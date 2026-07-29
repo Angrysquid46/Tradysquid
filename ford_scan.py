@@ -121,6 +121,7 @@ LOG_HEADER = [
     "bid_ask_width_at_entry",
     "outcome",
     "pct_gain_loss",
+    "realized_pl_dollars",
     "closed_at",
     "last_mark",
     "current_pl_dollars",
@@ -303,6 +304,20 @@ def parse_entry_price(row: dict[str, str]) -> float:
         return direct
     raw = (row.get("cost_or_credit") or "").replace("credit", "").strip()
     return as_float(raw, 0.0) or 0.0
+
+
+def realized_pl_dollars(row: dict[str, str]) -> float:
+    """Closed-trade dollar result for the scanner's one-contract position."""
+    stored = as_float(row.get("realized_pl_dollars"))
+    if stored is not None:
+        return stored
+
+    current = as_float(row.get("current_pl_dollars"))
+    if current is not None and row.get("outcome") in {"WIN", "LOSS", "SCRATCH"}:
+        return current
+
+    pct = as_float(row.get("pct_gain_loss"), 0.0) or 0.0
+    return round(parse_entry_price(row) * pct, 2)
 
 
 def row_key(row: dict[str, str]) -> tuple[str, str, str, str]:
@@ -534,6 +549,9 @@ def migrate_row(raw: dict[str, Any]) -> dict[str, str]:
     row["entry_price"] = round_or_blank(parse_entry_price(row), 4)
     row["discord_status"] = row.get("discord_status") or row["outcome"]
     row["last_signal"] = row.get("last_signal") or ("HOLD" if row["outcome"] == "OPEN" else row["outcome"])
+
+    if row["outcome"] in {"WIN", "LOSS", "SCRATCH"} and not row.get("realized_pl_dollars"):
+        row["realized_pl_dollars"] = round_or_blank(realized_pl_dollars(row), 2)
 
     try:
         if row.get("play_type") == "SPREAD":
@@ -943,6 +961,7 @@ def close_row(row: dict[str, str], evaluation: dict[str, Any], timestamp: dateti
         outcome = "WIN" if pnl_pct > 0 else "LOSS"
     row["outcome"] = outcome
     row["pct_gain_loss"] = round_or_blank(pnl_pct, 1)
+    row["realized_pl_dollars"] = round_or_blank(as_float(evaluation.get("pl_dollars"), 0.0), 2)
     row["closed_at"] = timestamp.isoformat()
     row["discord_status"] = outcome
     return outcome
@@ -1329,11 +1348,9 @@ def mark_closed_result_routed(row: dict[str, str], report_state: dict[str, Any])
 
 def stored_close_evaluation(row: dict[str, str]) -> dict[str, Any]:
     pl_pct = as_float(row.get("pct_gain_loss"), 0.0) or 0.0
-    entry = parse_entry_price(row)
-    pl_dollars = entry * 100 * (pl_pct / 100)
     return {
         "pl_pct": pl_pct,
-        "pl_dollars": pl_dollars,
+        "pl_dollars": realized_pl_dollars(row),
         "signal": row.get("last_signal") or "CLOSED",
     }
 
@@ -1440,10 +1457,6 @@ def result_metrics(rows: list[dict[str, str]]) -> dict[str, float]:
         value for value in (as_float(row.get("pct_gain_loss")) for row in rows)
         if value is not None
     ]
-    dollar_values = [
-        value for value in (as_float(row.get("current_pl_dollars")) for row in rows)
-        if value is not None
-    ]
     win_pcts = [
         value for value in (as_float(row.get("pct_gain_loss")) for row in wins)
         if value is not None
@@ -1453,13 +1466,23 @@ def result_metrics(rows: list[dict[str, str]]) -> dict[str, float]:
         if value is not None
     ]
 
+    win_dollars = [realized_pl_dollars(row) for row in wins]
+    loss_dollars = [realized_pl_dollars(row) for row in losses]
+    scratch_dollars = [realized_pl_dollars(row) for row in scratches]
+    all_dollars = win_dollars + loss_dollars + scratch_dollars
+
+    gross_won = sum(value for value in win_dollars if value > 0)
+    gross_lost = abs(sum(value for value in loss_dollars if value < 0))
+
     return {
         "wins": float(len(wins)),
         "losses": float(len(losses)),
         "scratches": float(len(scratches)),
         "closed": float(len(rows)),
         "win_rate": (len(wins) / len(decided) * 100) if decided else 0.0,
-        "total_pnl": sum(dollar_values),
+        "gross_won": gross_won,
+        "gross_lost": gross_lost,
+        "total_pnl": sum(all_dollars),
         "average_pct": (sum(pct_values) / len(pct_values)) if pct_values else 0.0,
         "average_win_pct": (sum(win_pcts) / len(win_pcts)) if win_pcts else 0.0,
         "average_loss_pct": (sum(loss_pcts) / len(loss_pcts)) if loss_pcts else 0.0,
@@ -1468,12 +1491,11 @@ def result_metrics(rows: list[dict[str, str]]) -> dict[str, float]:
         ) if decided else 0.0,
     }
 
-
 def compact_result_line(row: dict[str, str]) -> str:
     trade_id = row.get("trade_id", "F-UNKNOWN")
     outcome = row.get("outcome", "CLOSED")
     pct = as_float(row.get("pct_gain_loss"), 0.0) or 0.0
-    dollars = as_float(row.get("current_pl_dollars"))
+    dollars = realized_pl_dollars(row)
     play_type = row.get("play_type", "")
     kind = row.get("call_or_put", "").upper()
     result = f"{pct:+.1f}%"
@@ -1493,7 +1515,12 @@ def format_performance_stats(rows: list[dict[str, str]]) -> str:
             f"{int(metrics['scratches'])}S** · "
             f"Win rate **{metrics['win_rate']:.1f}%**"
         ),
-        f"Total P/L **{fmt_money(metrics['total_pnl'])}** · Open **{open_count}**",
+        (
+            f"Won **{fmt_money(metrics['gross_won'])}** · "
+            f"Lost **{fmt_money(metrics['gross_lost'])}** · "
+            f"Net **{fmt_money(metrics['total_pnl'])}**"
+        ),
+        f"Open **{open_count}** · 1-contract tracking",
         (
             f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
             f"Avg loss **{metrics['average_loss_pct']:+.1f}%** · "
@@ -1519,7 +1546,7 @@ def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
             line = (
                 f"**{label}** · {int(metrics['wins'])}W-{int(metrics['losses'])}L-"
                 f"{int(metrics['scratches'])}S · {metrics['win_rate']:.0f}% · "
-                f"{metrics['expectancy_pct']:+.1f}% avg"
+                f"Net {fmt_money(metrics['total_pnl'])} · {metrics['expectancy_pct']:+.1f}% avg"
             )
             ranked.append((metrics["expectancy_pct"], line))
         for _, line in sorted(ranked, key=lambda item: item[0], reverse=True):
@@ -1536,7 +1563,11 @@ def format_daily_recap(rows: list[dict[str, str]], report_date: date) -> str:
         (
             f"**{int(metrics['wins'])}W-{int(metrics['losses'])}L-"
             f"{int(metrics['scratches'])}S** · "
-            f"P/L **{fmt_money(metrics['total_pnl'])}**"
+            f"Net **{fmt_money(metrics['total_pnl'])}**"
+        ),
+        (
+            f"Won **{fmt_money(metrics['gross_won'])}** · "
+            f"Lost **{fmt_money(metrics['gross_lost'])}**"
         ),
     ]
     if completed:
@@ -1559,9 +1590,11 @@ def format_weekly_report(rows: list[dict[str, str]], report_date: date) -> str:
             f"Win rate **{metrics['win_rate']:.1f}%**"
         ),
         (
-            f"P/L **{fmt_money(metrics['total_pnl'])}** · "
-            f"Expectancy **{metrics['expectancy_pct']:+.1f}%**"
+            f"Won **{fmt_money(metrics['gross_won'])}** · "
+            f"Lost **{fmt_money(metrics['gross_lost'])}** · "
+            f"Net **{fmt_money(metrics['total_pnl'])}**"
         ),
+        f"Expectancy **{metrics['expectancy_pct']:+.1f}%**",
         (
             f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
             f"Avg loss **{metrics['average_loss_pct']:+.1f}%**"
@@ -1677,6 +1710,26 @@ def post_workflow_log(
     )
 
 
+def format_result_channel_summary(rows: list[dict[str, str]], outcome: str) -> str:
+    selected = [row for row in closed_rows(rows) if row.get("outcome") == outcome]
+    metrics = result_metrics(selected)
+    if outcome == "WIN":
+        return (
+            f"## 🏆 Wins Summary\n"
+            f"Trades **{len(selected)}** · Total won **{fmt_money(metrics['gross_won'])}**"
+        )
+    if outcome == "LOSS":
+        return (
+            f"## 🔴 Losses Summary\n"
+            f"Trades **{len(selected)}** · Total lost **{fmt_money(metrics['gross_lost'])}**"
+        )
+    return (
+        f"## ➖ Scratches Summary\n"
+        f"Trades **{len(selected)}** · Net **{fmt_money(metrics['total_pnl'])}**"
+    )
+
+
+
 def update_performance_pages(
     discord: DiscordTracker,
     state: dict[str, Any],
@@ -1695,6 +1748,24 @@ def update_performance_pages(
         state,
         "strategy-breakdown",
         format_strategy_breakdown(rows),
+    )
+    discord.upsert_channel_message(
+        "wins",
+        state,
+        "wins-summary",
+        format_result_channel_summary(rows, "WIN"),
+    )
+    discord.upsert_channel_message(
+        "losses",
+        state,
+        "losses-summary",
+        format_result_channel_summary(rows, "LOSS"),
+    )
+    discord.upsert_channel_message(
+        "scratches",
+        state,
+        "scratches-summary",
+        format_result_channel_summary(rows, "SCRATCH"),
     )
 
 
@@ -1786,7 +1857,8 @@ def render_dashboard(
             closed_items.append(
                 f"<div class='play-group closed'><div class='play-head'><div class='play-title'>{title}</div>"
                 f"<div><span class='badge {badge_class}'>{esc(outcome)}</span> "
-                f"<span class='pl'>{fmt_pct(as_float(row.get('pct_gain_loss')))}</span></div></div>"
+                f"<span class='pl'>{fmt_money(realized_pl_dollars(row))} "
+                f"({fmt_pct(as_float(row.get('pct_gain_loss')))})</span></div></div>"
                 f"<div class='plsub'>Opened {esc((row.get('timestamp') or '')[:16].replace('T',' '))} · "
                 f"Closed {esc((row.get('closed_at') or '')[:16].replace('T',' '))} · "
                 f"MFE {fmt_pct(as_float(row.get('max_favorable_pct')))} · MAE {fmt_pct(as_float(row.get('max_adverse_pct')))}</div></div>"
