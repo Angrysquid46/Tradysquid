@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Ford (F) options scanner + Discord trade tracker.
 
@@ -19,8 +18,11 @@ DISCORD_GUILD_ID             # Tradysquids server ID
 Expected Discord channel names
 ------------------------------
 Forum: trade-journal
-Text: scanner-feed, qualified-setups, entry-alerts, position-updates,
-      exit-alerts, wins, losses, scratches, scanner-status, api-errors
+Text: scanner-feed, qualified-trades, entry-alerts, position-updates,
+      exit-alerts, wins, losses, scratches, daily-recap, weekly-report,
+      performance-stats, strategy-breakdown, scanner-status, api-errors,
+      workflow-log, admin-notes, welcome, strategy-rules, risk-management,
+      server-guide
 
 Expected forum status tags
 --------------------------
@@ -62,6 +64,7 @@ STATE_DIR = REPO_ROOT / "state"
 DOCS_DIR = REPO_ROOT / "docs"
 LOG_PATH = STATE_DIR / "ford-plays-log.csv"
 DASHBOARD_PATH = DOCS_DIR / "index.html"
+REPORT_STATE_PATH = STATE_DIR / "discord-report-state.json"
 
 MARKET_TZ = ZoneInfo("America/Chicago")
 MARKET_OPEN = (8, 30)
@@ -137,15 +140,25 @@ LOG_HEADER = [
 CHANNEL_NAMES = {
     "forum": "trade-journal",
     "scanner_feed": "scanner-feed",
-    "qualified": "qualified-setups",
+    "qualified": "qualified-trades",
     "entry": "entry-alerts",
     "updates": "position-updates",
     "exit": "exit-alerts",
     "wins": "wins",
     "losses": "losses",
     "scratches": "scratches",
+    "daily_recap": "daily-recap",
+    "weekly_report": "weekly-report",
+    "performance_stats": "performance-stats",
+    "strategy_breakdown": "strategy-breakdown",
     "status": "scanner-status",
     "errors": "api-errors",
+    "workflow_log": "workflow-log",
+    "admin_notes": "admin-notes",
+    "welcome": "welcome",
+    "strategy_rules": "strategy-rules",
+    "risk_management": "risk-management",
+    "server_guide": "server-guide",
 }
 
 TAG_KEYS = {
@@ -216,6 +229,35 @@ def normalized_name(value: str) -> str:
 def split_chunks(values: list[str], size: int) -> Iterable[list[str]]:
     for index in range(0, len(values), size):
         yield values[index : index + size]
+
+
+def read_report_state() -> dict[str, Any]:
+    default = {
+        "messages": {},
+        "daily_report_date": "",
+        "weekly_report_key": "",
+        "guide_version": "",
+    }
+    if not REPORT_STATE_PATH.exists():
+        return default
+    try:
+        loaded = json.loads(REPORT_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return default
+    if not isinstance(loaded, dict):
+        return default
+    default.update(loaded)
+    if not isinstance(default.get("messages"), dict):
+        default["messages"] = {}
+    return default
+
+
+def write_report_state(state: dict[str, Any]) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    REPORT_STATE_PATH.write_text(
+        json.dumps(state, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 def market_is_open_now() -> tuple[bool, datetime]:
@@ -981,16 +1023,54 @@ class DiscordTracker:
             raise DiscordError(f"Missing required trade-journal forum tags: {', '.join(missing_tags)}")
         self.ready = True
 
-    def send_channel(self, logical_name: str, *, content: str = "", embed: dict[str, Any] | None = None) -> None:
+    def send_channel(
+        self,
+        logical_name: str,
+        *,
+        content: str = "",
+        embed: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         channel_id = self.channels.get(logical_name)
         if not self.ready or not channel_id:
-            return
+            return None
         payload: dict[str, Any] = {"allowed_mentions": {"parse": []}}
         if content:
             payload["content"] = content[:2000]
         if embed:
             payload["embeds"] = [embed]
-        self._request("POST", f"/channels/{channel_id}/messages", payload)
+        return self._request("POST", f"/channels/{channel_id}/messages", payload)
+
+    def upsert_channel_message(
+        self,
+        logical_name: str,
+        state: dict[str, Any],
+        state_key: str,
+        content: str,
+    ) -> None:
+        channel_id = self.channels.get(logical_name)
+        if not self.ready or not channel_id:
+            return
+        messages = state.setdefault("messages", {})
+        message_id = str(messages.get(state_key) or "")
+        payload = {
+            "content": content[:2000],
+            "embeds": [],
+            "allowed_mentions": {"parse": []},
+        }
+        if message_id:
+            try:
+                self._request(
+                    "PATCH",
+                    f"/channels/{channel_id}/messages/{message_id}",
+                    payload,
+                )
+                return
+            except DiscordError as exc:
+                if "HTTP 404" not in str(exc):
+                    raise
+        created = self._request("POST", f"/channels/{channel_id}/messages", payload)
+        if isinstance(created, dict) and created.get("id"):
+            messages[state_key] = created["id"]
 
     def create_trade_thread(self, row: dict[str, str], status: str = "OPEN") -> str:
         if not self.ready:
@@ -1248,6 +1328,337 @@ def post_new_trade(row: dict[str, str], discord: DiscordTracker) -> None:
     discord.send_channel("qualified", content=content)
     discord.send_channel("entry", content=content)
 
+
+# ---------------------------------------------------------------------------
+# Discord server pages and performance reporting
+# ---------------------------------------------------------------------------
+
+
+def closed_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [
+        row for row in rows
+        if row.get("outcome") in {"WIN", "LOSS", "SCRATCH"}
+    ]
+
+
+def rows_closed_on(rows: list[dict[str, str]], target_date: date) -> list[dict[str, str]]:
+    selected: list[dict[str, str]] = []
+    for row in closed_rows(rows):
+        closed_at = parse_iso(row.get("closed_at"))
+        if closed_at and closed_at.date() == target_date:
+            selected.append(row)
+    return selected
+
+
+def rows_closed_between(
+    rows: list[dict[str, str]],
+    start_date: date,
+    end_date: date,
+) -> list[dict[str, str]]:
+    selected: list[dict[str, str]] = []
+    for row in closed_rows(rows):
+        closed_at = parse_iso(row.get("closed_at"))
+        if closed_at and start_date <= closed_at.date() <= end_date:
+            selected.append(row)
+    return selected
+
+
+def result_metrics(rows: list[dict[str, str]]) -> dict[str, float]:
+    wins = [row for row in rows if row.get("outcome") == "WIN"]
+    losses = [row for row in rows if row.get("outcome") == "LOSS"]
+    scratches = [row for row in rows if row.get("outcome") == "SCRATCH"]
+    decided = wins + losses
+
+    pct_values = [
+        value for value in (as_float(row.get("pct_gain_loss")) for row in rows)
+        if value is not None
+    ]
+    dollar_values = [
+        value for value in (as_float(row.get("current_pl_dollars")) for row in rows)
+        if value is not None
+    ]
+    win_pcts = [
+        value for value in (as_float(row.get("pct_gain_loss")) for row in wins)
+        if value is not None
+    ]
+    loss_pcts = [
+        value for value in (as_float(row.get("pct_gain_loss")) for row in losses)
+        if value is not None
+    ]
+
+    return {
+        "wins": float(len(wins)),
+        "losses": float(len(losses)),
+        "scratches": float(len(scratches)),
+        "closed": float(len(rows)),
+        "win_rate": (len(wins) / len(decided) * 100) if decided else 0.0,
+        "total_pnl": sum(dollar_values),
+        "average_pct": (sum(pct_values) / len(pct_values)) if pct_values else 0.0,
+        "average_win_pct": (sum(win_pcts) / len(win_pcts)) if win_pcts else 0.0,
+        "average_loss_pct": (sum(loss_pcts) / len(loss_pcts)) if loss_pcts else 0.0,
+        "expectancy_pct": (
+            sum(as_float(row.get("pct_gain_loss"), 0.0) or 0.0 for row in decided) / len(decided)
+        ) if decided else 0.0,
+    }
+
+
+def compact_result_line(row: dict[str, str]) -> str:
+    trade_id = row.get("trade_id", "F-UNKNOWN")
+    outcome = row.get("outcome", "CLOSED")
+    pct = as_float(row.get("pct_gain_loss"), 0.0) or 0.0
+    dollars = as_float(row.get("current_pl_dollars"))
+    play_type = row.get("play_type", "")
+    kind = row.get("call_or_put", "").upper()
+    result = f"{pct:+.1f}%"
+    if dollars is not None:
+        result += f" / {fmt_money(dollars)}"
+    return f"• **{trade_id}** {play_type} {kind} · {outcome} · {result}"
+
+
+def format_performance_stats(rows: list[dict[str, str]]) -> str:
+    completed = closed_rows(rows)
+    metrics = result_metrics(completed)
+    open_count = len(open_rows(rows))
+    return "\n".join([
+        "## Performance",
+        (
+            f"**{int(metrics['wins'])}W-{int(metrics['losses'])}L-"
+            f"{int(metrics['scratches'])}S** · "
+            f"Win rate **{metrics['win_rate']:.1f}%**"
+        ),
+        f"Total P/L **{fmt_money(metrics['total_pnl'])}** · Open **{open_count}**",
+        (
+            f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
+            f"Avg loss **{metrics['average_loss_pct']:+.1f}%** · "
+            f"Expectancy **{metrics['expectancy_pct']:+.1f}%**"
+        ),
+        f"Updated {now_ct().strftime('%m/%d/%y %-I:%M %p CT')}",
+    ])[:2000]
+
+
+def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
+    groups: dict[str, list[dict[str, str]]] = {}
+    for row in closed_rows(rows):
+        label = f"{row.get('play_type', 'PLAY')} {row.get('call_or_put', '').upper()}".strip()
+        groups.setdefault(label, []).append(row)
+
+    lines = ["## Strategy Breakdown"]
+    if not groups:
+        lines.append("No completed trades yet.")
+    else:
+        ranked: list[tuple[float, str]] = []
+        for label, group in groups.items():
+            metrics = result_metrics(group)
+            line = (
+                f"**{label}** · {int(metrics['wins'])}W-{int(metrics['losses'])}L-"
+                f"{int(metrics['scratches'])}S · {metrics['win_rate']:.0f}% · "
+                f"{metrics['expectancy_pct']:+.1f}% avg"
+            )
+            ranked.append((metrics["expectancy_pct"], line))
+        for _, line in sorted(ranked, key=lambda item: item[0], reverse=True):
+            lines.append(line)
+    lines.append(f"Updated {now_ct().strftime('%m/%d/%y %-I:%M %p CT')}")
+    return "\n".join(lines)[:2000]
+
+
+def format_daily_recap(rows: list[dict[str, str]], report_date: date) -> str:
+    completed = rows_closed_on(rows, report_date)
+    metrics = result_metrics(completed)
+    lines = [
+        f"## Daily Recap · {report_date.strftime('%m/%d/%y')}",
+        (
+            f"**{int(metrics['wins'])}W-{int(metrics['losses'])}L-"
+            f"{int(metrics['scratches'])}S** · "
+            f"P/L **{fmt_money(metrics['total_pnl'])}**"
+        ),
+    ]
+    if completed:
+        lines.extend(compact_result_line(row) for row in completed[-12:])
+    else:
+        lines.append("No trades closed.")
+    lines.append(f"Open trades carried forward: **{len(open_rows(rows))}**")
+    return "\n".join(lines)[:2000]
+
+
+def format_weekly_report(rows: list[dict[str, str]], report_date: date) -> str:
+    monday = report_date - timedelta(days=report_date.weekday())
+    completed = rows_closed_between(rows, monday, report_date)
+    metrics = result_metrics(completed)
+    lines = [
+        f"## Weekly Report · {monday.strftime('%m/%d')}–{report_date.strftime('%m/%d/%y')}",
+        (
+            f"**{int(metrics['wins'])}W-{int(metrics['losses'])}L-"
+            f"{int(metrics['scratches'])}S** · "
+            f"Win rate **{metrics['win_rate']:.1f}%**"
+        ),
+        (
+            f"P/L **{fmt_money(metrics['total_pnl'])}** · "
+            f"Expectancy **{metrics['expectancy_pct']:+.1f}%**"
+        ),
+        (
+            f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
+            f"Avg loss **{metrics['average_loss_pct']:+.1f}%**"
+        ),
+    ]
+    if completed:
+        best = max(completed, key=lambda row: as_float(row.get("pct_gain_loss"), -math.inf) or -math.inf)
+        worst = min(completed, key=lambda row: as_float(row.get("pct_gain_loss"), math.inf) or math.inf)
+        lines.append(f"Best: {compact_result_line(best)[2:]}")
+        lines.append(f"Worst: {compact_result_line(worst)[2:]}")
+    else:
+        lines.append("No trades closed this week.")
+    return "\n".join(lines)[:2000]
+
+
+def static_server_pages() -> dict[str, str]:
+    return {
+        "welcome": "\n".join([
+            "# Tradysquids TradeBot",
+            "Ford options scans, entries, lifecycle updates, and results.",
+            "Start with **#entry-alerts**. Open any linked journal thread for the full trade history.",
+        ]),
+        "strategy_rules": "\n".join([
+            "# Strategy Rules",
+            "• Ford only",
+            f"• Credit-spread short delta: {SPREAD_SHORT_DELTA_MIN:.2f}–{SPREAD_SHORT_DELTA_MAX:.2f}",
+            f"• Long-option delta: {SINGLE_LEG_DELTA_MIN:.2f}–{SINGLE_LEG_DELTA_MAX:.2f}",
+            f"• Minimum open interest: {MIN_OPEN_INTEREST}",
+            f"• Maximum new entries per scan: {MAX_NEW_PLAYS_PER_SCAN}",
+            f"• Duplicate-entry cooldown: {REENTRY_COOLDOWN_MINUTES} minutes",
+        ]),
+        "risk_management": "\n".join([
+            "# Risk Management",
+            f"• Credit spreads: target {SPREAD_TAKE_PROFIT_PCT * 100:.0f}% credit capture",
+            f"• Credit spreads: stop at {SPREAD_STOP_MULTIPLE:.1f}× entry credit",
+            f"• Long options: target +{SINGLE_TAKE_PROFIT_PCT * 100:.1f}%",
+            f"• Long options: stop -{SINGLE_STOP_PCT * 100:.1f}%",
+            "• Every spread is defined-risk",
+        ]),
+        "server_guide": "\n".join([
+            "# Server Guide",
+            "**scanner-feed** — meaningful scan summaries",
+            "**qualified-trades** — new qualified setups",
+            "**entry-alerts** — compact entries",
+            "**trade-journal** — one thread per trade",
+            "**position-updates** — material P/L and signal changes",
+            "**exit-alerts** — every closure",
+            "**wins / losses / scratches** — final routing",
+            "**performance** channels — daily, weekly, and strategy statistics",
+            "**scanner-status / workflow-log / api-errors** — system health",
+        ]),
+        "admin_notes": "\n".join([
+            "# Admin Notes",
+            "Reserved for manual configuration changes, overrides, and maintenance notes.",
+        ]),
+    }
+
+
+def ensure_static_server_pages(
+    discord: DiscordTracker,
+    state: dict[str, Any],
+) -> None:
+    if not discord.ready:
+        return
+    for logical_name, content in static_server_pages().items():
+        discord.upsert_channel_message(
+            logical_name,
+            state,
+            f"page:{logical_name}",
+            content,
+        )
+    state["guide_version"] = "1"
+
+
+def update_scanner_status(
+    discord: DiscordTracker,
+    state: dict[str, Any],
+    *,
+    market_open: bool,
+    summary: str,
+    rows: list[dict[str, str]],
+    timestamp: datetime,
+) -> None:
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "local")
+    run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
+    status = "🟢 MARKET OPEN" if market_open else "⚫ MARKET CLOSED"
+    content = "\n".join([
+        f"## {status}",
+        summary,
+        f"Open trades **{len(open_rows(rows))}** · Trigger **{event_name}** · Run **#{run_number}**",
+        f"Last check {timestamp.strftime('%m/%d/%y %-I:%M:%S %p CT')}",
+    ])
+    discord.upsert_channel_message("status", state, "scanner-status", content)
+
+
+def post_workflow_log(
+    discord: DiscordTracker,
+    *,
+    timestamp: datetime,
+    result: str,
+) -> None:
+    if not discord.ready:
+        return
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "local")
+    run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
+    icon = "✅" if result.startswith("OK") else "⚠️"
+    discord.send_channel(
+        "workflow_log",
+        content=(
+            f"{icon} `{timestamp.strftime('%m/%d %H:%M:%S CT')}` "
+            f"#{run_number} {event_name} · {result}"
+        ),
+    )
+
+
+def update_performance_pages(
+    discord: DiscordTracker,
+    state: dict[str, Any],
+    rows: list[dict[str, str]],
+) -> None:
+    if not discord.ready:
+        return
+    discord.upsert_channel_message(
+        "performance_stats",
+        state,
+        "performance-stats",
+        format_performance_stats(rows),
+    )
+    discord.upsert_channel_message(
+        "strategy_breakdown",
+        state,
+        "strategy-breakdown",
+        format_strategy_breakdown(rows),
+    )
+
+
+def post_reports_if_due(
+    discord: DiscordTracker,
+    state: dict[str, Any],
+    rows: list[dict[str, str]],
+    timestamp: datetime,
+) -> None:
+    if not discord.ready:
+        return
+
+    report_date = timestamp.date()
+    date_key = report_date.isoformat()
+    if state.get("daily_report_date") != date_key:
+        discord.send_channel(
+            "daily_recap",
+            content=format_daily_recap(rows, report_date),
+        )
+        state["daily_report_date"] = date_key
+
+    iso_year, iso_week, _ = report_date.isocalendar()
+    week_key = f"{iso_year}-W{iso_week:02d}"
+    if report_date.weekday() == 4 and state.get("weekly_report_key") != week_key:
+        discord.send_channel(
+            "weekly_report",
+            content=format_weekly_report(rows, report_date),
+        )
+        state["weekly_report_key"] = week_key
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 
@@ -1427,6 +1838,16 @@ def main() -> int:
         report_error(None, f"TradeBot setup failed: {exc}")
         discord = DiscordTracker("", "")
 
+    report_state = read_report_state()
+    safe_discord_call(
+        "server pages",
+        lambda: ensure_static_server_pages(discord, report_state),
+    )
+    safe_discord_call(
+        "performance pages",
+        lambda: update_performance_pages(discord, report_state, rows),
+    )
+
     backfilled = sync_existing_open_threads(rows, discord)
     if backfilled:
         write_log(rows)
@@ -1441,8 +1862,41 @@ def main() -> int:
 
     is_open, timestamp = market_is_open_now()
     if not is_open:
+        closed_summary = (
+            f"Market closed · maintenance sync complete · "
+            f"{len(open_rows(rows))} open trade(s)"
+        )
+        safe_discord_call(
+            "closed status",
+            lambda: update_scanner_status(
+                discord,
+                report_state,
+                market_open=False,
+                summary=closed_summary,
+                rows=rows,
+                timestamp=timestamp,
+            ),
+        )
+        safe_discord_call(
+            "performance pages",
+            lambda: update_performance_pages(discord, report_state, rows),
+        )
+        if timestamp.hour >= MARKET_CLOSE[0]:
+            safe_discord_call(
+                "scheduled reports",
+                lambda: post_reports_if_due(discord, report_state, rows, timestamp),
+            )
+        safe_discord_call(
+            "workflow log",
+            lambda: post_workflow_log(
+                discord,
+                timestamp=timestamp,
+                result=f"OK · market closed · {len(open_rows(rows))} open",
+            ),
+        )
         render_dashboard(None, rows, f"Market closed at {timestamp.strftime('%-I:%M %p %Z')}; maintenance sync only.")
         write_log(rows)
+        write_report_state(report_state)
         print(f"Market closed ({timestamp.isoformat()}); maintenance sync complete.")
         return 0
 
@@ -1500,17 +1954,51 @@ def main() -> int:
             f"{len(open_rows(rows))} open total."
         )
         render_dashboard(spot, rows, summary)
+        safe_discord_call(
+            "open status",
+            lambda: update_scanner_status(
+                discord,
+                report_state,
+                market_open=True,
+                summary=summary,
+                rows=rows,
+                timestamp=timestamp,
+            ),
+        )
+        safe_discord_call(
+            "performance pages",
+            lambda: update_performance_pages(discord, report_state, rows),
+        )
+        safe_discord_call(
+            "workflow log",
+            lambda: post_workflow_log(
+                discord,
+                timestamp=timestamp,
+                result=f"OK · {summary}",
+            ),
+        )
 
         if discord.ready and (new_rows or closed_count):
             safe_discord_call("scanner feed", lambda: discord.send_channel("scanner_feed", content=f"📡 **Ford scan complete**\n{summary}"))
         elif not discord.ready and (new_rows or closed_count):
             notify_webhook([summary], title="Ford options scan")
 
+        write_report_state(report_state)
         print(summary)
         return 0
     except (TradierError, DiscordError, requests.RequestException, ValueError, KeyError) as exc:
-        report_error(discord, f"{type(exc).__name__}: {exc}")
+        error_text = f"{type(exc).__name__}: {exc}"
+        report_error(discord, error_text)
+        safe_discord_call(
+            "workflow error log",
+            lambda: post_workflow_log(
+                discord,
+                timestamp=now_ct(),
+                result=f"ERROR · {error_text[:120]}",
+            ),
+        )
         write_log(rows)
+        write_report_state(report_state)
         return 1
 
 
