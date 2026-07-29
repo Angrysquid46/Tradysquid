@@ -2,18 +2,16 @@ name: Ford Options Scan
 
 on:
   schedule:
-    # Every 15 minutes during regular market hours, Central Time.
-    # GitHub handles CST/CDT automatically through America/Chicago.
-
-    # 8:30 AM and 8:45 AM CT
+    # Regular U.S. market session in Central Time.
+    # 8:30 AM and 8:45 AM.
     - cron: "30,45 8 * * 1-5"
       timezone: "America/Chicago"
 
-    # Every 15 minutes from 9:00 AM through 2:45 PM CT
+    # Every 15 minutes from 9:00 AM through 2:45 PM.
     - cron: "0,15,30,45 9-14 * * 1-5"
       timezone: "America/Chicago"
 
-    # Final session scan at 3:00 PM CT
+    # Final regular-session scan at 3:00 PM.
     - cron: "0 15 * * 1-5"
       timezone: "America/Chicago"
 
@@ -23,27 +21,30 @@ on:
 permissions:
   contents: write
 
-# Prevent multiple scans from updating the same trades simultaneously.
+# Prevent scheduled and manual runs from modifying the trade log simultaneously.
 concurrency:
   group: ford-options-scan
   cancel-in-progress: false
 
 jobs:
   scan:
+    name: Scan and update Ford trades
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     env:
       PYTHONUNBUFFERED: "1"
+      TZ: "America/Chicago"
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: "pip"
@@ -51,9 +52,46 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           python -m pip install --disable-pip-version-check -r requirements.txt
 
-      - name: Run Ford options scan
+      - name: Verify required secrets
+        shell: bash
+        env:
+          TRADIER_TOKEN: ${{ secrets.TRADIER_TOKEN }}
+          TRADIER_BASE_URL: ${{ secrets.TRADIER_BASE_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          missing=0
+
+          if [ -z "$TRADIER_TOKEN" ]; then
+            echo "::error::TRADIER_TOKEN is missing."
+            missing=1
+          fi
+
+          if [ -z "$TRADIER_BASE_URL" ]; then
+            echo "::error::TRADIER_BASE_URL is missing."
+            missing=1
+          fi
+
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::error::DISCORD_WEBHOOK_URL is missing."
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "Required secrets are configured."
+
+      - name: Create required folders
+        shell: bash
+        run: |
+          mkdir -p state
+          mkdir -p docs
+
+      - name: Run Ford options scanner
         env:
           TRADIER_TOKEN: ${{ secrets.TRADIER_TOKEN }}
           TRADIER_BASE_URL: ${{ secrets.TRADIER_BASE_URL }}
@@ -62,29 +100,26 @@ jobs:
         run: |
           python ford_scan.py
 
-      - name: Commit updated state and dashboard
+      - name: Commit updated trade state and dashboard
         shell: bash
         run: |
           git config user.name "ford-scan-bot"
           git config user.email "actions@users.noreply.github.com"
 
-          if [ -d "state" ]; then
-            git add -A -- state
-          fi
-
-          if [ -d "docs" ]; then
-            git add -A -- docs
-          fi
+          git add -A -- state docs
 
           if git diff --cached --quiet; then
-            echo "No state or dashboard changes to commit."
+            echo "No trade-state or dashboard changes to commit."
             exit 0
           fi
 
           git commit -m "Ford scan update: $(date -u +'%Y-%m-%d %H:%M UTC')"
 
-          if ! git push origin HEAD:main; then
-            echo "Remote changed during scan. Rebasing and retrying."
-            git pull --rebase origin main
-            git push origin HEAD:main
+          if git push origin HEAD:main; then
+            echo "Scanner updates pushed successfully."
+            exit 0
           fi
+
+          echo "The remote branch changed during this run. Rebasing and retrying."
+          git pull --rebase origin main
+          git push origin HEAD:main
