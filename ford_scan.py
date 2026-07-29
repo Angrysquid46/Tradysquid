@@ -92,7 +92,7 @@ SCRATCH_BAND_PCT = float(os.environ.get("SCRATCH_BAND_PCT", "5.0"))
 DISCORD_PL_CHANGE_THRESHOLD = float(os.environ.get("DISCORD_PL_CHANGE_THRESHOLD", "10.0"))
 DISCORD_HEARTBEAT_MINUTES = int(os.environ.get("DISCORD_HEARTBEAT_MINUTES", "60"))
 DISCORD_SYNC_EXISTING_OPEN = os.environ.get("DISCORD_SYNC_EXISTING_OPEN", "true").lower() == "true"
-DISCORD_FORMAT_VERSION = "8"
+DISCORD_FORMAT_VERSION = "9"
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Tradysquids-TradeBot/1.0"})
@@ -228,15 +228,41 @@ def round_or_blank(value: float | None, digits: int = 2) -> str:
     return "" if value is None else str(round(value, digits))
 
 
+
 def fmt_money(value: float | None) -> str:
+    """Display one-contract and aggregate dollar values as whole dollars."""
     if value is None:
         return "—"
-    return f"-${abs(value):,.2f}" if value < 0 else f"${value:,.2f}"
+    rounded = int(round(value))
+    return f"-${abs(rounded):,}" if rounded < 0 else f"${rounded:,}"
+
+
+def fmt_option_price(value: float | None, *, approximate: bool = False) -> str:
+    """Options premiums and debits/credits are always displayed to two decimals."""
+    if value is None:
+        return "—"
+    prefix = "≈" if approximate else ""
+    return f"{prefix}${round(float(value), 2):.2f}"
+
+
+def fmt_iv(value: float | None) -> str:
+    if value is None or value <= 0:
+        return "Unavailable"
+    return f"{value * 100:.0f}%"
+
+
+def fmt_oi(value: Any) -> str:
+    amount = int(as_float(value, 0.0) or 0)
+    return f"{amount:,}" if amount > 0 else "Unavailable"
+
+
+def fmt_delta(value: float | None) -> str:
+    return "Unavailable" if value is None else f"{value:+.2f}"
+
 
 
 def fmt_pct(value: float | None) -> str:
-    return "—" if value is None else f"{value:+.1f}%"
-
+    return "—" if value is None else f"{value:+.0f}%"
 
 def fmt_strike(value: Any) -> str:
     return f"{float(value):g}"
@@ -332,19 +358,20 @@ def parse_spread_strikes(value: str) -> tuple[float, float]:
     return float(parts[0]), float(parts[1])
 
 
+
 def parse_entry_price(row: dict[str, str]) -> float:
     direct = as_float(row.get("entry_price"))
     if direct is not None:
-        return direct
+        return round(direct, 2)
     raw = (row.get("cost_or_credit") or "").replace("credit", "").strip()
-    return as_float(raw, 0.0) or 0.0
+    return round(as_float(raw, 0.0) or 0.0, 2)
 
 
 def exit_price(row: dict[str, str]) -> float | None:
-    """Tracked closing premium/debit. Reconstructs old rows only when necessary."""
+    """Tracked closing premium/debit, normalized to an option-price cent."""
     stored = as_float(row.get("exit_price"))
     if stored is not None:
-        return stored
+        return round(stored, 2)
 
     if row.get("outcome") not in {"WIN", "LOSS", "SCRATCH"}:
         return None
@@ -360,43 +387,42 @@ def exit_price(row: dict[str, str]) -> float | None:
         realized = entry * pct
 
     if row.get("play_type") == "SPREAD":
-        return round(entry - (realized / 100), 4)
-    return round(entry + (realized / 100), 4)
+        return round(entry - (realized / 100), 2)
+    return round(entry + (realized / 100), 2)
 
 
 def entry_contract_value(row: dict[str, str]) -> float:
-    return round(parse_entry_price(row) * 100, 2)
+    return round(parse_entry_price(row) * 100)
 
 
 def exit_contract_value(row: dict[str, str]) -> float | None:
     price = exit_price(row)
-    return None if price is None else round(price * 100, 2)
-
+    return None if price is None else round(price * 100)
 
 def result_is_reconstructed(row: dict[str, str]) -> bool:
     return row.get("result_price_source") == "RECONSTRUCTED"
 
 
-def realized_pl_dollars(row: dict[str, str]) -> float:
-    """One-contract result calculated from the stored entry and exit premiums."""
-    stored = as_float(row.get("realized_pl_dollars"))
-    if stored is not None:
-        return stored
 
+def realized_pl_dollars(row: dict[str, str]) -> float:
+    """One-contract result from cent-normalized entry and exit premiums."""
     entry = parse_entry_price(row)
     closing = exit_price(row)
     if closing is not None:
         if row.get("play_type") == "SPREAD":
-            return round((entry - closing) * 100, 2)
-        return round((closing - entry) * 100, 2)
+            return round((entry - closing) * 100)
+        return round((closing - entry) * 100)
+
+    stored = as_float(row.get("realized_pl_dollars"))
+    if stored is not None:
+        return round(stored)
 
     current = as_float(row.get("current_pl_dollars"))
     if current is not None and row.get("outcome") in {"WIN", "LOSS", "SCRATCH"}:
-        return current
+        return round(current)
 
     pct = as_float(row.get("pct_gain_loss"), 0.0) or 0.0
-    return round(entry * pct, 2)
-
+    return round(entry * pct)
 
 def result_amount_prefix(row: dict[str, str]) -> str:
     return "≈" if result_is_reconstructed(row) else ""
@@ -440,6 +466,7 @@ def format_expiration(value: str) -> str:
         return value or "—"
 
 
+
 def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
     trade_id = row.get("trade_id") or "F-UNKNOWN"
     sequence = trade_id.rsplit("-", 1)[-1]
@@ -449,61 +476,68 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
     entry = parse_entry_price(row)
     breakeven = as_float(row.get("breakeven"))
     delta = as_float(row.get("delta_at_entry"))
-    oi = int(as_float(row.get("open_interest_at_entry"), 0.0) or 0)
+    theta = as_float(row.get("theta_at_entry"))
+    oi = row.get("open_interest_at_entry")
     iv = as_float(row.get("iv_at_entry"))
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         strategy = f"{kind} CREDIT SPREAD"
         setup = (
-            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind} / "
+            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind}\n"
             f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
         )
-        stop = entry * SPREAD_STOP_MULTIPLE
-        target = entry * (1 - SPREAD_TAKE_PROFIT_PCT)
-        stop_pl = (entry - stop) * 100
-        target_pl = (entry - target) * 100
+        stop = round(entry * SPREAD_STOP_MULTIPLE, 2)
+        target = round(entry * (1 - SPREAD_TAKE_PROFIT_PCT), 2)
+        stop_pl = round((entry - stop) * 100)
+        target_pl = round((entry - target) * 100)
         price_line = (
-            f"ENTRY **${entry:.2f} CR** ({fmt_money(entry * 100)}) · "
-            f"STOP **${stop:.2f} DB** ({fmt_money(stop_pl)}) · "
-            f"TP **${target:.2f} DB** ({fmt_money(target_pl)})"
+            f"**Entry:** {fmt_option_price(entry)} CR ({fmt_money(entry * 100)})\n"
+            f"**Target:** {fmt_option_price(target)} DB ({fmt_money(target_pl)})\n"
+            f"**Stop:** {fmt_option_price(stop)} DB ({fmt_money(stop_pl)})"
         )
         risk_line = (
-            f"MAX PROFIT **{fmt_money(as_float(row.get('max_profit')))}** · "
-            f"MAX RISK **{fmt_money(as_float(row.get('max_risk')))}** · "
-            f"BE **${breakeven:.2f}**" if breakeven is not None else
-            f"MAX PROFIT **{fmt_money(as_float(row.get('max_profit')))}** · "
-            f"MAX RISK **{fmt_money(as_float(row.get('max_risk')))}**"
+            f"**Max profit:** {fmt_money(as_float(row.get('max_profit')))}\n"
+            f"**Max risk:** {fmt_money(as_float(row.get('max_risk')))}\n"
+            f"**Break-even:** {fmt_option_price(breakeven)}"
         )
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"LONG {kind}"
         setup = f"🟢 BUY 1 F {strike} {kind}"
-        stop = entry * (1 - SINGLE_STOP_PCT)
-        target = entry * (1 + SINGLE_TAKE_PROFIT_PCT)
+        stop = round(entry * (1 - SINGLE_STOP_PCT), 2)
+        target = round(entry * (1 + SINGLE_TAKE_PROFIT_PCT), 2)
         price_line = (
-            f"ENTRY **${entry:.2f} DB** ({fmt_money(entry * 100)}) · "
-            f"STOP **${stop:.2f} CR** ({fmt_money((stop - entry) * 100)}) · "
-            f"TP **${target:.2f} CR** ({fmt_money((target - entry) * 100)})"
+            f"**Entry:** {fmt_option_price(entry)} DB ({fmt_money(entry * 100)})\n"
+            f"**Target:** {fmt_option_price(target)} CR ({fmt_money((target - entry) * 100)})\n"
+            f"**Stop:** {fmt_option_price(stop)} CR ({fmt_money((stop - entry) * 100)})"
         )
         risk_line = (
-            f"MAX RISK **{fmt_money(as_float(row.get('max_risk')))}** · "
-            f"BE **${breakeven:.2f}**" if breakeven is not None else
-            f"MAX RISK **{fmt_money(as_float(row.get('max_risk')))}**"
+            f"**Max risk:** {fmt_money(as_float(row.get('max_risk')))}\n"
+            f"**Break-even:** {fmt_option_price(breakeven)}"
         )
 
-    iv_text = "—" if iv is None else f"{iv * 100:.1f}%"
-    delta_text = "—" if delta is None else f"{delta:+.2f}"
+    market_data = (
+        f"**Delta:** {fmt_delta(delta)}\n"
+        f"**IV:** {fmt_iv(iv)}\n"
+        f"**OI:** {fmt_oi(oi)} *(open interest)*\n"
+        f"**Theta:** {'Unavailable' if theta is None else f'{theta:+.3f}/day'}"
+    )
     lines = [
-        f"🟢 **F #{sequence} · ENTRY · {strategy}**",
-        f"{setup} · EXP **{expiration}**",
+        f"## 🟦 F #{sequence} · ENTRY · {strategy}",
+        "### Position",
+        f"{setup}\n**Expiration:** {expiration}",
+        "### Entry Plan",
         price_line,
+        "### Risk",
         risk_line,
-        f"Δ **{delta_text}** · IV **{iv_text}** · OI **{oi:,}**",
+        "### Market Data",
+        market_data,
     ]
     if include_link:
-        lines.append(f"[Open trade journal]({include_link})")
-    return "\n".join(lines)[:2000]
+        lines.extend(["### Journal", f"[Open trade journal]({include_link})"])
+    return "\n".join(lines)
+
 
 def position_update_text(
     row: dict[str, str],
@@ -517,92 +551,115 @@ def position_update_text(
     expiration = format_expiration(row.get("expiration", ""))
     signal = evaluation.get("signal") or row.get("last_signal") or "HOLD"
     entry = parse_entry_price(row)
-    mark = as_float(evaluation.get("mark"), as_float(row.get("last_mark")))
-    pl_dollars = as_float(evaluation.get("pl_dollars"), as_float(row.get("current_pl_dollars")))
-    pl_pct = as_float(evaluation.get("pl_pct"), as_float(row.get("current_pl_pct")))
+    mark = as_float(evaluation.get("mark"), as_float(row.get("last_mark"), entry))
+    if mark is None:
+        mark = entry
+    pl_dollars = as_float(evaluation.get("pl_dollars"), as_float(row.get("current_pl_dollars"), 0.0)) or 0.0
+    pl_pct = as_float(evaluation.get("pl_pct"), as_float(row.get("current_pl_pct"), 0.0)) or 0.0
+    mfe = as_float(row.get("max_favorable_pct"), 0.0) or 0.0
+    mae = as_float(row.get("max_adverse_pct"), 0.0) or 0.0
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         strategy = f"{kind} CREDIT SPREAD"
         setup = (
-            f"SELL 1 F {fmt_strike(sell_strike)} {kind} / "
-            f"BUY 1 F {fmt_strike(buy_strike)} {kind}"
+            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind}\n"
+            f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
         )
-        entry_label = f"${entry:.2f} CR"
-        mark_label = "—" if mark is None else f"${mark:.2f} DB"
+        price_labels = (
+            f"**Entry credit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})\n"
+            f"**Current close debit:** {fmt_option_price(mark)} ({fmt_money(mark * 100)})"
+        )
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"LONG {kind}"
-        setup = f"BUY 1 F {strike} {kind}"
-        entry_label = f"${entry:.2f} DB"
-        mark_label = "—" if mark is None else f"${mark:.2f} CR"
+        setup = f"🟢 BUY 1 F {strike} {kind}"
+        price_labels = (
+            f"**Entry debit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})\n"
+            f"**Current exit credit:** {fmt_option_price(mark)} ({fmt_money(mark * 100)})"
+        )
 
     quote_note = evaluation.get("note") or ""
     state_label = "HOLD" if signal == "HOLD" else signal
     lines = [
-        f"⏸️ **F #{sequence} · {state_label} · {strategy}**",
-        f"{setup} · EXP **{expiration}**",
-        f"ENTRY **{entry_label}** · CURRENT **{mark_label}**",
-        f"P/L **{fmt_money(pl_dollars)}** ({fmt_pct(pl_pct)})",
+        f"## 🟨 F #{sequence} · {state_label} · {strategy}",
+        "### Position",
+        f"{setup}\n**Expiration:** {expiration}\n**Status:** {state_label}",
+        "### Current Value",
         (
-            f"MFE **{fmt_pct(as_float(row.get('max_favorable_pct')))}** · "
-            f"MAE **{fmt_pct(as_float(row.get('max_adverse_pct')))}**"
+            f"{price_labels}\n"
+            f"**Open P/L:** {fmt_money(pl_dollars)} ({fmt_pct(pl_pct)})"
         ),
-        f"Last checked **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**",
+        "### Excursion",
+        f"**MFE:** {fmt_pct(mfe)}\n**MAE:** {fmt_pct(mae)}",
+        "### Market Data",
+        (
+            f"**IV:** {fmt_iv(as_float(evaluation.get('iv'), as_float(row.get('iv_at_entry'))))}\n"
+            f"**OI:** {fmt_oi(row.get('open_interest_at_entry'))} *(open interest)*\n"
+            f"**Last checked:** {now_ct().strftime('%m/%d/%y %-I:%M %p CT')}"
+        ),
     ]
     if quote_note:
-        lines.append(f"⚠️ {quote_note}")
+        lines.extend(["### Quote Status", f"⚠️ {quote_note}"])
     if include_link:
-        lines.append(f"[Open trade journal]({include_link})")
-    return "\n".join(lines)[:2000]
+        lines.extend(["### Journal", f"[Open trade journal]({include_link})"])
+    return "\n".join(lines)
+
 
 def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_link: str = "") -> str:
     outcome = row.get("outcome", "CLOSED")
-    icon = {"WIN": "🏆", "LOSS": "🔴", "SCRATCH": "➖"}.get(outcome, "📕")
+    icon = {"WIN": "🟩", "LOSS": "🟥", "SCRATCH": "⬜"}.get(outcome, "📕")
     trade_id = row.get("trade_id") or "F-UNKNOWN"
     sequence = trade_id.rsplit("-", 1)[-1]
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
     expiration = format_expiration(row.get("expiration", ""))
     entry, closing, stored_pl = result_price_details(row)
-    pl_dollars = as_float(evaluation.get("pl_dollars"), stored_pl)
-    pl_pct = as_float(evaluation.get("pl_pct"), as_float(row.get("pct_gain_loss"), 0.0))
+    pl_dollars = round(as_float(evaluation.get("pl_dollars"), stored_pl) or 0.0)
+    pl_pct = as_float(evaluation.get("pl_pct"), as_float(row.get("pct_gain_loss"), 0.0)) or 0.0
     close_reason = evaluation.get("signal") or row.get("last_signal") or "CLOSED"
-    approx = result_amount_prefix(row)
+    approx = result_is_reconstructed(row)
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         strategy = f"{kind} CREDIT SPREAD"
         setup = (
-            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind} / "
+            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind}\n"
             f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
         )
-        entry_label = f"${entry:.4f}".rstrip("0").rstrip(".") + " CR"
-        exit_label = "—" if closing is None else f"{approx}${closing:.4f}".rstrip("0").rstrip(".") + " DB"
+        entry_line = f"**Entry credit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})"
+        exit_line = f"**Exit debit:** {fmt_option_price(closing, approximate=approx)} ({'≈' if approx else ''}{fmt_money(exit_contract_value(row))})"
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"LONG {kind}"
         setup = f"🟢 BUY 1 F {strike} {kind}"
-        entry_label = f"${entry:.4f}".rstrip("0").rstrip(".") + " DB"
-        exit_label = "—" if closing is None else f"{approx}${closing:.4f}".rstrip("0").rstrip(".") + " CR"
+        entry_line = f"**Entry debit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})"
+        exit_line = f"**Exit credit:** {fmt_option_price(closing, approximate=approx)} ({'≈' if approx else ''}{fmt_money(exit_contract_value(row))})"
 
-    entry_value = entry_contract_value(row)
-    exit_value = exit_contract_value(row)
-    exit_value_text = "—" if exit_value is None else f"{approx}{fmt_money(exit_value)}"
-    pnl_text = f"{approx}{fmt_money(pl_dollars)}"
     closed_at = parse_iso(row.get("closed_at"))
     closed_text = closed_at.strftime("%m/%d/%y %-I:%M %p CT") if closed_at else "—"
-
+    approx_prefix = "≈" if approx else ""
     lines = [
-        f"{icon} **F #{sequence} · {outcome} · {strategy}**",
-        f"{setup} · EXP **{expiration}**",
-        f"ENTRY **{entry_label}** ({fmt_money(entry_value)}) · EXIT **{exit_label}** ({exit_value_text})",
-        f"P/L **{pnl_text}** ({fmt_pct(pl_pct)}) · CLOSE **{close_reason}**",
-        f"Closed **{closed_text}**",
+        f"## {icon} F #{sequence} · {outcome} · {strategy}",
+        "### Position",
+        f"{setup}\n**Expiration:** {expiration}",
+        "### Entry and Exit",
+        f"{entry_line}\n{exit_line}",
+        "### Result",
+        (
+            f"**Realized P/L:** {approx_prefix}{fmt_money(pl_dollars)}\n"
+            f"**Return:** {fmt_pct(pl_pct)}\n"
+            f"**Close reason:** {close_reason}\n"
+            f"**MFE:** {fmt_pct(as_float(row.get('max_favorable_pct'), 0.0))}\n"
+            f"**MAE:** {fmt_pct(as_float(row.get('max_adverse_pct'), 0.0))}"
+        ),
+        "### Timing",
+        f"**Closed:** {closed_text}",
     ]
     if include_link:
-        lines.append(f"[Open completed trade journal]({include_link})")
-    return "\n".join(lines)[:2000]
+        lines.extend(["### Journal", f"[Open completed trade journal]({include_link})"])
+    return "\n".join(lines)
+
 
 def qualified_trade_text(row: dict[str, str], include_link: str = "") -> str:
     trade_id = row.get("trade_id") or "F-UNKNOWN"
@@ -612,35 +669,43 @@ def qualified_trade_text(row: dict[str, str], include_link: str = "") -> str:
     expiration = format_expiration(row.get("expiration", ""))
     entry = parse_entry_price(row)
     pop = as_float(row.get("pop_estimate"))
-    oi = int(as_float(row.get("open_interest_at_entry"), 0.0) or 0)
+    delta = as_float(row.get("delta_at_entry"))
+    iv = as_float(row.get("iv_at_entry"))
+    oi = row.get("open_interest_at_entry")
     width = as_float(row.get("bid_ask_width_at_entry"))
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         strategy = f"{kind} CREDIT SPREAD"
         setup = (
-            f"SELL 1 F {fmt_strike(sell_strike)} {kind} / "
-            f"BUY 1 F {fmt_strike(buy_strike)} {kind}"
+            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind}\n"
+            f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
         )
-        price = f"${entry:.2f} CR ({fmt_money(entry * 100)})"
+        price = f"{fmt_option_price(entry)} CR ({fmt_money(entry * 100)})"
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"{play_type} LONG {kind}"
-        setup = f"BUY 1 F {strike} {kind}"
-        price = f"${entry:.2f} DB ({fmt_money(entry * 100)})"
+        setup = f"🟢 BUY 1 F {strike} {kind}"
+        price = f"{fmt_option_price(entry)} DB ({fmt_money(entry * 100)})"
 
     lines = [
-        f"✅ **F #{sequence} · QUALIFIED · {strategy}**",
-        f"{setup} · EXP **{expiration}**",
-        f"ENTRY **{price}**",
+        f"## 🟪 F #{sequence} · QUALIFIED · {strategy}",
+        "### Position",
+        f"{setup}\n**Expiration:** {expiration}",
+        "### Entry",
+        f"**Price:** {price}",
+        "### Filter Data",
         (
-            f"POP/DELTA EST **{fmt_pct(pop)}** · OI **{oi:,}** · "
-            f"BID/ASK WIDTH **{fmt_money(width)}**"
+            f"**Delta:** {fmt_delta(delta)}\n"
+            f"**POP estimate:** {fmt_pct(pop)}\n"
+            f"**IV:** {fmt_iv(iv)}\n"
+            f"**OI:** {fmt_oi(oi)} *(open interest)*\n"
+            f"**Bid/ask width:** {fmt_option_price(width)}"
         ),
     ]
     if include_link:
-        lines.append(f"[Open trade journal]({include_link})")
-    return "\n".join(lines)[:2000]
+        lines.extend(["### Journal", f"[Open trade journal]({include_link})"])
+    return "\n".join(lines)
 
 
 def candidate_brief(candidate: dict[str, Any]) -> str:
@@ -649,14 +714,18 @@ def candidate_brief(candidate: dict[str, Any]) -> str:
     expiration = format_expiration(str(candidate.get("expiration", "")))
     entry = as_float(candidate.get("entry_price"), 0.0) or 0.0
     score = as_float(candidate.get("score"), 0.0) or 0.0
+    iv = as_float(candidate.get("iv"))
+    oi = candidate.get("open_interest")
     if play_type == "SPREAD":
         setup = f"{kind} CREDIT {candidate.get('strike', '—')}"
-        price = f"${entry:.2f} CR"
+        price = f"{fmt_option_price(entry)} CR"
     else:
         setup = f"{play_type} {kind} {candidate.get('strike', '—')}"
-        price = f"${entry:.2f} DB"
-    return f"• **{setup}** · EXP {expiration} · {price} · score {score:.1f}"
-
+        price = f"{fmt_option_price(entry)} DB"
+    return (
+        f"• **{setup}** · EXP {expiration} · {price} · "
+        f"IV {fmt_iv(iv)} · OI {fmt_oi(oi)} · score {score:.0f}"
+    )
 
 def thread_link(thread_id: str) -> str:
     if not thread_id or not DISCORD_GUILD_ID:
@@ -781,21 +850,27 @@ def migrate_row(raw: dict[str, Any]) -> dict[str, str]:
 
     row["ticker"] = row.get("ticker") or TICKER
     row["outcome"] = (row.get("outcome") or "OPEN").upper()
-    row["entry_price"] = round_or_blank(parse_entry_price(row), 4)
+    row["entry_price"] = round_or_blank(parse_entry_price(row), 2)
     row["discord_status"] = row.get("discord_status") or row["outcome"]
     row["last_signal"] = row.get("last_signal") or ("HOLD" if row["outcome"] == "OPEN" else row["outcome"])
+    if row["outcome"] == "OPEN":
+        row["last_mark"] = row.get("last_mark") or round_or_blank(parse_entry_price(row), 2)
+        row["current_pl_dollars"] = row.get("current_pl_dollars") or "0"
+        row["current_pl_pct"] = row.get("current_pl_pct") or "0"
+        row["max_favorable_pct"] = row.get("max_favorable_pct") or "0"
+        row["max_adverse_pct"] = row.get("max_adverse_pct") or "0"
+
 
     if row["outcome"] in {"WIN", "LOSS", "SCRATCH"}:
         had_exit_price = bool(row.get("exit_price"))
         inferred_exit = exit_price(row)
         if inferred_exit is not None and not row.get("exit_price"):
-            row["exit_price"] = round_or_blank(inferred_exit, 4)
+            row["exit_price"] = round_or_blank(inferred_exit, 2)
         if not row.get("result_price_source"):
             row["result_price_source"] = "TRACKED" if had_exit_price else "RECONSTRUCTED"
-        row["entry_contract_value"] = round_or_blank(entry_contract_value(row), 2)
-        row["exit_contract_value"] = round_or_blank(exit_contract_value(row), 2)
-        if not row.get("realized_pl_dollars"):
-            row["realized_pl_dollars"] = round_or_blank(realized_pl_dollars(row), 2)
+        row["entry_contract_value"] = round_or_blank(entry_contract_value(row), 0)
+        row["exit_contract_value"] = round_or_blank(exit_contract_value(row), 0)
+        row["realized_pl_dollars"] = round_or_blank(realized_pl_dollars(row), 0)
 
     try:
         if row.get("play_type") == "SPREAD":
@@ -934,20 +1009,51 @@ def filter_strikes(strikes: list[float], spot: float) -> list[float]:
     return sorted(strike for strike in strikes if low <= strike <= high)
 
 
+
+
+def open_interest_value(option: dict[str, Any] | None) -> int:
+    if not option:
+        return 0
+    for key in ("open_interest", "openInterest", "oi"):
+        value = as_float(option.get(key))
+        if value is not None and value > 0:
+            return int(value)
+    greeks = option.get("greeks") or {}
+    for key in ("open_interest", "openInterest", "oi"):
+        value = as_float(greeks.get(key))
+        if value is not None and value > 0:
+            return int(value)
+    return 0
+
+
 def option_has_liquidity(option: dict[str, Any]) -> bool:
     bid = as_float(option.get("bid"), 0.0) or 0.0
-    open_interest = int(as_float(option.get("open_interest"), 0.0) or 0)
+    open_interest = open_interest_value(option)
     return bid > 0 and open_interest >= MIN_OPEN_INTEREST
-
 
 def greek(option: dict[str, Any], key: str) -> float | None:
     return as_float((option.get("greeks") or {}).get(key))
 
 
-def iv_value(option: dict[str, Any]) -> float | None:
-    greeks = option.get("greeks") or {}
-    return as_float(greeks.get("mid_iv") or greeks.get("smv_vol") or greeks.get("bid_iv"))
 
+def iv_value(option: dict[str, Any] | None) -> float | None:
+    if not option:
+        return None
+    greeks = option.get("greeks") or {}
+    for source in (greeks, option):
+        for key in (
+            "mid_iv",
+            "smv_vol",
+            "bid_iv",
+            "ask_iv",
+            "iv",
+            "implied_volatility",
+            "impliedVolatility",
+        ):
+            value = as_float(source.get(key))
+            if value is not None and value > 0:
+                return value
+    return None
 
 def scan_credit_spreads(chain: list[dict[str, Any]], kind: str, expiration: str) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
@@ -973,8 +1079,8 @@ def scan_credit_spreads(chain: list[dict[str, Any]], kind: str, expiration: str)
         width = abs(short_strike - long_strike)
         if credit <= 0 or width <= 0 or credit >= width:
             continue
-        short_oi = int(as_float(short_option.get("open_interest"), 0.0) or 0)
-        long_oi = int(as_float(long_option.get("open_interest"), 0.0) or 0)
+        short_oi = open_interest_value(short_option)
+        long_oi = open_interest_value(long_option)
         combined_width = max(short_ask - short_bid, 0) + max(long_ask - long_bid, 0)
         theta = -(greek(short_option, "theta") or 0.0) + (greek(long_option, "theta") or 0.0)
         reward_risk = credit / max(width - credit, 0.01)
@@ -991,7 +1097,7 @@ def scan_credit_spreads(chain: list[dict[str, Any]], kind: str, expiration: str)
                 "cost_or_credit": f"{round(credit, 2)} credit",
                 "delta": round(greek(short_option, "delta") or 0.0, 4),
                 "theta": round(theta, 4),
-                "iv": round(iv_value(short_option) or 0.0, 4),
+                "iv": round(iv_value(short_option), 4) if iv_value(short_option) is not None else "",
                 "pop": round((1 - delta) * 100, 1),
                 "max_profit": round(credit * 100, 2),
                 "max_risk": round((width - credit) * 100, 2),
@@ -1020,7 +1126,7 @@ def scan_single_legs(chain: list[dict[str, Any]], kind: str, expiration: str, pl
         if ask <= 0:
             continue
         strike = float(option["strike"])
-        open_interest = int(as_float(option.get("open_interest"), 0.0) or 0)
+        open_interest = open_interest_value(option)
         spread_width = max(ask - bid, 0)
         score = (1 - abs(delta - 0.50)) * 50 + math.log1p(open_interest) * 2 - (spread_width / ask) * 20
         max_profit: str | float
@@ -1038,7 +1144,7 @@ def scan_single_legs(chain: list[dict[str, Any]], kind: str, expiration: str, pl
                 "cost_or_credit": str(round(ask, 2)),
                 "delta": round(delta_signed, 4),
                 "theta": round(greek(option, "theta") or 0.0, 4),
-                "iv": round(iv_value(option) or 0.0, 4),
+                "iv": round(iv_value(option), 4) if iv_value(option) is not None else "",
                 "pop": round(delta * 100, 1),
                 "max_profit": max_profit,
                 "max_risk": round(ask * 100, 2),
@@ -1068,10 +1174,10 @@ def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], time
             "short_symbol": candidate.get("short_symbol", ""),
             "long_symbol": candidate.get("long_symbol", ""),
             "cost_or_credit": candidate["cost_or_credit"],
-            "entry_price": str(candidate["entry_price"]),
+            "entry_price": round_or_blank(as_float(candidate["entry_price"]), 2),
             "delta_at_entry": str(candidate["delta"]),
             "theta_at_entry": str(candidate["theta"]),
-            "iv_at_entry": str(candidate["iv"]),
+            "iv_at_entry": "" if candidate.get("iv") in (None, "") else str(candidate["iv"]),
             "pop_estimate": str(candidate["pop"]),
             "max_profit": str(candidate["max_profit"]),
             "max_risk": str(candidate["max_risk"]),
@@ -1080,10 +1186,10 @@ def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], time
             "bid_ask_width_at_entry": str(candidate["bid_ask_width"]),
             "outcome": "OPEN",
             "last_mark": str(candidate["entry_price"]),
-            "current_pl_dollars": "0.0",
-            "current_pl_pct": "0.0",
-            "max_favorable_pct": "0.0",
-            "max_adverse_pct": "0.0",
+            "current_pl_dollars": "0",
+            "current_pl_pct": "0",
+            "max_favorable_pct": "0",
+            "max_adverse_pct": "0",
             "last_signal": "HOLD",
             "last_evaluated_at": timestamp.isoformat(),
             "discord_status": "OPEN",
@@ -1094,6 +1200,41 @@ def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], time
 # ---------------------------------------------------------------------------
 # Open-play evaluation
 # ---------------------------------------------------------------------------
+
+
+
+def refresh_open_entry_market_data(
+    rows: list[dict[str, str]],
+    quotes: dict[str, dict[str, Any]],
+) -> int:
+    """Fill legacy missing IV/OI from the latest live quote without overwriting valid entry data."""
+    updated = 0
+    for row in open_rows(rows):
+        oi = int(as_float(row.get("open_interest_at_entry"), 0.0) or 0)
+        iv = as_float(row.get("iv_at_entry"))
+        replacement_oi = 0
+        replacement_iv: float | None = None
+
+        if row.get("play_type") == "SPREAD":
+            short_quote = quotes.get(row.get("short_symbol", ""))
+            long_quote = quotes.get(row.get("long_symbol", ""))
+            short_oi = open_interest_value(short_quote)
+            long_oi = open_interest_value(long_quote)
+            if short_oi > 0 and long_oi > 0:
+                replacement_oi = min(short_oi, long_oi)
+            replacement_iv = iv_value(short_quote)
+        else:
+            quote = quotes.get(row.get("option_symbol", ""))
+            replacement_oi = open_interest_value(quote)
+            replacement_iv = iv_value(quote)
+
+        if oi <= 0 and replacement_oi > 0:
+            row["open_interest_at_entry"] = str(replacement_oi)
+            updated += 1
+        if (iv is None or iv <= 0) and replacement_iv is not None and replacement_iv > 0:
+            row["iv_at_entry"] = round_or_blank(replacement_iv, 4)
+            updated += 1
+    return updated
 
 
 def symbols_for_rows(rows: list[dict[str, str]]) -> list[str]:
@@ -1126,7 +1267,13 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
         short_quote = quotes.get(row.get("short_symbol", ""))
         long_quote = quotes.get(row.get("long_symbol", ""))
         if not short_quote or not long_quote:
-            return {"signal": "HOLD", "note": "missing live leg quote", "pl_dollars": None, "pl_pct": None}
+            return {
+                "signal": "HOLD",
+                "note": "Live leg quote unavailable; showing last tracked values.",
+                "mark": as_float(row.get("last_mark"), entry),
+                "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
+                "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
+            }
         short_ask = as_float(short_quote.get("ask"), as_float(short_quote.get("last"), 0.0)) or 0.0
         long_bid = as_float(long_quote.get("bid"), as_float(long_quote.get("last"), 0.0)) or 0.0
         cost_to_close = max(short_ask - long_bid, 0.0)
@@ -1149,7 +1296,13 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
     else:
         quote = quotes.get(row.get("option_symbol", ""))
         if not quote:
-            return {"signal": "HOLD", "note": "missing live option quote", "pl_dollars": None, "pl_pct": None}
+            return {
+                "signal": "HOLD",
+                "note": "Live option quote unavailable; showing last tracked values.",
+                "mark": as_float(row.get("last_mark"), entry),
+                "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
+                "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
+            }
         mark = conservative_option_exit(quote)
         pnl = mark - entry
         pnl_pct = (pnl / entry * 100) if entry else 0.0
@@ -1168,33 +1321,45 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
 
     result = {
         "signal": signal,
-        "mark": round(mark, 4),
-        "pl_dollars": round(pnl * 100, 2),
-        "pl_pct": round(pnl_pct, 1),
+        "mark": round(mark, 2),
+        "pl_dollars": round(pnl * 100),
+        "pl_pct": round(pnl_pct),
         **details,
     }
     apply_evaluation_to_row(row, result, timestamp)
     return result
 
 
+
 def apply_evaluation_to_row(row: dict[str, str], evaluation: dict[str, Any], timestamp: datetime) -> None:
     pnl_pct = as_float(evaluation.get("pl_pct"))
     row["last_evaluated_at"] = timestamp.isoformat()
     row["last_signal"] = evaluation.get("signal", "HOLD")
-    row["last_mark"] = round_or_blank(as_float(evaluation.get("mark")), 4)
-    row["current_pl_dollars"] = round_or_blank(as_float(evaluation.get("pl_dollars")), 2)
-    row["current_pl_pct"] = round_or_blank(pnl_pct, 1)
+    row["last_mark"] = round_or_blank(as_float(evaluation.get("mark")), 2)
+    row["current_pl_dollars"] = round_or_blank(as_float(evaluation.get("pl_dollars")), 0)
+    row["current_pl_pct"] = round_or_blank(pnl_pct, 0)
 
     if pnl_pct is not None:
-        current_mfe = as_float(row.get("max_favorable_pct"), pnl_pct)
-        current_mae = as_float(row.get("max_adverse_pct"), pnl_pct)
-        row["max_favorable_pct"] = round_or_blank(max(current_mfe or pnl_pct, pnl_pct), 1)
-        row["max_adverse_pct"] = round_or_blank(min(current_mae or pnl_pct, pnl_pct), 1)
+        current_mfe = as_float(row.get("max_favorable_pct"), 0.0) or 0.0
+        current_mae = as_float(row.get("max_adverse_pct"), 0.0) or 0.0
+        row["max_favorable_pct"] = round_or_blank(max(current_mfe, pnl_pct), 0)
+        row["max_adverse_pct"] = round_or_blank(min(current_mae, pnl_pct), 0)
 
 
 def close_row(row: dict[str, str], evaluation: dict[str, Any], timestamp: datetime) -> str:
     signal = evaluation.get("signal")
-    pnl_pct = as_float(evaluation.get("pl_pct"), 0.0) or 0.0
+    tracked_exit = as_float(evaluation.get("mark"))
+    tracked_exit = None if tracked_exit is None else round(tracked_exit, 2)
+    entry = parse_entry_price(row)
+
+    if tracked_exit is None:
+        realized = round(as_float(evaluation.get("pl_dollars"), 0.0) or 0.0)
+    elif row.get("play_type") == "SPREAD":
+        realized = round((entry - tracked_exit) * 100)
+    else:
+        realized = round((tracked_exit - entry) * 100)
+
+    pnl_pct = (realized / (entry * 100) * 100) if entry else 0.0
     if signal == "TAKE PROFIT":
         outcome = "WIN"
     elif signal == "STOP OUT":
@@ -1203,24 +1368,120 @@ def close_row(row: dict[str, str], evaluation: dict[str, Any], timestamp: dateti
         outcome = "SCRATCH"
     else:
         outcome = "WIN" if pnl_pct > 0 else "LOSS"
+
     row["outcome"] = outcome
-    row["pct_gain_loss"] = round_or_blank(pnl_pct, 1)
-    tracked_exit = as_float(evaluation.get("mark"))
-    row["exit_price"] = round_or_blank(tracked_exit, 4)
-    row["entry_contract_value"] = round_or_blank(entry_contract_value(row), 2)
+    row["pct_gain_loss"] = round_or_blank(pnl_pct, 0)
+    row["exit_price"] = round_or_blank(tracked_exit, 2)
+    row["entry_contract_value"] = round_or_blank(entry_contract_value(row), 0)
     row["exit_contract_value"] = round_or_blank(
         None if tracked_exit is None else tracked_exit * 100,
-        2,
+        0,
     )
-    row["realized_pl_dollars"] = round_or_blank(as_float(evaluation.get("pl_dollars"), 0.0), 2)
+    row["realized_pl_dollars"] = round_or_blank(realized, 0)
     row["result_price_source"] = "TRACKED"
     row["closed_at"] = timestamp.isoformat()
     row["discord_status"] = outcome
     return outcome
 
-# ---------------------------------------------------------------------------
-# Discord REST client
-# ---------------------------------------------------------------------------
+
+CARD_COLORS = {
+    "entry": 0x3498DB,
+    "qualified": 0x9B59B6,
+    "hold": 0xF1C40F,
+    "win": 0x2ECC71,
+    "loss": 0xE74C3C,
+    "scratch": 0x95A5A6,
+    "scanner": 0x00A8E8,
+    "performance": 0x5865F2,
+    "error": 0xE74C3C,
+    "status": 0x607D8B,
+}
+
+
+
+def card_color_for_text(content: str) -> int:
+    title = next((line for line in content.splitlines() if line.strip()), content).upper()
+    if "ERROR" in title or "FAILED" in title or "🚨" in title:
+        return CARD_COLORS["error"]
+    if "QUALIFIED" in title:
+        return CARD_COLORS["qualified"]
+    if "ENTRY" in title:
+        return CARD_COLORS["entry"]
+    if "· WIN" in title or "WINS SUMMARY" in title or "🏆" in title or "🟩" in title:
+        return CARD_COLORS["win"]
+    if "· LOSS" in title or "LOSSES SUMMARY" in title or "🟥" in title:
+        return CARD_COLORS["loss"]
+    if "SCRATCH" in title:
+        return CARD_COLORS["scratch"]
+    if "HOLD" in title or "POSITION" in title:
+        return CARD_COLORS["hold"]
+    if "SCAN" in title:
+        return CARD_COLORS["scanner"]
+    if "PERFORMANCE" in title or "STRATEGY" in title or "REPORT" in title or "RECAP" in title:
+        return CARD_COLORS["performance"]
+    return CARD_COLORS["status"]
+
+def discord_card(content: str) -> dict[str, Any]:
+    """Convert scanner markdown into a native Discord embed card."""
+    raw_lines = [line.rstrip() for line in content.strip().splitlines()]
+    title = "Tradysquids TradeBot"
+    description_lines: list[str] = []
+    fields: list[dict[str, Any]] = []
+    current_name = ""
+    current_value: list[str] = []
+
+    def flush_field() -> None:
+        nonlocal current_name, current_value
+        if not current_name:
+            return
+        value = "\n".join(current_value).strip() or "—"
+        fields.append({
+            "name": current_name[:256],
+            "value": value[:1024],
+            "inline": False,
+        })
+        current_name = ""
+        current_value = []
+
+    for line in raw_lines:
+        if line.startswith("## ") and title == "Tradysquids TradeBot":
+            title = line[3:].strip()
+            continue
+        if line.startswith("# ") and title == "Tradysquids TradeBot":
+            title = line[2:].strip()
+            continue
+        if line.startswith("### "):
+            flush_field()
+            current_name = line[4:].strip()
+            continue
+        if current_name:
+            current_value.append(line)
+        else:
+            description_lines.append(line)
+    flush_field()
+
+    description = "\n".join(description_lines).strip()
+    embed: dict[str, Any] = {
+        "title": title[:256],
+        "color": card_color_for_text(content),
+        "footer": {"text": f"Tradysquids TradeBot · Card format {DISCORD_FORMAT_VERSION}"},
+    }
+    if description:
+        embed["description"] = description[:4096]
+    if fields:
+        embed["fields"] = fields[:25]
+    return embed
+
+
+def message_search_text(message: dict[str, Any]) -> str:
+    parts = [str(message.get("content") or "")]
+    for embed in message.get("embeds") or []:
+        parts.append(str(embed.get("title") or ""))
+        parts.append(str(embed.get("description") or ""))
+        for field in embed.get("fields") or []:
+            parts.append(str(field.get("name") or ""))
+            parts.append(str(field.get("value") or ""))
+    return "\n".join(parts)
 
 
 class DiscordError(RuntimeError):
@@ -1329,6 +1590,9 @@ class DiscordTracker:
         if not self.ready or not channel_id:
             return None
         payload: dict[str, Any] = {"allowed_mentions": {"parse": []}}
+        if embed is None and content:
+            embed = discord_card(content)
+            content = ""
         if content:
             payload["content"] = content[:2000]
         if embed:
@@ -1349,11 +1613,15 @@ class DiscordTracker:
         messages = state.setdefault("messages", {})
         hashes = state.setdefault("message_hashes", {})
         message_id = str(messages.get(state_key) or "")
-        clipped_content = content[:2000]
-        content_hash = hashlib.sha256(clipped_content.encode("utf-8")).hexdigest()
+        clipped_content = content[:6000]
+        embed = discord_card(clipped_content)
+        serialized = json.dumps(embed, sort_keys=True, separators=(",", ":"))
+        content_hash = hashlib.sha256(
+            f"{DISCORD_FORMAT_VERSION}:{serialized}".encode("utf-8")
+        ).hexdigest()
         payload = {
-            "content": clipped_content,
-            "embeds": [],
+            "content": "",
+            "embeds": [embed],
             "allowed_mentions": {"parse": []},
         }
         if message_id and hashes.get(state_key) == content_hash:
@@ -1372,7 +1640,7 @@ class DiscordTracker:
             if isinstance(recent, list):
                 for message in recent:
                     author = message.get("author") or {}
-                    if author.get("bot") and search_token in (message.get("content") or ""):
+                    if author.get("bot") and search_token in message_search_text(message):
                         message_id = str(message.get("id") or "")
                         if message_id:
                             self._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
@@ -1445,7 +1713,8 @@ class DiscordTracker:
             "auto_archive_duration": 1440,
             "applied_tags": [tag_id] if tag_id else [],
             "message": {
-                "content": entry_alert_text(row),
+                "content": "",
+                "embeds": [discord_card(entry_alert_text(row))],
                 "allowed_mentions": {"parse": []},
             },
         }
@@ -1456,7 +1725,7 @@ class DiscordTracker:
             row["discord_status"] = status
             row["discord_format_version"] = DISCORD_FORMAT_VERSION
             row["last_discord_signal"] = "OPEN"
-            row["last_discord_pl_pct"] = row.get("current_pl_pct") or "0.0"
+            row["last_discord_pl_pct"] = row.get("current_pl_pct") or "0"
             row["last_discord_update_at"] = now_ct().isoformat()
         return thread_id
 
@@ -1468,7 +1737,7 @@ class DiscordTracker:
         self._request(
             "PATCH",
             f"/channels/{thread_id}/messages/{thread_id}",
-            {"content": entry_alert_text(row), "embeds": [], "allowed_mentions": {"parse": []}},
+            {"content": "", "embeds": [discord_card(entry_alert_text(row))], "allowed_mentions": {"parse": []}},
         )
         row["discord_format_version"] = DISCORD_FORMAT_VERSION
 
@@ -1478,7 +1747,7 @@ class DiscordTracker:
         self._request(
             "POST",
             f"/channels/{thread_id}/messages",
-            {"content": content[:2000], "allowed_mentions": {"parse": []}},
+            {"content": "", "embeds": [discord_card(content)], "allowed_mentions": {"parse": []}},
         )
 
     def set_thread_status(self, thread_id: str, status: str, archive: bool = False) -> None:
@@ -1492,6 +1761,51 @@ class DiscordTracker:
             payload["archived"] = True
         if payload:
             self._request("PATCH", f"/channels/{thread_id}", payload)
+
+
+
+def migrate_recent_bot_messages_to_cards(
+    discord: DiscordTracker,
+    state: dict[str, Any],
+    *,
+    limit_per_channel: int = 50,
+) -> int:
+    """One-time conversion of recent TradeBot plain messages into embed cards."""
+    if not discord.ready or state.get("card_migration_version") == DISCORD_FORMAT_VERSION:
+        return 0
+
+    converted = 0
+    for logical_name in AUTOMATED_CHANNEL_KEYS:
+        channel_id = discord.channels.get(logical_name)
+        if not channel_id:
+            continue
+        recent = discord._request(
+            "GET",
+            f"/channels/{channel_id}/messages?limit={max(1, min(limit_per_channel, 100))}",
+        )
+        if not isinstance(recent, list):
+            continue
+        for message in recent:
+            author = message.get("author") or {}
+            content = str(message.get("content") or "").strip()
+            if not author.get("bot") or not content or message.get("embeds"):
+                continue
+            message_id = str(message.get("id") or "")
+            if not message_id:
+                continue
+            discord._request(
+                "PATCH",
+                f"/channels/{channel_id}/messages/{message_id}",
+                {
+                    "content": "",
+                    "embeds": [discord_card(content)],
+                    "allowed_mentions": {"parse": []},
+                },
+            )
+            converted += 1
+
+    state["card_migration_version"] = DISCORD_FORMAT_VERSION
+    return converted
 
 
 def safe_discord_call(label: str, callback: Any) -> None:
@@ -1525,7 +1839,7 @@ def setup_embed(row: dict[str, str]) -> dict[str, Any]:
     max_risk = fmt_money(as_float(row.get("max_risk")))
     theta = as_float(row.get("theta_at_entry"))
     iv = as_float(row.get("iv_at_entry"))
-    iv_text = "—" if iv is None else f"{iv * 100:.1f}%"
+    iv_text = fmt_iv(iv)
 
     return {
         "title": f"📈 {row.get('trade_id')} | Opened",
@@ -1540,10 +1854,10 @@ def setup_embed(row: dict[str, str]) -> dict[str, Any]:
             embed_field("Maximum risk", max_risk),
             embed_field("Break-even", f"${as_float(row.get('breakeven'), 0):.2f}"),
             embed_field("Delta", row.get("delta_at_entry")),
-            embed_field("Estimated POP", f"{as_float(row.get('pop_estimate'), 0):.1f}%"),
-            embed_field("Theta", "—" if theta is None else f"{theta:+.4f}/day"),
+            embed_field("Estimated POP", f"{as_float(row.get('pop_estimate'), 0):.0f}%"),
+            embed_field("Theta", "—" if theta is None else f"{theta:+.3f}/day"),
             embed_field("IV", iv_text),
-            embed_field("Entry OI", row.get("open_interest_at_entry")),
+            embed_field("Entry OI", fmt_oi(row.get("open_interest_at_entry"))),
             embed_field("Bid/ask width", f"${as_float(row.get('bid_ask_width_at_entry'), 0):.2f}"),
             embed_field(
                 "Management",
@@ -1655,18 +1969,19 @@ def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discor
     discord.set_thread_status(row["discord_thread_id"], status)
     row["discord_status"] = status
     row["last_discord_signal"] = evaluation.get("signal", "HOLD")
-    row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 1)
+    row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 0)
     row["last_discord_update_at"] = timestamp.isoformat()
+
 
 def stored_open_evaluation(row: dict[str, str]) -> dict[str, Any]:
     return {
-        "signal": "HOLD",
-        "mark": as_float(row.get("last_mark")),
-        "pl_dollars": as_float(row.get("current_pl_dollars")),
-        "pl_pct": as_float(row.get("current_pl_pct")),
+        "signal": row.get("last_signal") or "HOLD",
+        "mark": as_float(row.get("last_mark"), parse_entry_price(row)),
+        "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
+        "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
         "note": "",
+        "iv": as_float(row.get("iv_at_entry")),
     }
-
 
 def sync_open_trade_cards(
     row: dict[str, str],
@@ -1795,7 +2110,7 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     discord.delete_trade_message("updates", report_state, "position", row.get("trade_id", ""))
     row["discord_status"] = row["outcome"]
     row["last_discord_signal"] = evaluation.get("signal", "CLOSE")
-    row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 1)
+    row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 0)
     row["last_discord_update_at"] = row.get("closed_at") or now_ct().isoformat()
 
 def post_new_trade(
@@ -1888,33 +2203,34 @@ def result_metrics(rows: list[dict[str, str]]) -> dict[str, float]:
         ) if decided else 0.0,
     }
 
+
 def compact_result_line(row: dict[str, str]) -> str:
     trade_id = row.get("trade_id", "F-UNKNOWN")
     outcome = row.get("outcome", "CLOSED")
     kind = row.get("call_or_put", "").upper()
     entry, closing, dollars = result_price_details(row)
     pct = as_float(row.get("pct_gain_loss"), 0.0) or 0.0
-    approx = result_amount_prefix(row)
+    approx = result_is_reconstructed(row)
+    prefix = "≈" if approx else ""
 
     if row.get("play_type") == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         setup = f"{kind} CREDIT {fmt_strike(sell_strike)}/{fmt_strike(buy_strike)}"
         price_move = (
-            f"${entry:.4f}".rstrip("0").rstrip(".") + " CR → " +
-            ("—" if closing is None else f"{approx}${closing:.4f}".rstrip("0").rstrip(".") + " DB")
+            f"{fmt_option_price(entry)} CR → "
+            f"{fmt_option_price(closing, approximate=approx)} DB"
         )
     else:
         setup = f"LONG {kind} {fmt_strike(as_float(row.get('strike'), 0) or 0)}"
         price_move = (
-            f"${entry:.4f}".rstrip("0").rstrip(".") + " DB → " +
-            ("—" if closing is None else f"{approx}${closing:.4f}".rstrip("0").rstrip(".") + " CR")
+            f"{fmt_option_price(entry)} DB → "
+            f"{fmt_option_price(closing, approximate=approx)} CR"
         )
 
     return (
-        f"• **{trade_id}** {setup} · {price_move} · "
-        f"{outcome} · {approx}{fmt_money(dollars)} ({pct:+.1f}%)"
+        f"• **{trade_id}** · {setup}\n"
+        f"  {price_move} · **{outcome} {prefix}{fmt_money(dollars)} ({fmt_pct(pct)})**"
     )
-
 
 def fmt_metric_money(metrics: dict[str, float], key: str) -> str:
     prefix = "≈" if metrics.get("reconstructed", 0) else ""
@@ -1932,7 +2248,7 @@ def format_performance_stats(rows: list[dict[str, str]]) -> str:
             f"🏆 **{int(metrics['wins'])} Wins** · 🔴 **{int(metrics['losses'])} Losses** · "
             f"➖ **{int(metrics['scratches'])} Scratches**"
         ),
-        f"Win rate **{metrics['win_rate']:.1f}%** · Closed trades **{int(metrics['closed'])}**",
+        f"Win rate **{metrics['win_rate']:.0f}%** · Closed trades **{int(metrics['closed'])}**",
         "### Money",
         (
             f"Won **{fmt_metric_money(metrics, 'gross_won')}** · "
@@ -1941,14 +2257,15 @@ def format_performance_stats(rows: list[dict[str, str]]) -> str:
         ),
         "### Trade Quality",
         (
-            f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
-            f"Avg loss **{metrics['average_loss_pct']:+.1f}%** · "
-            f"Expectancy **{metrics['expectancy_pct']:+.1f}%**"
+            f"Avg win **{metrics['average_win_pct']:+.0f}%** · "
+            f"Avg loss **{metrics['average_loss_pct']:+.0f}%** · "
+            f"Expectancy **{metrics['expectancy_pct']:+.0f}%**"
         ),
         "### Current Exposure",
         f"⏸️ Open/HOLD positions **{open_count}** · Results use **1 contract per trade**",
         f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**",
     ])[:2000]
+
 
 def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
     groups: dict[str, list[dict[str, str]]] = {}
@@ -1958,9 +2275,12 @@ def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
         label = f"{play_type} {kind}".strip()
         groups.setdefault(label, []).append(row)
 
-    lines = ["## 🧠 Strategy Breakdown", "Ranked by net result, then expectancy."]
+    lines = [
+        "## 🧠 Strategy Breakdown",
+        "Strategies ranked by net result, then expectancy.",
+    ]
     if not groups:
-        lines.append("No completed trades yet.")
+        lines.extend(["### Results", "No completed trades yet."])
     else:
         ranked: list[tuple[float, float, str, dict[str, float]]] = []
         for label, group in groups.items():
@@ -1974,22 +2294,19 @@ def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
             lines.extend([
                 f"### {badge} {label}",
                 (
-                    f"Record **{int(metrics['wins'])}W-{int(metrics['losses'])}L-"
-                    f"{int(metrics['scratches'])}S** · Win rate **{metrics['win_rate']:.1f}%**"
-                ),
-                (
-                    f"Won **{fmt_metric_money(metrics, 'gross_won')}** · "
-                    f"Lost **{fmt_metric_money(metrics, 'gross_lost')}** · "
-                    f"Net **{fmt_metric_money(metrics, 'total_pnl')}**"
-                ),
-                (
-                    f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
-                    f"Avg loss **{metrics['average_loss_pct']:+.1f}%** · "
-                    f"Expectancy **{metrics['expectancy_pct']:+.1f}%**"
+                    f"**Record:** {int(metrics['wins'])}W · {int(metrics['losses'])}L · "
+                    f"{int(metrics['scratches'])}S\n"
+                    f"**Win rate:** {metrics['win_rate']:.0f}%\n"
+                    f"**Won / Lost / Net:** {fmt_metric_money(metrics, 'gross_won')} / "
+                    f"{fmt_metric_money(metrics, 'gross_lost')} / "
+                    f"{fmt_metric_money(metrics, 'total_pnl')}\n"
+                    f"**Avg win / Avg loss:** {metrics['average_win_pct']:+.0f}% / "
+                    f"{metrics['average_loss_pct']:+.0f}%\n"
+                    f"**Expectancy:** {metrics['expectancy_pct']:+.0f}%"
                 ),
             ])
-    lines.append(f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**")
-    return "\n".join(lines)[:2000]
+    lines.extend(["### Updated", now_ct().strftime("%m/%d/%y %-I:%M %p CT")])
+    return "\n".join(lines)
 
 def format_daily_recap(
     rows: list[dict[str, str]],
@@ -2005,7 +2322,7 @@ def format_daily_recap(
         "### Results",
         (
             f"🏆 **{int(metrics['wins'])}W** · 🔴 **{int(metrics['losses'])}L** · "
-            f"➖ **{int(metrics['scratches'])}S** · Win rate **{metrics['win_rate']:.1f}%**"
+            f"➖ **{int(metrics['scratches'])}S** · Win rate **{metrics['win_rate']:.0f}%**"
         ),
         (
             f"Won **{fmt_metric_money(metrics, 'gross_won')}** · "
@@ -2035,7 +2352,7 @@ def format_weekly_report(rows: list[dict[str, str]], report_date: date) -> str:
         "### Record",
         (
             f"🏆 **{int(metrics['wins'])}W** · 🔴 **{int(metrics['losses'])}L** · "
-            f"➖ **{int(metrics['scratches'])}S** · Win rate **{metrics['win_rate']:.1f}%**"
+            f"➖ **{int(metrics['scratches'])}S** · Win rate **{metrics['win_rate']:.0f}%**"
         ),
         "### Money",
         (
@@ -2045,9 +2362,9 @@ def format_weekly_report(rows: list[dict[str, str]], report_date: date) -> str:
         ),
         "### Trade Quality",
         (
-            f"Expectancy **{metrics['expectancy_pct']:+.1f}%** · "
-            f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
-            f"Avg loss **{metrics['average_loss_pct']:+.1f}%**"
+            f"Expectancy **{metrics['expectancy_pct']:+.0f}%** · "
+            f"Avg win **{metrics['average_win_pct']:+.0f}%** · "
+            f"Avg loss **{metrics['average_loss_pct']:+.0f}%**"
         ),
     ]
     if completed:
@@ -2083,6 +2400,7 @@ def ensure_static_server_pages(
     state["guide_version"] = "1"
 
 
+
 def update_scanner_status(
     discord: DiscordTracker,
     state: dict[str, Any],
@@ -2097,12 +2415,17 @@ def update_scanner_status(
     status = "🟢 MARKET OPEN" if market_open else "⚫ MARKET CLOSED"
     content = "\n".join([
         f"## {status}",
+        "### Current State",
         summary,
-        f"Open trades **{len(open_rows(rows))}** · Trigger **{event_name}** · Run **#{run_number}**",
-        f"Last check {timestamp.strftime('%m/%d/%y %-I:%M:%S %p CT')}",
+        "### Workflow",
+        (
+            f"**Open trades:** {len(open_rows(rows))}\n"
+            f"**Trigger:** {event_name}\n"
+            f"**Run:** #{run_number}\n"
+            f"**Last check:** {timestamp.strftime('%m/%d/%y %-I:%M:%S %p CT')}"
+        ),
     ])
     discord.upsert_channel_message("status", state, "scanner-status", content)
-
 
 def post_workflow_log(
     discord: DiscordTracker,
@@ -2124,43 +2447,59 @@ def post_workflow_log(
     )
 
 
+
 def format_result_channel_summary(rows: list[dict[str, str]], outcome: str) -> str:
     selected = [row for row in closed_rows(rows) if row.get("outcome") == outcome]
     metrics = result_metrics(selected)
     if outcome == "WIN":
-        title = "## 🏆 Wins"
-        total_line = f"Total won **{fmt_metric_money(metrics, 'gross_won')}**"
-        avg_line = f"Average win **{metrics['average_win_pct']:+.1f}%**"
+        title = "## 🟩 Wins Summary"
+        total_label = "Total won"
+        total_value = fmt_metric_money(metrics, "gross_won")
+        average = f"{metrics['average_win_pct']:+.0f}%"
     elif outcome == "LOSS":
-        title = "## 🔴 Losses"
-        total_line = f"Total lost **{fmt_metric_money(metrics, 'gross_lost')}**"
-        avg_line = f"Average loss **{metrics['average_loss_pct']:+.1f}%**"
+        title = "## 🟥 Losses Summary"
+        total_label = "Total lost"
+        total_value = fmt_metric_money(metrics, "gross_lost")
+        average = f"{metrics['average_loss_pct']:+.0f}%"
     else:
-        title = "## ➖ Scratches"
-        total_line = f"Net **{fmt_metric_money(metrics, 'total_pnl')}**"
-        avg_line = f"Average result **{metrics['average_pct']:+.1f}%**"
+        title = "## ⬜ Scratches Summary"
+        total_label = "Net"
+        total_value = fmt_metric_money(metrics, "total_pnl")
+        average = f"{metrics['average_pct']:+.0f}%"
     return "\n".join([
         title,
-        f"Trades **{len(selected)}** · {total_line}",
-        avg_line,
-        f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**",
+        "### Record",
+        f"**Trades:** {len(selected)}\n**Average result:** {average}",
+        "### Money",
+        f"**{total_label}:** {total_value}",
+        "### Updated",
+        now_ct().strftime("%m/%d/%y %-I:%M %p CT"),
     ])
 
 def format_channel_audit(discord: DiscordTracker, timestamp: datetime) -> str:
     connected = len(AUTOMATED_CHANNEL_KEYS) - len(discord.missing_channels)
     lines = [
         "## 🔌 Discord Routing Audit",
-        f"Automated channels **{connected}/{len(AUTOMATED_CHANNEL_KEYS)} connected**",
-        "Trade journal forum **connected** · Required tags **connected**",
+        "### Connections",
+        (
+            f"**Automated channels:** {connected}/{len(AUTOMATED_CHANNEL_KEYS)} connected\n"
+            f"**Trade journal forum:** Connected\n"
+            f"**Required tags:** Connected\n"
+            f"**Card format:** Version {DISCORD_FORMAT_VERSION}"
+        ),
+        "### Result",
     ]
     if discord.missing_channels:
         lines.append("❌ Missing: " + ", ".join(f"#{name}" for name in discord.missing_channels))
     else:
-        lines.append("✅ Scanner, trade lifecycle, results, reports, performance, and system routing verified.")
-    lines.append("Manual channels are intentionally not modified by TradeBot.")
-    lines.append(f"Checked **{timestamp.strftime('%m/%d/%y %-I:%M %p CT')}**")
-    return "\n".join(lines)[:2000]
-
+        lines.append("✅ Scanner, lifecycle, results, reports, performance, and system routing verified.")
+    lines.extend([
+        "### Manual Channels",
+        "Welcome, rules, risk management, server guide, and admin notes are not modified.",
+        "### Checked",
+        timestamp.strftime("%m/%d/%y %-I:%M %p CT"),
+    ])
+    return "\n".join(lines)
 
 def publish_channel_audit(
     discord: DiscordTracker,
@@ -2188,6 +2527,7 @@ def publish_channel_audit(
         )
 
 
+
 def format_qualified_scan(
     qualified: list[dict[str, Any]],
     eligible: list[dict[str, Any]],
@@ -2197,21 +2537,24 @@ def format_qualified_scan(
     run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
     lines = [
         f"## ✅ Qualified Scan · Run #{run_number}",
+        "### Filter Results",
         (
-            f"Passed all filters **{len(qualified)}** · "
-            f"New eligible **{len(eligible)}** · Opened **{len(selected)}**"
+            f"**Passed all filters:** {len(qualified)}\n"
+            f"**New eligible:** {len(eligible)}\n"
+            f"**Opened:** {len(selected)}"
         ),
+        "### Highest-Ranked Setups",
     ]
     if qualified:
-        lines.append("### Highest-Ranked Setups")
         ranked = sorted(qualified, key=lambda candidate: candidate.get("score", 0), reverse=True)
         lines.extend(candidate_brief(candidate) for candidate in ranked[:8])
         if len(ranked) > 8:
             lines.append(f"…and **{len(ranked) - 8}** additional qualified setup(s).")
     else:
         lines.append("No setup passed every filter on this run.")
-    lines.append(f"Scanned **{timestamp.strftime('%m/%d/%y %-I:%M %p CT')}**")
-    return "\n".join(lines)[:2000]
+    lines.extend(["### Scan Time", timestamp.strftime("%m/%d/%y %-I:%M %p CT")])
+    return "\n".join(lines)
+
 
 def format_scanner_feed(
     stats: dict[str, Any],
@@ -2227,27 +2570,45 @@ def format_scanner_feed(
     run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
     event_name = os.environ.get("GITHUB_EVENT_NAME", "local")
     expirations = stats.get("expirations") or []
-    expiration_text = ", ".join(
-        f"{item['bucket']} {format_expiration(item['expiration'])}"
+    expiration_text = "\n".join(
+        f"• **{item['bucket']}:** {format_expiration(item['expiration'])}"
         for item in expirations
-    ) or "none available"
+    ) or "None available"
     by_strategy = stats.get("candidate_counts") or {}
-    strategy_text = " · ".join(
-        f"{label} **{count}**" for label, count in by_strategy.items() if count
-    ) or "none"
+    strategy_text = "\n".join(
+        f"• **{label}:** {count}" for label, count in by_strategy.items() if count
+    ) or "None"
     return "\n".join([
         f"## 📡 Ford Scan · Run #{run_number}",
-        f"**{timestamp.strftime('%m/%d/%y %-I:%M %p CT')}** · Trigger **{event_name}** · Spot **${spot_price:.2f}**",
-        f"Expirations: **{expiration_text}**",
+        "### Market",
         (
-            f"Contracts received **{stats.get('raw_contracts', 0)}** · "
-            f"Inside strike band **{stats.get('band_contracts', 0)}** · "
-            f"Calls **{stats.get('calls', 0)}** · Puts **{stats.get('puts', 0)}**"
+            f"**Time:** {timestamp.strftime('%m/%d/%y %-I:%M %p CT')}\n"
+            f"**Trigger:** {event_name}\n"
+            f"**Ford spot:** {fmt_option_price(spot_price)}"
         ),
-        f"Passed filters **{stats.get('qualified_candidates', 0)}** · New eligible **{eligible_count}** · Opened **{selected_count}**",
-        f"Qualified mix: {strategy_text}",
-        f"Lifecycle: HOLD **{hold_count}** · Closed this run **{closed_count}** · Open total **{open_count}**",
-    ])[:2000]
+        "### Expirations",
+        expiration_text,
+        "### Contracts",
+        (
+            f"**Received:** {stats.get('raw_contracts', 0)}\n"
+            f"**Inside strike band:** {stats.get('band_contracts', 0)}\n"
+            f"**Calls / Puts:** {stats.get('calls', 0)} / {stats.get('puts', 0)}"
+        ),
+        "### Filter Results",
+        (
+            f"**Passed:** {stats.get('qualified_candidates', 0)}\n"
+            f"**New eligible:** {eligible_count}\n"
+            f"**Opened:** {selected_count}"
+        ),
+        "### Qualified Mix",
+        strategy_text,
+        "### Lifecycle",
+        (
+            f"**HOLD:** {hold_count}\n"
+            f"**Closed this run:** {closed_count}\n"
+            f"**Open total:** {open_count}"
+        ),
+    ])
 
 
 def format_closed_scanner_feed(rows: list[dict[str, str]], timestamp: datetime) -> str:
@@ -2255,11 +2616,18 @@ def format_closed_scanner_feed(rows: list[dict[str, str]], timestamp: datetime) 
     event_name = os.environ.get("GITHUB_EVENT_NAME", "local")
     return "\n".join([
         f"## 📡 Ford Scan · Run #{run_number}",
-        f"**{timestamp.strftime('%m/%d/%y %-I:%M %p CT')}** · Trigger **{event_name}**",
-        "⚫ Market closed. No option-chain scan was performed.",
-        f"Maintenance sync completed · Open/HOLD positions **{len(open_rows(rows))}**",
+        "### Market",
+        (
+            f"**Status:** Closed\n"
+            f"**Time:** {timestamp.strftime('%m/%d/%y %-I:%M %p CT')}\n"
+            f"**Trigger:** {event_name}"
+        ),
+        "### Maintenance Sync",
+        (
+            "No option-chain scan was performed.\n"
+            f"**Open/HOLD positions:** {len(open_rows(rows))}"
+        ),
     ])
-
 
 def update_performance_pages(
     discord: DiscordTracker,
@@ -2418,8 +2786,8 @@ def render_dashboard(
                 f"<span class='pl'>{fmt_money(realized_pl_dollars(row))} "
                 f"({fmt_pct(as_float(row.get('pct_gain_loss')))})</span></div></div>"
                 f"<div class='plsub'>"
-                f"Entry ${parse_entry_price(row):.4f} ({fmt_money(entry_contract_value(row))}) · "
-                f"Exit {'≈' if result_is_reconstructed(row) else ''}${(exit_price(row) or 0):.4f} "
+                f"Entry ${parse_entry_price(row):.2f} ({fmt_money(entry_contract_value(row))}) · "
+                f"Exit {'≈' if result_is_reconstructed(row) else ''}${(exit_price(row) or 0):.2f} "
                 f"({'≈' if result_is_reconstructed(row) else ''}{fmt_money(exit_contract_value(row))}) · "
                 f"Opened {esc((row.get('timestamp') or '')[:16].replace('T',' '))} · "
                 f"Closed {esc((row.get('closed_at') or '')[:16].replace('T',' '))} · "
@@ -2568,6 +2936,13 @@ def main() -> int:
         discord = DiscordTracker("", "")
 
     report_state = read_report_state()
+    migrated_cards = 0
+    try:
+        migrated_cards = migrate_recent_bot_messages_to_cards(discord, report_state)
+    except DiscordError as exc:
+        print(f"Discord card migration failed: {exc}", file=sys.stderr)
+    if migrated_cards:
+        print(f"Discord card migration: converted {migrated_cards} recent message(s).")
     safe_discord_call(
         "channel audit",
         lambda: publish_channel_audit(discord, report_state, timestamp),
@@ -2670,6 +3045,9 @@ def main() -> int:
         # Reprice every existing open play in one or more batched quote calls.
         currently_open = open_rows(rows)
         open_quote_map = get_quotes(symbols_for_rows(currently_open), include_greeks=True)
+        refreshed_market_fields = refresh_open_entry_market_data(currently_open, open_quote_map)
+        if refreshed_market_fields:
+            print(f"Refreshed {refreshed_market_fields} missing IV/OI field(s) on open trades.")
         closed_count = 0
         material_updates = 0
         hold_count = 0
@@ -2716,8 +3094,8 @@ def main() -> int:
         for row in new_rows:
             evaluation = evaluate_open_row(row, all_quotes, timestamp)
             if evaluation.get("pl_pct") is None:
-                row["current_pl_pct"] = "0.0"
-                row["current_pl_dollars"] = "0.0"
+                row["current_pl_pct"] = "0"
+                row["current_pl_dollars"] = "0"
                 evaluation = stored_open_evaluation(row)
             hold_count += 1
             safe_discord_call(
