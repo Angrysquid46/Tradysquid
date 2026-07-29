@@ -2,22 +2,28 @@ name: Ford Options Scan
 
 on:
   schedule:
-    # Every 5 minutes on weekdays.
-    #
-    # This UTC window covers 8:30 AM through 3:00 PM Central Time
-    # during both CST and CDT. The Python script performs the exact
-    # Central Time market-hours check and exits outside that window.
-    - cron: "30-55/5 13 * * 1-5"
-    - cron: "*/5 14-20 * * 1-5"
-    - cron: "0 21 * * 1-5"
+    # Every 15 minutes during regular market hours, Central Time.
+    # GitHub handles CST/CDT automatically through America/Chicago.
 
-  # Allows manual testing from the GitHub Actions page.
+    # 8:30 AM and 8:45 AM CT
+    - cron: "30,45 8 * * 1-5"
+      timezone: "America/Chicago"
+
+    # Every 15 minutes from 9:00 AM through 2:45 PM CT
+    - cron: "0,15,30,45 9-14 * * 1-5"
+      timezone: "America/Chicago"
+
+    # Final session scan at 3:00 PM CT
+    - cron: "0 15 * * 1-5"
+      timezone: "America/Chicago"
+
+  # Keeps the manual Run workflow button available.
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# Prevent two scanner runs from editing the CSV at the same time.
+# Prevent multiple scans from updating the same trades simultaneously.
 concurrency:
   group: ford-options-scan
   cancel-in-progress: false
@@ -25,7 +31,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     env:
       PYTHONUNBUFFERED: "1"
@@ -62,12 +68,12 @@ jobs:
           git config user.name "ford-scan-bot"
           git config user.email "actions@users.noreply.github.com"
 
-          if [ -e "state" ]; then
-            git add -A state
+          if [ -d "state" ]; then
+            git add -A -- state
           fi
 
-          if [ -e "docs" ]; then
-            git add -A docs
+          if [ -d "docs" ]; then
+            git add -A -- docs
           fi
 
           if git diff --cached --quiet; then
@@ -76,5 +82,9 @@ jobs:
           fi
 
           git commit -m "Ford scan update: $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git pull --rebase origin main
-          git push origin HEAD:main
+
+          if ! git push origin HEAD:main; then
+            echo "Remote changed during scan. Rebasing and retrying."
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
