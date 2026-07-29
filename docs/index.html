@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="300">
+<style>
+  :root { color-scheme: light; }
+  body { font-family: -apple-system, Helvetica, Arial, sans-serif; background:#fff; color:#1a1a1a; padding:20px; max-width:720px; margin:0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color:#666; font-size:13px; margin-bottom:16px; }
+  .card { border:1px solid #e2e2e2; border-radius:10px; padding:16px; margin-bottom:16px; background:#fafafa; }
+  .card h2 { font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:#555; margin:0 0 10px; }
+  .price { font-size:28px; font-weight:700; }
+  .chg { font-size:14px; font-weight:600; }
+  .up { color:#16794d; } .down { color:#c22b2b; } .flat { color:#666; }
+  .play-group { border:1px solid #dfe3ea; border-radius:8px; padding:10px 12px; margin-bottom:10px; background:#fff; border-left:4px solid #6b5bd6; }
+  .play-group.closed { border-left-color:#999; }
+  .play-head { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; }
+  .play-title { font-weight:700; font-size:13.5px; }
+  .pl { font-weight:700; font-size:14px; }
+  .pl.pos { color:#16794d; } .pl.neg { color:#c22b2b; } .pl.zero { color:#666; }
+  .plsub { font-size:11px; color:#777; margin-top:4px; }
+  .legrow { font-size:12px; color:#555; padding:2px 0; }
+  .muted { color:#888; font-size:13px; }
+  .footer { color:#999; font-size:11px; margin-top:6px; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+  .badge-win { background:#eaf7ee; color:#1c8a44; }
+  .badge-loss { background:#fdeceb; color:#b0281c; }
+  .sig-hold { color:#555; font-weight:700; }
+  .sig-warn { color:#b0281c; font-weight:700; }
+  .tabs { display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid #e2e2e2; }
+  .tab-btn { appearance:none; border:none; background:none; padding:10px 14px; font-size:13px; font-weight:600;
+             color:#888; cursor:pointer; border-bottom:2px solid transparent; }
+  .tab-btn.active { color:#1a1a1a; border-bottom-color:#6b5bd6; }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+</style></head>
+<body>
+<h1>Ford (F) Options Scan</h1>
+<div class="sub">Self-hosted &middot; Tradier data &middot; auto-refreshes every 5 min &middot; analysis only, no trades placed automatically &middot; last run: 2026-07-29 13:16 CDT</div>
+
+<div class="card">
+  <h2>Spot</h2>
+  <div class='price'>$15.58</div><div class='chg up'>+0.62 (+4.14%)</div>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="open">Open Trades (10)</button>
+  <button class="tab-btn" data-tab="watchlist">Watchlist (15)</button>
+  <button class="tab-btn" data-tab="closed">Closed &middot; 0W-1L (0%)</button>
+</div>
+
+<div id="tab-open" class="tab-panel active">
+  
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SPREAD &middot; PUT (2026-08-07)</div>
+              <div class="pl zero">— </div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-hold">HOLD</span></div>
+            <div class="legrow"><span><b>SELL</b> 14.5 PUT</span></div><div class="legrow"><span><b>BUY</b> 14.0 PUT</span></div>
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SPREAD &middot; CALL (2026-08-07)</div>
+              <div class="pl zero">— </div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-hold">HOLD</span></div>
+            <div class="legrow"><span><b>SELL</b> 16.0 CALL</span></div><div class="legrow"><span><b>BUY</b> 16.5 CALL</span></div>
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">REGULAR &middot; PUT 15.5 (2026-07-31)</div>
+              <div class="pl neg">$-8.00 (-24.2%)</div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-warn">STOP OUT</span></div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">REGULAR &middot; PUT 15.5 (2026-08-07)</div>
+              <div class="pl zero">— </div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-hold">HOLD</span></div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">REGULAR &middot; CALL 15.5 (2026-07-31)</div>
+              <div class="pl pos">$3.50 (12.1%)</div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-hold">HOLD</span></div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">REGULAR &middot; CALL 15.5 (2026-08-07)</div>
+              <div class="pl zero">— </div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-hold">HOLD</span></div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; CALL 15 (2026-08-21)</div>
+              <div class="pl pos">$4.50 (5.4%)</div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-hold">HOLD</span></div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; PUT 15 (2026-08-21)</div>
+              <div class="pl neg">$-6.00 (-12.8%)</div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-hold">HOLD</span></div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; CALL 15 (2026-09-04)</div>
+              <div class="pl zero">— </div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-hold">HOLD</span></div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; PUT 15 (2026-09-04)</div>
+              <div class="pl zero">— </div>
+            </div>
+            <div class="plsub">Signal: <span class="sig-hold">HOLD</span></div>
+            
+          </div>
+</div>
+
+<div id="tab-watchlist" class="tab-panel">
+  
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SPREAD &middot; PUT (2026-08-07)</div>
+              <div class="plsub">Entry: 0.06 credit &middot; Δ -0.19</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 11:40</div>
+            <div class="legrow"><span><b>SELL</b> 14.5 PUT</span></div><div class="legrow"><span><b>BUY</b> 14.0 PUT</span></div>
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SPREAD &middot; CALL (2026-08-07)</div>
+              <div class="plsub">Entry: 0.10 credit &middot; Δ 0.34</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 11:40</div>
+            <div class="legrow"><span><b>SELL</b> 16.0 CALL</span></div><div class="legrow"><span><b>BUY</b> 16.5 CALL</span></div>
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">REGULAR &middot; PUT 15.5 (2026-08-07)</div>
+              <div class="plsub">Entry: 0.49 &middot; Δ -0.50</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 11:40</div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">REGULAR &middot; CALL 15.5 (2026-07-31)</div>
+              <div class="plsub">Entry: 0.29 &middot; Δ 0.48</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 11:40</div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">REGULAR &middot; CALL 15.5 (2026-08-07)</div>
+              <div class="plsub">Entry: 0.47 &middot; Δ 0.50</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 11:40</div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; CALL 15 (2026-08-21)</div>
+              <div class="plsub">Entry: 0.84 &middot; Δ 0.65</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 11:40</div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; PUT 15 (2026-08-21)</div>
+              <div class="plsub">Entry: 0.47 &middot; Δ -0.37</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 11:40</div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; CALL 15 (2026-09-04)</div>
+              <div class="plsub">Entry: 0.97 &middot; Δ 0.64</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 11:40</div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; PUT 15 (2026-09-04)</div>
+              <div class="plsub">Entry: 0.59 &middot; Δ -0.37</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 11:40</div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SPREAD &middot; CALL (2026-07-31)</div>
+              <div class="plsub">Entry: 0.07 credit &middot; Δ 0.246</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 13:16</div>
+            <div class="legrow"><span><b>SELL</b> 16.0 CALL</span></div><div class="legrow"><span><b>BUY</b> 16.5 CALL</span></div>
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SPREAD &middot; CALL (2026-07-31)</div>
+              <div class="plsub">Entry: 0.01 credit &middot; Δ 0.107</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 13:16</div>
+            <div class="legrow"><span><b>SELL</b> 16.5 CALL</span></div><div class="legrow"><span><b>BUY</b> 17.0 CALL</span></div>
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SPREAD &middot; PUT (2026-07-31)</div>
+              <div class="plsub">Entry: 0.04 credit &middot; Δ 0.265</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 13:16</div>
+            <div class="legrow"><span><b>SELL</b> 15.0 PUT</span></div><div class="legrow"><span><b>BUY</b> 14.5 PUT</span></div>
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; CALL 15 (2026-08-14)</div>
+              <div class="plsub">Entry: 0.85 &middot; Δ 0.624</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 13:16</div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; CALL 15.5 (2026-08-14)</div>
+              <div class="plsub">Entry: 0.57 &middot; Δ 0.477</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 13:16</div>
+            
+          </div>
+          <div class="play-group">
+            <div class="play-head">
+              <div class="play-title">SWING &middot; PUT 15 (2026-08-14)</div>
+              <div class="plsub">Entry: 0.37 &middot; Δ 0.376</div>
+            </div>
+            <div class="plsub">Suggested 2026-07-29 13:16</div>
+            
+          </div>
+</div>
+
+<div id="tab-closed" class="tab-panel">
+  
+          <div class="play-group closed">
+            <div class="play-head">
+              <div class="play-title">REGULAR &middot; PUT 15.5 (2026-07-31)</div>
+              <div><span class="badge badge-loss">LOSS</span> <span class="pl neg">-24.2%</span></div>
+            </div>
+            <div class="plsub">Entry: 0.33 &middot; Opened 2026-07-29 &middot; Closed 2026-07-29 13:16</div>
+          </div>
+</div>
+
+<div class="card">
+  <h2>Latest Scan Summary</h2>
+  <div class="muted">6 new candidate(s) this scan.</div>
+  <div class="muted">1 closed this scan.</div>
+  <div class="footer">Generated by GitHub Actions every 5 min during market hours (8:30am&ndash;3:00pm CT, Mon&ndash;Fri).</div>
+</div>
+
+<script>
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+</script>
+
+</body></html>
