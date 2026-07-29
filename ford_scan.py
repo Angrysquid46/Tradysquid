@@ -237,6 +237,7 @@ def read_report_state() -> dict[str, Any]:
         "daily_report_date": "",
         "weekly_report_key": "",
         "guide_version": "",
+        "routed_closed_trade_ids": [],
     }
     if not REPORT_STATE_PATH.exists():
         return default
@@ -249,6 +250,8 @@ def read_report_state() -> dict[str, Any]:
     default.update(loaded)
     if not isinstance(default.get("messages"), dict):
         default["messages"] = {}
+    if not isinstance(default.get("routed_closed_trade_ids"), list):
+        default["routed_closed_trade_ids"] = []
     return default
 
 
@@ -380,15 +383,30 @@ def position_update_text(row: dict[str, str], evaluation: dict[str, Any]) -> str
 def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_link: str = "") -> str:
     outcome = row.get("outcome", "CLOSED")
     icon = {"WIN": "🏆", "LOSS": "🔴", "SCRATCH": "➖"}.get(outcome, "📕")
+    trade_id = row.get("trade_id") or "F-UNKNOWN"
+    sequence = trade_id.rsplit("-", 1)[-1]
+    play_type = row.get("play_type", "PLAY").upper()
+    kind = row.get("call_or_put", "").upper()
+    expiration = format_expiration(row.get("expiration", ""))
+    pl_dollars = as_float(evaluation.get("pl_dollars"))
+    pl_pct = as_float(evaluation.get("pl_pct"))
+    signal = evaluation.get("signal") or row.get("last_signal") or "CLOSED"
+
+    if play_type == "SPREAD":
+        sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
+        setup = f"{fmt_strike(sell_strike)}/{fmt_strike(buy_strike)} {kind} CREDIT"
+    else:
+        strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
+        setup = f"BUY {strike} {kind}"
+
     lines = [
-        f"{icon} **{row.get('trade_id')} • {outcome}**",
-        f"Final P/L: {fmt_money(as_float(evaluation.get('pl_dollars')))} ({fmt_pct(as_float(evaluation.get('pl_pct')))})",
-        f"Exit reason: {evaluation.get('signal', 'CLOSE')}",
-        f"MFE: {fmt_pct(as_float(row.get('max_favorable_pct')))} | MAE: {fmt_pct(as_float(row.get('max_adverse_pct')))}",
+        f"{icon} **F #{sequence} • {outcome}** • {fmt_money(pl_dollars)} ({fmt_pct(pl_pct)})",
+        f"{setup} • EXP {expiration} • {signal}",
     ]
     if include_link:
-        lines.append(f"🔗 {include_link}")
+        lines.append(f"[Journal]({include_link})")
     return "\n".join(lines)[:2000]
+
 
 def thread_link(thread_id: str) -> str:
     if not thread_id or not DISCORD_GUILD_ID:
@@ -1300,7 +1318,55 @@ def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discor
     row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 1)
     row["last_discord_update_at"] = timestamp.isoformat()
 
-def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: DiscordTracker) -> None:
+def mark_closed_result_routed(row: dict[str, str], report_state: dict[str, Any]) -> None:
+    trade_id = row.get("trade_id", "")
+    if not trade_id:
+        return
+    routed = report_state.setdefault("routed_closed_trade_ids", [])
+    if trade_id not in routed:
+        routed.append(trade_id)
+
+
+def stored_close_evaluation(row: dict[str, str]) -> dict[str, Any]:
+    pl_pct = as_float(row.get("pct_gain_loss"), 0.0) or 0.0
+    entry = parse_entry_price(row)
+    pl_dollars = entry * 100 * (pl_pct / 100)
+    return {
+        "pl_pct": pl_pct,
+        "pl_dollars": pl_dollars,
+        "signal": row.get("last_signal") or "CLOSED",
+    }
+
+
+def sync_closed_result_channels(
+    rows: list[dict[str, str]],
+    discord: DiscordTracker,
+    report_state: dict[str, Any],
+) -> int:
+    """Populate WIN/LOSS/SCRATCH channels with any closed rows not routed before."""
+    if not discord.ready:
+        return 0
+    routed = set(report_state.setdefault("routed_closed_trade_ids", []))
+    posted = 0
+    for row in sorted(closed_rows(rows), key=lambda item: item.get("closed_at") or item.get("timestamp") or ""):
+        trade_id = row.get("trade_id", "")
+        if not trade_id or trade_id in routed:
+            continue
+        result_channel = {"WIN": "wins", "LOSS": "losses", "SCRATCH": "scratches"}.get(row.get("outcome", ""))
+        if not result_channel:
+            continue
+        link = thread_link(row.get("discord_thread_id", ""))
+        discord.send_channel(
+            result_channel,
+            content=close_alert_text(row, stored_close_evaluation(row), link),
+        )
+        mark_closed_result_routed(row, report_state)
+        routed.add(trade_id)
+        posted += 1
+    return posted
+
+
+def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: DiscordTracker, report_state: dict[str, Any]) -> None:
     if not discord.ready:
         return
     thread_id = row.get("discord_thread_id", "")
@@ -1313,6 +1379,7 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     result_channel = {"WIN": "wins", "LOSS": "losses", "SCRATCH": "scratches"}.get(row["outcome"])
     if result_channel:
         discord.send_channel(result_channel, content=content)
+        mark_closed_result_routed(row, report_state)
     row["discord_status"] = row["outcome"]
     row["last_discord_signal"] = evaluation.get("signal", "CLOSE")
     row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 1)
@@ -1848,6 +1915,14 @@ def main() -> int:
         lambda: update_performance_pages(discord, report_state, rows),
     )
 
+    closed_results_backfilled = 0
+    try:
+        closed_results_backfilled = sync_closed_result_channels(rows, discord, report_state)
+    except DiscordError as exc:
+        print(f"Discord closed-result backfill failed: {exc}", file=sys.stderr)
+    if closed_results_backfilled:
+        print(f"Discord result backfill: posted {closed_results_backfilled} closed result(s).")
+
     backfilled = sync_existing_open_threads(rows, discord)
     if backfilled:
         write_log(rows)
@@ -1918,7 +1993,7 @@ def main() -> int:
             signal = evaluation.get("signal")
             if signal in {"STOP OUT", "TAKE PROFIT", "EXPIRY CLOSE"}:
                 close_row(row, evaluation, timestamp)
-                safe_discord_call("close routing", lambda r=row, e=evaluation: post_close(r, e, discord))
+                safe_discord_call("close routing", lambda r=row, e=evaluation: post_close(r, e, discord, report_state))
                 closed_count += 1
             else:
                 before = row.get("last_discord_update_at")
