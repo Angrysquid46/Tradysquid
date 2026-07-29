@@ -1,14 +1,15 @@
 name: Ford Options Scan
 
 on:
-  # Runs every 10 minutes on weekdays across the UTC window that covers
-  # Ford market hours in Central Time during both CST and CDT.
-  #
-  # Python still performs the exact 8:30 AM-3:00 PM Central Time check.
-  # The 3-minute offset also avoids scheduling directly at the top of the hour.
   schedule:
-    - cron: "33-53/10 13 * * 1-5"
-    - cron: "3-53/10 14-20 * * 1-5"
+    # Every 5 minutes on weekdays.
+    #
+    # This UTC window covers 8:30 AM through 3:00 PM Central Time
+    # during both CST and CDT. The Python script performs the exact
+    # Central Time market-hours check and exits outside that window.
+    - cron: "30-55/5 13 * * 1-5"
+    - cron: "*/5 14-20 * * 1-5"
+    - cron: "0 21 * * 1-5"
 
   # Allows manual testing from the GitHub Actions page.
   workflow_dispatch:
@@ -16,7 +17,7 @@ on:
 permissions:
   contents: write
 
-# Prevent two scans from editing and pushing the log at the same time.
+# Prevent two scanner runs from editing the CSV at the same time.
 concurrency:
   group: ford-options-scan
   cancel-in-progress: false
@@ -31,12 +32,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
@@ -61,11 +62,11 @@ jobs:
           git config user.name "ford-scan-bot"
           git config user.email "actions@users.noreply.github.com"
 
-          if [ -d "state" ]; then
+          if [ -e "state" ]; then
             git add -A state
           fi
 
-          if [ -d "docs" ]; then
+          if [ -e "docs" ]; then
             git add -A docs
           fi
 
