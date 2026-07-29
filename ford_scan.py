@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
-Ford (F) options scanner + Discord paper-trade tracker.
+Ford (F) options scanner + Discord trade tracker.
 
 Purpose
 -------
 - Read-only Tradier market data.
-- Never places, modifies, previews, or cancels brokerage orders.
-- Creates scanner-generated paper plays that the user may copy manually in Robinhood.
 - Tracks each play in CSV, a static HTML dashboard, and one Discord forum post.
 - Reprices open plays on each scheduled run and routes closed results to Discord.
 
@@ -90,7 +88,7 @@ SCRATCH_BAND_PCT = float(os.environ.get("SCRATCH_BAND_PCT", "5.0"))
 DISCORD_PL_CHANGE_THRESHOLD = float(os.environ.get("DISCORD_PL_CHANGE_THRESHOLD", "10.0"))
 DISCORD_HEARTBEAT_MINUTES = int(os.environ.get("DISCORD_HEARTBEAT_MINUTES", "60"))
 DISCORD_SYNC_EXISTING_OPEN = os.environ.get("DISCORD_SYNC_EXISTING_OPEN", "true").lower() == "true"
-DISCORD_FORMAT_VERSION = "5"
+DISCORD_FORMAT_VERSION = "6"
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Tradysquids-TradeBot/1.0"})
@@ -277,12 +275,16 @@ def trade_title(row: dict[str, str]) -> str:
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
     expiration = format_expiration(row.get("expiration", ""))
+
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
-        strategy = f"{kind} CREDIT {fmt_strike(sell_strike)}/{fmt_strike(buy_strike)}"
-    else:
-        strategy = f"{play_type} {kind} {row.get('strike', '')}"
-    return f"F #{sequence} | {strategy} | {expiration}"
+        return (
+            f"F #{sequence} | {fmt_strike(sell_strike)}/{fmt_strike(buy_strike)} "
+            f"{kind} CREDIT | {expiration}"
+        )
+
+    strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
+    return f"F #{sequence} | BUY {strike} {kind} | {expiration}"
 
 
 def format_expiration(value: str) -> str:
@@ -292,56 +294,39 @@ def format_expiration(value: str) -> str:
         return value or "—"
 
 
-def paper_entry_text(row: dict[str, str], include_link: str = "") -> str:
+def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
     trade_id = row.get("trade_id") or "F-UNKNOWN"
     sequence = trade_id.rsplit("-", 1)[-1]
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
     entry = parse_entry_price(row)
-    expiration = format_expiration(row.get("expiration", ""))
-    max_profit = as_float(row.get("max_profit"))
-    max_risk = as_float(row.get("max_risk"))
-    breakeven = as_float(row.get("breakeven"))
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
-        strategy = f"{kind} CREDIT SPREAD"
-        legs = [
-            f"🔴 **SELL** 1 F {fmt_strike(sell_strike)} {kind}",
-            f"🟢 **BUY** 1 F {fmt_strike(buy_strike)} {kind}",
-        ]
-        entry_text = f"${entry:.2f} credit (${entry * 100:.0f})"
-        stop_text = f"Close at ${entry * SPREAD_STOP_MULTIPLE:.2f} debit"
-        target_text = f"Close at ${entry * (1 - SPREAD_TAKE_PROFIT_PCT):.2f} debit"
+        setup = (
+            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind} | "
+            f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
+        )
+        entry_text = f"${entry:.2f} CR"
+        stop_text = f"${entry * SPREAD_STOP_MULTIPLE:.2f} DB"
+        target_text = f"${entry * (1 - SPREAD_TAKE_PROFIT_PCT):.2f} DB"
     else:
-        strategy = f"{play_type} LONG {kind}"
-        legs = [f"🟢 **BUY** 1 F {row.get('strike', '—')} {kind}"]
-        entry_text = f"${entry:.2f} debit (${entry * 100:.0f})"
-        stop_text = f"Close near ${entry * (1 - SINGLE_STOP_PCT):.2f}"
-        target_text = f"Close near ${entry * (1 + SINGLE_TAKE_PROFIT_PCT):.2f}"
+        strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
+        setup = f"🟢 BUY 1 F {strike} {kind}"
+        entry_text = f"${entry:.2f}"
+        stop_text = f"${entry * (1 - SINGLE_STOP_PCT):.2f}"
+        target_text = f"${entry * (1 + SINGLE_TAKE_PROFIT_PCT):.2f}"
 
     lines = [
-        f"📥 **F PAPER ENTRY • #{sequence}**",
-        f"**{strategy}**",
-        "",
-        *legs,
-        "",
-        f"📅 **EXP:** {expiration}",
-        f"💵 **ENTRY:** {entry_text}",
-        f"🛑 **STOP:** {stop_text}",
-        f"🎯 **TARGET:** {target_text}",
-        f"⚠️ **MAX RISK:** {fmt_money(max_risk)}",
-        f"💰 **MAX PROFIT:** {fmt_money(max_profit) if max_profit is not None else row.get('max_profit', '—')}",
-        f"📍 **BREAK-EVEN:** {fmt_money(breakeven)}",
-        "",
-        "*Scanner paper play only. No brokerage order was placed.*",
+        f"**F #{sequence}** • {setup}",
+        f"ENTRY {entry_text} • STOP {stop_text} • TP {target_text}",
     ]
     if include_link:
-        lines.extend(["", f"🔗 {include_link}"])
+        lines.append(f"[Journal]({include_link})")
     return "\n".join(lines)[:2000]
 
 
-def paper_update_text(row: dict[str, str], evaluation: dict[str, Any]) -> str:
+def position_update_text(row: dict[str, str], evaluation: dict[str, Any]) -> str:
     return "\n".join([
         f"📊 **{row.get('trade_id')} • {evaluation.get('signal', 'HOLD')}**",
         f"Mark: {fmt_money(as_float(evaluation.get('mark')))}",
@@ -350,7 +335,7 @@ def paper_update_text(row: dict[str, str], evaluation: dict[str, Any]) -> str:
     ])
 
 
-def paper_close_text(row: dict[str, str], evaluation: dict[str, Any], include_link: str = "") -> str:
+def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_link: str = "") -> str:
     outcome = row.get("outcome", "CLOSED")
     icon = {"WIN": "🏆", "LOSS": "🔴", "SCRATCH": "➖"}.get(outcome, "📕")
     lines = [
@@ -1016,7 +1001,7 @@ class DiscordTracker:
             "auto_archive_duration": 1440,
             "applied_tags": [tag_id] if tag_id else [],
             "message": {
-                "content": paper_entry_text(row),
+                "content": entry_alert_text(row),
                 "allowed_mentions": {"parse": []},
             },
         }
@@ -1039,7 +1024,7 @@ class DiscordTracker:
         self._request(
             "PATCH",
             f"/channels/{thread_id}/messages/{thread_id}",
-            {"content": paper_entry_text(row), "embeds": [], "allowed_mentions": {"parse": []}},
+            {"content": entry_alert_text(row), "embeds": [], "allowed_mentions": {"parse": []}},
         )
         row["discord_format_version"] = DISCORD_FORMAT_VERSION
 
@@ -1099,8 +1084,8 @@ def setup_embed(row: dict[str, str]) -> dict[str, Any]:
     iv_text = "—" if iv is None else f"{iv * 100:.1f}%"
 
     return {
-        "title": f"📈 {row.get('trade_id')} | Paper play opened",
-        "description": "Scanner-generated paper tracking only. No Tradier or Robinhood order was placed.",
+        "title": f"📈 {row.get('trade_id')} | Opened",
+        "description": "",
         "color": 0x5865F2,
         "fields": [
             embed_field("Strategy", strategy),
@@ -1122,7 +1107,7 @@ def setup_embed(row: dict[str, str]) -> dict[str, Any]:
                 False,
             ),
         ],
-        "footer": {"text": "Tradysquids TradeBot • paper tracking"},
+        "footer": {"text": "Tradysquids TradeBot"},
         "timestamp": row.get("timestamp") or now_ct().isoformat(),
     }
 
@@ -1142,7 +1127,7 @@ def update_embed(row: dict[str, str], evaluation: dict[str, Any]) -> dict[str, A
             embed_field("MAE", fmt_pct(as_float(row.get("max_adverse_pct")))),
             embed_field("Action", signal),
         ],
-        "footer": {"text": "15-minute paper position update"},
+        "footer": {"text": "15-minute position update"},
         "timestamp": now_ct().isoformat(),
     }
 
@@ -1155,14 +1140,14 @@ def close_embed(row: dict[str, str], evaluation: dict[str, Any]) -> dict[str, An
         "description": f"Closed by scanner rule: **{evaluation.get('signal', 'CLOSE')}**",
         "color": colors.get(outcome, 0x95A5A6),
         "fields": [
-            embed_field("Realized paper P&L", fmt_money(as_float(evaluation.get("pl_dollars")))),
+            embed_field("Realized P&L", fmt_money(as_float(evaluation.get("pl_dollars")))),
             embed_field("Return", fmt_pct(as_float(evaluation.get("pl_pct")))),
             embed_field("MFE", fmt_pct(as_float(row.get("max_favorable_pct")))),
             embed_field("MAE", fmt_pct(as_float(row.get("max_adverse_pct")))),
             embed_field("Opened", (row.get("timestamp") or "")[:16].replace("T", " ")),
             embed_field("Closed", (row.get("closed_at") or "")[:16].replace("T", " ")),
         ],
-        "footer": {"text": "Paper result • no brokerage order placed"},
+        "footer": {"text": "Tradysquids TradeBot"},
         "timestamp": row.get("closed_at") or now_ct().isoformat(),
     }
 
@@ -1196,7 +1181,7 @@ def sync_existing_open_threads(rows: list[dict[str, str]], discord: DiscordTrack
             if thread_id:
                 created += 1
                 link = thread_link(thread_id)
-                discord.send_channel("entry", content=paper_entry_text(row, link))
+                discord.send_channel("entry", content=entry_alert_text(row, link))
         except DiscordError as exc:
             print(f"Could not sync Discord thread for {row.get('trade_id')}: {exc}", file=sys.stderr)
     return created
@@ -1218,7 +1203,7 @@ def should_post_update(row: dict[str, str], evaluation: dict[str, Any], timestam
 def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discord: DiscordTracker, timestamp: datetime) -> None:
     if not discord.ready or not row.get("discord_thread_id") or not should_post_update(row, evaluation, timestamp):
         return
-    content = paper_update_text(row, evaluation)
+    content = position_update_text(row, evaluation)
     discord.send_thread(row["discord_thread_id"], content)
     discord.send_channel(
         "updates",
@@ -1240,9 +1225,9 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
         return
     thread_id = row.get("discord_thread_id", "")
     link = thread_link(thread_id)
-    content = paper_close_text(row, evaluation, link)
+    content = close_alert_text(row, evaluation, link)
     if thread_id:
-        discord.send_thread(thread_id, paper_close_text(row, evaluation))
+        discord.send_thread(thread_id, close_alert_text(row, evaluation))
         discord.set_thread_status(thread_id, row["outcome"], archive=True)
     discord.send_channel("exit", content=content)
     result_channel = {"WIN": "wins", "LOSS": "losses", "SCRATCH": "scratches"}.get(row["outcome"])
@@ -1259,7 +1244,7 @@ def post_new_trade(row: dict[str, str], discord: DiscordTracker) -> None:
         return
     thread_id = discord.create_trade_thread(row, "OPEN")
     link = thread_link(thread_id)
-    content = paper_entry_text(row, link)
+    content = entry_alert_text(row, link)
     discord.send_channel("qualified", content=content)
     discord.send_channel("entry", content=content)
 
@@ -1360,14 +1345,14 @@ h1 {{ font-size:22px; margin:0 0 4px; }} .sub,.plsub,.muted,.footer {{ color:#9a
 .footer {{ font-size:11px; margin-top:10px; }}
 </style></head><body>
 <h1>Tradysquids · Ford Options Desk</h1>
-<div class='sub'>Tradier market data · scanner-generated paper plays · no automatic order placement · refreshed every 15 minutes · last build {now_ct().strftime('%Y-%m-%d %H:%M %Z')}</div>
+<div class='sub'>Tradier market data · refreshed every 15 minutes · last build {now_ct().strftime('%Y-%m-%d %H:%M %Z')}</div>
 <div class='card'><h2>Ford spot</h2>{spot_html}</div>
 <div class='tabs'>
 <button class='tab-btn active' data-tab='open'>Open ({len(open_items)})</button>
 <button class='tab-btn' data-tab='watch'>All plays ({len(watch_items)})</button>
 <button class='tab-btn' data-tab='closed'>Closed · {wins}W-{losses}L-{scratches}S ({'—' if win_rate is None else f'{win_rate:.0f}%'})</button>
 </div>
-<div id='tab-open' class='tab-panel active'>{''.join(open_items) if open_items else "<div class='muted'>No open paper plays.</div>"}</div>
+<div id='tab-open' class='tab-panel active'>{''.join(open_items) if open_items else "<div class='muted'>No open plays.</div>"}</div>
 <div id='tab-watch' class='tab-panel'>{''.join(watch_items) if watch_items else "<div class='muted'>No plays logged.</div>"}</div>
 <div id='tab-closed' class='tab-panel'>{''.join(reversed(closed_items)) if closed_items else "<div class='muted'>No closed results.</div>"}</div>
 <div class='card'><h2>Latest run</h2><div class='muted'>{esc(latest_summary)}</div><div class='footer'>GitHub Actions schedule: every 15 minutes. GitHub can delay scheduled jobs; protective exits must not rely on this scanner.</div></div>
@@ -1449,7 +1434,7 @@ def main() -> int:
             "backfill status",
             lambda: discord.send_channel(
                 "status",
-                content=f"✅ TradeBot imported {backfilled} existing OPEN paper play(s) into #trade-journal.",
+                content=f"✅ TradeBot imported {backfilled} existing OPEN play(s) into #trade-journal.",
             ),
         )
         print(f"Discord backfill: created {backfilled} open-trade forum thread(s).")
@@ -1510,7 +1495,7 @@ def main() -> int:
 
         write_log(rows)
         summary = (
-            f"Spot ${spot_price:.2f} · {len(new_rows)} new paper play(s) · "
+            f"Spot ${spot_price:.2f} · {len(new_rows)} new play(s) · "
             f"{closed_count} closed · {material_updates} material update(s) · "
             f"{len(open_rows(rows))} open total."
         )
