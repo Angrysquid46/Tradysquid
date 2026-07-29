@@ -34,6 +34,7 @@ Emoji prefixes are fine. Matching ignores emoji and punctuation.
 from __future__ import annotations
 
 import csv
+import hashlib
 import html
 import json
 import math
@@ -91,7 +92,7 @@ SCRATCH_BAND_PCT = float(os.environ.get("SCRATCH_BAND_PCT", "5.0"))
 DISCORD_PL_CHANGE_THRESHOLD = float(os.environ.get("DISCORD_PL_CHANGE_THRESHOLD", "10.0"))
 DISCORD_HEARTBEAT_MINUTES = int(os.environ.get("DISCORD_HEARTBEAT_MINUTES", "60"))
 DISCORD_SYNC_EXISTING_OPEN = os.environ.get("DISCORD_SYNC_EXISTING_OPEN", "true").lower() == "true"
-DISCORD_FORMAT_VERSION = "7"
+DISCORD_FORMAT_VERSION = "8"
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Tradysquids-TradeBot/1.0"})
@@ -179,6 +180,32 @@ TAG_KEYS = {
     "EXPIRED",
 }
 
+AUTOMATED_CHANNEL_KEYS = [
+    "scanner_feed",
+    "qualified",
+    "entry",
+    "updates",
+    "exit",
+    "wins",
+    "losses",
+    "scratches",
+    "daily_recap",
+    "weekly_report",
+    "performance_stats",
+    "strategy_breakdown",
+    "status",
+    "errors",
+    "workflow_log",
+]
+
+MANUAL_CHANNEL_KEYS = [
+    "welcome",
+    "strategy_rules",
+    "risk_management",
+    "server_guide",
+    "admin_notes",
+]
+
 # ---------------------------------------------------------------------------
 # Generic helpers
 # ---------------------------------------------------------------------------
@@ -202,7 +229,9 @@ def round_or_blank(value: float | None, digits: int = 2) -> str:
 
 
 def fmt_money(value: float | None) -> str:
-    return "—" if value is None else f"${value:,.2f}"
+    if value is None:
+        return "—"
+    return f"-${abs(value):,.2f}" if value < 0 else f"${value:,.2f}"
 
 
 def fmt_pct(value: float | None) -> str:
@@ -239,6 +268,7 @@ def split_chunks(values: list[str], size: int) -> Iterable[list[str]]:
 def read_report_state() -> dict[str, Any]:
     default = {
         "messages": {},
+        "message_hashes": {},
         "daily_report_date": "",
         "weekly_report_key": "",
         "guide_version": "",
@@ -415,41 +445,116 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
     sequence = trade_id.rsplit("-", 1)[-1]
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
+    expiration = format_expiration(row.get("expiration", ""))
     entry = parse_entry_price(row)
+    breakeven = as_float(row.get("breakeven"))
+    delta = as_float(row.get("delta_at_entry"))
+    oi = int(as_float(row.get("open_interest_at_entry"), 0.0) or 0)
+    iv = as_float(row.get("iv_at_entry"))
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
+        strategy = f"{kind} CREDIT SPREAD"
         setup = (
-            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind} | "
+            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind} / "
             f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
         )
-        entry_text = f"${entry:.2f} CR"
-        stop_text = f"${entry * SPREAD_STOP_MULTIPLE:.2f} DB"
-        target_text = f"${entry * (1 - SPREAD_TAKE_PROFIT_PCT):.2f} DB"
+        stop = entry * SPREAD_STOP_MULTIPLE
+        target = entry * (1 - SPREAD_TAKE_PROFIT_PCT)
+        stop_pl = (entry - stop) * 100
+        target_pl = (entry - target) * 100
+        price_line = (
+            f"ENTRY **${entry:.2f} CR** ({fmt_money(entry * 100)}) · "
+            f"STOP **${stop:.2f} DB** ({fmt_money(stop_pl)}) · "
+            f"TP **${target:.2f} DB** ({fmt_money(target_pl)})"
+        )
+        risk_line = (
+            f"MAX PROFIT **{fmt_money(as_float(row.get('max_profit')))}** · "
+            f"MAX RISK **{fmt_money(as_float(row.get('max_risk')))}** · "
+            f"BE **${breakeven:.2f}**" if breakeven is not None else
+            f"MAX PROFIT **{fmt_money(as_float(row.get('max_profit')))}** · "
+            f"MAX RISK **{fmt_money(as_float(row.get('max_risk')))}**"
+        )
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
+        strategy = f"LONG {kind}"
         setup = f"🟢 BUY 1 F {strike} {kind}"
-        entry_text = f"${entry:.2f}"
-        stop_text = f"${entry * (1 - SINGLE_STOP_PCT):.2f}"
-        target_text = f"${entry * (1 + SINGLE_TAKE_PROFIT_PCT):.2f}"
+        stop = entry * (1 - SINGLE_STOP_PCT)
+        target = entry * (1 + SINGLE_TAKE_PROFIT_PCT)
+        price_line = (
+            f"ENTRY **${entry:.2f} DB** ({fmt_money(entry * 100)}) · "
+            f"STOP **${stop:.2f} CR** ({fmt_money((stop - entry) * 100)}) · "
+            f"TP **${target:.2f} CR** ({fmt_money((target - entry) * 100)})"
+        )
+        risk_line = (
+            f"MAX RISK **{fmt_money(as_float(row.get('max_risk')))}** · "
+            f"BE **${breakeven:.2f}**" if breakeven is not None else
+            f"MAX RISK **{fmt_money(as_float(row.get('max_risk')))}**"
+        )
 
+    iv_text = "—" if iv is None else f"{iv * 100:.1f}%"
+    delta_text = "—" if delta is None else f"{delta:+.2f}"
     lines = [
-        f"**F #{sequence}** • {setup}",
-        f"ENTRY {entry_text} • STOP {stop_text} • TP {target_text}",
+        f"🟢 **F #{sequence} · ENTRY · {strategy}**",
+        f"{setup} · EXP **{expiration}**",
+        price_line,
+        risk_line,
+        f"Δ **{delta_text}** · IV **{iv_text}** · OI **{oi:,}**",
     ]
     if include_link:
-        lines.append(f"[Journal]({include_link})")
+        lines.append(f"[Open trade journal]({include_link})")
     return "\n".join(lines)[:2000]
 
+def position_update_text(
+    row: dict[str, str],
+    evaluation: dict[str, Any],
+    include_link: str = "",
+) -> str:
+    trade_id = row.get("trade_id") or "F-UNKNOWN"
+    sequence = trade_id.rsplit("-", 1)[-1]
+    play_type = row.get("play_type", "PLAY").upper()
+    kind = row.get("call_or_put", "").upper()
+    expiration = format_expiration(row.get("expiration", ""))
+    signal = evaluation.get("signal") or row.get("last_signal") or "HOLD"
+    entry = parse_entry_price(row)
+    mark = as_float(evaluation.get("mark"), as_float(row.get("last_mark")))
+    pl_dollars = as_float(evaluation.get("pl_dollars"), as_float(row.get("current_pl_dollars")))
+    pl_pct = as_float(evaluation.get("pl_pct"), as_float(row.get("current_pl_pct")))
 
-def position_update_text(row: dict[str, str], evaluation: dict[str, Any]) -> str:
-    return "\n".join([
-        f"📊 **{row.get('trade_id')} • {evaluation.get('signal', 'HOLD')}**",
-        f"Mark: {fmt_money(as_float(evaluation.get('mark')))}",
-        f"P/L: {fmt_money(as_float(evaluation.get('pl_dollars')))} ({fmt_pct(as_float(evaluation.get('pl_pct')))})",
-        f"MFE: {fmt_pct(as_float(row.get('max_favorable_pct')))} | MAE: {fmt_pct(as_float(row.get('max_adverse_pct')))}",
-    ])
+    if play_type == "SPREAD":
+        sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
+        strategy = f"{kind} CREDIT SPREAD"
+        setup = (
+            f"SELL 1 F {fmt_strike(sell_strike)} {kind} / "
+            f"BUY 1 F {fmt_strike(buy_strike)} {kind}"
+        )
+        entry_label = f"${entry:.2f} CR"
+        mark_label = "—" if mark is None else f"${mark:.2f} DB"
+    else:
+        strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
+        strategy = f"LONG {kind}"
+        setup = f"BUY 1 F {strike} {kind}"
+        entry_label = f"${entry:.2f} DB"
+        mark_label = "—" if mark is None else f"${mark:.2f} CR"
 
+    quote_note = evaluation.get("note") or ""
+    state_label = "HOLD" if signal == "HOLD" else signal
+    lines = [
+        f"⏸️ **F #{sequence} · {state_label} · {strategy}**",
+        f"{setup} · EXP **{expiration}**",
+        f"ENTRY **{entry_label}** · CURRENT **{mark_label}**",
+        f"P/L **{fmt_money(pl_dollars)}** ({fmt_pct(pl_pct)})",
+        (
+            f"MFE **{fmt_pct(as_float(row.get('max_favorable_pct')))}** · "
+            f"MAE **{fmt_pct(as_float(row.get('max_adverse_pct')))}**"
+        ),
+        f"Last checked **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**",
+    ]
+    if quote_note:
+        lines.append(f"⚠️ {quote_note}")
+    if include_link:
+        lines.append(f"[Open trade journal]({include_link})")
+    return "\n".join(lines)[:2000]
 
 def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_link: str = "") -> str:
     outcome = row.get("outcome", "CLOSED")
@@ -462,7 +567,53 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
     entry, closing, stored_pl = result_price_details(row)
     pl_dollars = as_float(evaluation.get("pl_dollars"), stored_pl)
     pl_pct = as_float(evaluation.get("pl_pct"), as_float(row.get("pct_gain_loss"), 0.0))
+    close_reason = evaluation.get("signal") or row.get("last_signal") or "CLOSED"
     approx = result_amount_prefix(row)
+
+    if play_type == "SPREAD":
+        sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
+        strategy = f"{kind} CREDIT SPREAD"
+        setup = (
+            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind} / "
+            f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
+        )
+        entry_label = f"${entry:.4f}".rstrip("0").rstrip(".") + " CR"
+        exit_label = "—" if closing is None else f"{approx}${closing:.4f}".rstrip("0").rstrip(".") + " DB"
+    else:
+        strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
+        strategy = f"LONG {kind}"
+        setup = f"🟢 BUY 1 F {strike} {kind}"
+        entry_label = f"${entry:.4f}".rstrip("0").rstrip(".") + " DB"
+        exit_label = "—" if closing is None else f"{approx}${closing:.4f}".rstrip("0").rstrip(".") + " CR"
+
+    entry_value = entry_contract_value(row)
+    exit_value = exit_contract_value(row)
+    exit_value_text = "—" if exit_value is None else f"{approx}{fmt_money(exit_value)}"
+    pnl_text = f"{approx}{fmt_money(pl_dollars)}"
+    closed_at = parse_iso(row.get("closed_at"))
+    closed_text = closed_at.strftime("%m/%d/%y %-I:%M %p CT") if closed_at else "—"
+
+    lines = [
+        f"{icon} **F #{sequence} · {outcome} · {strategy}**",
+        f"{setup} · EXP **{expiration}**",
+        f"ENTRY **{entry_label}** ({fmt_money(entry_value)}) · EXIT **{exit_label}** ({exit_value_text})",
+        f"P/L **{pnl_text}** ({fmt_pct(pl_pct)}) · CLOSE **{close_reason}**",
+        f"Closed **{closed_text}**",
+    ]
+    if include_link:
+        lines.append(f"[Open completed trade journal]({include_link})")
+    return "\n".join(lines)[:2000]
+
+def qualified_trade_text(row: dict[str, str], include_link: str = "") -> str:
+    trade_id = row.get("trade_id") or "F-UNKNOWN"
+    sequence = trade_id.rsplit("-", 1)[-1]
+    play_type = row.get("play_type", "PLAY").upper()
+    kind = row.get("call_or_put", "").upper()
+    expiration = format_expiration(row.get("expiration", ""))
+    entry = parse_entry_price(row)
+    pop = as_float(row.get("pop_estimate"))
+    oi = int(as_float(row.get("open_interest_at_entry"), 0.0) or 0)
+    width = as_float(row.get("bid_ask_width_at_entry"))
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
@@ -471,29 +622,40 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
             f"SELL 1 F {fmt_strike(sell_strike)} {kind} / "
             f"BUY 1 F {fmt_strike(buy_strike)} {kind}"
         )
-        entry_label = f"${entry:.4f}".rstrip("0").rstrip(".") + " CR"
-        exit_label = "—" if closing is None else f"{approx}${closing:.4f}".rstrip("0").rstrip(".") + " DB"
+        price = f"${entry:.2f} CR ({fmt_money(entry * 100)})"
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
-        strategy = f"LONG {kind}"
+        strategy = f"{play_type} LONG {kind}"
         setup = f"BUY 1 F {strike} {kind}"
-        entry_label = f"${entry:.4f}".rstrip("0").rstrip(".") + " DB"
-        exit_label = "—" if closing is None else f"{approx}${closing:.4f}".rstrip("0").rstrip(".") + " CR"
-
-    entry_value = entry_contract_value(row)
-    exit_value = exit_contract_value(row)
-    exit_value_text = "—" if exit_value is None else f"{approx}{fmt_money(exit_value)}"
-    pnl_text = f"{approx}{fmt_money(pl_dollars)}"
+        price = f"${entry:.2f} DB ({fmt_money(entry * 100)})"
 
     lines = [
-        f"{icon} **F #{sequence} • {outcome} • {strategy}**",
-        f"{setup} • EXP {expiration}",
-        f"ENTRY {entry_label} ({fmt_money(entry_value)}) • EXIT {exit_label} ({exit_value_text})",
-        f"P/L **{pnl_text}** ({fmt_pct(pl_pct)})",
+        f"✅ **F #{sequence} · QUALIFIED · {strategy}**",
+        f"{setup} · EXP **{expiration}**",
+        f"ENTRY **{price}**",
+        (
+            f"POP/DELTA EST **{fmt_pct(pop)}** · OI **{oi:,}** · "
+            f"BID/ASK WIDTH **{fmt_money(width)}**"
+        ),
     ]
     if include_link:
-        lines.append(f"[Journal]({include_link})")
+        lines.append(f"[Open trade journal]({include_link})")
     return "\n".join(lines)[:2000]
+
+
+def candidate_brief(candidate: dict[str, Any]) -> str:
+    kind = str(candidate.get("call_or_put", "")).upper()
+    play_type = str(candidate.get("play_type", "PLAY")).upper()
+    expiration = format_expiration(str(candidate.get("expiration", "")))
+    entry = as_float(candidate.get("entry_price"), 0.0) or 0.0
+    score = as_float(candidate.get("score"), 0.0) or 0.0
+    if play_type == "SPREAD":
+        setup = f"{kind} CREDIT {candidate.get('strike', '—')}"
+        price = f"${entry:.2f} CR"
+    else:
+        setup = f"{play_type} {kind} {candidate.get('strike', '—')}"
+        price = f"${entry:.2f} DB"
+    return f"• **{setup}** · EXP {expiration} · {price} · score {score:.1f}"
 
 
 def thread_link(thread_id: str) -> str:
@@ -1075,6 +1237,7 @@ class DiscordTracker:
         self.channels: dict[str, str] = {}
         self.tag_ids: dict[str, str] = {}
         self.forum_id = ""
+        self.missing_channels: list[str] = []
 
     @property
     def enabled(self) -> bool:
@@ -1145,9 +1308,14 @@ class DiscordTracker:
                 if normalized == key or normalized.endswith(f" {key}") or key in normalized:
                     self.tag_ids.setdefault(key, tag["id"])
 
-        missing_tags = sorted(key for key in ("OPEN", "WIN", "LOSS", "SCRATCH") if key not in self.tag_ids)
+        missing_tags = sorted(key for key in ("OPEN", "HOLDING", "WIN", "LOSS", "SCRATCH") if key not in self.tag_ids)
         if missing_tags:
             raise DiscordError(f"Missing required trade-journal forum tags: {', '.join(missing_tags)}")
+        self.missing_channels = [
+            CHANNEL_NAMES[key]
+            for key in AUTOMATED_CHANNEL_KEYS
+            if key not in self.channels
+        ]
         self.ready = True
 
     def send_channel(
@@ -1173,31 +1341,69 @@ class DiscordTracker:
         state: dict[str, Any],
         state_key: str,
         content: str,
-    ) -> None:
+        search_token: str = "",
+    ) -> str:
         channel_id = self.channels.get(logical_name)
         if not self.ready or not channel_id:
-            return
+            return ""
         messages = state.setdefault("messages", {})
+        hashes = state.setdefault("message_hashes", {})
         message_id = str(messages.get(state_key) or "")
+        clipped_content = content[:2000]
+        content_hash = hashlib.sha256(clipped_content.encode("utf-8")).hexdigest()
         payload = {
-            "content": content[:2000],
+            "content": clipped_content,
             "embeds": [],
             "allowed_mentions": {"parse": []},
         }
+        if message_id and hashes.get(state_key) == content_hash:
+            return message_id
         if message_id:
             try:
-                self._request(
-                    "PATCH",
-                    f"/channels/{channel_id}/messages/{message_id}",
-                    payload,
-                )
-                return
+                self._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
+                hashes[state_key] = content_hash
+                return message_id
             except DiscordError as exc:
                 if "HTTP 404" not in str(exc):
                     raise
+
+        if search_token:
+            recent = self._request("GET", f"/channels/{channel_id}/messages?limit=100")
+            if isinstance(recent, list):
+                for message in recent:
+                    author = message.get("author") or {}
+                    if author.get("bot") and search_token in (message.get("content") or ""):
+                        message_id = str(message.get("id") or "")
+                        if message_id:
+                            self._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
+                            messages[state_key] = message_id
+                            hashes[state_key] = content_hash
+                            return message_id
+
         created = self._request("POST", f"/channels/{channel_id}/messages", payload)
         if isinstance(created, dict) and created.get("id"):
-            messages[state_key] = created["id"]
+            message_id = str(created["id"])
+            messages[state_key] = message_id
+            hashes[state_key] = content_hash
+        return message_id
+
+    def upsert_trade_message(
+        self,
+        logical_name: str,
+        state: dict[str, Any],
+        namespace: str,
+        trade_id: str,
+        content: str,
+    ) -> str:
+        if not trade_id:
+            return ""
+        return self.upsert_channel_message(
+            logical_name,
+            state,
+            f"{namespace}:{logical_name}:{trade_id}",
+            content,
+            search_token=trade_id,
+        )
 
     def upsert_trade_result(
         self,
@@ -1206,49 +1412,29 @@ class DiscordTracker:
         trade_id: str,
         content: str,
     ) -> None:
+        self.upsert_trade_message(logical_name, state, "result", trade_id, content)
+
+    def delete_trade_message(
+        self,
+        logical_name: str,
+        state: dict[str, Any],
+        namespace: str,
+        trade_id: str,
+    ) -> None:
         channel_id = self.channels.get(logical_name)
         if not self.ready or not channel_id or not trade_id:
             return
-
         messages = state.setdefault("messages", {})
-        state_key = f"result:{logical_name}:{trade_id}"
+        state_key = f"{namespace}:{logical_name}:{trade_id}"
         message_id = str(messages.get(state_key) or "")
-        payload = {
-            "content": content[:2000],
-            "embeds": [],
-            "allowed_mentions": {"parse": []},
-        }
-
         if message_id:
             try:
-                self._request(
-                    "PATCH",
-                    f"/channels/{channel_id}/messages/{message_id}",
-                    payload,
-                )
-                return
+                self._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
             except DiscordError as exc:
                 if "HTTP 404" not in str(exc):
                     raise
-
-        recent = self._request("GET", f"/channels/{channel_id}/messages?limit=100")
-        if isinstance(recent, list):
-            for message in recent:
-                author = message.get("author") or {}
-                if author.get("bot") and trade_id in (message.get("content") or ""):
-                    message_id = str(message.get("id") or "")
-                    if message_id:
-                        self._request(
-                            "PATCH",
-                            f"/channels/{channel_id}/messages/{message_id}",
-                            payload,
-                        )
-                        messages[state_key] = message_id
-                        return
-
-        created = self._request("POST", f"/channels/{channel_id}/messages", payload)
-        if isinstance(created, dict) and created.get("id"):
-            messages[state_key] = created["id"]
+        messages.pop(state_key, None)
+        state.setdefault("message_hashes", {}).pop(state_key, None)
 
     def create_trade_thread(self, row: dict[str, str], status: str = "OPEN") -> str:
         if not self.ready:
@@ -1438,8 +1624,6 @@ def sync_existing_open_threads(rows: list[dict[str, str]], discord: DiscordTrack
             thread_id = discord.create_trade_thread(row, "OPEN")
             if thread_id:
                 created += 1
-                link = thread_link(thread_id)
-                discord.send_channel("entry", content=entry_alert_text(row, link))
         except DiscordError as exc:
             print(f"Could not sync Discord thread for {row.get('trade_id')}: {exc}", file=sys.stderr)
     return created
@@ -1463,10 +1647,6 @@ def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discor
         return
     content = position_update_text(row, evaluation)
     discord.send_thread(row["discord_thread_id"], content)
-    discord.send_channel(
-        "updates",
-        content=f"{content}\n🔗 {thread_link(row['discord_thread_id'])}",
-    )
     status = "HOLDING"
     if evaluation.get("signal") == "TAKE PROFIT":
         status = "TARGET HIT"
@@ -1477,6 +1657,84 @@ def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discor
     row["last_discord_signal"] = evaluation.get("signal", "HOLD")
     row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 1)
     row["last_discord_update_at"] = timestamp.isoformat()
+
+def stored_open_evaluation(row: dict[str, str]) -> dict[str, Any]:
+    return {
+        "signal": "HOLD",
+        "mark": as_float(row.get("last_mark")),
+        "pl_dollars": as_float(row.get("current_pl_dollars")),
+        "pl_pct": as_float(row.get("current_pl_pct")),
+        "note": "",
+    }
+
+
+def sync_open_trade_cards(
+    row: dict[str, str],
+    discord: DiscordTracker,
+    report_state: dict[str, Any],
+    evaluation: dict[str, Any] | None = None,
+) -> None:
+    if not discord.ready or row.get("outcome") != "OPEN":
+        return
+    trade_id = row.get("trade_id", "")
+    thread_id = row.get("discord_thread_id", "")
+    link = thread_link(thread_id)
+    current = evaluation or stored_open_evaluation(row)
+    discord.upsert_trade_message(
+        "qualified",
+        report_state,
+        "qualified",
+        trade_id,
+        qualified_trade_text(row, link),
+    )
+    discord.upsert_trade_message(
+        "entry",
+        report_state,
+        "entry",
+        trade_id,
+        entry_alert_text(row, link),
+    )
+    discord.upsert_trade_message(
+        "updates",
+        report_state,
+        "position",
+        trade_id,
+        position_update_text(row, current, link),
+    )
+    if thread_id and row.get("discord_status") != "HOLDING":
+        discord.set_thread_status(thread_id, "HOLDING")
+        row["discord_status"] = "HOLDING"
+
+
+def sync_all_open_trade_cards(
+    rows: list[dict[str, str]],
+    discord: DiscordTracker,
+    report_state: dict[str, Any],
+) -> int:
+    synced_open = 0
+    for row in rows:
+        trade_id = row.get("trade_id", "")
+        if not trade_id:
+            continue
+        link = thread_link(row.get("discord_thread_id", ""))
+        discord.upsert_trade_message(
+            "qualified",
+            report_state,
+            "qualified",
+            trade_id,
+            qualified_trade_text(row, link),
+        )
+        discord.upsert_trade_message(
+            "entry",
+            report_state,
+            "entry",
+            trade_id,
+            entry_alert_text(row, link),
+        )
+        if row.get("outcome") == "OPEN":
+            sync_open_trade_cards(row, discord, report_state)
+            synced_open += 1
+    return synced_open
 
 def mark_closed_result_routed(row: dict[str, str], report_state: dict[str, Any]) -> None:
     trade_id = row.get("trade_id", "")
@@ -1502,7 +1760,7 @@ def sync_closed_result_channels(
     discord: DiscordTracker,
     report_state: dict[str, Any],
 ) -> int:
-    """Create or refresh every WIN/LOSS/SCRATCH result with full entry/exit details."""
+    """Refresh exit alerts and outcome channels with complete entry/exit structures."""
     if not discord.ready:
         return 0
     updated = 0
@@ -1512,16 +1770,13 @@ def sync_closed_result_channels(
         if not trade_id or not result_channel:
             continue
         link = thread_link(row.get("discord_thread_id", ""))
-        discord.upsert_trade_result(
-            result_channel,
-            report_state,
-            trade_id,
-            close_alert_text(row, stored_close_evaluation(row), link),
-        )
+        content = close_alert_text(row, stored_close_evaluation(row), link)
+        discord.upsert_trade_message("exit", report_state, "exit", trade_id, content)
+        discord.upsert_trade_result(result_channel, report_state, trade_id, content)
+        discord.delete_trade_message("updates", report_state, "position", trade_id)
         mark_closed_result_routed(row, report_state)
         updated += 1
     return updated
-
 
 def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: DiscordTracker, report_state: dict[str, Any]) -> None:
     if not discord.ready:
@@ -1532,31 +1787,27 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     if thread_id:
         discord.send_thread(thread_id, close_alert_text(row, evaluation))
         discord.set_thread_status(thread_id, row["outcome"], archive=True)
-    discord.send_channel("exit", content=content)
+    discord.upsert_trade_message("exit", report_state, "exit", row.get("trade_id", ""), content)
     result_channel = {"WIN": "wins", "LOSS": "losses", "SCRATCH": "scratches"}.get(row["outcome"])
     if result_channel:
-        discord.upsert_trade_result(
-            result_channel,
-            report_state,
-            row.get("trade_id", ""),
-            content,
-        )
+        discord.upsert_trade_result(result_channel, report_state, row.get("trade_id", ""), content)
         mark_closed_result_routed(row, report_state)
+    discord.delete_trade_message("updates", report_state, "position", row.get("trade_id", ""))
     row["discord_status"] = row["outcome"]
     row["last_discord_signal"] = evaluation.get("signal", "CLOSE")
     row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 1)
     row["last_discord_update_at"] = row.get("closed_at") or now_ct().isoformat()
 
-
-def post_new_trade(row: dict[str, str], discord: DiscordTracker) -> None:
+def post_new_trade(
+    row: dict[str, str],
+    discord: DiscordTracker,
+    report_state: dict[str, Any],
+) -> None:
     if not discord.ready:
         return
-    thread_id = discord.create_trade_thread(row, "OPEN")
-    link = thread_link(thread_id)
-    content = entry_alert_text(row, link)
-    discord.send_channel("qualified", content=content)
-    discord.send_channel("entry", content=content)
-
+    if not row.get("discord_thread_id"):
+        discord.create_trade_thread(row, "OPEN")
+    sync_open_trade_cards(row, discord, report_state)
 
 # ---------------------------------------------------------------------------
 # Discord server pages and performance reporting
@@ -1675,93 +1926,126 @@ def format_performance_stats(rows: list[dict[str, str]]) -> str:
     metrics = result_metrics(completed)
     open_count = len(open_rows(rows))
     return "\n".join([
-        "## Performance",
+        "## 📊 Performance Dashboard",
+        "### Record",
         (
-            f"**{int(metrics['wins'])}W-{int(metrics['losses'])}L-"
-            f"{int(metrics['scratches'])}S** · "
-            f"Win rate **{metrics['win_rate']:.1f}%**"
+            f"🏆 **{int(metrics['wins'])} Wins** · 🔴 **{int(metrics['losses'])} Losses** · "
+            f"➖ **{int(metrics['scratches'])} Scratches**"
+        ),
+        f"Win rate **{metrics['win_rate']:.1f}%** · Closed trades **{int(metrics['closed'])}**",
+        "### Money",
+        (
+            f"Won **{fmt_metric_money(metrics, 'gross_won')}** · "
+            f"Lost **{fmt_metric_money(metrics, 'gross_lost')}** · "
+            f"Net **{fmt_metric_money(metrics, 'total_pnl')}**"
+        ),
+        "### Trade Quality",
+        (
+            f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
+            f"Avg loss **{metrics['average_loss_pct']:+.1f}%** · "
+            f"Expectancy **{metrics['expectancy_pct']:+.1f}%**"
+        ),
+        "### Current Exposure",
+        f"⏸️ Open/HOLD positions **{open_count}** · Results use **1 contract per trade**",
+        f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**",
+    ])[:2000]
+
+def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
+    groups: dict[str, list[dict[str, str]]] = {}
+    for row in closed_rows(rows):
+        play_type = row.get("play_type", "PLAY").upper()
+        kind = row.get("call_or_put", "").upper()
+        label = f"{play_type} {kind}".strip()
+        groups.setdefault(label, []).append(row)
+
+    lines = ["## 🧠 Strategy Breakdown", "Ranked by net result, then expectancy."]
+    if not groups:
+        lines.append("No completed trades yet.")
+    else:
+        ranked: list[tuple[float, float, str, dict[str, float]]] = []
+        for label, group in groups.items():
+            metrics = result_metrics(group)
+            ranked.append((metrics["total_pnl"], metrics["expectancy_pct"], label, metrics))
+        medals = ["🥇", "🥈", "🥉"]
+        for index, (_, _, label, metrics) in enumerate(
+            sorted(ranked, key=lambda item: (item[0], item[1]), reverse=True)[:8]
+        ):
+            badge = medals[index] if index < len(medals) else "▫️"
+            lines.extend([
+                f"### {badge} {label}",
+                (
+                    f"Record **{int(metrics['wins'])}W-{int(metrics['losses'])}L-"
+                    f"{int(metrics['scratches'])}S** · Win rate **{metrics['win_rate']:.1f}%**"
+                ),
+                (
+                    f"Won **{fmt_metric_money(metrics, 'gross_won')}** · "
+                    f"Lost **{fmt_metric_money(metrics, 'gross_lost')}** · "
+                    f"Net **{fmt_metric_money(metrics, 'total_pnl')}**"
+                ),
+                (
+                    f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
+                    f"Avg loss **{metrics['average_loss_pct']:+.1f}%** · "
+                    f"Expectancy **{metrics['expectancy_pct']:+.1f}%**"
+                ),
+            ])
+    lines.append(f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**")
+    return "\n".join(lines)[:2000]
+
+def format_daily_recap(
+    rows: list[dict[str, str]],
+    report_date: date,
+    *,
+    market_open: bool,
+) -> str:
+    completed = rows_closed_on(rows, report_date)
+    metrics = result_metrics(completed)
+    status = "🟢 LIVE" if market_open else "✅ FINAL"
+    lines = [
+        f"## 📅 Daily Recap · {report_date.strftime('%m/%d/%y')} · {status}",
+        "### Results",
+        (
+            f"🏆 **{int(metrics['wins'])}W** · 🔴 **{int(metrics['losses'])}L** · "
+            f"➖ **{int(metrics['scratches'])}S** · Win rate **{metrics['win_rate']:.1f}%**"
         ),
         (
             f"Won **{fmt_metric_money(metrics, 'gross_won')}** · "
             f"Lost **{fmt_metric_money(metrics, 'gross_lost')}** · "
             f"Net **{fmt_metric_money(metrics, 'total_pnl')}**"
         ),
-        f"Open **{open_count}** · 1-contract tracking",
-        (
-            f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
-            f"Avg loss **{metrics['average_loss_pct']:+.1f}%** · "
-            f"Expectancy **{metrics['expectancy_pct']:+.1f}%**"
-        ),
-        f"Updated {now_ct().strftime('%m/%d/%y %-I:%M %p CT')}",
-    ])[:2000]
-
-
-def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
-    groups: dict[str, list[dict[str, str]]] = {}
-    for row in closed_rows(rows):
-        label = f"{row.get('play_type', 'PLAY')} {row.get('call_or_put', '').upper()}".strip()
-        groups.setdefault(label, []).append(row)
-
-    lines = ["## Strategy Breakdown"]
-    if not groups:
-        lines.append("No completed trades yet.")
-    else:
-        ranked: list[tuple[float, str]] = []
-        for label, group in groups.items():
-            metrics = result_metrics(group)
-            line = (
-                f"**{label}** · {int(metrics['wins'])}W-{int(metrics['losses'])}L-"
-                f"{int(metrics['scratches'])}S · {metrics['win_rate']:.0f}% · "
-                f"Net {fmt_metric_money(metrics, 'total_pnl')} · {metrics['expectancy_pct']:+.1f}% avg"
-            )
-            ranked.append((metrics["expectancy_pct"], line))
-        for _, line in sorted(ranked, key=lambda item: item[0], reverse=True):
-            lines.append(line)
-    lines.append(f"Updated {now_ct().strftime('%m/%d/%y %-I:%M %p CT')}")
-    return "\n".join(lines)[:2000]
-
-
-def format_daily_recap(rows: list[dict[str, str]], report_date: date) -> str:
-    completed = rows_closed_on(rows, report_date)
-    metrics = result_metrics(completed)
-    lines = [
-        f"## Daily Recap · {report_date.strftime('%m/%d/%y')}",
-        (
-            f"**{int(metrics['wins'])}W-{int(metrics['losses'])}L-"
-            f"{int(metrics['scratches'])}S** · "
-            f"Net **{fmt_metric_money(metrics, 'total_pnl')}**"
-        ),
-        (
-            f"Won **{fmt_metric_money(metrics, 'gross_won')}** · "
-            f"Lost **{fmt_metric_money(metrics, 'gross_lost')}**"
-        ),
+        "### Closed Trades",
     ]
     if completed:
-        lines.extend(compact_result_line(row) for row in completed[-12:])
+        lines.extend(compact_result_line(row) for row in completed[-8:])
     else:
-        lines.append("No trades closed.")
-    lines.append(f"Open trades carried forward: **{len(open_rows(rows))}**")
+        lines.append("• No trades closed today.")
+    carried = open_rows(rows)
+    lines.extend([
+        "### Positions Carried",
+        f"⏸️ **{len(carried)} open/HOLD position(s)**",
+        f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**",
+    ])
     return "\n".join(lines)[:2000]
-
 
 def format_weekly_report(rows: list[dict[str, str]], report_date: date) -> str:
     monday = report_date - timedelta(days=report_date.weekday())
     completed = rows_closed_between(rows, monday, report_date)
     metrics = result_metrics(completed)
     lines = [
-        f"## Weekly Report · {monday.strftime('%m/%d')}–{report_date.strftime('%m/%d/%y')}",
+        f"## 📆 Weekly Report · {monday.strftime('%m/%d')}–{report_date.strftime('%m/%d/%y')}",
+        "### Record",
         (
-            f"**{int(metrics['wins'])}W-{int(metrics['losses'])}L-"
-            f"{int(metrics['scratches'])}S** · "
-            f"Win rate **{metrics['win_rate']:.1f}%**"
+            f"🏆 **{int(metrics['wins'])}W** · 🔴 **{int(metrics['losses'])}L** · "
+            f"➖ **{int(metrics['scratches'])}S** · Win rate **{metrics['win_rate']:.1f}%**"
         ),
+        "### Money",
         (
             f"Won **{fmt_metric_money(metrics, 'gross_won')}** · "
             f"Lost **{fmt_metric_money(metrics, 'gross_lost')}** · "
             f"Net **{fmt_metric_money(metrics, 'total_pnl')}**"
         ),
-        f"Expectancy **{metrics['expectancy_pct']:+.1f}%**",
+        "### Trade Quality",
         (
+            f"Expectancy **{metrics['expectancy_pct']:+.1f}%** · "
             f"Avg win **{metrics['average_win_pct']:+.1f}%** · "
             f"Avg loss **{metrics['average_loss_pct']:+.1f}%**"
         ),
@@ -1769,55 +2053,19 @@ def format_weekly_report(rows: list[dict[str, str]], report_date: date) -> str:
     if completed:
         best = max(completed, key=lambda row: as_float(row.get("pct_gain_loss"), -math.inf) or -math.inf)
         worst = min(completed, key=lambda row: as_float(row.get("pct_gain_loss"), math.inf) or math.inf)
-        lines.append(f"Best: {compact_result_line(best)[2:]}")
-        lines.append(f"Worst: {compact_result_line(worst)[2:]}")
+        lines.extend([
+            "### Best / Worst",
+            f"Best: {compact_result_line(best)[2:]}",
+            f"Worst: {compact_result_line(worst)[2:]}",
+        ])
     else:
         lines.append("No trades closed this week.")
+    lines.append(f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**")
     return "\n".join(lines)[:2000]
 
-
 def static_server_pages() -> dict[str, str]:
-    return {
-        "welcome": "\n".join([
-            "# Tradysquids TradeBot",
-            "Ford options scans, entries, lifecycle updates, and results.",
-            "Start with **#entry-alerts**. Open any linked journal thread for the full trade history.",
-        ]),
-        "strategy_rules": "\n".join([
-            "# Strategy Rules",
-            "• Ford only",
-            f"• Credit-spread short delta: {SPREAD_SHORT_DELTA_MIN:.2f}–{SPREAD_SHORT_DELTA_MAX:.2f}",
-            f"• Long-option delta: {SINGLE_LEG_DELTA_MIN:.2f}–{SINGLE_LEG_DELTA_MAX:.2f}",
-            f"• Minimum open interest: {MIN_OPEN_INTEREST}",
-            f"• Maximum new entries per scan: {MAX_NEW_PLAYS_PER_SCAN}",
-            f"• Duplicate-entry cooldown: {REENTRY_COOLDOWN_MINUTES} minutes",
-        ]),
-        "risk_management": "\n".join([
-            "# Risk Management",
-            f"• Credit spreads: target {SPREAD_TAKE_PROFIT_PCT * 100:.0f}% credit capture",
-            f"• Credit spreads: stop at {SPREAD_STOP_MULTIPLE:.1f}× entry credit",
-            f"• Long options: target +{SINGLE_TAKE_PROFIT_PCT * 100:.1f}%",
-            f"• Long options: stop -{SINGLE_STOP_PCT * 100:.1f}%",
-            "• Every spread is defined-risk",
-        ]),
-        "server_guide": "\n".join([
-            "# Server Guide",
-            "**scanner-feed** — meaningful scan summaries",
-            "**qualified-trades** — new qualified setups",
-            "**entry-alerts** — compact entries",
-            "**trade-journal** — one thread per trade",
-            "**position-updates** — material P/L and signal changes",
-            "**exit-alerts** — every closure",
-            "**wins / losses / scratches** — final routing",
-            "**performance** channels — daily, weekly, and strategy statistics",
-            "**scanner-status / workflow-log / api-errors** — system health",
-        ]),
-        "admin_notes": "\n".join([
-            "# Admin Notes",
-            "Reserved for manual configuration changes, overrides, and maintenance notes.",
-        ]),
-    }
-
+    """Manual channels are intentionally excluded from automation."""
+    return {}
 
 def ensure_static_server_pages(
     discord: DiscordTracker,
@@ -1880,20 +2128,137 @@ def format_result_channel_summary(rows: list[dict[str, str]], outcome: str) -> s
     selected = [row for row in closed_rows(rows) if row.get("outcome") == outcome]
     metrics = result_metrics(selected)
     if outcome == "WIN":
-        return (
-            f"## 🏆 Wins Summary\n"
-            f"Trades **{len(selected)}** · Total won **{fmt_metric_money(metrics, 'gross_won')}**"
-        )
-    if outcome == "LOSS":
-        return (
-            f"## 🔴 Losses Summary\n"
-            f"Trades **{len(selected)}** · Total lost **{fmt_metric_money(metrics, 'gross_lost')}**"
-        )
-    return (
-        f"## ➖ Scratches Summary\n"
-        f"Trades **{len(selected)}** · Net **{fmt_metric_money(metrics, 'total_pnl')}**"
-    )
+        title = "## 🏆 Wins"
+        total_line = f"Total won **{fmt_metric_money(metrics, 'gross_won')}**"
+        avg_line = f"Average win **{metrics['average_win_pct']:+.1f}%**"
+    elif outcome == "LOSS":
+        title = "## 🔴 Losses"
+        total_line = f"Total lost **{fmt_metric_money(metrics, 'gross_lost')}**"
+        avg_line = f"Average loss **{metrics['average_loss_pct']:+.1f}%**"
+    else:
+        title = "## ➖ Scratches"
+        total_line = f"Net **{fmt_metric_money(metrics, 'total_pnl')}**"
+        avg_line = f"Average result **{metrics['average_pct']:+.1f}%**"
+    return "\n".join([
+        title,
+        f"Trades **{len(selected)}** · {total_line}",
+        avg_line,
+        f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**",
+    ])
 
+def format_channel_audit(discord: DiscordTracker, timestamp: datetime) -> str:
+    connected = len(AUTOMATED_CHANNEL_KEYS) - len(discord.missing_channels)
+    lines = [
+        "## 🔌 Discord Routing Audit",
+        f"Automated channels **{connected}/{len(AUTOMATED_CHANNEL_KEYS)} connected**",
+        "Trade journal forum **connected** · Required tags **connected**",
+    ]
+    if discord.missing_channels:
+        lines.append("❌ Missing: " + ", ".join(f"#{name}" for name in discord.missing_channels))
+    else:
+        lines.append("✅ Scanner, trade lifecycle, results, reports, performance, and system routing verified.")
+    lines.append("Manual channels are intentionally not modified by TradeBot.")
+    lines.append(f"Checked **{timestamp.strftime('%m/%d/%y %-I:%M %p CT')}**")
+    return "\n".join(lines)[:2000]
+
+
+def publish_channel_audit(
+    discord: DiscordTracker,
+    state: dict[str, Any],
+    timestamp: datetime,
+) -> None:
+    if not discord.ready:
+        return
+    content = format_channel_audit(discord, timestamp)
+    discord.upsert_channel_message(
+        "status",
+        state,
+        "channel-audit",
+        content,
+        search_token="Discord Routing Audit",
+    )
+    if discord.missing_channels:
+        discord.upsert_channel_message(
+            "errors",
+            state,
+            "missing-discord-channels",
+            "🚨 **Discord routing audit failed**\nMissing: "
+            + ", ".join(f"#{name}" for name in discord.missing_channels),
+            search_token="Discord routing audit failed",
+        )
+
+
+def format_qualified_scan(
+    qualified: list[dict[str, Any]],
+    eligible: list[dict[str, Any]],
+    selected: list[dict[str, Any]],
+    timestamp: datetime,
+) -> str:
+    run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
+    lines = [
+        f"## ✅ Qualified Scan · Run #{run_number}",
+        (
+            f"Passed all filters **{len(qualified)}** · "
+            f"New eligible **{len(eligible)}** · Opened **{len(selected)}**"
+        ),
+    ]
+    if qualified:
+        lines.append("### Highest-Ranked Setups")
+        ranked = sorted(qualified, key=lambda candidate: candidate.get("score", 0), reverse=True)
+        lines.extend(candidate_brief(candidate) for candidate in ranked[:8])
+        if len(ranked) > 8:
+            lines.append(f"…and **{len(ranked) - 8}** additional qualified setup(s).")
+    else:
+        lines.append("No setup passed every filter on this run.")
+    lines.append(f"Scanned **{timestamp.strftime('%m/%d/%y %-I:%M %p CT')}**")
+    return "\n".join(lines)[:2000]
+
+def format_scanner_feed(
+    stats: dict[str, Any],
+    *,
+    spot_price: float,
+    eligible_count: int,
+    selected_count: int,
+    closed_count: int,
+    hold_count: int,
+    open_count: int,
+    timestamp: datetime,
+) -> str:
+    run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "local")
+    expirations = stats.get("expirations") or []
+    expiration_text = ", ".join(
+        f"{item['bucket']} {format_expiration(item['expiration'])}"
+        for item in expirations
+    ) or "none available"
+    by_strategy = stats.get("candidate_counts") or {}
+    strategy_text = " · ".join(
+        f"{label} **{count}**" for label, count in by_strategy.items() if count
+    ) or "none"
+    return "\n".join([
+        f"## 📡 Ford Scan · Run #{run_number}",
+        f"**{timestamp.strftime('%m/%d/%y %-I:%M %p CT')}** · Trigger **{event_name}** · Spot **${spot_price:.2f}**",
+        f"Expirations: **{expiration_text}**",
+        (
+            f"Contracts received **{stats.get('raw_contracts', 0)}** · "
+            f"Inside strike band **{stats.get('band_contracts', 0)}** · "
+            f"Calls **{stats.get('calls', 0)}** · Puts **{stats.get('puts', 0)}**"
+        ),
+        f"Passed filters **{stats.get('qualified_candidates', 0)}** · New eligible **{eligible_count}** · Opened **{selected_count}**",
+        f"Qualified mix: {strategy_text}",
+        f"Lifecycle: HOLD **{hold_count}** · Closed this run **{closed_count}** · Open total **{open_count}**",
+    ])[:2000]
+
+
+def format_closed_scanner_feed(rows: list[dict[str, str]], timestamp: datetime) -> str:
+    run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "local")
+    return "\n".join([
+        f"## 📡 Ford Scan · Run #{run_number}",
+        f"**{timestamp.strftime('%m/%d/%y %-I:%M %p CT')}** · Trigger **{event_name}**",
+        "⚫ Market closed. No option-chain scan was performed.",
+        f"Maintenance sync completed · Open/HOLD positions **{len(open_rows(rows))}**",
+    ])
 
 
 def update_performance_pages(
@@ -1935,37 +2300,64 @@ def update_performance_pages(
     )
 
 
-def post_reports_if_due(
+def sync_reports(
     discord: DiscordTracker,
     state: dict[str, Any],
     rows: list[dict[str, str]],
     timestamp: datetime,
+    *,
+    market_open: bool,
 ) -> None:
     if not discord.ready:
         return
 
-    report_date = timestamp.date()
-    date_key = report_date.isoformat()
-    if state.get("daily_report_date") != date_key:
-        discord.send_channel(
+    today = timestamp.date()
+    historical_dates = {
+        parsed.date()
+        for row in closed_rows(rows)
+        if (parsed := parse_iso(row.get("closed_at"))) is not None
+    }
+    daily_dates = sorted(historical_dates | {today})[-30:]
+    for report_date in daily_dates:
+        date_key = report_date.isoformat()
+        daily = format_daily_recap(
+            rows,
+            report_date,
+            market_open=market_open and report_date == today,
+        )
+        discord.upsert_channel_message(
             "daily_recap",
-            content=format_daily_recap(rows, report_date),
+            state,
+            f"daily-recap:{date_key}",
+            daily,
+            search_token=f"Daily Recap · {report_date.strftime('%m/%d/%y')}",
         )
-        state["daily_report_date"] = date_key
 
-    iso_year, iso_week, _ = report_date.isocalendar()
-    week_key = f"{iso_year}-W{iso_week:02d}"
-    if report_date.weekday() == 4 and state.get("weekly_report_key") != week_key:
-        discord.send_channel(
+    week_starts = {
+        report_date - timedelta(days=report_date.weekday())
+        for report_date in daily_dates
+    }
+    for monday in sorted(week_starts)[-12:]:
+        current_week = monday <= today <= monday + timedelta(days=6)
+        report_end = today if current_week else monday + timedelta(days=4)
+        iso_year, iso_week, _ = monday.isocalendar()
+        week_key = f"{iso_year}-W{iso_week:02d}"
+        weekly = format_weekly_report(rows, report_end)
+        discord.upsert_channel_message(
             "weekly_report",
-            content=format_weekly_report(rows, report_date),
+            state,
+            f"weekly-report:{week_key}",
+            weekly,
+            search_token=f"Weekly Report · {monday.strftime('%m/%d')}",
         )
-        state["weekly_report_key"] = week_key
+
+    state["daily_report_date"] = today.isoformat()
+    iso_year, iso_week, _ = today.isocalendar()
+    state["weekly_report_key"] = f"{iso_year}-W{iso_week:02d}"
 
 
 # ---------------------------------------------------------------------------
-# Dashboard
-
+# Main orchestration
 # ---------------------------------------------------------------------------
 
 
@@ -2090,7 +2482,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click
 # Main orchestration
 # ---------------------------------------------------------------------------
 
-
 def initialize_discord() -> DiscordTracker:
     tracker = DiscordTracker(DISCORD_BOT_TOKEN, DISCORD_GUILD_ID)
     if tracker.enabled:
@@ -2098,7 +2489,9 @@ def initialize_discord() -> DiscordTracker:
     return tracker
 
 
-def scan_candidates(spot_price: float) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+def scan_candidates(
+    spot_price: float,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
     expirations = get_expirations(TICKER)
     near_expirations, swing_expirations = pick_expirations(expirations, now_ct().date())
     candidate_expirations: list[tuple[str, str]] = []
@@ -2107,29 +2500,55 @@ def scan_candidates(spot_price: float) -> tuple[list[dict[str, Any]], dict[str, 
     if swing_expirations:
         candidate_expirations.append((swing_expirations[0], "SWING"))
 
+    stats: dict[str, Any] = {
+        "expirations": [],
+        "raw_contracts": 0,
+        "band_contracts": 0,
+        "calls": 0,
+        "puts": 0,
+        "qualified_candidates": 0,
+        "candidate_counts": {},
+    }
     candidates: list[dict[str, Any]] = []
     quote_map: dict[str, dict[str, Any]] = {}
+
+    def add_candidates(label: str, found: list[dict[str, Any]]) -> None:
+        candidates.extend(found)
+        stats["candidate_counts"][label] = stats["candidate_counts"].get(label, 0) + len(found)
+
     for expiration, bucket in candidate_expirations:
+        stats["expirations"].append({"expiration": expiration, "bucket": bucket})
         allowed_strikes = set(filter_strikes(get_strikes(TICKER, expiration), spot_price))
-        chain = [option for option in get_chain(TICKER, expiration) if float(option.get("strike", -1)) in allowed_strikes]
+        raw_chain = get_chain(TICKER, expiration)
+        stats["raw_contracts"] += len(raw_chain)
+        chain = [
+            option for option in raw_chain
+            if float(option.get("strike", -1)) in allowed_strikes
+        ]
+        stats["band_contracts"] += len(chain)
         for option in chain:
             if option.get("symbol"):
                 quote_map[option["symbol"]] = option
         calls = [option for option in chain if option.get("option_type") == "call"]
         puts = [option for option in chain if option.get("option_type") == "put"]
+        stats["calls"] += len(calls)
+        stats["puts"] += len(puts)
         if bucket == "NEAR":
-            candidates.extend(scan_credit_spreads(calls, "call", expiration))
-            candidates.extend(scan_credit_spreads(puts, "put", expiration))
-            candidates.extend(scan_single_legs(calls, "call", expiration, "REGULAR"))
-            candidates.extend(scan_single_legs(puts, "put", expiration, "REGULAR"))
+            add_candidates("Call spreads", scan_credit_spreads(calls, "call", expiration))
+            add_candidates("Put spreads", scan_credit_spreads(puts, "put", expiration))
+            add_candidates("Regular calls", scan_single_legs(calls, "call", expiration, "REGULAR"))
+            add_candidates("Regular puts", scan_single_legs(puts, "put", expiration, "REGULAR"))
         else:
-            candidates.extend(scan_single_legs(calls, "call", expiration, "SWING"))
-            candidates.extend(scan_single_legs(puts, "put", expiration, "SWING"))
-    return candidates, quote_map
-
+            add_candidates("Swing calls", scan_single_legs(calls, "call", expiration, "SWING"))
+            add_candidates("Swing puts", scan_single_legs(puts, "put", expiration, "SWING"))
+    stats["qualified_candidates"] = len(candidates)
+    return candidates, quote_map, stats
 
 def report_error(discord: DiscordTracker | None, message: str) -> None:
-    safe_message = message.replace(TRADIER_TOKEN, "[REDACTED]").replace(DISCORD_BOT_TOKEN, "[REDACTED]")
+    safe_message = message
+    for secret in (TRADIER_TOKEN, DISCORD_BOT_TOKEN, DISCORD_WEBHOOK_URL):
+        if secret:
+            safe_message = safe_message.replace(secret, "[REDACTED]")
     print(safe_message, file=sys.stderr)
     if discord and discord.ready:
         safe_discord_call("error alert", lambda: discord.send_channel("errors", content=f"🚨 **Ford scanner error**\n```{safe_message[:1500]}```"))
@@ -2149,6 +2568,10 @@ def main() -> int:
         discord = DiscordTracker("", "")
 
     report_state = read_report_state()
+    safe_discord_call(
+        "channel audit",
+        lambda: publish_channel_audit(discord, report_state, timestamp),
+    )
     safe_discord_call(
         "server pages",
         lambda: ensure_static_server_pages(discord, report_state),
@@ -2178,6 +2601,11 @@ def main() -> int:
         )
         print(f"Discord backfill: created {backfilled} open-trade forum thread(s).")
 
+    safe_discord_call(
+        "open trade channel sync",
+        lambda: sync_all_open_trade_cards(rows, discord, report_state),
+    )
+
     is_open, timestamp = market_is_open_now()
     if not is_open:
         closed_summary = (
@@ -2199,11 +2627,26 @@ def main() -> int:
             "performance pages",
             lambda: update_performance_pages(discord, report_state, rows),
         )
-        if timestamp.hour >= MARKET_CLOSE[0]:
-            safe_discord_call(
-                "scheduled reports",
-                lambda: post_reports_if_due(discord, report_state, rows, timestamp),
-            )
+        safe_discord_call(
+            "report sync",
+            lambda: sync_reports(
+                discord,
+                report_state,
+                rows,
+                timestamp,
+                market_open=False,
+            ),
+        )
+        safe_discord_call(
+            "closed scanner feed",
+            lambda: discord.upsert_channel_message(
+                "scanner_feed",
+                report_state,
+                f"scanner-closed:{timestamp.date().isoformat()}",
+                format_closed_scanner_feed(rows, timestamp),
+                search_token="Market closed. No option-chain scan was performed.",
+            ),
+        )
         safe_discord_call(
             "workflow log",
             lambda: post_workflow_log(
@@ -2229,9 +2672,15 @@ def main() -> int:
         open_quote_map = get_quotes(symbols_for_rows(currently_open), include_greeks=True)
         closed_count = 0
         material_updates = 0
+        hold_count = 0
         for row in list(currently_open):
             evaluation = evaluate_open_row(row, open_quote_map, timestamp)
             if evaluation.get("pl_pct") is None:
+                hold_count += 1
+                safe_discord_call(
+                    "position board quote warning",
+                    lambda r=row, e=evaluation: sync_open_trade_cards(r, discord, report_state, e),
+                )
                 continue
             signal = evaluation.get("signal")
             if signal in {"STOP OUT", "TAKE PROFIT", "EXPIRY CLOSE"}:
@@ -2239,13 +2688,18 @@ def main() -> int:
                 safe_discord_call("close routing", lambda r=row, e=evaluation: post_close(r, e, discord, report_state))
                 closed_count += 1
             else:
+                hold_count += 1
                 before = row.get("last_discord_update_at")
-                safe_discord_call("position update", lambda r=row, e=evaluation: post_material_update(r, e, discord, timestamp))
+                safe_discord_call("journal position update", lambda r=row, e=evaluation: post_material_update(r, e, discord, timestamp))
+                safe_discord_call(
+                    "position board sync",
+                    lambda r=row, e=evaluation: sync_open_trade_cards(r, discord, report_state, e),
+                )
                 if row.get("last_discord_update_at") != before:
                     material_updates += 1
 
         # Scan for new candidates and choose the highest-quality unique set.
-        candidates, candidate_quote_map = scan_candidates(spot_price)
+        candidates, candidate_quote_map, scan_stats = scan_candidates(spot_price)
         eligible = [candidate for candidate in candidates if not recently_tracked(rows, candidate, timestamp)]
         eligible.sort(key=lambda candidate: candidate.get("score", 0), reverse=True)
         selected = eligible[:MAX_NEW_PLAYS_PER_SCAN]
@@ -2255,7 +2709,7 @@ def main() -> int:
             row = candidate_to_row(candidate, rows, timestamp)
             rows.append(row)
             new_rows.append(row)
-            safe_discord_call("new trade post", lambda r=row: post_new_trade(r, discord))
+            safe_discord_call("new trade post", lambda r=row: post_new_trade(r, discord, report_state))
 
         # Give newly opened rows their initial zero-P&L values and preserve all state.
         all_quotes = {**open_quote_map, **candidate_quote_map}
@@ -2264,12 +2718,18 @@ def main() -> int:
             if evaluation.get("pl_pct") is None:
                 row["current_pl_pct"] = "0.0"
                 row["current_pl_dollars"] = "0.0"
+                evaluation = stored_open_evaluation(row)
+            hold_count += 1
+            safe_discord_call(
+                "new position board sync",
+                lambda r=row, e=evaluation: sync_open_trade_cards(r, discord, report_state, e),
+            )
 
         write_log(rows)
         summary = (
-            f"Spot ${spot_price:.2f} · {len(new_rows)} new play(s) · "
-            f"{closed_count} closed · {material_updates} material update(s) · "
-            f"{len(open_rows(rows))} open total."
+            f"Spot ${spot_price:.2f} · {scan_stats.get('raw_contracts', 0)} contracts scanned · "
+            f"{scan_stats.get('qualified_candidates', 0)} passed filters · {len(new_rows)} opened · "
+            f"{closed_count} closed · {hold_count} HOLD · {len(open_rows(rows))} open total."
         )
         render_dashboard(spot, rows, summary)
         safe_discord_call(
@@ -2288,6 +2748,46 @@ def main() -> int:
             lambda: update_performance_pages(discord, report_state, rows),
         )
         safe_discord_call(
+            "report sync",
+            lambda: sync_reports(
+                discord,
+                report_state,
+                rows,
+                timestamp,
+                market_open=True,
+            ),
+        )
+        run_number = os.environ.get("GITHUB_RUN_NUMBER", timestamp.strftime("%Y%m%d%H%M"))
+        safe_discord_call(
+            "qualified scan feed",
+            lambda: discord.upsert_channel_message(
+                "qualified",
+                report_state,
+                f"qualified-scan:{run_number}",
+                format_qualified_scan(candidates, eligible, selected, timestamp),
+                search_token=f"Qualified Scan · Run #{run_number}",
+            ),
+        )
+        safe_discord_call(
+            "scanner feed",
+            lambda: discord.upsert_channel_message(
+                "scanner_feed",
+                report_state,
+                f"scanner-run:{run_number}",
+                format_scanner_feed(
+                    scan_stats,
+                    spot_price=spot_price,
+                    eligible_count=len(eligible),
+                    selected_count=len(new_rows),
+                    closed_count=closed_count,
+                    hold_count=hold_count,
+                    open_count=len(open_rows(rows)),
+                    timestamp=timestamp,
+                ),
+                search_token=f"Ford Scan · Run #{run_number}",
+            ),
+        )
+        safe_discord_call(
             "workflow log",
             lambda: post_workflow_log(
                 discord,
@@ -2296,9 +2796,7 @@ def main() -> int:
             ),
         )
 
-        if discord.ready and (new_rows or closed_count):
-            safe_discord_call("scanner feed", lambda: discord.send_channel("scanner_feed", content=f"📡 **Ford scan complete**\n{summary}"))
-        elif not discord.ready and (new_rows or closed_count):
+        if not discord.ready and (new_rows or closed_count):
             notify_webhook([summary], title="Ford options scan")
 
         write_report_state(report_state)
