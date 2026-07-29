@@ -1,0 +1,47 @@
+# Save this file at: .github/workflows/ford-scan.yml  (create the .github/workflows/
+# folders yourself in your repo — GitHub only recognizes workflows in that exact path)
+
+name: Ford Options Scan
+
+on:
+  schedule:
+    # Every 5 minutes, every day. The script itself checks Central Time market
+    # hours (8:30am-3:00pm CT, Mon-Fri) and exits immediately outside that
+    # window, so this cron does NOT need DST-aware adjustment twice a year --
+    # keeping it broad and letting Python do the real gating avoids that bug
+    # class entirely. GitHub may add a few minutes of scheduling jitter/delay
+    # under load; that's normal and fine for this use case.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}   # lets you manually trigger a run from the Actions tab
+
+permissions:
+  contents: write   # required so the workflow can commit the updated log/dashboard back
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scan
+        env:
+          TRADIER_TOKEN: ${{ secrets.TRADIER_TOKEN }}
+          TRADIER_BASE_URL: ${{ secrets.TRADIER_BASE_URL }}
+          TRADIER_ACCOUNT_ID: ${{ secrets.TRADIER_ACCOUNT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python ford_scan.py
+
+      - name: Commit updated state + dashboard
+        run: |
+          git config user.name "ford-scan-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add state/ docs/
+          git diff --quiet --cached || git commit -m "Ford scan update: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
