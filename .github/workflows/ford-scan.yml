@@ -4,24 +4,19 @@ run-name: "Ford scan • ${{ github.event_name }} • #${{ github.run_number }}"
 
 on:
   schedule:
-    # Every 15 minutes during regular market hours in Central Time.
-    # Offset from common quarter-hour boundaries to reduce scheduler congestion.
+    # Every 15 minutes on weekdays across the UTC window covering
+    # Central Time market hours during both CDT and CST.
+    #
+    # Runs at :08, :23, :38, and :53.
+    # ford_scan.py performs the exact Central-Time market-hours check.
+    - cron: "8,23,38,53 13-21 * * 1-5"
 
-    # 8:38 AM and 8:53 AM CT
-    - cron: "38,53 8 * * 1-5"
-      timezone: "America/Chicago"
-
-    # Every 15 minutes from 9:08 AM through 2:53 PM CT
-    - cron: "8,23,38,53 9-14 * * 1-5"
-      timezone: "America/Chicago"
-
-  # Keeps the manual Run workflow button.
+  # Keeps the manual Run workflow button available.
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# Prevent a manual and scheduled run from editing the files simultaneously.
 concurrency:
   group: ford-options-scan
   cancel-in-progress: false
@@ -40,10 +35,10 @@ jobs:
       - name: Show trigger information
         shell: bash
         run: |
-          echo "Trigger type: $GITHUB_EVENT_NAME"
+          echo "Trigger: $GITHUB_EVENT_NAME"
           echo "Branch: $GITHUB_REF_NAME"
-          echo "UTC time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-          echo "Central time: $(TZ=America/Chicago date +'%Y-%m-%d %H:%M:%S %Z')"
+          echo "UTC: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "Central: $(TZ=America/Chicago date +'%Y-%m-%d %H:%M:%S %Z')"
 
       - name: Check out repository
         uses: actions/checkout@v6
@@ -105,6 +100,7 @@ jobs:
           TRADIER_TOKEN: ${{ secrets.TRADIER_TOKEN }}
           TRADIER_BASE_URL: ${{ secrets.TRADIER_BASE_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
         run: |
           python ford_scan.py
 
@@ -117,17 +113,17 @@ jobs:
           git add -A -- state docs
 
           if git diff --cached --quiet; then
-            echo "No trade-state or dashboard changes to commit."
+            echo "No state or dashboard changes to commit."
             exit 0
           fi
 
           git commit -m "Ford scan update: $(date -u +'%Y-%m-%d %H:%M UTC')"
 
-          if git push origin "HEAD:$GITHUB_REF_NAME"; then
+          if git push origin HEAD:main; then
             echo "Scanner updates pushed successfully."
             exit 0
           fi
 
           echo "Remote changed during the scan. Rebasing and retrying."
-          git pull --rebase origin "$GITHUB_REF_NAME"
-          git push origin "HEAD:$GITHUB_REF_NAME"
+          git pull --rebase origin main
+          git push origin HEAD:main
