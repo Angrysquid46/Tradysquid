@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Ford (F) options scanner + Discord paper-trade tracker.
 
