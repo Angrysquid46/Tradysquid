@@ -1,0 +1,14 @@
+{
+  "daily_report_date": "2026-07-29",
+  "guide_version": "1",
+  "messages": {
+    "page:admin_notes": "1532149209371906139",
+    "page:risk_management": "1532149208524787912",
+    "page:strategy_rules": "1532149207706894546",
+    "page:welcome": "1532149206725165166",
+    "performance-stats": "1532149210324140124",
+    "scanner-status": "1532149211913785504",
+    "strategy-breakdown": "1532149211213074634"
+  },
+  "weekly_report_key": ""
+}
