@@ -24,6 +24,7 @@ from typing import Any, Callable
 from urllib.parse import quote, quote_plus, urljoin
 
 import ford_scan
+import outcome_learning
 import requests
 import ticker_registry
 from run_with_env import load_env
@@ -1235,6 +1236,23 @@ def full_scanner_job(connection: sqlite3.Connection) -> str:
     return f"Options scan completed for {', '.join(results) or 'no active tickers'}"
 
 
+def outcome_learning_job(connection: sqlite3.Connection) -> str:
+    summary = outcome_learning.export_learning_archive()
+    store_observation(
+        connection,
+        "outcome-learning",
+        {
+            "closed_trades": summary["closed_trades"],
+            "evidence_ready_groups": len(summary["evidence_ready_groups"]),
+            "generated_at": summary["generated_at"],
+        },
+    )
+    return (
+        f"{summary['closed_trades']} closed trades; "
+        f"{len(summary['evidence_ready_groups'])} evidence-ready groups"
+    )
+
+
 @dataclass
 class Job:
     name: str
@@ -1273,6 +1291,11 @@ JOBS = [
         "upgrade-request-reactions",
         timedelta(minutes=1),
         upgrade_request_reactions_job,
+    ),
+    Job(
+        "outcome-learning",
+        timedelta(hours=6),
+        outcome_learning_job,
     ),
     Job(
         "full-options-scan",

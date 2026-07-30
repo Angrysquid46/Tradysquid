@@ -9,6 +9,7 @@ from unittest.mock import patch
 import discord_command_bot
 import local_information_engine as engine
 import multi_ticker_scan
+import outcome_learning
 import register_discord_commands
 import ticker_registry
 
@@ -98,6 +99,34 @@ class InformationEngineTests(unittest.TestCase):
         unknown = discord_command_bot.ask_reply("Predict tomorrow's exact winner")
         self.assertIn("do not have a reliable curated answer", unknown)
         self.assertIn("will not invent", unknown)
+
+    def test_outcome_learning_uses_all_tickers_without_auto_changes(self) -> None:
+        rows = [
+            {
+                "ticker": ticker,
+                "play_type": "LONG",
+                "call_or_put": "call",
+                "market_regime": "BULLISH",
+                "outcome": outcome,
+                "realized_pl_dollars": pnl,
+                "dte_at_entry": 30,
+            }
+            for ticker, outcome, pnl in (
+                ("F", "WIN", "5"),
+                ("VALE", "LOSS", "-3"),
+            )
+        ]
+        summary = outcome_learning.summarize(rows)
+        ticker_groups = {
+            item["value"]
+            for item in summary["groups"]
+            if item["feature"] == "ticker"
+        }
+        self.assertEqual(ticker_groups, {"F", "VALE"})
+        self.assertIn(
+            "No scanner filters are changed automatically.",
+            summary["guardrails"],
+        )
 
     def test_every_ticker_market_command_accepts_dynamic_ticker(self) -> None:
         ticker_commands = {
