@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import subprocess
 import threading
 from pathlib import Path
 from typing import Any
@@ -303,6 +304,50 @@ def require_ticker_admin(interaction: dict[str, Any]) -> None:
         raise PermissionError("Only the configured server owner can manage tickers.")
 
 
+def publish_ticker_configuration() -> str:
+    """Commit and push only the tracked ticker list for cloud-backup parity."""
+    root = Path(__file__).resolve().parent
+    add = subprocess.run(
+        ["git", "add", "--", "config/tickers.json"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    if add.returncode:
+        raise RuntimeError("Could not stage the tracked ticker configuration.")
+    changed = subprocess.run(
+        ["git", "diff", "--cached", "--quiet", "--", "config/tickers.json"],
+        cwd=root,
+        timeout=20,
+    )
+    if changed.returncode == 0:
+        return "GitHub ticker configuration already matched."
+    if changed.returncode != 1:
+        raise RuntimeError("Could not verify the tracked ticker configuration.")
+    commit = subprocess.run(
+        ["git", "commit", "-m", "Sync active ticker configuration"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if commit.returncode:
+        raise RuntimeError("Could not commit the tracked ticker configuration.")
+    push = subprocess.run(
+        ["git", "push", "origin", "HEAD:main"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if push.returncode:
+        raise RuntimeError(
+            "Ticker changed locally, but GitHub sync failed. Run the sync again."
+        )
+    return "GitHub backup ticker configuration synchronized."
+
+
 def ticker_add_reply(interaction: dict[str, Any]) -> str:
     require_ticker_admin(interaction)
     ticker = ticker_registry.normalize_ticker(
@@ -316,6 +361,7 @@ def ticker_add_reply(interaction: dict[str, Any]) -> str:
     if not expirations:
         raise ValueError(f"{ticker} does not currently have a usable options chain.")
     item = ticker_registry.provision_discord_desk(ticker)
+    sync_status = publish_ticker_configuration()
     return "\n".join([
         f"✅ **{ticker} fully integrated**",
         f"Verified price: **${price:.2f}** · listed expirations: **{len(expirations)}**",
@@ -323,6 +369,7 @@ def ticker_add_reply(interaction: dict[str, Any]) -> str:
         "Status: **ACTIVE** · scheduled research and eligible trade scanning enabled.",
         f"Category ID: `{item.get('category_id')}`",
         "Existing positions remain in the shared lifecycle desk.",
+        sync_status,
     ])
 
 
@@ -331,13 +378,14 @@ def ticker_pause_reply(interaction: dict[str, Any]) -> str:
     ticker = str(option_value(interaction, "ticker", ""))
     duration = str(option_value(interaction, "duration", "today"))
     item = ticker_registry.pause(ticker, today_only=duration == "today")
+    sync_status = publish_ticker_configuration()
     resume = (
         f" It will resume automatically on **{item['resume_on']}**."
         if item.get("resume_on") else " Use `/ticker-resume` to enable it again."
     )
     return (
         f"⏸️ **{item['ticker']} paused.** No new positions will be generated."
-        f"{resume} Existing positions continue to be tracked."
+        f"{resume} Existing positions continue to be tracked. {sync_status}"
     ).replace("Ford", ticker)
 
 
@@ -346,9 +394,10 @@ def ticker_resume_reply(interaction: dict[str, Any]) -> str:
     ticker = str(option_value(interaction, "ticker", ""))
     ticker_registry.rename_category(ticker, archived=False)
     item = ticker_registry.resume(ticker)
+    sync_status = publish_ticker_configuration()
     return (
         f"▶️ **{item['ticker']} resumed.** Scheduled research and eligible "
-        "trade generation are active."
+        f"trade generation are active. {sync_status}"
     )
 
 
@@ -357,12 +406,14 @@ def ticker_remove_reply(interaction: dict[str, Any]) -> str:
     ticker = str(option_value(interaction, "ticker", ""))
     item = ticker_registry.archive(ticker)
     ticker_registry.rename_category(ticker, archived=True)
+    sync_status = publish_ticker_configuration()
     return "\n".join([
         f"📦 **{item['ticker']} archived.**",
         "No new positions will be generated.",
         "Channels, trade history, performance, and filters were preserved.",
         "Any existing position will continue through the shared lifecycle until closed.",
         "Use `/ticker-resume` to restore it.",
+        sync_status,
     ])
 
 

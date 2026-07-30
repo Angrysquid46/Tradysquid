@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import discord_command_bot
 import local_information_engine as engine
+import multi_ticker_scan
 import register_discord_commands
 import ticker_registry
 
@@ -235,6 +236,40 @@ class InformationEngineTests(unittest.TestCase):
             self.assertTrue(trade_id.startswith("VALE-"))
         finally:
             engine.ford_scan.TICKER = original
+
+    def test_tracked_config_drives_all_active_backup_tickers(self) -> None:
+        original = multi_ticker_scan.TICKER_CONFIG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / "tickers.json"
+            config.write_text(
+                """
+                {
+                  "version": 1,
+                  "tickers": [
+                    {"ticker": "F", "status": "ACTIVE", "resume_on": ""},
+                    {"ticker": "VALE", "status": "ACTIVE", "resume_on": ""},
+                    {"ticker": "XYZ", "status": "ARCHIVED", "resume_on": ""}
+                  ]
+                }
+                """,
+                encoding="utf-8",
+            )
+            multi_ticker_scan.TICKER_CONFIG_PATH = config
+            self.assertEqual(
+                multi_ticker_scan.configured_active_tickers(),
+                ["VALE", "F"],
+            )
+        multi_ticker_scan.TICKER_CONFIG_PATH = original
+
+    def test_github_backup_workflow_runs_multi_ticker_entrypoint(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parent
+            / ".github"
+            / "workflows"
+            / "ford-scan.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("python multi_ticker_scan.py", workflow)
+        self.assertIn("Multi-Ticker Options Scan", workflow)
 
     def test_ticker_pause_resume_and_archive_preserve_registry(self) -> None:
         original = ticker_registry.DB_PATH

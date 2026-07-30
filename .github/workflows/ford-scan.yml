@@ -1,6 +1,6 @@
-name: Ford Options Scan
+name: Multi-Ticker Options Scan
 
-run-name: "Ford scan • ${{ github.event_name }} • #${{ github.run_number }}"
+run-name: "Ticker scan • ${{ github.event_name }} • #${{ github.run_number }}"
 
 on:
   # Local monitoring is the primary scheduler. Keep this as an on-demand
@@ -11,12 +11,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: ford-options-scan
+  group: multi-ticker-options-scan
   cancel-in-progress: false
 
 jobs:
   scan:
-    name: Scan and update Ford plays
+    name: Scan all active ticker strategies
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -53,7 +53,7 @@ jobs:
             -r requirements.txt
 
       - name: Validate scanner syntax
-        run: python -m py_compile ford_scan.py
+        run: python -m py_compile ford_scan.py multi_ticker_scan.py ticker_registry.py
 
       - name: Verify required secrets
         shell: bash
@@ -103,7 +103,7 @@ jobs:
           mkdir -p state
           mkdir -p docs
 
-      - name: Run Ford options scanner
+      - name: Run all active ticker scanners
         env:
           TRADIER_TOKEN: ${{ secrets.TRADIER_TOKEN }}
           TRADIER_BASE_URL: ${{ secrets.TRADIER_BASE_URL }}
@@ -112,12 +112,12 @@ jobs:
           DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: |
-          python ford_scan.py
+          python multi_ticker_scan.py
 
       - name: Commit updated state and dashboard
         shell: bash
         run: |
-          git config user.name "ford-scan-bot"
+          git config user.name "ticker-scan-bot"
           git config user.email "actions@users.noreply.github.com"
 
           git add -A -- state docs
@@ -127,7 +127,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Ford scan update: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git commit -m "Ticker scan update: $(date -u +'%Y-%m-%d %H:%M UTC')"
 
           if git push origin HEAD:main; then
             echo "Scanner updates pushed successfully."

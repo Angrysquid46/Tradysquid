@@ -13,6 +13,7 @@ import ford_scan
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "state" / "ticker-registry.db"
+CONFIG_PATH = ROOT / "config" / "tickers.json"
 
 DESK_CHANNELS = {
     "dashboard": "{ticker}-dashboard",
@@ -59,8 +60,67 @@ def connect() -> sqlite3.Connection:
         """,
         (now_text(), now_text()),
     )
+    if DB_PATH == ROOT / "state" / "ticker-registry.db" and CONFIG_PATH.exists():
+        try:
+            configured = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            configured = {}
+        for item in configured.get("tickers") or []:
+            ticker = str(item.get("ticker") or "").strip().upper()
+            status = str(item.get("status") or "ACTIVE").strip().upper()
+            if (
+                not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,9}", ticker)
+                or status not in {"ACTIVE", "PAUSED", "ARCHIVED"}
+            ):
+                continue
+            connection.execute(
+                """
+                INSERT INTO tickers(
+                    ticker, status, added_at, updated_at, resume_on, note
+                ) VALUES (?, ?, ?, ?, ?, 'Loaded from tracked configuration')
+                ON CONFLICT(ticker) DO UPDATE SET
+                    status=excluded.status,
+                    resume_on=excluded.resume_on
+                """,
+                (
+                    ticker,
+                    status,
+                    now_text(),
+                    now_text(),
+                    str(item.get("resume_on") or ""),
+                ),
+            )
     connection.commit()
     return connection
+
+
+def export_tracked_config() -> None:
+    if DB_PATH != ROOT / "state" / "ticker-registry.db":
+        return
+    connection = sqlite3.connect(DB_PATH, timeout=10)
+    connection.row_factory = sqlite3.Row
+    try:
+        rows = connection.execute(
+            "SELECT ticker, status, resume_on FROM tickers ORDER BY ticker"
+        ).fetchall()
+    finally:
+        connection.close()
+    payload = {
+        "version": 1,
+        "tickers": [
+            {
+                "ticker": row["ticker"],
+                "status": row["status"],
+                "resume_on": row["resume_on"],
+            }
+            for row in rows
+        ],
+    }
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(
+        json.dumps(payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def row_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -154,6 +214,7 @@ def save(
         connection.commit()
     finally:
         connection.close()
+    export_tracked_config()
     return get(ticker) or {}
 
 
@@ -209,6 +270,7 @@ def refresh_daily_pauses() -> None:
         connection.commit()
     finally:
         connection.close()
+    export_tracked_config()
 
 
 def provision_discord_desk(ticker: str) -> dict[str, Any]:
