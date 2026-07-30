@@ -123,6 +123,10 @@ Start with `/help`. Examples:
 `/chart` defers immediately, builds a fresh PNG from Tradier data, and edits the
 Discord response with the chart attached.
 
+The same instructions are pinned in Discord under **Start Here → #bot-commands**.
+Run `python run_with_env.py setup_discord_guide.py` to refresh the guide without
+creating duplicate messages.
+
 ## Everyday startup
 
 After restarting the laptop:
