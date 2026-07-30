@@ -214,6 +214,13 @@ AUTOMATED_CHANNEL_KEYS = [
     "workflow_log",
 ]
 
+SYSTEM_CHANNEL_KEYS = {
+    "status",
+    "errors",
+    "workflow_log",
+    "admin_notes",
+}
+
 MANUAL_CHANNEL_KEYS = [
     "welcome",
     "strategy_rules",
@@ -229,6 +236,12 @@ MANUAL_CHANNEL_KEYS = [
 
 def now_ct() -> datetime:
     return datetime.now(MARKET_TZ)
+
+
+def portable_strftime(value: datetime, format_string: str) -> str:
+    """Support GNU's non-padded hour token on Windows as well as Linux."""
+    rendered = value.strftime(format_string.replace("%-I", "%I"))
+    return re.sub(r"(?<!\d)0(\d)(?=:)", r"\1", rendered)
 
 
 def as_float(value: Any, default: float | None = None) -> float | None:
@@ -619,7 +632,7 @@ def position_update_text(
         (
             f"**IV:** {fmt_iv(as_float(evaluation.get('iv'), as_float(row.get('iv_at_entry'))))}\n"
             f"**OI:** {fmt_oi(row.get('open_interest_at_entry'))} *(open interest)*\n"
-            f"**Last checked:** {now_ct().strftime('%m/%d/%y %-I:%M %p CT')}"
+            f"**Last checked:** {portable_strftime(now_ct(), '%m/%d/%y %-I:%M %p CT')}"
         ),
     ]
     if quote_note:
@@ -660,7 +673,7 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
         exit_line = f"**Exit credit:** {fmt_option_price(closing, approximate=approx)} ({'≈' if approx else ''}{fmt_money(exit_contract_value(row))})"
 
     closed_at = parse_iso(row.get("closed_at"))
-    closed_text = closed_at.strftime("%m/%d/%y %-I:%M %p CT") if closed_at else "—"
+    closed_text = portable_strftime(closed_at, "%m/%d/%y %-I:%M %p CT") if closed_at else "—"
     approx_prefix = "≈" if approx else ""
     lines = [
         f"## {icon} F #{sequence} · {outcome} · {strategy}",
@@ -1641,6 +1654,7 @@ class DiscordTracker:
         self.tag_ids: dict[str, str] = {}
         self.forum_id = ""
         self.missing_channels: list[str] = []
+        self.private_system_channels: set[str] = set()
 
     @property
     def enabled(self) -> bool:
@@ -1705,6 +1719,24 @@ class DiscordTracker:
             if channel:
                 self.channels[key] = channel["id"]
 
+        channel_by_id = {str(channel.get("id")): channel for channel in guild_channels}
+
+        def denies_everyone_view(channel: dict[str, Any] | None) -> bool:
+            if not channel:
+                return False
+            for overwrite in channel.get("permission_overwrites") or []:
+                if str(overwrite.get("id")) != self.guild_id or int(overwrite.get("type", -1)) != 0:
+                    continue
+                deny = int(overwrite.get("deny", 0))
+                return bool(deny & 1024)  # VIEW_CHANNEL
+            return False
+
+        for key in SYSTEM_CHANNEL_KEYS:
+            channel = by_name.get(CHANNEL_NAMES[key])
+            parent = channel_by_id.get(str(channel.get("parent_id"))) if channel else None
+            if denies_everyone_view(channel) or denies_everyone_view(parent):
+                self.private_system_channels.add(key)
+
         for tag in forum.get("available_tags") or []:
             normalized = normalized_name(tag.get("name", ""))
             for key in TAG_KEYS:
@@ -1721,6 +1753,13 @@ class DiscordTracker:
         ]
         self.ready = True
 
+    def ensure_private_system_route(self, logical_name: str) -> None:
+        if logical_name in SYSTEM_CHANNEL_KEYS and logical_name not in self.private_system_channels:
+            raise DiscordError(
+                f"Refusing to post system data to #{CHANNEL_NAMES[logical_name]} "
+                "because @everyone can view the channel or its privacy could not be verified"
+            )
+
     def send_channel(
         self,
         logical_name: str,
@@ -1731,6 +1770,7 @@ class DiscordTracker:
         channel_id = self.channels.get(logical_name)
         if not self.ready or not channel_id:
             return None
+        self.ensure_private_system_route(logical_name)
         payload: dict[str, Any] = {"allowed_mentions": {"parse": []}}
         if embed is None and content:
             embed = discord_card(content)
@@ -1752,6 +1792,7 @@ class DiscordTracker:
         channel_id = self.channels.get(logical_name)
         if not self.ready or not channel_id:
             return ""
+        self.ensure_private_system_route(logical_name)
         messages = state.setdefault("messages", {})
         hashes = state.setdefault("message_hashes", {})
         message_id = str(messages.get(state_key) or "")
@@ -2407,7 +2448,7 @@ def format_performance_stats(rows: list[dict[str, str]]) -> str:
         ),
         "### Current Exposure",
         f"⏸️ Open/HOLD positions **{open_count}** · Results use **1 contract per trade**",
-        f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**",
+        f"Updated **{portable_strftime(now_ct(), '%m/%d/%y %-I:%M %p CT')}**",
     ])[:2000]
 
 
@@ -2449,7 +2490,7 @@ def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
                     f"**Expectancy:** {metrics['expectancy_pct']:+.0f}%"
                 ),
             ])
-    lines.extend(["### Updated", now_ct().strftime("%m/%d/%y %-I:%M %p CT")])
+    lines.extend(["### Updated", portable_strftime(now_ct(), "%m/%d/%y %-I:%M %p CT")])
     return "\n".join(lines)
 
 def format_daily_recap(
@@ -2483,7 +2524,7 @@ def format_daily_recap(
     lines.extend([
         "### Positions Carried",
         f"⏸️ **{len(carried)} open/HOLD position(s)**",
-        f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**",
+        f"Updated **{portable_strftime(now_ct(), '%m/%d/%y %-I:%M %p CT')}**",
     ])
     return "\n".join(lines)[:2000]
 
@@ -2521,7 +2562,7 @@ def format_weekly_report(rows: list[dict[str, str]], report_date: date) -> str:
         ])
     else:
         lines.append("No trades closed this week.")
-    lines.append(f"Updated **{now_ct().strftime('%m/%d/%y %-I:%M %p CT')}**")
+    lines.append(f"Updated **{portable_strftime(now_ct(), '%m/%d/%y %-I:%M %p CT')}**")
     return "\n".join(lines)[:2000]
 
 def static_server_pages() -> dict[str, str]:
@@ -2566,7 +2607,7 @@ def update_scanner_status(
             f"**Open trades:** {len(open_rows(rows))}\n"
             f"**Trigger:** {event_name}\n"
             f"**Run:** #{run_number}\n"
-            f"**Last check:** {timestamp.strftime('%m/%d/%y %-I:%M:%S %p CT')}"
+            f"**Last check:** {portable_strftime(timestamp, '%m/%d/%y %-I:%M:%S %p CT')}"
         ),
     ])
     discord.upsert_channel_message("status", state, "scanner-status", content)
@@ -2617,11 +2658,19 @@ def format_result_channel_summary(rows: list[dict[str, str]], outcome: str) -> s
         "### Money",
         f"**{total_label}:** {total_value}",
         "### Updated",
-        now_ct().strftime("%m/%d/%y %-I:%M %p CT"),
+        portable_strftime(now_ct(), "%m/%d/%y %-I:%M %p CT"),
     ])
 
 def format_channel_audit(discord: DiscordTracker, timestamp: datetime) -> str:
     connected = len(AUTOMATED_CHANNEL_KEYS) - len(discord.missing_channels)
+    private_systems = sorted(
+        CHANNEL_NAMES[key] for key in SYSTEM_CHANNEL_KEYS
+        if key in discord.private_system_channels
+    )
+    privacy_issues = sorted(
+        CHANNEL_NAMES[key] for key in SYSTEM_CHANNEL_KEYS
+        if key in discord.channels and key not in discord.private_system_channels
+    )
     lines = [
         "## 🔌 Discord Routing Audit",
         "### Connections",
@@ -2629,19 +2678,26 @@ def format_channel_audit(discord: DiscordTracker, timestamp: datetime) -> str:
             f"**Automated channels:** {connected}/{len(AUTOMATED_CHANNEL_KEYS)} connected\n"
             f"**Trade journal forum:** Connected\n"
             f"**Required tags:** Connected\n"
-            f"**Card format:** Version {DISCORD_FORMAT_VERSION}"
+            f"**Card format:** Version {DISCORD_FORMAT_VERSION}\n"
+            f"**Private system channels:** {len(private_systems)}/{len(SYSTEM_CHANNEL_KEYS)} verified"
         ),
         "### Result",
     ]
-    if discord.missing_channels:
+    if privacy_issues:
+        lines.append(
+            "❌ Unsafe system visibility: "
+            + ", ".join(f"#{name}" for name in privacy_issues)
+            + ". Technical posts to these channels are blocked."
+        )
+    elif discord.missing_channels:
         lines.append("❌ Missing: " + ", ".join(f"#{name}" for name in discord.missing_channels))
     else:
-        lines.append("✅ Scanner, lifecycle, results, reports, performance, and system routing verified.")
+        lines.append("✅ Trading content is public-facing; diagnostics remain in the private SYSTEM category.")
     lines.extend([
         "### Manual Channels",
         "Welcome, rules, risk management, server guide, and admin notes are not modified.",
         "### Checked",
-        timestamp.strftime("%m/%d/%y %-I:%M %p CT"),
+        portable_strftime(timestamp, "%m/%d/%y %-I:%M %p CT"),
     ])
     return "\n".join(lines)
 
@@ -2678,9 +2734,8 @@ def format_qualified_scan(
     selected: list[dict[str, Any]],
     timestamp: datetime,
 ) -> str:
-    run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
     lines = [
-        f"## ✅ Qualified Scan · Run #{run_number}",
+        "## ✅ Qualified Ford Call Setups",
         "### Filter Results",
         (
             f"**Passed all filters:** {len(qualified)}\n"
@@ -2696,7 +2751,7 @@ def format_qualified_scan(
             lines.append(f"…and **{len(ranked) - 8}** additional qualified setup(s).")
     else:
         lines.append("No setup passed every filter on this run.")
-    lines.extend(["### Scan Time", timestamp.strftime("%m/%d/%y %-I:%M %p CT")])
+    lines.extend(["### Scan Time", portable_strftime(timestamp, "%m/%d/%y %-I:%M %p CT")])
     return "\n".join(lines)
 
 
@@ -2711,8 +2766,6 @@ def format_scanner_feed(
     open_count: int,
     timestamp: datetime,
 ) -> str:
-    run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
-    event_name = os.environ.get("GITHUB_EVENT_NAME", "local")
     expirations = stats.get("expirations") or []
     expiration_text = "\n".join(
         f"• **{item['bucket']}:** {format_expiration(item['expiration'])}"
@@ -2734,11 +2787,10 @@ def format_scanner_feed(
         f"• **{label}:** {count}" for label, count in by_strategy.items() if count
     ) or "None"
     return "\n".join([
-        f"## 📡 Ford Scan · Run #{run_number}",
+        "## 📡 Ford Call Scanner",
         "### Market",
         (
-            f"**Time:** {timestamp.strftime('%m/%d/%y %-I:%M %p CT')}\n"
-            f"**Trigger:** {event_name}\n"
+            f"**Time:** {portable_strftime(timestamp, '%m/%d/%y %-I:%M %p CT')}\n"
             f"**Ford spot:** {fmt_option_price(spot_price)}"
         ),
         "### Expirations",
@@ -2769,15 +2821,12 @@ def format_scanner_feed(
 
 
 def format_closed_scanner_feed(rows: list[dict[str, str]], timestamp: datetime) -> str:
-    run_number = os.environ.get("GITHUB_RUN_NUMBER", "—")
-    event_name = os.environ.get("GITHUB_EVENT_NAME", "local")
     return "\n".join([
-        f"## 📡 Ford Scan · Run #{run_number}",
+        "## 📡 Ford Call Scanner",
         "### Market",
         (
             f"**Status:** Closed\n"
-            f"**Time:** {timestamp.strftime('%m/%d/%y %-I:%M %p CT')}\n"
-            f"**Trigger:** {event_name}"
+            f"**Time:** {portable_strftime(timestamp, '%m/%d/%y %-I:%M %p CT')}"
         ),
         "### Maintenance Sync",
         (
@@ -3074,7 +3123,6 @@ def report_error(discord: DiscordTracker | None, message: str) -> None:
     print(safe_message, file=sys.stderr)
     if discord and discord.ready:
         safe_discord_call("error alert", lambda: discord.send_channel("errors", content=f"🚨 **Ford scanner error**\n```{safe_message[:1500]}```"))
-    notify_webhook([safe_message[:1500]], title="Ford scanner error")
 
 
 def main() -> int:
@@ -3184,7 +3232,7 @@ def main() -> int:
                 result=f"OK · market closed · {len(open_rows(rows))} open",
             ),
         )
-        render_dashboard(None, rows, f"Market closed at {timestamp.strftime('%-I:%M %p %Z')}; maintenance sync only.")
+        render_dashboard(None, rows, f"Market closed at {portable_strftime(timestamp, '%-I:%M %p %Z')}; maintenance sync only.")
         write_log(rows)
         write_report_state(report_state)
         print(f"Market closed ({timestamp.isoformat()}); maintenance sync complete.")
@@ -3298,7 +3346,7 @@ def main() -> int:
                 report_state,
                 f"qualified-scan:{run_number}",
                 format_qualified_scan(candidates, eligible, selected, timestamp),
-                search_token=f"Qualified Scan · Run #{run_number}",
+                search_token="Qualified Ford Call Setups",
             ),
         )
         safe_discord_call(
@@ -3317,7 +3365,7 @@ def main() -> int:
                     open_count=len(open_rows(rows)),
                     timestamp=timestamp,
                 ),
-                search_token=f"Ford Scan · Run #{run_number}",
+                search_token="Ford Call Scanner",
             ),
         )
         safe_discord_call(

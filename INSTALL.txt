@@ -23,6 +23,10 @@ Discord requirements:
                  position-updates, exit-alerts, wins, losses,
                  scratches, scanner-status, api-errors
 
+  Keep scanner-status, api-errors, workflow-log, and admin-notes inside a
+  private SYSTEM category. TradeBot verifies that @everyone cannot view
+  these channels and refuses to post technical details if privacy is lost.
+
   Forum tags must contain these words; emoji prefixes are supported:
   OPEN, HOLDING, TARGET HIT, STOP WARNING, WIN, LOSS, SCRATCH
 
