@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import threading
 from pathlib import Path
 from typing import Any
@@ -19,15 +20,29 @@ from nacl.signing import VerifyKey
 
 import ford_scan
 import local_information_engine as info_engine
+import ticker_registry
 
 HOST = os.environ.get("COMMAND_BOT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("COMMAND_BOT_PORT", "8080"))
+LOCK_PORT = int(os.environ.get("COMMAND_BOT_LOCK_PORT", "8081"))
 PUBLIC_KEY = os.environ.get("DISCORD_PUBLIC_KEY", "").strip()
 ALLOWED_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 ALLOWED_USER_ID = os.environ.get("DISCORD_ALLOWED_USER_ID", "").strip()
 
 APP = Flask(__name__)
 CHART_LOCK = threading.Lock()
+
+
+def acquire_instance_lock() -> socket.socket:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+    try:
+        listener.bind((HOST, LOCK_PORT))
+        listener.listen(1)
+    except OSError as exc:
+        listener.close()
+        raise RuntimeError("The Discord command service is already running.") from exc
+    return listener
 
 
 def command_user_id(interaction: dict[str, Any]) -> str:
@@ -209,9 +224,112 @@ def help_reply() -> str:
         "`/why trade_id:` — show the recorded rationale for a tracked trade",
         "`/status`, `/dataage`, `/lastscan`, `/schedule` — system reliability",
         "`/explain topic:` — plain-language options education",
+        "`/ticker-add`, `/ticker-pause`, `/ticker-resume`, `/ticker-remove` — owner ticker controls",
+        "`/ticker-list` and `/ticker-status` — integrated strategy status",
         "",
         "Select a command after typing `/`, complete its fields, then press Send.",
         "Educational information only—not professional financial advice.",
+    ])
+
+
+def require_ticker_admin(interaction: dict[str, Any]) -> None:
+    if not ALLOWED_USER_ID:
+        raise PermissionError(
+            "Ticker editing is locked until DISCORD_ALLOWED_USER_ID is configured."
+        )
+    if command_user_id(interaction) != ALLOWED_USER_ID:
+        raise PermissionError("Only the configured server owner can manage tickers.")
+
+
+def ticker_add_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    ticker = ticker_registry.normalize_ticker(
+        str(option_value(interaction, "ticker", ""))
+    )
+    quote = ford_scan.get_quote(ticker) or {}
+    price = ford_scan.as_float(quote.get("last"))
+    if price is None:
+        raise ValueError(f"Tradier could not verify stock ticker {ticker}.")
+    expirations = ford_scan.get_expirations(ticker)
+    if not expirations:
+        raise ValueError(f"{ticker} does not currently have a usable options chain.")
+    item = ticker_registry.provision_discord_desk(ticker)
+    return "\n".join([
+        f"✅ **{ticker} fully integrated**",
+        f"Verified price: **${price:.2f}** · listed expirations: **{len(expirations)}**",
+        "Created or connected its five-channel information desk.",
+        "Status: **ACTIVE** · scheduled research and eligible trade scanning enabled.",
+        f"Category ID: `{item.get('category_id')}`",
+        "Existing positions remain in the shared lifecycle desk.",
+    ])
+
+
+def ticker_pause_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    ticker = str(option_value(interaction, "ticker", ""))
+    duration = str(option_value(interaction, "duration", "today"))
+    item = ticker_registry.pause(ticker, today_only=duration == "today")
+    resume = (
+        f" It will resume automatically on **{item['resume_on']}**."
+        if item.get("resume_on") else " Use `/ticker-resume` to enable it again."
+    )
+    return (
+        f"⏸️ **{item['ticker']} paused.** No new positions will be generated."
+        f"{resume} Existing positions continue to be tracked."
+    )
+
+
+def ticker_resume_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    ticker = str(option_value(interaction, "ticker", ""))
+    ticker_registry.rename_category(ticker, archived=False)
+    item = ticker_registry.resume(ticker)
+    return (
+        f"▶️ **{item['ticker']} resumed.** Scheduled research and eligible "
+        "trade generation are active."
+    )
+
+
+def ticker_remove_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    ticker = str(option_value(interaction, "ticker", ""))
+    item = ticker_registry.archive(ticker)
+    ticker_registry.rename_category(ticker, archived=True)
+    return "\n".join([
+        f"📦 **{item['ticker']} archived.**",
+        "No new positions will be generated.",
+        "Channels, trade history, performance, and filters were preserved.",
+        "Any existing position will continue through the shared lifecycle until closed.",
+        "Use `/ticker-resume` to restore it.",
+    ])
+
+
+def ticker_list_reply() -> str:
+    groups: dict[str, list[str]] = {"ACTIVE": [], "PAUSED": [], "ARCHIVED": []}
+    for item in ticker_registry.all_tickers():
+        groups.setdefault(str(item["status"]), []).append(str(item["ticker"]))
+    lines = ["📚 **Integrated ticker strategies**"]
+    for status in ("ACTIVE", "PAUSED", "ARCHIVED"):
+        values = groups.get(status) or []
+        lines.append(f"**{status.title()}:** {', '.join(values) if values else 'None'}")
+    lines.append(
+        "Ford is protected. Pausing or archiving never stops existing-position tracking."
+    )
+    return "\n".join(lines)
+
+
+def ticker_status_reply(ticker: str) -> str:
+    item = ticker_registry.get(ticker)
+    if not item:
+        return f"❌ `{ticker.upper()}` is not integrated."
+    return "\n".join([
+        f"🧩 **{item['ticker']} ticker strategy**",
+        f"Status: **{item['status']}**",
+        f"Resume date: **{item.get('resume_on') or 'manual / not applicable'}**",
+        f"Discord desk: **{'connected' if item.get('category_id') else 'not provisioned'}**",
+        f"Information channels: **{len(item.get('channels') or {})}/5**",
+        f"Last registry update: {item['updated_at']}",
+        f"Note: {item.get('note') or 'None'}",
     ])
 
 
@@ -528,7 +646,23 @@ def process_command(interaction: dict[str, Any]) -> None:
     token = str(interaction.get("token") or "")
     name = str(interaction.get("data", {}).get("name") or "")
     try:
-        if name == "chart":
+        if name == "ticker-add":
+            patch_original(application_id, token, content=ticker_add_reply(interaction))
+        elif name == "ticker-pause":
+            patch_original(application_id, token, content=ticker_pause_reply(interaction))
+        elif name == "ticker-resume":
+            patch_original(application_id, token, content=ticker_resume_reply(interaction))
+        elif name == "ticker-remove":
+            patch_original(application_id, token, content=ticker_remove_reply(interaction))
+        elif name == "ticker-list":
+            patch_original(application_id, token, content=ticker_list_reply())
+        elif name == "ticker-status":
+            patch_original(
+                application_id,
+                token,
+                content=ticker_status_reply(str(option_value(interaction, "ticker", ""))),
+            )
+        elif name == "chart":
             days = int(option_value(interaction, "days", 90))
             content, chart_path = chart_reply(days)
             patch_original(application_id, token, content=content, file_path=chart_path)
@@ -641,4 +775,9 @@ def interactions() -> Response:
 if __name__ == "__main__":
     if not PUBLIC_KEY:
         raise SystemExit("DISCORD_PUBLIC_KEY is required")
-    APP.run(host=HOST, port=PORT, debug=False, threaded=True)
+    try:
+        instance_lock = acquire_instance_lock()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
+    with instance_lock:
+        APP.run(host=HOST, port=PORT, debug=False, threaded=True)

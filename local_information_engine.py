@@ -14,14 +14,17 @@ import os
 import socket
 import sqlite3
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urljoin
 
 import ford_scan
 import requests
+import ticker_registry
 from run_with_env import load_env
 
 ROOT = Path(__file__).resolve().parent
@@ -33,6 +36,10 @@ MARKET_REFRESH_MINUTES = int(os.environ.get("LOCAL_MARKET_REFRESH_MINUTES", "5")
 FILINGS_REFRESH_MINUTES = int(os.environ.get("LOCAL_FILINGS_REFRESH_MINUTES", "30"))
 STATUS_REFRESH_MINUTES = int(os.environ.get("LOCAL_STATUS_REFRESH_MINUTES", "15"))
 FULL_SCAN_ENABLED = os.environ.get("LOCAL_FULL_SCAN_ENABLED", "false").lower() == "true"
+FORD_NEWS_URL = "https://shareholder.ford.com/news/default.aspx"
+FORD_NEWS_FEED_URL = (
+    "https://shareholder.ford.com/feed/PressRelease.svc/GetPressReleaseList"
+)
 
 
 def utc_now() -> datetime:
@@ -190,9 +197,9 @@ def average_true_range(history: list[dict[str, Any]], period: int = 14) -> float
     return sum(ranges[-period:]) / period if len(ranges) >= period else None
 
 
-def market_snapshot() -> dict[str, Any]:
-    quote = ford_scan.get_quote(ford_scan.TICKER) or {}
-    history = ford_scan.get_daily_history(ford_scan.TICKER, days=400)
+def market_snapshot(symbol: str = ford_scan.TICKER) -> dict[str, Any]:
+    quote = ford_scan.get_quote(symbol) or {}
+    history = ford_scan.get_daily_history(symbol, days=400)
     spot = ford_scan.as_float(quote.get("last"))
     if spot is None or not history:
         raise ford_scan.TradierError("Ford quote or price history is unavailable")
@@ -236,7 +243,7 @@ def market_snapshot() -> dict[str, Any]:
     support20 = min(closes[-20:]) if closes else spot
     resistance20 = max(closes[-20:]) if closes else spot
     return {
-        "symbol": ford_scan.TICKER,
+        "symbol": symbol,
         "observed_at": iso_now(),
         "price": spot,
         "previous_close": previous_close,
@@ -324,19 +331,22 @@ def option_quality(option: dict[str, Any], spot: float) -> dict[str, Any]:
 
 
 def ranked_option_chain(
-    side: str = "call", limit: int = 8, expiration: str | None = None
+    side: str = "call",
+    limit: int = 8,
+    expiration: str | None = None,
+    symbol: str = ford_scan.TICKER,
 ) -> list[dict[str, Any]]:
-    spot_quote = ford_scan.get_quote(ford_scan.TICKER) or {}
+    spot_quote = ford_scan.get_quote(symbol) or {}
     spot = ford_scan.as_float(spot_quote.get("last"))
     if spot is None:
         raise ford_scan.TradierError("Ford spot price is unavailable")
-    expirations = ford_scan.get_expirations(ford_scan.TICKER)
+    expirations = ford_scan.get_expirations(symbol)
     if expiration is None:
         _, swing = ford_scan.pick_expirations(expirations, ford_scan.now_ct().date())
         expiration = swing[0] if swing else next(iter(expirations), None)
     if not expiration:
         return []
-    chain = ford_scan.get_chain(ford_scan.TICKER, expiration)
+    chain = ford_scan.get_chain(symbol, expiration)
     ranked = [
         option_quality(option, spot)
         for option in chain
@@ -440,6 +450,169 @@ def discord_tracker() -> ford_scan.DiscordTracker | None:
     return tracker if tracker.ready else None
 
 
+def upsert_dashboard(
+    connection: sqlite3.Connection,
+    logical_channel: str,
+    state_key: str,
+    content: str,
+) -> bool:
+    """Maintain one bot-authored dashboard message per information channel."""
+    tracker = discord_tracker()
+    if not tracker:
+        return False
+    try:
+        state = json.loads(get_state(connection, "discord_dashboard_state", "{}"))
+    except json.JSONDecodeError:
+        state = {}
+    message_id = tracker.upsert_channel_message(
+        logical_channel,
+        state,
+        f"local-engine:{state_key}",
+        content,
+        search_token=f"Tradysquids {state_key}",
+    )
+    if not message_id:
+        return False
+    set_state(connection, "discord_dashboard_state", json.dumps(state))
+    return True
+
+
+def upsert_ticker_dashboard(
+    connection: sqlite3.Connection,
+    ticker: str,
+    channel_key: str,
+    card_key: str,
+    content: str,
+) -> bool:
+    item = ticker_registry.get(ticker)
+    channel_id = str((item or {}).get("channels", {}).get(channel_key) or "")
+    tracker = discord_tracker()
+    if not tracker or not channel_id:
+        return False
+    state_name = "dynamic_ticker_discord_state"
+    try:
+        state = json.loads(get_state(connection, state_name, "{}"))
+    except json.JSONDecodeError:
+        state = {}
+    messages = state.setdefault("messages", {})
+    state_key = f"{ticker}:{channel_key}:{card_key}"
+    message_id = str(messages.get(state_key) or "")
+    payload = {
+        "content": "",
+        "embeds": [ford_scan.discord_card(content[:6000])],
+        "allowed_mentions": {"parse": []},
+    }
+    if message_id:
+        try:
+            tracker._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
+        except ford_scan.DiscordError as exc:
+            if "HTTP 404" not in str(exc):
+                raise
+            message_id = ""
+    if not message_id:
+        created = tracker._request("POST", f"/channels/{channel_id}/messages", payload)
+        message_id = str((created or {}).get("id") or "")
+        if message_id:
+            messages[state_key] = message_id
+    set_state(connection, state_name, json.dumps(state))
+    return bool(message_id)
+
+
+def market_is_open() -> bool:
+    return bool(ford_scan.market_is_open_now()[0])
+
+
+def technicals_text(snapshot: dict[str, Any]) -> str:
+    def value(key: str, digits: int = 2) -> str:
+        item = snapshot.get(key)
+        return "Unavailable" if item is None else f"{float(item):.{digits}f}"
+
+    session = "LIVE MARKET" if market_is_open() else "AFTER-HOURS / LAST SNAPSHOT"
+    return "\n".join([
+        "## Tradysquids Technical Dashboard",
+        f"**{session}** · F **${value('price')}** · regime **{snapshot.get('regime')}**",
+        f"RSI14 **{value('rsi14', 1)}** · MACD **{value('macd', 3)}** · ATR14 **${value('atr14')}**",
+        f"SMA20 **${value('sma20')}** · SMA50 **${value('sma50')}** · SMA200 **${value('sma200')}**",
+        f"Bollinger range **${value('bollinger_lower')}–${value('bollinger_upper')}**",
+        f"Support **${value('support20')}** · resistance **${value('resistance20')}**",
+        f"Updated {snapshot.get('observed_at')}. Educational information only.",
+    ])
+
+
+def market_pulse_text(snapshot: dict[str, Any]) -> str:
+    session = "live" if market_is_open() else "closed; showing the latest available quote"
+    return (
+        "## Tradysquids Market Pulse\n"
+        f"Market is **{session}**.\n"
+        + market_alert_text(snapshot).replace("## Ford Local Market Monitor\n", "")
+    )
+
+
+def options_dashboard_text(snapshot: dict[str, Any], options: list[dict[str, Any]]) -> str:
+    lines = [
+        "## Tradysquids Options Chain",
+        (
+            "**Live scan**" if market_is_open()
+            else "**Market closed — quotes are the last available snapshot, not tradable prices.**"
+        ),
+        f"Ford spot **${float(snapshot['price']):.2f}** · ranked for liquidity and conservative delta.",
+    ]
+    if not options:
+        lines.append("No contract currently passes the available chain filters.")
+    for item in options[:5]:
+        delta = item.get("delta")
+        if delta is None:
+            lines.append(f"• `{item.get('symbol')}` · Greeks unavailable")
+            continue
+        width = item.get("width_pct")
+        width_text = "n/a" if width is None else f"{float(width) * 100:.1f}%"
+        lines.append(
+            f"• `{item.get('symbol')}` · ${float(item.get('strike') or 0):.2f} "
+            f"· bid/ask ${float(item.get('bid') or 0):.2f}/${float(item.get('ask') or 0):.2f} "
+            f"· Δ {float(delta):.2f} · OI {int(item.get('open_interest') or 0)} "
+            f"· vol {int(item.get('volume') or 0)} · spread {width_text} "
+            f"· {'PASS' if item.get('liquidity_pass') else 'WATCH'}"
+        )
+    lines.extend([
+        f"Updated {snapshot.get('observed_at')}.",
+        "Ranking is informational, not a recommendation or guarantee.",
+    ])
+    return "\n".join(lines)
+
+
+def fetch_ford_news() -> list[dict[str, str]]:
+    response = requests.get(
+        FORD_NEWS_FEED_URL,
+        params={
+            "languageId": 1,
+            "bodyType": 0,
+            "pressReleaseDateFilter": 3,
+            "categoryId": "",
+            "includeTags": "true",
+            "pageSize": 20,
+            "pageNumber": 0,
+            "tagList": "",
+        },
+        headers={"User-Agent": ford_scan.SEC_USER_AGENT or "Tradysquids local monitor"},
+        timeout=25,
+    )
+    response.raise_for_status()
+    rows = response.json().get("GetPressReleaseListResult") or []
+    items = []
+    for row in rows:
+        title = " ".join(str(row.get("Headline") or "").split())
+        href = str(row.get("LinkToDetailPage") or row.get("LinkToUrl") or "")
+        if not title or not href:
+            continue
+        items.append({
+            "id": str(row.get("PressReleaseId") or hashlib.sha256(href.encode()).hexdigest()[:20]),
+            "title": title,
+            "url": urljoin(FORD_NEWS_URL, href),
+            "date": str(row.get("PressReleaseDate") or ""),
+        })
+    return items
+
+
 def publish_change_only(
     connection: sqlite3.Connection,
     alert_key: str,
@@ -526,7 +699,155 @@ def market_job(connection: sqlite3.Connection) -> str:
         )
     set_state(connection, "last_regime", str(snapshot["regime"]))
     set_state(connection, "last_price", str(price))
+    upsert_dashboard(connection, "market_pulse", "market-pulse", market_pulse_text(snapshot))
+    upsert_dashboard(connection, "technicals", "technicals", technicals_text(snapshot))
+    upsert_dashboard(
+        connection,
+        "research_summary",
+        "research-summary",
+        "\n".join([
+            "## Tradysquids Research Summary",
+            f"Current regime: **{snapshot.get('regime')}** · qualified: **{'yes' if snapshot.get('qualified') else 'no'}**",
+            f"System read: {snapshot.get('reason') or 'No controlled setup.'}",
+            "Tracked failures: " + (", ".join(snapshot.get("failures") or []) or "none"),
+            f"Updated {snapshot.get('observed_at')}. This is evidence tracking, not financial advice.",
+        ]),
+    )
     return f"F ${price:.2f} · {snapshot['regime']}"
+
+
+def options_job(connection: sqlite3.Connection) -> str:
+    market = latest_observation("market")
+    snapshot = market["payload"] if market else market_snapshot()
+    options = ranked_option_chain("call", limit=8)
+    store_observation(connection, "options-chain", {"options": options})
+    upsert_dashboard(
+        connection,
+        "options_chain",
+        "options-chain",
+        options_dashboard_text(snapshot, options),
+    )
+    risk_lines = [
+        "## Tradysquids Risk Desk",
+        "The scanner does not remove risk and does not guarantee a profitable trade.",
+        f"Ford regime: **{snapshot.get('regime')}** · ATR14 **${float(snapshot.get('atr14') or 0):.2f}**.",
+        "Only consider contracts that pass configured liquidity, spread, DTE, and delta rules.",
+        "Avoid chasing entries, use a defined maximum loss, and verify quotes before any order.",
+        (
+            f"Best current liquidity candidate: `{options[0].get('symbol')}` "
+            f"({'passes' if options[0].get('liquidity_pass') else 'does not pass'} rules)."
+            if options else "No eligible contract is available."
+        ),
+        f"Updated {iso_now()}. Educational information only.",
+    ]
+    upsert_dashboard(connection, "risk_desk", "risk-desk", "\n".join(risk_lines))
+    return f"{len(options)} ranked calls"
+
+
+def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
+    completed: list[str] = []
+    failed: list[str] = []
+    for ticker in ticker_registry.active_tickers():
+        if ticker == "F":
+            continue
+        try:
+            snapshot = market_snapshot(ticker)
+            options = ranked_option_chain("call", limit=8, symbol=ticker)
+            store_observation(
+                connection,
+                f"ticker-market:{ticker}",
+                {key: value for key, value in snapshot.items() if key != "history"},
+            )
+            upsert_ticker_dashboard(
+                connection,
+                ticker,
+                "dashboard",
+                "market",
+                market_pulse_text(snapshot).replace("Ford", ticker),
+            )
+            upsert_ticker_dashboard(
+                connection,
+                ticker,
+                "options_setups",
+                "options",
+                options_dashboard_text(snapshot, options).replace("Ford", ticker),
+            )
+            upsert_ticker_dashboard(
+                connection,
+                ticker,
+                "research_performance",
+                "research",
+                "\n".join([
+                    f"## {ticker} Research and Strategy Status",
+                    f"Regime: **{snapshot.get('regime')}**",
+                    f"Qualified chart: **{'yes' if snapshot.get('qualified') else 'no'}**",
+                    f"Evidence: {snapshot.get('reason') or 'No controlled setup.'}",
+                    f"Active option candidates reviewed: **{len(options)}**",
+                    f"Updated {snapshot.get('observed_at')}. Educational information only.",
+                ]),
+            )
+            completed.append(ticker)
+        except Exception as exc:
+            failed.append(f"{ticker}:{type(exc).__name__}")
+    return (
+        f"updated {', '.join(completed) if completed else 'no additional tickers'}"
+        + (f" · failed {', '.join(failed)}" if failed else "")
+    )
+
+
+def news_job(connection: sqlite3.Connection) -> str:
+    try:
+        items = fetch_ford_news()
+    except requests.HTTPError as exc:
+        if exc.response is None or exc.response.status_code != 429:
+            raise
+        cached = latest_observation("news")
+        items = list((cached or {}).get("payload", {}).get("items") or [])
+        if not items:
+            raise
+        upsert_dashboard(
+            connection,
+            "news_events",
+            "news-digest",
+            "\n".join([
+                "## Tradysquids Ford News & Events",
+                f"Official source: [Ford Investor Relations]({FORD_NEWS_URL})",
+                *[f"• [{item['title']}]({item['url']})" for item in items[:8]],
+                (
+                    f"Ford temporarily rate-limited this check at {iso_now()}; "
+                    "showing the last successful official results. The next scheduled check will retry."
+                ),
+            ]),
+        )
+        return f"Ford rate limited request · using {len(items)} cached official items"
+    previous_raw = get_state(connection, "seen_news", "")
+    previous = set(json.loads(previous_raw or "[]"))
+    fresh = [item for item in items if item["id"] not in previous]
+    if not previous_raw:
+        fresh = []
+    store_observation(connection, "news", {"items": items, "new": fresh})
+    for item in reversed(fresh[:5]):
+        publish_change_only(
+            connection,
+            f"ford-news:{item['id']}",
+            "\n".join([
+                "## New official Ford news",
+                f"**[{item['title']}]({item['url']})**",
+                "News can move price outside market hours; trading availability is separate.",
+                "Review the source before treating it as material. Educational information only.",
+            ]),
+            logical_channel="news_events",
+            minimum_minutes=0,
+        )
+    digest = [
+        "## Tradysquids Ford News & Events",
+        f"Official source: [Ford Investor Relations]({FORD_NEWS_URL})",
+    ]
+    digest.extend(f"• [{item['title']}]({item['url']})" for item in items[:8])
+    digest.append(f"Checked {iso_now()}. New items are posted once; this digest updates in place.")
+    upsert_dashboard(connection, "news_events", "news-digest", "\n".join(digest))
+    set_state(connection, "seen_news", json.dumps([item["id"] for item in items]))
+    return f"{len(items)} official items · {len(fresh)} new"
 
 
 def filings_job(connection: sqlite3.Connection) -> str:
@@ -547,8 +868,16 @@ def filings_job(connection: sqlite3.Connection) -> str:
             connection,
             f"filings:{fresh[0]['id']}",
             "\n".join(lines),
+            logical_channel="sec_filings",
             minimum_minutes=0,
         )
+    digest = ["## Tradysquids SEC Filing Monitor"]
+    digest.extend(
+        f"• **{item['date']} · {item['form']}** · [Open filing]({item['url']})"
+        for item in filings[:8]
+    )
+    digest.append(f"Checked {iso_now()}. New filings are posted once; this digest updates in place.")
+    upsert_dashboard(connection, "sec_filings", "sec-filings", "\n".join(digest))
     set_state(connection, "seen_filings", json.dumps([item["id"] for item in filings]))
     return f"{len(filings)} recent · {len(fresh)} new"
 
@@ -567,6 +896,20 @@ def status_job(connection: sqlite3.Connection) -> str:
         "sec_monitor": bool(ford_scan.SEC_USER_AGENT),
     }
     store_observation(connection, "status", status)
+    upsert_dashboard(
+        connection,
+        "status",
+        "system-status",
+        "\n".join([
+            "## Tradysquids System Status",
+            "**Engine:** online",
+            f"**Market data age:** {status['market_data_age']}",
+            f"**Tradier:** {'configured' if status['tradier_configured'] else 'missing'}",
+            f"**Discord scheduling:** {'configured' if status['discord_scheduled_posts'] else 'missing'}",
+            f"**SEC monitor:** {'configured' if status['sec_monitor'] else 'missing'}",
+            f"Updated {status['updated_at']}. This private card updates in place.",
+        ]),
+    )
     return json.dumps(status, separators=(",", ":"))
 
 
@@ -576,6 +919,8 @@ def briefing_job(connection: sqlite3.Connection) -> str:
     session = ""
     if weekday and (7 <= now.hour < 8 or (now.hour == 8 and now.minute < 25)):
         session = "premarket"
+    elif weekday and 11 <= now.hour < 12:
+        session = "midday"
     elif weekday and 15 <= now.hour < 17:
         session = "after-market"
     if not session:
@@ -660,15 +1005,36 @@ def full_scanner_job(connection: sqlite3.Connection) -> str:
         return "disabled until LOCAL_FULL_SCAN_ENABLED=true"
     if not ford_scan.DISCORD_BOT_TOKEN:
         return "waiting for local DISCORD_BOT_TOKEN"
-    result = ford_scan.main()
+    original_ticker = ford_scan.TICKER
+    original_bot_token = ford_scan.DISCORD_BOT_TOKEN
+    original_webhook = ford_scan.DISCORD_WEBHOOK_URL
+    results: dict[str, int] = {}
+    try:
+        active = ticker_registry.active_tickers()
+        ordered = [ticker for ticker in active if ticker != "F"]
+        if "F" in active:
+            ordered.append("F")
+        for ticker in ordered:
+            ford_scan.TICKER = ticker
+            # Additional tickers write candidates to the shared lifecycle log.
+            # Ford runs last with Discord enabled and synchronizes every ticker's
+            # new/held/result cards without overwriting Ford's information desk.
+            ford_scan.DISCORD_BOT_TOKEN = original_bot_token if ticker == "F" else ""
+            ford_scan.DISCORD_WEBHOOK_URL = original_webhook if ticker == "F" else ""
+            results[ticker] = ford_scan.main()
+    finally:
+        ford_scan.TICKER = original_ticker
+        ford_scan.DISCORD_BOT_TOKEN = original_bot_token
+        ford_scan.DISCORD_WEBHOOK_URL = original_webhook
     store_observation(
         connection,
         "full-scan",
-        {"exit_code": result, "completed_at": iso_now()},
+        {"results": results, "completed_at": iso_now()},
     )
-    if result:
-        raise RuntimeError(f"Ford scanner exited with code {result}")
-    return "Ford options scan completed locally"
+    failed = [ticker for ticker, result in results.items() if result]
+    if failed:
+        raise RuntimeError(f"Scanner failed for: {', '.join(failed)}")
+    return f"Options scan completed for {', '.join(results) or 'no active tickers'}"
 
 
 @dataclass
@@ -677,10 +1043,29 @@ class Job:
     interval: timedelta
     callback: Callable[[sqlite3.Connection], str]
     market_hours_only: bool = False
+    after_hours_interval: timedelta | None = None
 
 
 JOBS = [
-    Job("market-monitor", timedelta(minutes=MARKET_REFRESH_MINUTES), market_job),
+    Job(
+        "market-monitor",
+        timedelta(minutes=MARKET_REFRESH_MINUTES),
+        market_job,
+        after_hours_interval=timedelta(minutes=30),
+    ),
+    Job(
+        "options-dashboard",
+        timedelta(minutes=15),
+        options_job,
+        after_hours_interval=timedelta(hours=2),
+    ),
+    Job(
+        "managed-ticker-information",
+        timedelta(minutes=15),
+        managed_ticker_information_job,
+        after_hours_interval=timedelta(hours=1),
+    ),
+    Job("official-ford-news", timedelta(minutes=30), news_job),
     Job("filings-monitor", timedelta(minutes=FILINGS_REFRESH_MINUTES), filings_job),
     Job("health-snapshot", timedelta(minutes=STATUS_REFRESH_MINUTES), status_job),
     Job("session-briefing", timedelta(minutes=15), briefing_job),
@@ -695,10 +1080,13 @@ JOBS = [
 
 
 def due(connection: sqlite3.Connection, job: Job, now: datetime) -> bool:
+    interval = job.interval
+    if job.after_hours_interval and not market_is_open():
+        interval = job.after_hours_interval
     last = get_state(connection, f"job:{job.name}")
     if last:
         try:
-            if now - datetime.fromisoformat(last) < job.interval:
+            if now - datetime.fromisoformat(last) < interval:
                 return False
         except ValueError:
             pass
@@ -736,13 +1124,47 @@ def acquire_instance_lock() -> socket.socket:
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
     try:
         listener.bind((LOCK_HOST, LOCK_PORT))
-        listener.listen(1)
+        listener.listen(8)
+        listener.setblocking(False)
     except OSError as exc:
         listener.close()
         raise RuntimeError(
             "The local information engine is already running."
         ) from exc
     return listener
+
+
+def drain_health_probes(listener: socket.socket) -> None:
+    """Accept queued launcher probes so the single-instance socket stays healthy."""
+    while True:
+        try:
+            connection, _ = listener.accept()
+        except BlockingIOError:
+            return
+        except OSError:
+            return
+        with connection:
+            try:
+                connection.sendall(b"OK\n")
+            except OSError:
+                pass
+
+
+def serve_health_probes(listener: socket.socket) -> None:
+    """Continuously serve launcher probes independently of scheduler sleeps."""
+    listener.settimeout(1.0)
+    while True:
+        try:
+            connection, _ = listener.accept()
+        except socket.timeout:
+            continue
+        except OSError:
+            return
+        with connection:
+            try:
+                connection.sendall(b"OK\n")
+            except OSError:
+                pass
 
 
 def run_once() -> int:
@@ -766,6 +1188,12 @@ def main() -> int:
         return 0
     print("Tradysquids local information engine is running.")
     print("Frequent monitoring is local and does not use GitHub Actions minutes.")
+    threading.Thread(
+        target=serve_health_probes,
+        args=(instance_lock,),
+        name="engine-health-listener",
+        daemon=True,
+    ).start()
     connection = connect_db()
     try:
         with instance_lock:

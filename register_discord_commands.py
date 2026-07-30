@@ -13,6 +13,88 @@ GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 
 COMMANDS = [
     {
+        "name": "ticker-add",
+        "type": 1,
+        "description": "Owner: fully integrate a ticker and create its information desk",
+        "options": [{
+            "name": "ticker",
+            "description": "Stock symbol, such as VALE",
+            "type": 3,
+            "required": True,
+            "min_length": 1,
+            "max_length": 10,
+        }],
+    },
+    {
+        "name": "ticker-pause",
+        "type": 1,
+        "description": "Owner: pause new setups for a ticker",
+        "options": [
+            {
+                "name": "ticker",
+                "description": "Integrated ticker symbol",
+                "type": 3,
+                "required": True,
+                "min_length": 1,
+                "max_length": 10,
+            },
+            {
+                "name": "duration",
+                "description": "Resume next market day or remain paused",
+                "type": 3,
+                "required": False,
+                "choices": [
+                    {"name": "Today only", "value": "today"},
+                    {"name": "Until resumed", "value": "indefinite"},
+                ],
+            },
+        ],
+    },
+    {
+        "name": "ticker-resume",
+        "type": 1,
+        "description": "Owner: resume scheduled setups for an integrated ticker",
+        "options": [{
+            "name": "ticker",
+            "description": "Integrated ticker symbol",
+            "type": 3,
+            "required": True,
+            "min_length": 1,
+            "max_length": 10,
+        }],
+    },
+    {
+        "name": "ticker-remove",
+        "type": 1,
+        "description": "Owner: archive a ticker while preserving trades and history",
+        "options": [{
+            "name": "ticker",
+            "description": "Integrated ticker symbol",
+            "type": 3,
+            "required": True,
+            "min_length": 1,
+            "max_length": 10,
+        }],
+    },
+    {
+        "name": "ticker-list",
+        "type": 1,
+        "description": "List active, paused, and archived ticker strategies",
+    },
+    {
+        "name": "ticker-status",
+        "type": 1,
+        "description": "Show one ticker strategy and Discord desk status",
+        "options": [{
+            "name": "ticker",
+            "description": "Integrated ticker symbol",
+            "type": 3,
+            "required": True,
+            "min_length": 1,
+            "max_length": 10,
+        }],
+    },
+    {
         "name": "help",
         "type": 1,
         "description": "Show every Tradysquids Ford command and how to use it",

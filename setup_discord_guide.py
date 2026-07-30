@@ -40,6 +40,14 @@ GUIDE = """# 🧭 Tradysquids Command Guide
 - `/explain topic:` — delta, theta, IV, spread, OI, DTE, RSI or ATR.
 - `/why trade_id:` — recorded evidence and rationale for a tracked trade.
 
+## Ticker management (owner only)
+- `/ticker-add ticker:` — integrate a ticker and create its five-channel desk.
+- `/ticker-pause ticker: duration:` — stop new positions today or indefinitely.
+- `/ticker-resume ticker:` — reactivate a paused or archived ticker.
+- `/ticker-remove ticker:` — archive without deleting trades or history.
+- `/ticker-list` — show active, paused, and archived strategies.
+- `/ticker-status ticker:` — inspect one ticker's registry and desk status.
+
 ## Tracking and reliability
 - `/performance` — recorded wins, losses, open trades and P/L.
 - `/status` — bot, Tradier, scheduler, Discord and SEC configuration.

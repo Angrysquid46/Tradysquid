@@ -91,7 +91,7 @@ SPREAD_SHORT_DELTA_MIN = float(os.environ.get("SPREAD_SHORT_DELTA_MIN", "0.10"))
 SPREAD_SHORT_DELTA_MAX = float(os.environ.get("SPREAD_SHORT_DELTA_MAX", "0.25"))
 SINGLE_LEG_DELTA_MIN = float(os.environ.get("SINGLE_LEG_DELTA_MIN", "0.60"))
 SINGLE_LEG_DELTA_MAX = float(os.environ.get("SINGLE_LEG_DELTA_MAX", "0.75"))
-MAX_RISK_PER_TRADE = float(os.environ.get("MAX_RISK_PER_TRADE", "150"))
+MAX_RISK_PER_TRADE = float(os.environ.get("MAX_RISK_PER_TRADE", "50"))
 MIN_SPREAD_CREDIT = float(os.environ.get("MIN_SPREAD_CREDIT", "0.05"))
 STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
 MIN_DTE = int(os.environ.get("MIN_DTE", "21"))
@@ -106,7 +106,8 @@ MAX_EXTENSION_ABOVE_SMA20_PCT = float(os.environ.get("MAX_EXTENSION_ABOVE_SMA20_
 # Management rules
 SPREAD_STOP_MULTIPLE = float(os.environ.get("SPREAD_STOP_MULTIPLE", "2.0"))
 SPREAD_TAKE_PROFIT_PCT = float(os.environ.get("SPREAD_TAKE_PROFIT_PCT", "0.50"))
-SINGLE_TAKE_PROFIT_PCT = float(os.environ.get("SINGLE_TAKE_PROFIT_PCT", "0.15"))
+SPREAD_EXIT_DTE = int(os.environ.get("SPREAD_EXIT_DTE", "5"))
+SINGLE_TAKE_PROFIT_PCT = float(os.environ.get("SINGLE_TAKE_PROFIT_PCT", "0.20"))
 SINGLE_STOP_PCT = float(os.environ.get("SINGLE_STOP_PCT", "0.15"))
 SCRATCH_BAND_PCT = float(os.environ.get("SCRATCH_BAND_PCT", "5.0"))
 
@@ -172,15 +173,23 @@ LOG_HEADER = [
 CHANNEL_NAMES = {
     "forum": "trade-journal",
     "scanner_feed": "scanner-feed",
-    "charts": "ford-charts",
-    "intelligence": "ford-intelligence",
+    "charts": "f-charts",
+    "intelligence": "f-research-performance",
+    "market_pulse": "f-dashboard",
+    "technicals": "f-dashboard",
+    "options_chain": "f-options-setups",
+    "risk_desk": "f-options-setups",
+    "news_events": "f-news-events",
+    "sec_filings": "f-news-events",
+    "research_summary": "f-research-performance",
     "qualified": "qualified-trades",
-    "entry": "entry-alerts",
-    "updates": "position-updates",
+    "entry": "new-positions",
+    "updates": "held-positions",
     "exit": "exit-alerts",
     "wins": "wins",
     "losses": "losses",
     "scratches": "scratches",
+    "expired": "expired",
     "daily_recap": "daily-recap",
     "weekly_report": "weekly-report",
     "performance_stats": "performance-stats",
@@ -212,6 +221,13 @@ AUTOMATED_CHANNEL_KEYS = [
     "scanner_feed",
     "charts",
     "intelligence",
+    "market_pulse",
+    "technicals",
+    "options_chain",
+    "risk_desk",
+    "news_events",
+    "sec_filings",
+    "research_summary",
     "qualified",
     "entry",
     "updates",
@@ -219,6 +235,7 @@ AUTOMATED_CHANNEL_KEYS = [
     "wins",
     "losses",
     "scratches",
+    "expired",
     "daily_recap",
     "weekly_report",
     "performance_stats",
@@ -475,8 +492,9 @@ def result_price_details(row: dict[str, str]) -> tuple[float, float | None, floa
     return parse_entry_price(row), exit_price(row), realized_pl_dollars(row)
 
 
-def row_key(row: dict[str, str]) -> tuple[str, str, str, str]:
+def row_key(row: dict[str, str]) -> tuple[str, str, str, str, str]:
     return (
+        row.get("ticker", ""),
         row.get("play_type", ""),
         row.get("call_or_put", ""),
         row.get("strike", ""),
@@ -1397,35 +1415,40 @@ def assign_missing_trade_ids(rows: list[dict[str, str]]) -> None:
     next_sequence: dict[str, int] = {}
     for row in rows:
         trade_id = row.get("trade_id", "")
-        match = re.fullmatch(r"F-(\d{8})-(\d{3,})", trade_id)
+        match = re.fullmatch(r"([A-Z0-9.-]+)-(\d{8})-(\d{3,})", trade_id)
         if match:
-            day_key, sequence = match.group(1), int(match.group(2))
-            next_sequence[day_key] = max(next_sequence.get(day_key, 1), sequence + 1)
+            prefix, day_key, sequence = match.group(1), match.group(2), int(match.group(3))
+            next_sequence[f"{prefix}:{day_key}"] = max(
+                next_sequence.get(f"{prefix}:{day_key}", 1), sequence + 1
+            )
 
     for row in rows:
         if row.get("trade_id"):
             continue
         timestamp = parse_iso(row.get("timestamp")) or now_ct()
         day_key = timestamp.strftime("%Y%m%d")
-        sequence = next_sequence.get(day_key, 1)
-        candidate = f"F-{day_key}-{sequence:03d}"
+        ticker = re.sub(r"[^A-Z0-9.-]", "", (row.get("ticker") or TICKER).upper()) or TICKER
+        sequence_key = f"{ticker}:{day_key}"
+        sequence = next_sequence.get(sequence_key, 1)
+        candidate = f"{ticker}-{day_key}-{sequence:03d}"
         while candidate in used:
             sequence += 1
-            candidate = f"F-{day_key}-{sequence:03d}"
+            candidate = f"{ticker}-{day_key}-{sequence:03d}"
         row["trade_id"] = candidate
         used.add(candidate)
-        next_sequence[day_key] = sequence + 1
+        next_sequence[sequence_key] = sequence + 1
 
 
 def next_trade_id(rows: list[dict[str, str]], timestamp: datetime) -> str:
     day_key = timestamp.strftime("%Y%m%d")
     highest = 0
-    pattern = re.compile(rf"F-{day_key}-(\d+)$")
+    prefix = re.escape(TICKER)
+    pattern = re.compile(rf"{prefix}-{day_key}-(\d+)$")
     for row in rows:
         match = pattern.match(row.get("trade_id", ""))
         if match:
             highest = max(highest, int(match.group(1)))
-    return f"F-{day_key}-{highest + 1:03d}"
+    return f"{TICKER}-{day_key}-{highest + 1:03d}"
 
 
 def fill_trade_math(row: dict[str, str]) -> None:
@@ -1468,6 +1491,7 @@ def open_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
 
 def recently_tracked(rows: list[dict[str, str]], candidate: dict[str, Any], now: datetime) -> bool:
     key = (
+        TICKER,
         candidate["play_type"],
         candidate["call_or_put"],
         candidate["strike"],
@@ -1811,8 +1835,9 @@ def conservative_option_exit(quote: dict[str, Any]) -> float:
 
 def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], timestamp: datetime) -> dict[str, Any]:
     entry = parse_entry_price(row)
-    expiring_soon = days_to_expiry(row["expiration"]) <= 1
     play_type = row.get("play_type")
+    expiry_days = days_to_expiry(row["expiration"])
+    expiring_soon = expiry_days <= (SPREAD_EXIT_DTE if play_type == "SPREAD" else 1)
 
     if play_type == "SPREAD":
         short_quote = quotes.get(row.get("short_symbol", ""))
@@ -2493,7 +2518,11 @@ def setup_embed(row: dict[str, str]) -> dict[str, Any]:
             embed_field("Why it qualified", row.get("setup_reason"), False),
             embed_field(
                 "Management",
-                "50% credit capture / 2× credit stop" if play_type == "SPREAD" else "+15% target / -15% stop",
+                (
+                    f"50% credit capture / 2× credit stop / close by {SPREAD_EXIT_DTE} DTE"
+                    if play_type == "SPREAD"
+                    else "+20% target / -15% stop"
+                ),
                 False,
             ),
         ],
@@ -2713,7 +2742,12 @@ def sync_closed_result_channels(
     updated = 0
     for row in sorted(closed_rows(rows), key=lambda item: item.get("closed_at") or item.get("timestamp") or ""):
         trade_id = row.get("trade_id", "")
-        result_channel = {"WIN": "wins", "LOSS": "losses", "SCRATCH": "scratches"}.get(row.get("outcome", ""))
+        result_channel = {
+            "WIN": "wins",
+            "LOSS": "losses",
+            "SCRATCH": "scratches",
+            "EXPIRED": "expired",
+        }.get(row.get("outcome", ""))
         if not trade_id or not result_channel:
             continue
         link = thread_link(row.get("discord_thread_id", ""))
@@ -2735,7 +2769,12 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
         discord.send_thread(thread_id, close_alert_text(row, evaluation))
         discord.set_thread_status(thread_id, row["outcome"], archive=True)
     discord.upsert_trade_message("exit", report_state, "exit", row.get("trade_id", ""), content)
-    result_channel = {"WIN": "wins", "LOSS": "losses", "SCRATCH": "scratches"}.get(row["outcome"])
+    result_channel = {
+        "WIN": "wins",
+        "LOSS": "losses",
+        "SCRATCH": "scratches",
+        "EXPIRED": "expired",
+    }.get(row["outcome"])
     if result_channel:
         discord.upsert_trade_result(result_channel, report_state, row.get("trade_id", ""), content)
         mark_closed_result_routed(row, report_state)
