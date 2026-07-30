@@ -67,6 +67,7 @@ class InformationEngineTests(unittest.TestCase):
     def test_registered_command_names_are_unique(self) -> None:
         names = [command["name"] for command in register_discord_commands.COMMANDS]
         self.assertEqual(len(names), len(set(names)))
+        self.assertGreaterEqual(len(names), 18)
         self.assertIn("help", names)
         self.assertIn("chain", names)
         self.assertIn("status", names)

@@ -218,16 +218,31 @@ def main() -> int:
         "Content-Type": "application/json",
         "User-Agent": "DiscordBot (Tradysquids TradeBot, 1.0)",
     }
-    for command in COMMANDS:
-        response = requests.post(url, headers=headers, json=command, timeout=20)
-        if not response.ok:
-            print(
-                f"Failed to register /{command['name']}: "
-                f"HTTP {response.status_code} {response.text[:500]}",
-                file=sys.stderr,
-            )
-            return 1
-        print(f"Registered /{command['name']}")
+    # Discord's bulk-overwrite endpoint registers the complete guild command
+    # set in one request. This avoids a burst of POST requests and removes
+    # commands that no longer exist in COMMANDS.
+    response = requests.put(url, headers=headers, json=COMMANDS, timeout=30)
+    if not response.ok:
+        print(
+            f"Failed to register command set: "
+            f"HTTP {response.status_code} {response.text[:500]}",
+            file=sys.stderr,
+        )
+        return 1
+    registered = response.json()
+    if not isinstance(registered, list):
+        print("Discord returned an unexpected command response.", file=sys.stderr)
+        return 1
+    names = {str(command.get("name") or "") for command in registered}
+    expected = {str(command["name"]) for command in COMMANDS}
+    if names != expected:
+        print(
+            "Discord command verification mismatch: "
+            f"expected {sorted(expected)}, received {sorted(names)}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"Registered and verified {len(registered)} guild commands.")
     return 0
 
 
