@@ -3,11 +3,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 import socket
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
 import discord_command_bot
 import ai_coordination
+import ford_scan
 import local_information_engine as engine
 import multi_ticker_scan
 import outcome_learning
@@ -16,6 +18,66 @@ import ticker_registry
 
 
 class InformationEngineTests(unittest.TestCase):
+    @staticmethod
+    def market_history(closes: list[float]) -> list[dict[str, float]]:
+        return [
+            {"close": close, "volume": 1_000_000 + index * 1_000}
+            for index, close in enumerate(closes)
+        ]
+
+    @staticmethod
+    def intraday_history(closes: list[float]) -> list[dict[str, float]]:
+        return [
+            {"close": close, "volume": 10_000 + index * 100}
+            for index, close in enumerate(closes)
+        ]
+
+    def test_intraday_selloff_can_override_slow_bullish_daily_trend(self) -> None:
+        daily = self.market_history([10 + index * 0.1 for index in range(60)])
+        intraday = self.intraday_history([15.9 - index * 0.08 for index in range(24)])
+        context = ford_scan.directional_market_context(daily, intraday[-1]["close"], intraday)
+        self.assertTrue(context["qualified"])
+        self.assertEqual(context["regime"], "BEARISH / CONTROLLED")
+        self.assertLessEqual(context["evidence_score"], -2)
+
+    def test_intraday_rally_can_override_slow_bearish_daily_trend(self) -> None:
+        daily = self.market_history([16 - index * 0.1 for index in range(60)])
+        intraday = self.intraday_history([10.1 + index * 0.08 for index in range(24)])
+        context = ford_scan.directional_market_context(daily, intraday[-1]["close"], intraday)
+        self.assertTrue(context["qualified"])
+        self.assertEqual(context["regime"], "BULLISH / CONTROLLED")
+        self.assertGreaterEqual(context["evidence_score"], 2)
+
+    def test_balanced_intraday_evidence_qualifies_range_strategy(self) -> None:
+        daily = self.market_history([
+            15.0 + (0.1 if index % 2 else -0.1)
+            for index in range(60)
+        ])
+        intraday = self.intraday_history([
+            15.0 + (0.02 if index % 2 else -0.02)
+            for index in range(24)
+        ])
+        context = ford_scan.directional_market_context(daily, 15.0, intraday)
+        self.assertTrue(context["qualified"])
+        self.assertEqual(context["regime"], "NEUTRAL / RANGE")
+
+    def test_mixed_daily_evidence_without_intraday_confirmation_is_rejected(self) -> None:
+        daily = self.market_history([
+            15.0 + (0.1 if index % 2 else -0.1)
+            for index in range(60)
+        ])
+        context = ford_scan.directional_market_context(daily, 15.0)
+        self.assertFalse(context["qualified"])
+        self.assertEqual(context["regime"], "NO TRADE")
+
+    def test_regular_and_swing_expirations_are_both_considered(self) -> None:
+        regular, swing = ford_scan.pick_expirations(
+            ["2026-08-07", "2026-08-21", "2026-09-11"],
+            date(2026, 7, 30),
+        )
+        self.assertEqual(regular, ["2026-08-07"])
+        self.assertEqual(swing, ["2026-08-21", "2026-09-11"])
+
     def test_exponential_moving_average(self) -> None:
         values = [float(value) for value in range(1, 31)]
         ema = engine.exponential_moving_average(values, 12)

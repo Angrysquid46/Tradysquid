@@ -96,6 +96,8 @@ MIN_SPREAD_CREDIT = float(os.environ.get("MIN_SPREAD_CREDIT", "0.05"))
 STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
 MIN_DTE = int(os.environ.get("MIN_DTE", "21"))
 MAX_DTE = int(os.environ.get("MAX_DTE", "45"))
+REGULAR_MIN_DTE = int(os.environ.get("REGULAR_MIN_DTE", "7"))
+REGULAR_MAX_DTE = int(os.environ.get("REGULAR_MAX_DTE", "20"))
 REENTRY_COOLDOWN_MINUTES = int(os.environ.get("REENTRY_COOLDOWN_MINUTES", "1440"))
 
 # Conservative directional-regime gate
@@ -905,6 +907,28 @@ def get_daily_history(symbol: str, days: int = 90) -> list[dict[str, Any]]:
     return [values] if isinstance(values, dict) else list(values)
 
 
+def get_intraday_history(
+    symbol: str,
+    interval: str = "5min",
+) -> list[dict[str, Any]]:
+    """Return today's intraday bars when Tradier supplies time-and-sales data."""
+    today = now_ct().date().isoformat()
+    data = tradier_get(
+        "/markets/timesales",
+        {
+            "symbol": symbol,
+            "interval": interval,
+            "start": f"{today} 08:30",
+            "end": f"{today} 15:00",
+            "session_filter": "open",
+        },
+    )
+    values = data.get("series", {}).get("data")
+    if not values:
+        return []
+    return [values] if isinstance(values, dict) else list(values)
+
+
 def simple_moving_average(values: list[float], period: int) -> float | None:
     if len(values) < period:
         return None
@@ -922,7 +946,11 @@ def relative_strength_index(values: list[float], period: int = 14) -> float | No
     return 100 - (100 / (1 + gains / losses))
 
 
-def directional_market_context(history: list[dict[str, Any]], spot_price: float) -> dict[str, Any]:
+def directional_market_context(
+    history: list[dict[str, Any]],
+    spot_price: float,
+    intraday: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
     volumes = [value for day in history if (value := as_float(day.get("volume"))) is not None]
     sma20 = simple_moving_average(closes, 20)
@@ -935,6 +963,38 @@ def directional_market_context(history: list[dict[str, Any]], spot_price: float)
         if latest_volume is not None and average_volume20 and average_volume20 > 0
         else None
     )
+    intraday = intraday or []
+    intraday_closes = [
+        value
+        for bar in intraday
+        if (value := as_float(bar.get("close") or bar.get("price"))) is not None
+    ]
+    intraday_volumes = [
+        as_float(bar.get("volume"), 0.0) or 0.0
+        for bar in intraday
+        if as_float(bar.get("close") or bar.get("price")) is not None
+    ]
+    intraday_open = intraday_closes[0] if intraday_closes else None
+    intraday_change_pct = (
+        ((spot_price / intraday_open) - 1) * 100
+        if intraday_open and intraday_open > 0
+        else None
+    )
+    intraday_vwap = None
+    if intraday_closes and sum(intraday_volumes) > 0:
+        intraday_vwap = sum(
+            price * volume
+            for price, volume in zip(intraday_closes, intraday_volumes)
+        ) / sum(intraday_volumes)
+    intraday_rsi = relative_strength_index(intraday_closes, 9)
+    fast_average = simple_moving_average(intraday_closes, 5)
+    slow_average = simple_moving_average(intraday_closes, 20)
+    slope_pct = (
+        ((intraday_closes[-1] / intraday_closes[-4]) - 1) * 100
+        if len(intraday_closes) >= 4 and intraday_closes[-4] > 0
+        else None
+    )
+
     reasons: list[str] = []
     failures: list[str] = []
     regime = "NO TRADE"
@@ -942,41 +1002,77 @@ def directional_market_context(history: list[dict[str, Any]], spot_price: float)
         failures.append("insufficient daily history")
     else:
         extension = (spot_price / sma20) - 1
-        bullish = (
-            spot_price >= sma20 >= sma50
-            and RSI_MIN <= rsi14 <= RSI_MAX
-            and extension <= MAX_EXTENSION_ABOVE_SMA20_PCT
-        )
-        bearish = (
-            spot_price <= sma20 <= sma50
-            and (100 - RSI_MAX) <= rsi14 <= (100 - RSI_MIN)
-            and extension >= -MAX_EXTENSION_ABOVE_SMA20_PCT
-        )
-        neutral = 40 <= rsi14 <= 60 and abs(extension) <= MAX_EXTENSION_ABOVE_SMA20_PCT
-        if bullish:
+        score = 0
+        spot_vs_sma20 = (spot_price / sma20) - 1
+        sma_trend_pct = (sma20 / sma50) - 1
+        if spot_vs_sma20 >= 0.0025:
+            score += 1
+            reasons.append("price is above its 20-day average")
+        elif spot_vs_sma20 <= -0.0025:
+            score -= 1
+            reasons.append("price is below its 20-day average")
+        if sma_trend_pct >= 0.002:
+            score += 1
+            reasons.append("20-day trend is above the 50-day trend")
+        elif sma_trend_pct <= -0.002:
+            score -= 1
+            reasons.append("20-day trend is below the 50-day trend")
+        if rsi14 >= 55:
+            score += 1
+        elif rsi14 <= 45:
+            score -= 1
+
+        if intraday_change_pct is not None:
+            if intraday_change_pct >= 0.35:
+                score += 2
+                reasons.append(f"intraday move is bullish ({intraday_change_pct:+.1f}%)")
+            elif intraday_change_pct <= -0.35:
+                score -= 2
+                reasons.append(f"intraday move is bearish ({intraday_change_pct:+.1f}%)")
+        if intraday_vwap:
+            vwap_distance_pct = ((spot_price / intraday_vwap) - 1) * 100
+            if vwap_distance_pct >= 0.15:
+                score += 1
+                reasons.append("price is holding above intraday VWAP")
+            elif vwap_distance_pct <= -0.15:
+                score -= 1
+                reasons.append("price is holding below intraday VWAP")
+        if fast_average is not None and slow_average is not None:
+            momentum_gap_pct = ((fast_average / slow_average) - 1) * 100
+            if momentum_gap_pct >= 0.10:
+                score += 1
+                reasons.append("5-bar momentum is above the 20-bar trend")
+            elif momentum_gap_pct <= -0.10:
+                score -= 1
+                reasons.append("5-bar momentum is below the 20-bar trend")
+        if intraday_rsi is not None:
+            if intraday_rsi >= 60:
+                score += 1
+            elif intraday_rsi <= 40:
+                score -= 1
+        if slope_pct is not None:
+            if slope_pct >= 0.35:
+                score += 1
+                reasons.append("recent 15-minute price slope is rising")
+            elif slope_pct <= -0.35:
+                score -= 1
+                reasons.append("recent 15-minute price slope is falling")
+
+        if score >= 2:
             regime = "BULLISH / CONTROLLED"
-            reasons.extend([
-                "price above 20-day average",
-                "20-day average above 50-day average",
-                f"RSI {rsi14:.1f} supports controlled upside",
-            ])
-        elif bearish:
+        elif score <= -2:
             regime = "BEARISH / CONTROLLED"
-            reasons.extend([
-                "price below 20-day average",
-                "20-day average below 50-day average",
-                f"RSI {rsi14:.1f} supports controlled downside",
-            ])
-        elif neutral:
+        elif intraday_closes:
             regime = "NEUTRAL / RANGE"
-            reasons.extend([
-                "price remains near its 20-day average",
-                f"RSI {rsi14:.1f} is neutral",
-            ])
+            reasons.append("combined daily and intraday evidence is balanced")
         else:
             failures.append(
-                f"trend/RSI is not controlled enough for a high-probability setup "
-                f"(RSI {rsi14:.1f}, extension {extension * 100:+.1f}%)"
+                "intraday confirmation is unavailable and daily evidence is mixed"
+            )
+        if abs(extension) > MAX_EXTENSION_ABOVE_SMA20_PCT:
+            reasons.append(
+                f"price is extended {extension * 100:+.1f}% from the 20-day average; "
+                "contract risk filters still apply"
             )
     return {
         "qualified": not failures,
@@ -984,6 +1080,13 @@ def directional_market_context(history: list[dict[str, Any]], spot_price: float)
         "sma50": sma50,
         "rsi14": rsi14,
         "volume_ratio": volume_ratio,
+        "intraday_change_pct": intraday_change_pct,
+        "intraday_vwap": intraday_vwap,
+        "intraday_rsi": intraday_rsi,
+        "intraday_fast_average": fast_average,
+        "intraday_slow_average": slow_average,
+        "intraday_slope_pct": slope_pct,
+        "evidence_score": score if sma20 is not None and sma50 is not None and rsi14 is not None else 0,
         "regime": regime,
         "reason": "; ".join(reasons) if reasons else "No controlled directional setup",
         "failures": failures,
@@ -1520,13 +1623,16 @@ def recently_tracked(rows: list[dict[str, str]], candidate: dict[str, Any], now:
 
 
 def pick_expirations(expirations: list[str], today: date) -> tuple[list[str], list[str]]:
+    regular: list[str] = []
     conservative: list[str] = []
     for expiration in expirations:
         expiry_date = datetime.strptime(expiration, "%Y-%m-%d").date()
         days_out = (expiry_date - today).days
-        if MIN_DTE <= days_out <= MAX_DTE:
+        if REGULAR_MIN_DTE <= days_out <= REGULAR_MAX_DTE:
+            regular.append(expiration)
+        elif MIN_DTE <= days_out <= MAX_DTE:
             conservative.append(expiration)
-    return [], sorted(conservative)
+    return sorted(regular), sorted(conservative)
 
 
 def filter_strikes(strikes: list[float], spot: float) -> list[float]:
@@ -3579,10 +3685,20 @@ def scan_candidates(
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
     expirations = get_expirations(TICKER)
     near_expirations, swing_expirations = pick_expirations(expirations, now_ct().date())
-    market_context = directional_market_context(get_daily_history(TICKER), spot_price)
+    try:
+        intraday_history = get_intraday_history(TICKER)
+    except (TradierError, requests.RequestException):
+        intraday_history = []
+    market_context = directional_market_context(
+        get_daily_history(TICKER),
+        spot_price,
+        intraday_history,
+    )
     candidate_expirations: list[tuple[str, str]] = []
+    if near_expirations:
+        candidate_expirations.append((near_expirations[0], "REGULAR"))
     if swing_expirations:
-        candidate_expirations.append((swing_expirations[0], "CONSERVATIVE"))
+        candidate_expirations.append((swing_expirations[0], "SWING"))
 
     stats: dict[str, Any] = {
         "expirations": [],
@@ -3623,12 +3739,20 @@ def scan_candidates(
         stats["puts"] += len(puts)
         regime = market_context["regime"]
         if regime == "BULLISH / CONTROLLED":
-            add_candidates("Long calls", scan_single_legs(calls, "call", expiration, "SWING", market_context))
-            add_candidates("Bull put spreads", scan_credit_spreads(puts, "put", expiration, market_context))
+            add_candidates(
+                f"{bucket} long calls",
+                scan_single_legs(calls, "call", expiration, bucket, market_context),
+            )
+            if bucket == "SWING":
+                add_candidates("Bull put spreads", scan_credit_spreads(puts, "put", expiration, market_context))
         elif regime == "BEARISH / CONTROLLED":
-            add_candidates("Long puts", scan_single_legs(puts, "put", expiration, "SWING", market_context))
-            add_candidates("Bear call spreads", scan_credit_spreads(calls, "call", expiration, market_context))
-        elif regime == "NEUTRAL / RANGE":
+            add_candidates(
+                f"{bucket} long puts",
+                scan_single_legs(puts, "put", expiration, bucket, market_context),
+            )
+            if bucket == "SWING":
+                add_candidates("Bear call spreads", scan_credit_spreads(calls, "call", expiration, market_context))
+        elif regime == "NEUTRAL / RANGE" and bucket == "SWING":
             add_candidates("Call credit spreads", scan_credit_spreads(calls, "call", expiration, market_context))
             add_candidates("Put credit spreads", scan_credit_spreads(puts, "put", expiration, market_context))
     stats["qualified_candidates"] = len(candidates)

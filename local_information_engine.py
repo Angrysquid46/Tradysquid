@@ -207,6 +207,10 @@ def market_snapshot(symbol: str = ford_scan.TICKER) -> dict[str, Any]:
     spot = ford_scan.as_float(quote.get("last"))
     if spot is None or not history:
         raise ford_scan.TradierError("Ford quote or price history is unavailable")
+    try:
+        intraday = ford_scan.get_intraday_history(symbol)
+    except (ford_scan.TradierError, requests.RequestException):
+        intraday = []
     closes = [
         value
         for day in history
@@ -217,7 +221,7 @@ def market_snapshot(symbol: str = ford_scan.TICKER) -> dict[str, Any]:
         for day in history
         if (value := ford_scan.as_float(day.get("volume"))) is not None
     ]
-    context = ford_scan.directional_market_context(history, spot)
+    context = ford_scan.directional_market_context(history, spot, intraday)
     ema12 = exponential_moving_average(closes, 12)
     ema26 = exponential_moving_average(closes, 26)
     macd = ema12 - ema26 if ema12 is not None and ema26 is not None else None
@@ -265,6 +269,11 @@ def market_snapshot(symbol: str = ford_scan.TICKER) -> dict[str, Any]:
         "sma50": context.get("sma50"),
         "sma200": ford_scan.simple_moving_average(closes, 200),
         "rsi14": context.get("rsi14"),
+        "intraday_change_pct": context.get("intraday_change_pct"),
+        "intraday_vwap": context.get("intraday_vwap"),
+        "intraday_rsi": context.get("intraday_rsi"),
+        "intraday_slope_pct": context.get("intraday_slope_pct"),
+        "evidence_score": context.get("evidence_score"),
         "ema12": ema12,
         "ema26": ema26,
         "macd": macd,
