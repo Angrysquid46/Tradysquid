@@ -118,10 +118,17 @@ Discord response with the chart attached.
 
 After restarting the laptop:
 
-1. Start `.\start-command-bot.cmd`.
-2. Start `ngrok http 8080`.
+1. Double-click `START-TRADYSQUID.bat`.
+2. Keep the Command Bot and ngrok windows open.
 3. If the ngrok HTTPS domain changed, update Discord's Interactions Endpoint
    URL before using commands.
+
+The launcher checks the private configuration, locates ngrok, starts both
+services in visible windows, and opens Discord, TradingView, GitHub Actions,
+and the local ngrok inspector.
+
+Run `CREATE-DESKTOP-SHORTCUT.cmd` once if you want a **Start Tradysquids**
+shortcut on the Windows desktop.
 
 ## Safety
 
