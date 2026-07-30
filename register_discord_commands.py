@@ -13,6 +13,21 @@ GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 
 COMMANDS = [
     {
+        "name": "help",
+        "type": 1,
+        "description": "Show every Tradysquids Ford command and how to use it",
+    },
+    {
+        "name": "quote",
+        "type": 1,
+        "description": "Show the current Ford quote, volume, spread, and timestamp",
+    },
+    {
+        "name": "trend",
+        "type": 1,
+        "description": "Show the full Ford technical dashboard",
+    },
+    {
         "name": "chart",
         "type": 1,
         "description": "Generate a current Ford price chart",
@@ -50,6 +65,133 @@ COMMANDS = [
             "required": True,
             "min_length": 10,
             "max_length": 40,
+        }],
+    },
+    {
+        "name": "chain",
+        "type": 1,
+        "description": "Rank liquid Ford option contracts",
+        "options": [{
+            "name": "side",
+            "description": "Calls or puts",
+            "type": 3,
+            "required": False,
+            "choices": [
+                {"name": "Calls", "value": "call"},
+                {"name": "Puts", "value": "put"},
+            ],
+        }],
+    },
+    {
+        "name": "setup",
+        "type": 1,
+        "description": "Check the qualified Ford direction and research shortlist",
+    },
+    {
+        "name": "watchlist",
+        "type": 1,
+        "description": "Show reactive Ford levels and monitored conditions",
+    },
+    {
+        "name": "option",
+        "type": 1,
+        "description": "Inspect one Ford option contract",
+        "options": [{
+            "name": "symbol",
+            "description": "Tradier OCC option symbol",
+            "type": 3,
+            "required": True,
+            "min_length": 8,
+            "max_length": 32,
+        }],
+    },
+    {
+        "name": "risk",
+        "type": 1,
+        "description": "Calculate long-option premium risk and management levels",
+        "options": [
+            {
+                "name": "premium",
+                "description": "Option price per share, such as 0.42",
+                "type": 10,
+                "required": True,
+                "min_value": 0.01,
+                "max_value": 100,
+            },
+            {
+                "name": "contracts",
+                "description": "Number of contracts",
+                "type": 4,
+                "required": False,
+                "min_value": 1,
+                "max_value": 100,
+            },
+            {
+                "name": "side",
+                "description": "Call or put",
+                "type": 3,
+                "required": False,
+                "choices": [
+                    {"name": "Call", "value": "call"},
+                    {"name": "Put", "value": "put"},
+                ],
+            },
+        ],
+    },
+    {
+        "name": "performance",
+        "type": 1,
+        "description": "Summarize recorded Ford trade performance",
+    },
+    {
+        "name": "status",
+        "type": 1,
+        "description": "Check bot, Tradier, scheduler, Discord, and SEC status",
+    },
+    {
+        "name": "schedule",
+        "type": 1,
+        "description": "Show the local no-GitHub monitoring schedule",
+    },
+    {
+        "name": "dataage",
+        "type": 1,
+        "description": "Show the age of locally cached Ford information",
+    },
+    {
+        "name": "lastscan",
+        "type": 1,
+        "description": "Show recent local monitoring job results",
+    },
+    {
+        "name": "filings",
+        "type": 1,
+        "description": "Show recent official Ford SEC filings",
+    },
+    {
+        "name": "calendar",
+        "type": 1,
+        "description": "Show Ford event links and recent material filings",
+    },
+    {
+        "name": "explain",
+        "type": 1,
+        "description": "Explain an options or technical-analysis term",
+        "options": [{
+            "name": "topic",
+            "description": "Delta, theta, IV, spread, open interest, DTE, RSI, or ATR",
+            "type": 3,
+            "required": True,
+            "choices": [
+                {"name": "Delta", "value": "delta"},
+                {"name": "Theta", "value": "theta"},
+                {"name": "Implied volatility", "value": "iv"},
+                {"name": "Bid/ask spread", "value": "spread"},
+                {"name": "Open interest", "value": "open-interest"},
+                {"name": "Days to expiration", "value": "dte"},
+                {"name": "RSI", "value": "rsi"},
+                {"name": "ATR", "value": "atr"},
+            ],
         }],
     },
 ]
@@ -91,4 +233,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

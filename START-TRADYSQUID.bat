@@ -36,13 +36,40 @@ if not defined NGROK_EXE (
     exit /b 1
 )
 
-echo Starting the local Discord command service...
-start "Tradysquids Command Bot" cmd /k "cd /d ""%~dp0"" && python run_with_env.py discord_command_bot.py"
+set "BOT_RUNNING="
+powershell -NoProfile -Command "try { if ((Invoke-RestMethod -Uri 'http://127.0.0.1:8080/health' -TimeoutSec 2).ok) { exit 0 } } catch {}; exit 1" >nul 2>&1
+if not errorlevel 1 set "BOT_RUNNING=1"
+
+if defined BOT_RUNNING (
+    echo Discord command service is already running.
+) else (
+    echo Starting the local Discord command service...
+    start "Tradysquids Command Bot" cmd /k "cd /d ""%~dp0"" && python run_with_env.py discord_command_bot.py"
+)
+
+set "ENGINE_RUNNING="
+powershell -NoProfile -Command "try { $c = New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',8765); $c.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
+if not errorlevel 1 set "ENGINE_RUNNING=1"
+
+if defined ENGINE_RUNNING (
+    echo Local information engine is already running.
+) else (
+    echo Starting the local no-GitHub information engine...
+    start "Tradysquids Information Engine" cmd /k "cd /d ""%~dp0"" && python run_with_env.py local_information_engine.py"
+)
 
 timeout /t 2 /nobreak >nul
 
-echo Starting the secure ngrok tunnel...
-start "Tradysquids ngrok Tunnel" cmd /k "cd /d ""%~dp0"" && python run_ngrok.py ""%NGROK_EXE%"""
+set "NGROK_RUNNING="
+powershell -NoProfile -Command "try { $t = Invoke-RestMethod -Uri 'http://127.0.0.1:4040/api/tunnels' -TimeoutSec 2; if ($t.tunnels.Count -gt 0) { exit 0 } } catch {}; exit 1" >nul 2>&1
+if not errorlevel 1 set "NGROK_RUNNING=1"
+
+if defined NGROK_RUNNING (
+    echo Secure ngrok tunnel is already running.
+) else (
+    echo Starting the secure ngrok tunnel...
+    start "Tradysquids ngrok Tunnel" cmd /k "cd /d ""%~dp0"" && python run_ngrok.py ""%NGROK_EXE%"""
+)
 
 timeout /t 3 /nobreak >nul
 
@@ -54,7 +81,7 @@ start "" "http://127.0.0.1:4040"
 
 echo.
 echo Tradysquids is starting.
-echo Keep the Command Bot and ngrok windows open.
+echo Keep the Command Bot, Information Engine, and ngrok windows open.
 echo You may close this launcher window.
 echo.
 pause
