@@ -16,11 +16,13 @@ import sqlite3
 import sys
 import threading
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urljoin
+from urllib.parse import quote_plus
 
 import ford_scan
 import requests
@@ -40,6 +42,8 @@ FORD_NEWS_URL = "https://shareholder.ford.com/news/default.aspx"
 FORD_NEWS_FEED_URL = (
     "https://shareholder.ford.com/feed/PressRelease.svc/GetPressReleaseList"
 )
+GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
+TICKER_CHART_DIR = ROOT / "docs" / "tickers"
 
 
 def utc_now() -> datetime:
@@ -518,6 +522,100 @@ def upsert_ticker_dashboard(
     return bool(message_id)
 
 
+def send_ticker_chart(
+    connection: sqlite3.Connection,
+    ticker: str,
+    file_path: Path,
+    content: str,
+) -> bool:
+    """Upload one fresh chart per ticker per market date."""
+    item = ticker_registry.get(ticker)
+    channel_id = str((item or {}).get("channels", {}).get("charts") or "")
+    tracker = discord_tracker()
+    if not tracker or not channel_id or not file_path.exists():
+        return False
+    state_key = f"ticker-chart-date:{ticker}"
+    today = ford_scan.now_ct().date().isoformat()
+    if get_state(connection, state_key) == today:
+        return True
+    url = f"{tracker.API_BASE}/channels/{channel_id}/messages"
+    headers = {
+        "Authorization": f"Bot {tracker.token}",
+        "User-Agent": "DiscordBot (Tradysquids TradeBot, 1.0)",
+    }
+    payload = {"content": content[:2000], "allowed_mentions": {"parse": []}}
+    with file_path.open("rb") as handle:
+        response = requests.post(
+            url,
+            headers=headers,
+            data={"payload_json": json.dumps(payload)},
+            files={"files[0]": (file_path.name, handle, "image/png")},
+            timeout=30,
+        )
+    if not response.ok:
+        raise ford_scan.DiscordError(
+            f"Discord ticker chart upload HTTP {response.status_code}: {response.text[:500]}"
+        )
+    set_state(connection, state_key, today)
+    return True
+
+
+def fetch_ticker_news(ticker: str, limit: int = 8) -> list[dict[str, str]]:
+    """Fetch a general public-news digest for an integrated ticker."""
+    query = quote_plus(f'"{ticker}" stock when:2d')
+    response = requests.get(
+        f"{GOOGLE_NEWS_RSS_URL}?q={query}&hl=en-US&gl=US&ceid=US:en",
+        headers={"User-Agent": ford_scan.SEC_USER_AGENT or "Tradysquids local monitor"},
+        timeout=25,
+    )
+    response.raise_for_status()
+    root = ET.fromstring(response.content)
+    items: list[dict[str, str]] = []
+    for node in root.findall("./channel/item"):
+        title = " ".join((node.findtext("title") or "").split())
+        link = (node.findtext("link") or "").strip()
+        published = (node.findtext("pubDate") or "").strip()
+        if title and link:
+            items.append({"title": title, "url": link, "date": published})
+        if len(items) >= limit:
+            break
+    return items
+
+
+def managed_ticker_news_job(connection: sqlite3.Connection) -> str:
+    completed: list[str] = []
+    failed: list[str] = []
+    for ticker in ticker_registry.active_tickers():
+        if ticker == "F":
+            continue
+        try:
+            items = fetch_ticker_news(ticker)
+            lines = [
+                f"## {ticker} News & Events",
+                "General public-news monitor; verify the original publisher before acting.",
+            ]
+            lines.extend(
+                f"• [{item['title']}]({item['url']})"
+                for item in items
+            )
+            if not items:
+                lines.append("No recent matching headlines were returned.")
+            lines.append(
+                f"Checked {iso_now()}. Headlines are informational, not automatic trade signals."
+            )
+            upsert_ticker_dashboard(
+                connection, ticker, "news_events", "news", "\n".join(lines)
+            )
+            store_observation(connection, f"ticker-news:{ticker}", {"items": items})
+            completed.append(ticker)
+        except Exception as exc:
+            failed.append(f"{ticker}:{type(exc).__name__}")
+    return (
+        f"updated {', '.join(completed) if completed else 'no additional tickers'}"
+        + (f" · failed {', '.join(failed)}" if failed else "")
+    )
+
+
 def market_is_open() -> bool:
     return bool(ford_scan.market_is_open_now()[0])
 
@@ -571,11 +669,11 @@ def options_dashboard_text(snapshot: dict[str, Any], options: list[dict[str, Any
             f"· bid/ask ${float(item.get('bid') or 0):.2f}/${float(item.get('ask') or 0):.2f} "
             f"· Δ {float(delta):.2f} · OI {int(item.get('open_interest') or 0)} "
             f"· vol {int(item.get('volume') or 0)} · spread {width_text} "
-            f"· {'PASS' if item.get('liquidity_pass') else 'WATCH'}"
+            f"· {'LIQUIDITY PASS' if item.get('liquidity_pass') else 'LIQUIDITY WATCH'}"
         )
     lines.extend([
         f"Updated {snapshot.get('observed_at')}.",
-        "Ranking is informational, not a recommendation or guarantee.",
+        "Liquidity status is not a full trade qualification. Ranking is informational, not a recommendation or guarantee.",
     ])
     return "\n".join(lines)
 
@@ -757,6 +855,28 @@ def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
                 connection,
                 f"ticker-market:{ticker}",
                 {key: value for key, value in snapshot.items() if key != "history"},
+            )
+            chart_path = TICKER_CHART_DIR / f"{ticker.lower()}-market-chart.png"
+            ford_scan.render_market_chart_png(
+                snapshot["history"],
+                float(snapshot["price"]),
+                {
+                    "regime": snapshot.get("regime"),
+                    "rsi14": snapshot.get("rsi14"),
+                },
+                float(snapshot.get("support20") or snapshot["price"]),
+                float(snapshot.get("resistance20") or snapshot["price"]),
+                symbol=ticker,
+                output_path=chart_path,
+            )
+            send_ticker_chart(
+                connection,
+                ticker,
+                chart_path,
+                (
+                    f"{ticker} daily market chart · {ford_scan.now_ct().date().isoformat()} "
+                    f"· ${float(snapshot['price']):.2f} · {snapshot.get('regime')}"
+                ),
             )
             upsert_ticker_dashboard(
                 connection,
@@ -1065,6 +1185,7 @@ JOBS = [
         managed_ticker_information_job,
         after_hours_interval=timedelta(hours=1),
     ),
+    Job("managed-ticker-news", timedelta(minutes=30), managed_ticker_news_job),
     Job("official-ford-news", timedelta(minutes=30), news_job),
     Job("filings-monitor", timedelta(minutes=FILINGS_REFRESH_MINUTES), filings_job),
     Job("health-snapshot", timedelta(minutes=STATUS_REFRESH_MINUTES), status_job),

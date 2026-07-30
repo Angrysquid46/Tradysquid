@@ -1088,6 +1088,9 @@ def render_market_chart_png(
     context: dict[str, Any],
     support: float,
     resistance: float,
+    *,
+    symbol: str = "F",
+    output_path: Path | None = None,
 ) -> None:
     """Create a Discord-ready PNG screenshot without relying on a browser."""
     from PIL import Image, ImageDraw, ImageFont
@@ -1138,11 +1141,14 @@ def render_market_chart_png(
     draw_series(sma50, "#f59e0b", 3)
     rsi = context.get("rsi14")
     rsi_text = f"{rsi:.1f}" if rsi is not None else "Unavailable"
-    draw.text((left, 25), f"Ford (F) Market Map | ${spot_price:.2f} | {context['regime']}", fill="#f4f7fb", font=title_font)
+    display_name = "Ford (F)" if symbol == "F" else symbol
+    draw.text((left, 25), f"{display_name} Market Map | ${spot_price:.2f} | {context['regime']}", fill="#f4f7fb", font=title_font)
     draw.text((left, 55), f"RSI14 {rsi_text} | White: Price | Blue: SMA20 | Orange: SMA50", fill="#9fb0c3", font=small)
     draw.text((left, height - 66), f"20-day support ${support:.2f}  |  resistance ${resistance:.2f}", fill="#dbe7f3", font=font)
     draw.text((left, height - 36), "Decision aid only - not professional financial advice or a profit guarantee", fill="#9fb0c3", font=small)
-    image.save(CHART_SCREENSHOT_PATH, format="PNG", optimize=True)
+    destination = output_path or CHART_SCREENSHOT_PATH
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    image.save(destination, format="PNG", optimize=True)
 
 
 def market_map_text(history: list[dict[str, Any]], spot_price: float) -> str:
