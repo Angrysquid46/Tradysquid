@@ -19,7 +19,7 @@ Required GitHub Actions repository secrets:
 Discord requirements:
 
   Forum channel: trade-journal
-  Text channels: scanner-feed, qualified-setups, entry-alerts,
+  Text channels: scanner-feed, qualified-trades, entry-alerts,
                  position-updates, exit-alerts, wins, losses,
                  scratches, scanner-status, api-errors
 
@@ -38,6 +38,13 @@ TradeBot permissions needed in the server/forum:
 Behavior:
 
   - No brokerage orders are placed.
+  - New scans consider bullish Ford calls only.
+  - Entries require a bullish daily trend gate, 21-45 DTE, delta 0.60-0.75,
+    open interest of at least 100, option volume of at least 10, and a
+    bid/ask spread no wider than 20% of midpoint.
+  - New contracts are capped at $150 risk each, one new play per scan,
+    and two simultaneous open plays. Existing legacy positions continue
+    to be monitored until they close.
   - Existing OPEN CSV plays are imported into trade-journal once.
   - New scanner plays get one forum post and permanent trade ID.
   - Open plays are repriced every scheduled run.

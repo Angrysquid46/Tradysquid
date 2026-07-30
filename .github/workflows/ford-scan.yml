@@ -60,6 +60,9 @@ jobs:
             --disable-pip-version-check \
             -r requirements.txt
 
+      - name: Validate scanner syntax
+        run: python -m py_compile ford_scan.py
+
       - name: Verify required secrets
         shell: bash
         env:

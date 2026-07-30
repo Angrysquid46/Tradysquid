@@ -72,20 +72,32 @@ MARKET_OPEN = (8, 30)
 MARKET_CLOSE = (15, 0)
 
 # Candidate screening
-MIN_OPEN_INTEREST = int(os.environ.get("MIN_OPEN_INTEREST", "25"))
+MIN_OPEN_INTEREST = int(os.environ.get("MIN_OPEN_INTEREST", "100"))
+MIN_OPTION_VOLUME = int(os.environ.get("MIN_OPTION_VOLUME", "10"))
+MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.20"))
+# Retained only so legacy credit-spread rows/functions remain readable; new scans do not use them.
 SPREAD_SHORT_DELTA_MIN = float(os.environ.get("SPREAD_SHORT_DELTA_MIN", "0.10"))
 SPREAD_SHORT_DELTA_MAX = float(os.environ.get("SPREAD_SHORT_DELTA_MAX", "0.35"))
-SINGLE_LEG_DELTA_MIN = float(os.environ.get("SINGLE_LEG_DELTA_MIN", "0.35"))
-SINGLE_LEG_DELTA_MAX = float(os.environ.get("SINGLE_LEG_DELTA_MAX", "0.65"))
-STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.20"))
-MAX_NEW_PLAYS_PER_SCAN = int(os.environ.get("MAX_NEW_PLAYS_PER_SCAN", "4"))
-REENTRY_COOLDOWN_MINUTES = int(os.environ.get("REENTRY_COOLDOWN_MINUTES", "90"))
+SINGLE_LEG_DELTA_MIN = float(os.environ.get("SINGLE_LEG_DELTA_MIN", "0.60"))
+SINGLE_LEG_DELTA_MAX = float(os.environ.get("SINGLE_LEG_DELTA_MAX", "0.75"))
+MAX_CONTRACT_COST = float(os.environ.get("MAX_CONTRACT_COST", "150"))
+STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
+MIN_DTE = int(os.environ.get("MIN_DTE", "21"))
+MAX_DTE = int(os.environ.get("MAX_DTE", "45"))
+MAX_NEW_PLAYS_PER_SCAN = int(os.environ.get("MAX_NEW_PLAYS_PER_SCAN", "1"))
+MAX_OPEN_PLAYS = int(os.environ.get("MAX_OPEN_PLAYS", "2"))
+REENTRY_COOLDOWN_MINUTES = int(os.environ.get("REENTRY_COOLDOWN_MINUTES", "1440"))
+
+# Conservative bullish trend gate
+RSI_MIN = float(os.environ.get("RSI_MIN", "45"))
+RSI_MAX = float(os.environ.get("RSI_MAX", "68"))
+MAX_EXTENSION_ABOVE_SMA20_PCT = float(os.environ.get("MAX_EXTENSION_ABOVE_SMA20_PCT", "0.05"))
 
 # Management rules
 SPREAD_STOP_MULTIPLE = float(os.environ.get("SPREAD_STOP_MULTIPLE", "2.0"))
 SPREAD_TAKE_PROFIT_PCT = float(os.environ.get("SPREAD_TAKE_PROFIT_PCT", "0.50"))
-SINGLE_TAKE_PROFIT_PCT = float(os.environ.get("SINGLE_TAKE_PROFIT_PCT", "0.225"))
-SINGLE_STOP_PCT = float(os.environ.get("SINGLE_STOP_PCT", "0.225"))
+SINGLE_TAKE_PROFIT_PCT = float(os.environ.get("SINGLE_TAKE_PROFIT_PCT", "0.15"))
+SINGLE_STOP_PCT = float(os.environ.get("SINGLE_STOP_PCT", "0.15"))
 SCRATCH_BAND_PCT = float(os.environ.get("SCRATCH_BAND_PCT", "5.0"))
 
 # Discord update throttling
@@ -124,6 +136,10 @@ LOG_HEADER = [
     "breakeven",
     "open_interest_at_entry",
     "bid_ask_width_at_entry",
+    "option_volume_at_entry",
+    "setup_score",
+    "setup_reason",
+    "market_regime",
     "outcome",
     "pct_gain_loss",
     "realized_pl_dollars",
@@ -521,6 +537,7 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
         f"**Delta:** {fmt_delta(delta)}\n"
         f"**IV:** {fmt_iv(iv)}\n"
         f"**OI:** {fmt_oi(oi)} *(open interest)*\n"
+        f"**Volume:** {fmt_oi(row.get('option_volume_at_entry'))}\n"
         f"**Theta:** {'Unavailable' if theta is None else f'{theta:+.3f}/day'}"
     )
     lines = [
@@ -533,6 +550,12 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
         risk_line,
         "### Market Data",
         market_data,
+        "### Why This Qualified",
+        (
+            f"**Regime:** {row.get('market_regime') or 'BULLISH / CONTROLLED'}\n"
+            f"**Score:** {row.get('setup_score') or '—'} *(ranking only; not a win probability)*\n"
+            f"**Evidence:** {row.get('setup_reason') or 'Conservative bullish filters passed'}"
+        ),
     ]
     if include_link:
         lines.extend(["### Journal", f"[Open trade journal]({include_link})"])
@@ -673,6 +696,7 @@ def qualified_trade_text(row: dict[str, str], include_link: str = "") -> str:
     iv = as_float(row.get("iv_at_entry"))
     oi = row.get("open_interest_at_entry")
     width = as_float(row.get("bid_ask_width_at_entry"))
+    volume = row.get("option_volume_at_entry")
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
@@ -697,11 +721,14 @@ def qualified_trade_text(row: dict[str, str], include_link: str = "") -> str:
         "### Filter Data",
         (
             f"**Delta:** {fmt_delta(delta)}\n"
-            f"**POP estimate:** {fmt_pct(pop)}\n"
+            f"**Delta proxy:** {fmt_pct(pop)} *(not a guaranteed win rate)*\n"
             f"**IV:** {fmt_iv(iv)}\n"
             f"**OI:** {fmt_oi(oi)} *(open interest)*\n"
+            f"**Volume:** {fmt_oi(volume)}\n"
             f"**Bid/ask width:** {fmt_option_price(width)}"
         ),
+        "### Why This Qualified",
+        row.get("setup_reason") or "Conservative bullish filters passed.",
     ]
     if include_link:
         lines.extend(["### Journal", f"[Open trade journal]({include_link})"])
@@ -813,6 +840,84 @@ def get_chain(symbol: str, expiration: str) -> list[dict[str, Any]]:
     if values is None:
         return []
     return [values] if isinstance(values, dict) else list(values)
+
+
+def get_daily_history(symbol: str, days: int = 90) -> list[dict[str, Any]]:
+    end = now_ct().date()
+    start = end - timedelta(days=days)
+    data = tradier_get(
+        "/markets/history",
+        {
+            "symbol": symbol,
+            "interval": "daily",
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+        },
+    )
+    values = data.get("history", {}).get("day")
+    if not values:
+        return []
+    return [values] if isinstance(values, dict) else list(values)
+
+
+def simple_moving_average(values: list[float], period: int) -> float | None:
+    if len(values) < period:
+        return None
+    return sum(values[-period:]) / period
+
+
+def relative_strength_index(values: list[float], period: int = 14) -> float | None:
+    if len(values) <= period:
+        return None
+    changes = [current - previous for previous, current in zip(values[-period - 1:-1], values[-period:])]
+    gains = sum(max(change, 0) for change in changes) / period
+    losses = sum(max(-change, 0) for change in changes) / period
+    if losses == 0:
+        return 100.0
+    return 100 - (100 / (1 + gains / losses))
+
+
+def bullish_market_context(history: list[dict[str, Any]], spot_price: float) -> dict[str, Any]:
+    closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
+    volumes = [value for day in history if (value := as_float(day.get("volume"))) is not None]
+    sma20 = simple_moving_average(closes, 20)
+    sma50 = simple_moving_average(closes, 50)
+    rsi14 = relative_strength_index(closes)
+    average_volume20 = simple_moving_average(volumes, 20)
+    latest_volume = volumes[-1] if volumes else None
+    volume_ratio = (
+        latest_volume / average_volume20
+        if latest_volume is not None and average_volume20 and average_volume20 > 0
+        else None
+    )
+    reasons: list[str] = []
+    failures: list[str] = []
+    if sma20 is None or sma50 is None or rsi14 is None:
+        failures.append("insufficient daily history")
+    else:
+        (reasons if spot_price >= sma20 else failures).append(
+            f"price {'above' if spot_price >= sma20 else 'below'} 20-day average"
+        )
+        (reasons if sma20 >= sma50 else failures).append(
+            f"20-day average {'above' if sma20 >= sma50 else 'below'} 50-day average"
+        )
+        (reasons if RSI_MIN <= rsi14 <= RSI_MAX else failures).append(
+            f"RSI {rsi14:.1f} {'inside' if RSI_MIN <= rsi14 <= RSI_MAX else 'outside'} {RSI_MIN:.0f}-{RSI_MAX:.0f}"
+        )
+        extension = (spot_price / sma20) - 1
+        (reasons if extension <= MAX_EXTENSION_ABOVE_SMA20_PCT else failures).append(
+            f"price {extension * 100:.1f}% above 20-day average"
+        )
+    return {
+        "qualified": not failures,
+        "sma20": sma20,
+        "sma50": sma50,
+        "rsi14": rsi14,
+        "volume_ratio": volume_ratio,
+        "regime": "BULLISH / CONTROLLED" if not failures else "NO TRADE",
+        "reason": "; ".join(reasons) if reasons else "No bullish confirmations",
+        "failures": failures,
+    }
 
 # ---------------------------------------------------------------------------
 # CSV state and migration
@@ -991,16 +1096,13 @@ def recently_tracked(rows: list[dict[str, str]], candidate: dict[str, Any], now:
 
 
 def pick_expirations(expirations: list[str], today: date) -> tuple[list[str], list[str]]:
-    near: list[str] = []
-    swing: list[str] = []
+    conservative: list[str] = []
     for expiration in expirations:
         expiry_date = datetime.strptime(expiration, "%Y-%m-%d").date()
         days_out = (expiry_date - today).days
-        if 0 < days_out <= 8:
-            near.append(expiration)
-        elif 14 <= days_out <= 42:
-            swing.append(expiration)
-    return sorted(near), sorted(swing)
+        if MIN_DTE <= days_out <= MAX_DTE:
+            conservative.append(expiration)
+    return [], sorted(conservative)
 
 
 def filter_strikes(strikes: list[float], spot: float) -> list[float]:
@@ -1026,10 +1128,26 @@ def open_interest_value(option: dict[str, Any] | None) -> int:
     return 0
 
 
+def option_volume_value(option: dict[str, Any] | None) -> int:
+    if not option:
+        return 0
+    return int(as_float(option.get("volume"), 0.0) or 0)
+
+
 def option_has_liquidity(option: dict[str, Any]) -> bool:
     bid = as_float(option.get("bid"), 0.0) or 0.0
+    ask = as_float(option.get("ask"), 0.0) or 0.0
     open_interest = open_interest_value(option)
-    return bid > 0 and open_interest >= MIN_OPEN_INTEREST
+    volume = option_volume_value(option)
+    midpoint = (bid + ask) / 2 if bid > 0 and ask > 0 else 0
+    spread_pct = ((ask - bid) / midpoint) if midpoint > 0 else float("inf")
+    return (
+        bid > 0
+        and ask >= bid
+        and open_interest >= MIN_OPEN_INTEREST
+        and volume >= MIN_OPTION_VOLUME
+        and spread_pct <= MAX_BID_ASK_PCT
+    )
 
 def greek(option: dict[str, Any], key: str) -> float | None:
     return as_float((option.get("greeks") or {}).get(key))
@@ -1112,7 +1230,13 @@ def scan_credit_spreads(chain: list[dict[str, Any]], kind: str, expiration: str)
     return candidates
 
 
-def scan_single_legs(chain: list[dict[str, Any]], kind: str, expiration: str, play_type: str) -> list[dict[str, Any]]:
+def scan_single_legs(
+    chain: list[dict[str, Any]],
+    kind: str,
+    expiration: str,
+    play_type: str,
+    market_context: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for option in chain:
         if not option_has_liquidity(option):
@@ -1125,10 +1249,21 @@ def scan_single_legs(chain: list[dict[str, Any]], kind: str, expiration: str, pl
         bid = as_float(option.get("bid"), 0.0) or 0.0
         if ask <= 0:
             continue
+        if ask * 100 > MAX_CONTRACT_COST:
+            continue
         strike = float(option["strike"])
         open_interest = open_interest_value(option)
+        option_volume = option_volume_value(option)
         spread_width = max(ask - bid, 0)
-        score = (1 - abs(delta - 0.50)) * 50 + math.log1p(open_interest) * 2 - (spread_width / ask) * 20
+        spread_pct = spread_width / ((ask + bid) / 2)
+        score = (
+            40
+            + delta * 30
+            + math.log1p(open_interest) * 2
+            + math.log1p(option_volume)
+            - spread_pct * 50
+            - (ask * 100 / max(MAX_CONTRACT_COST, 1)) * 5
+        )
         max_profit: str | float
         if kind == "call":
             max_profit = "UNLIMITED"
@@ -1150,9 +1285,12 @@ def scan_single_legs(chain: list[dict[str, Any]], kind: str, expiration: str, pl
                 "max_risk": round(ask * 100, 2),
                 "breakeven": round(strike + ask if kind == "call" else strike - ask, 2),
                 "open_interest": open_interest,
+                "option_volume": option_volume,
                 "bid_ask_width": round(spread_width, 2),
                 "option_symbol": option.get("symbol") or option_symbol(TICKER, expiration, kind, strike),
                 "score": score,
+                "setup_reason": (market_context or {}).get("reason", "Bullish trend gate passed"),
+                "market_regime": (market_context or {}).get("regime", "BULLISH / CONTROLLED"),
             }
         )
     return candidates
@@ -1184,6 +1322,10 @@ def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], time
             "breakeven": str(candidate["breakeven"]),
             "open_interest_at_entry": str(candidate["open_interest"]),
             "bid_ask_width_at_entry": str(candidate["bid_ask_width"]),
+            "option_volume_at_entry": str(candidate.get("option_volume", "")),
+            "setup_score": round_or_blank(as_float(candidate.get("score")), 1),
+            "setup_reason": str(candidate.get("setup_reason", "")),
+            "market_regime": str(candidate.get("market_regime", "")),
             "outcome": "OPEN",
             "last_mark": str(candidate["entry_price"]),
             "current_pl_dollars": "0",
@@ -1858,10 +2000,12 @@ def setup_embed(row: dict[str, str]) -> dict[str, Any]:
             embed_field("Theta", "—" if theta is None else f"{theta:+.3f}/day"),
             embed_field("IV", iv_text),
             embed_field("Entry OI", fmt_oi(row.get("open_interest_at_entry"))),
+            embed_field("Entry volume", fmt_oi(row.get("option_volume_at_entry"))),
             embed_field("Bid/ask width", f"${as_float(row.get('bid_ask_width_at_entry'), 0):.2f}"),
+            embed_field("Why it qualified", row.get("setup_reason"), False),
             embed_field(
                 "Management",
-                "50% credit capture / 2× credit stop" if play_type == "SPREAD" else "+22.5% target / -22.5% stop",
+                "50% credit capture / 2× credit stop" if play_type == "SPREAD" else "+15% target / -15% stop",
                 False,
             ),
         ],
@@ -2575,6 +2719,17 @@ def format_scanner_feed(
         for item in expirations
     ) or "None available"
     by_strategy = stats.get("candidate_counts") or {}
+    context = stats.get("market_context") or {}
+    failures = context.get("failures") or []
+    trend_text = (
+        f"**Regime:** {context.get('regime', 'Unavailable')}\n"
+        f"**SMA20 / SMA50:** {fmt_option_price(as_float(context.get('sma20')))} / "
+        f"{fmt_option_price(as_float(context.get('sma50')))}\n"
+        f"**RSI(14):** {round_or_blank(as_float(context.get('rsi14')), 1) or '—'}\n"
+        f"**Gate:** {'Passed' if context.get('qualified') else 'Blocked'}"
+    )
+    if failures:
+        trend_text += "\n**Blocked by:** " + "; ".join(failures)
     strategy_text = "\n".join(
         f"• **{label}:** {count}" for label, count in by_strategy.items() if count
     ) or "None"
@@ -2588,6 +2743,8 @@ def format_scanner_feed(
         ),
         "### Expirations",
         expiration_text,
+        "### Bullish Trend Gate",
+        trend_text,
         "### Contracts",
         (
             f"**Received:** {stats.get('raw_contracts', 0)}\n"
@@ -2862,11 +3019,10 @@ def scan_candidates(
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
     expirations = get_expirations(TICKER)
     near_expirations, swing_expirations = pick_expirations(expirations, now_ct().date())
+    market_context = bullish_market_context(get_daily_history(TICKER), spot_price)
     candidate_expirations: list[tuple[str, str]] = []
-    if near_expirations:
-        candidate_expirations.append((near_expirations[0], "NEAR"))
     if swing_expirations:
-        candidate_expirations.append((swing_expirations[0], "SWING"))
+        candidate_expirations.append((swing_expirations[0], "CONSERVATIVE"))
 
     stats: dict[str, Any] = {
         "expirations": [],
@@ -2876,9 +3032,13 @@ def scan_candidates(
         "puts": 0,
         "qualified_candidates": 0,
         "candidate_counts": {},
+        "market_context": market_context,
     }
     candidates: list[dict[str, Any]] = []
     quote_map: dict[str, dict[str, Any]] = {}
+
+    if not market_context["qualified"]:
+        return candidates, quote_map, stats
 
     def add_candidates(label: str, found: list[dict[str, Any]]) -> None:
         candidates.extend(found)
@@ -2898,17 +3058,11 @@ def scan_candidates(
             if option.get("symbol"):
                 quote_map[option["symbol"]] = option
         calls = [option for option in chain if option.get("option_type") == "call"]
-        puts = [option for option in chain if option.get("option_type") == "put"]
         stats["calls"] += len(calls)
-        stats["puts"] += len(puts)
-        if bucket == "NEAR":
-            add_candidates("Call spreads", scan_credit_spreads(calls, "call", expiration))
-            add_candidates("Put spreads", scan_credit_spreads(puts, "put", expiration))
-            add_candidates("Regular calls", scan_single_legs(calls, "call", expiration, "REGULAR"))
-            add_candidates("Regular puts", scan_single_legs(puts, "put", expiration, "REGULAR"))
-        else:
-            add_candidates("Swing calls", scan_single_legs(calls, "call", expiration, "SWING"))
-            add_candidates("Swing puts", scan_single_legs(puts, "put", expiration, "SWING"))
+        add_candidates(
+            "Conservative calls",
+            scan_single_legs(calls, "call", expiration, "SWING", market_context),
+        )
     stats["qualified_candidates"] = len(candidates)
     return candidates, quote_map, stats
 
@@ -3080,7 +3234,8 @@ def main() -> int:
         candidates, candidate_quote_map, scan_stats = scan_candidates(spot_price)
         eligible = [candidate for candidate in candidates if not recently_tracked(rows, candidate, timestamp)]
         eligible.sort(key=lambda candidate: candidate.get("score", 0), reverse=True)
-        selected = eligible[:MAX_NEW_PLAYS_PER_SCAN]
+        available_slots = max(MAX_OPEN_PLAYS - len(open_rows(rows)), 0)
+        selected = eligible[:min(MAX_NEW_PLAYS_PER_SCAN, available_slots)]
 
         new_rows: list[dict[str, str]] = []
         for candidate in selected:
