@@ -3552,6 +3552,39 @@ def main() -> int:
 
     is_open, timestamp = market_is_open_now()
     if not is_open:
+        try:
+            closed_spot = get_quote(TICKER)
+            closed_spot_price = as_float((closed_spot or {}).get("last"))
+            closed_history = get_daily_history(TICKER, days=120)
+            if closed_spot_price is not None and closed_history:
+                render_market_chart(closed_history, closed_spot_price)
+                safe_discord_call(
+                    "closed-market Ford map",
+                    lambda: discord.upsert_channel_message(
+                        "charts",
+                        report_state,
+                        "ford-market-map",
+                        market_map_text(closed_history, closed_spot_price),
+                        search_token="Ford Market Map",
+                    ),
+                )
+                if report_state.get("chart_snapshot_date") != timestamp.date().isoformat():
+                    upload = discord.send_channel_file(
+                        "charts",
+                        CHART_SCREENSHOT_PATH,
+                        content=(
+                            f"📊 **DAILY FORD CHART · {timestamp.date().isoformat()}**\n"
+                            f"Last price ${closed_spot_price:.2f} · indicators, support, and resistance are marked."
+                        ),
+                    )
+                    if upload:
+                        report_state["chart_snapshot_date"] = timestamp.date().isoformat()
+            safe_discord_call(
+                "closed-market Ford event monitor",
+                lambda: sync_ford_events(discord, report_state),
+            )
+        except (TradierError, DiscordError, requests.RequestException, ValueError, KeyError) as exc:
+            print(f"Closed-market chart refresh skipped: {exc}", file=sys.stderr)
         closed_summary = (
             f"Market closed · maintenance sync complete · "
             f"{len(open_rows(rows))} open trade(s)"
@@ -3624,18 +3657,16 @@ def main() -> int:
                 ),
             )
             if report_state.get("chart_snapshot_date") != timestamp.date().isoformat():
-                safe_discord_call(
-                    "daily Ford chart screenshot",
-                    lambda: discord.send_channel_file(
-                        "charts",
-                        CHART_SCREENSHOT_PATH,
-                        content=(
-                            f"📊 **DAILY FORD CHART · {timestamp.date().isoformat()}**\n"
-                            f"Spot ${spot_price:.2f} · indicators, support, and resistance are marked."
-                        ),
+                upload = discord.send_channel_file(
+                    "charts",
+                    CHART_SCREENSHOT_PATH,
+                    content=(
+                        f"📊 **DAILY FORD CHART · {timestamp.date().isoformat()}**\n"
+                        f"Spot ${spot_price:.2f} · indicators, support, and resistance are marked."
                     ),
                 )
-                report_state["chart_snapshot_date"] = timestamp.date().isoformat()
+                if upload:
+                    report_state["chart_snapshot_date"] = timestamp.date().isoformat()
         safe_discord_call(
             "Ford event monitor",
             lambda: sync_ford_events(discord, report_state),
