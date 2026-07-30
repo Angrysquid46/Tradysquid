@@ -173,6 +173,7 @@ CHANNEL_NAMES = {
     "forum": "trade-journal",
     "scanner_feed": "scanner-feed",
     "charts": "ford-charts",
+    "intelligence": "ford-intelligence",
     "qualified": "qualified-trades",
     "entry": "entry-alerts",
     "updates": "position-updates",
@@ -210,6 +211,7 @@ TAG_KEYS = {
 AUTOMATED_CHANNEL_KEYS = [
     "scanner_feed",
     "charts",
+    "intelligence",
     "qualified",
     "entry",
     "updates",
@@ -1203,8 +1205,113 @@ def sync_ford_events(discord: "DiscordTracker", state: dict[str, Any]) -> None:
         "### How the bot uses this",
         "Events raise caution and add context; they never override price confirmation, liquidity rules, or max-risk controls.",
     ])
-    discord.upsert_channel_message("scanner_feed", state, "ford-event-monitor", "\n".join(lines))
+    discord.upsert_channel_message("intelligence", state, "ford-event-monitor", "\n".join(lines))
     state["seen_ford_filings"] = [filing["id"] for filing in filings]
+
+
+def ford_intelligence_text(
+    rows: list[dict[str, str]],
+    history: list[dict[str, Any]],
+    spot_price: float,
+    timestamp: datetime,
+) -> str:
+    context = directional_market_context(history, spot_price)
+    closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
+    support = min(closes[-20:]) if closes else spot_price
+    resistance = max(closes[-20:]) if closes else spot_price
+    today_rows = [
+        row for row in rows
+        if (parsed := parse_iso(row.get("timestamp"))) and parsed.date() == timestamp.date()
+    ]
+    calls = sum(1 for row in today_rows if row.get("call_or_put", "").lower() == "call")
+    puts = sum(1 for row in today_rows if row.get("call_or_put", "").lower() == "put")
+    spreads = sum(1 for row in today_rows if row.get("play_type") == "SPREAD")
+    directional = len(today_rows) - spreads
+    reconstructed = sum(1 for row in today_rows if not row.get("setup_reason"))
+    wins = sum(1 for row in today_rows if row.get("outcome") == "WIN")
+    losses = sum(1 for row in today_rows if row.get("outcome") == "LOSS")
+    open_count = sum(1 for row in today_rows if row.get("outcome") == "OPEN")
+    rsi_text = f"{context['rsi14']:.1f}" if context.get("rsi14") is not None else "Unavailable"
+    event_note = (
+        "**Primary event:** Ford reported Q2 2026 earnings after the July 28 close. "
+        "The July 29 session was therefore an earnings-reaction day with gap, volatility, "
+        "and reversal risk—not a normal technical session."
+        if timestamp.date() == date(2026, 7, 29)
+        else (
+            "Check the official Ford events and SEC links below before treating a move as purely technical. "
+            "Company events can override normal indicator behavior."
+        )
+    )
+    lines = [
+        "## 🧭 Ford Intelligence Desk",
+        "### What Moved Ford",
+        event_note,
+        "### Trend and Levels",
+        (
+            f"**Last price:** ${spot_price:.2f}\n"
+            f"**Regime:** {context['regime']}\n"
+            f"**SMA20:** {fmt_money(context.get('sma20'))} · "
+            f"**SMA50:** {fmt_money(context.get('sma50'))} · **RSI14:** {rsi_text}\n"
+            f"**20-day support:** ${support:.2f} · **20-day resistance:** ${resistance:.2f}"
+        ),
+        "### Today's Trade Map",
+        (
+            f"**Logged:** {len(today_rows)} · **Calls:** {calls} · **Puts:** {puts} · "
+            f"**Spreads:** {spreads} · **Directional:** {directional}\n"
+            f"**Closed:** {wins} wins / {losses} losses · **Still open:** {open_count}"
+        ),
+    ]
+    if reconstructed:
+        lines.extend([
+            "### Important Data Limitation",
+            (
+                f"⚠️ **{reconstructed} trade(s) were imported or created before detailed rationale fields were active.** "
+                "Their exact original trend, liquidity, and event justification was not recorded, so the bot will not "
+                "invent one after the fact. Their structure can be explained, but their original decision evidence is incomplete."
+            ),
+        ])
+    lines.extend([
+        "### How to Read the Structures",
+        (
+            "**Long calls:** bullish direction; need upside continuation large enough to overcome premium and theta.\n"
+            "**Long puts:** bearish/reversal direction; especially risky when fighting a strong earnings gap.\n"
+            "**Call credit spreads:** neutral-to-bearish; profit if Ford remains below the short strike.\n"
+            "**Put credit spreads:** neutral-to-bullish; profit if Ford remains above the short strike."
+        ),
+        "### Current Risk Read",
+        (
+            "An elevated RSI near a recent high means momentum is strong, but fresh calls can be late and puts can be early. "
+            "The safer response is confirmation at support/resistance, controlled size, and liquid contracts—not guessing the reversal."
+        ),
+        "### Official Ford Sources",
+        (
+            f"[Ford investor events]({FORD_IR_EVENTS_URL}) · "
+            "[Ford investor news](https://shareholder.ford.com/news/default.aspx) · "
+            "[Ford SEC filings](https://www.sec.gov/edgar/browse/?CIK=37996) · "
+            f"[Current chart]({CHART_PUBLIC_URL})"
+        ),
+        "Educational review only—not professional financial advice or a guarantee of profit.",
+    ])
+    return "\n".join(lines)
+
+
+def publish_ford_intelligence(
+    discord: "DiscordTracker",
+    state: dict[str, Any],
+    rows: list[dict[str, str]],
+    history: list[dict[str, Any]],
+    spot_price: float,
+    timestamp: datetime,
+) -> None:
+    if not discord.ready or not history:
+        return
+    discord.upsert_channel_message(
+        "intelligence",
+        state,
+        "ford-intelligence-desk",
+        ford_intelligence_text(rows, history, spot_price, timestamp),
+        search_token="Ford Intelligence Desk",
+    )
 
 # ---------------------------------------------------------------------------
 # CSV state and migration
@@ -3579,6 +3686,17 @@ def main() -> int:
                     )
                     if upload:
                         report_state["chart_snapshot_date"] = timestamp.date().isoformat()
+                safe_discord_call(
+                    "closed-market Ford intelligence",
+                    lambda: publish_ford_intelligence(
+                        discord,
+                        report_state,
+                        rows,
+                        closed_history,
+                        closed_spot_price,
+                        timestamp,
+                    ),
+                )
             safe_discord_call(
                 "closed-market Ford event monitor",
                 lambda: sync_ford_events(discord, report_state),
@@ -3667,6 +3785,17 @@ def main() -> int:
                 )
                 if upload:
                     report_state["chart_snapshot_date"] = timestamp.date().isoformat()
+            safe_discord_call(
+                "Ford intelligence",
+                lambda: publish_ford_intelligence(
+                    discord,
+                    report_state,
+                    rows,
+                    history,
+                    spot_price,
+                    timestamp,
+                ),
+            )
         safe_discord_call(
             "Ford event monitor",
             lambda: sync_ford_events(discord, report_state),
