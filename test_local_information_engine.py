@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import discord_command_bot
+import ai_coordination
 import local_information_engine as engine
 import multi_ticker_scan
 import outcome_learning
@@ -127,6 +128,12 @@ class InformationEngineTests(unittest.TestCase):
             "No scanner filters are changed automatically.",
             summary["guardrails"],
         )
+
+    def test_ai_coordination_snapshot_identifies_authoritative_commit(self) -> None:
+        snapshot = ai_coordination.repository_snapshot()
+        self.assertEqual(len(snapshot["commit"]), 40)
+        self.assertTrue(snapshot["branch"])
+        self.assertIn("dirty_files", snapshot)
 
     def test_every_ticker_market_command_accepts_dynamic_ticker(self) -> None:
         ticker_commands = {
