@@ -59,6 +59,7 @@ TRADIER_TOKEN = os.environ.get("TRADIER_TOKEN", "").strip()
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
+SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT", "").strip()
 
 REPO_ROOT = Path(__file__).resolve().parent
 STATE_DIR = REPO_ROOT / "state"
@@ -66,6 +67,16 @@ DOCS_DIR = REPO_ROOT / "docs"
 LOG_PATH = STATE_DIR / "ford-plays-log.csv"
 DASHBOARD_PATH = DOCS_DIR / "index.html"
 REPORT_STATE_PATH = STATE_DIR / "discord-report-state.json"
+CHART_PATH = DOCS_DIR / "ford-market-chart.svg"
+CHART_SCREENSHOT_PATH = DOCS_DIR / "ford-market-chart.png"
+CHART_PUBLIC_URL = os.environ.get(
+    "CHART_PUBLIC_URL",
+    "https://angrysquid46.github.io/Tradysquid/ford-market-chart.svg",
+).strip()
+
+FORD_CIK = "0000037996"
+FORD_IR_EVENTS_URL = "https://shareholder.ford.com/events/default.aspx"
+SEC_FORMS = {"8-K", "10-Q", "10-K", "DEFA14A"}
 
 MARKET_TZ = ZoneInfo("America/Chicago")
 MARKET_OPEN = (8, 30)
@@ -161,6 +172,7 @@ LOG_HEADER = [
 CHANNEL_NAMES = {
     "forum": "trade-journal",
     "scanner_feed": "scanner-feed",
+    "charts": "ford-charts",
     "qualified": "qualified-trades",
     "entry": "entry-alerts",
     "updates": "position-updates",
@@ -197,6 +209,7 @@ TAG_KEYS = {
 
 AUTOMATED_CHANNEL_KEYS = [
     "scanner_feed",
+    "charts",
     "qualified",
     "entry",
     "updates",
@@ -955,6 +968,243 @@ def directional_market_context(history: list[dict[str, Any]], spot_price: float)
         "reason": "; ".join(reasons) if reasons else "No controlled directional setup",
         "failures": failures,
     }
+
+
+def rolling_average(values: list[float], period: int) -> list[float | None]:
+    output: list[float | None] = []
+    running = 0.0
+    for index, value in enumerate(values):
+        running += value
+        if index >= period:
+            running -= values[index - period]
+        output.append(running / period if index + 1 >= period else None)
+    return output
+
+
+def render_market_chart(history: list[dict[str, Any]], spot_price: float) -> None:
+    """Render a dependency-free SVG chart that GitHub Pages and browsers can display."""
+    points = [
+        (str(day.get("date", "")), as_float(day.get("close")), as_float(day.get("volume")))
+        for day in history
+    ]
+    points = [(day, close, volume) for day, close, volume in points if close is not None]
+    if len(points) < 20:
+        return
+    dates = [point[0] for point in points]
+    closes = [float(point[1]) for point in points]
+    sma20 = rolling_average(closes, 20)
+    sma50 = rolling_average(closes, 50)
+    chart_width, chart_height = 1120, 560
+    left, right, top, bottom = 72, 28, 56, 70
+    plot_width = chart_width - left - right
+    plot_height = chart_height - top - bottom
+    visible_values = closes + [value for value in sma20 + sma50 if value is not None]
+    low, high = min(visible_values), max(visible_values)
+    padding = max((high - low) * 0.08, 0.10)
+    low, high = low - padding, high + padding
+
+    def xy(index: int, value: float) -> tuple[float, float]:
+        x = left + (index / max(len(closes) - 1, 1)) * plot_width
+        y = top + ((high - value) / max(high - low, 0.01)) * plot_height
+        return x, y
+
+    def polyline(values: list[float | None], color: str, width: int) -> str:
+        segments: list[list[str]] = []
+        current: list[str] = []
+        for index, value in enumerate(values):
+            if value is None:
+                if current:
+                    segments.append(current)
+                    current = []
+                continue
+            x, y = xy(index, value)
+            current.append(f"{x:.1f},{y:.1f}")
+        if current:
+            segments.append(current)
+        return "".join(
+            f'<polyline points="{" ".join(segment)}" fill="none" stroke="{color}" '
+            f'stroke-width="{width}" stroke-linejoin="round" stroke-linecap="round"/>'
+            for segment in segments
+        )
+
+    grid: list[str] = []
+    for step in range(6):
+        value = low + (high - low) * step / 5
+        _, y = xy(0, value)
+        grid.append(
+            f'<line x1="{left}" y1="{y:.1f}" x2="{chart_width-right}" y2="{y:.1f}" '
+            f'stroke="#243244" stroke-width="1"/>'
+            f'<text x="{left-10}" y="{y+4:.1f}" text-anchor="end" fill="#9fb0c3" '
+            f'font-size="13">${value:.2f}</text>'
+        )
+    context = directional_market_context(history, spot_price)
+    support = min(closes[-20:])
+    resistance = max(closes[-20:])
+    title = html.escape(
+        f"Ford (F) market map • {dates[-1]} • {context['regime']} • RSI {context['rsi14']:.1f}"
+        if context.get("rsi14") is not None
+        else f"Ford (F) market map • {dates[-1]}"
+    )
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{chart_width}" height="{chart_height}" viewBox="0 0 {chart_width} {chart_height}">
+<rect width="100%" height="100%" fill="#0d1520"/>
+<text x="{left}" y="30" fill="#f4f7fb" font-family="Arial,sans-serif" font-size="20" font-weight="700">{title}</text>
+{"".join(grid)}
+{polyline([float(value) for value in closes], "#f4f7fb", 3)}
+{polyline(sma20, "#38bdf8", 2)}
+{polyline(sma50, "#f59e0b", 2)}
+<text x="{left}" y="{chart_height-34}" fill="#38bdf8" font-family="Arial,sans-serif" font-size="14">SMA20</text>
+<text x="{left+72}" y="{chart_height-34}" fill="#f59e0b" font-family="Arial,sans-serif" font-size="14">SMA50</text>
+<text x="{left+150}" y="{chart_height-34}" fill="#9fb0c3" font-family="Arial,sans-serif" font-size="14">20-day support ${support:.2f} • resistance ${resistance:.2f}</text>
+<text x="{chart_width-right}" y="{chart_height-34}" text-anchor="end" fill="#9fb0c3" font-family="Arial,sans-serif" font-size="12">Decision aid, not financial advice</text>
+</svg>"""
+    DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    CHART_PATH.write_text(svg, encoding="utf-8")
+    render_market_chart_png(history, spot_price, context, support, resistance)
+
+
+def render_market_chart_png(
+    history: list[dict[str, Any]],
+    spot_price: float,
+    context: dict[str, Any],
+    support: float,
+    resistance: float,
+) -> None:
+    """Create a Discord-ready PNG screenshot without relying on a browser."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
+    if len(closes) < 20:
+        return
+    sma20 = rolling_average(closes, 20)
+    sma50 = rolling_average(closes, 50)
+    width, height = 1200, 630
+    left, right, top, bottom = 85, 35, 85, 95
+    plot_width, plot_height = width - left - right, height - top - bottom
+    values = closes + [value for value in sma20 + sma50 if value is not None]
+    low, high = min(values), max(values)
+    padding = max((high - low) * 0.08, 0.10)
+    low, high = low - padding, high + padding
+    image = Image.new("RGB", (width, height), "#0d1520")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=18)
+    small = ImageFont.load_default(size=15)
+    title_font = ImageFont.load_default(size=25)
+
+    def xy(index: int, value: float) -> tuple[int, int]:
+        x = left + int(index / max(len(closes) - 1, 1) * plot_width)
+        y = top + int((high - value) / max(high - low, 0.01) * plot_height)
+        return x, y
+
+    for step in range(6):
+        value = low + (high - low) * step / 5
+        y = xy(0, value)[1]
+        draw.line((left, y, width - right, y), fill="#243244", width=1)
+        draw.text((12, y - 9), f"${value:.2f}", fill="#9fb0c3", font=small)
+
+    def draw_series(series: list[float | None], color: str, line_width: int) -> None:
+        segment: list[tuple[int, int]] = []
+        for index, value in enumerate(series):
+            if value is None:
+                if len(segment) > 1:
+                    draw.line(segment, fill=color, width=line_width, joint="curve")
+                segment = []
+            else:
+                segment.append(xy(index, value))
+        if len(segment) > 1:
+            draw.line(segment, fill=color, width=line_width, joint="curve")
+
+    draw_series([float(value) for value in closes], "#f4f7fb", 4)
+    draw_series(sma20, "#38bdf8", 3)
+    draw_series(sma50, "#f59e0b", 3)
+    rsi = context.get("rsi14")
+    rsi_text = f"{rsi:.1f}" if rsi is not None else "Unavailable"
+    draw.text((left, 25), f"Ford (F) Market Map | ${spot_price:.2f} | {context['regime']}", fill="#f4f7fb", font=title_font)
+    draw.text((left, 55), f"RSI14 {rsi_text} | White: Price | Blue: SMA20 | Orange: SMA50", fill="#9fb0c3", font=small)
+    draw.text((left, height - 66), f"20-day support ${support:.2f}  |  resistance ${resistance:.2f}", fill="#dbe7f3", font=font)
+    draw.text((left, height - 36), "Decision aid only - not professional financial advice or a profit guarantee", fill="#9fb0c3", font=small)
+    image.save(CHART_SCREENSHOT_PATH, format="PNG", optimize=True)
+
+
+def market_map_text(history: list[dict[str, Any]], spot_price: float) -> str:
+    context = directional_market_context(history, spot_price)
+    closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
+    support = min(closes[-20:]) if closes else spot_price
+    resistance = max(closes[-20:]) if closes else spot_price
+    rsi_text = f"{context['rsi14']:.1f}" if context.get("rsi14") is not None else "Unavailable"
+    chart_line = f"[Open the current Ford chart]({CHART_PUBLIC_URL})" if CHART_PUBLIC_URL else "Chart saved to the dashboard."
+    return "\n".join([
+        "## 📈 Ford Market Map",
+        "### Trend",
+        (
+            f"**Regime:** {context['regime']}\n"
+            f"**F:** ${spot_price:.2f} · **SMA20:** {fmt_money(context.get('sma20'))} · "
+            f"**SMA50:** {fmt_money(context.get('sma50'))} · **RSI14:** {rsi_text}"
+        ),
+        "### Decision Levels",
+        f"**20-day support:** ${support:.2f}\n**20-day resistance:** ${resistance:.2f}",
+        "### Read",
+        f"{context['reason']}. A level break is confirmation only after price and option liquidity agree.",
+        "### Chart",
+        chart_line,
+        "Educational decision support only—not professional financial advice or a profit guarantee.",
+    ])
+
+
+def fetch_recent_ford_filings() -> list[dict[str, str]]:
+    """Read Ford's official SEC submission feed; disabled until an identifiable UA is configured."""
+    if not SEC_USER_AGENT:
+        return []
+    response = requests.get(
+        f"https://data.sec.gov/submissions/CIK{FORD_CIK}.json",
+        headers={"User-Agent": SEC_USER_AGENT, "Accept-Encoding": "gzip, deflate"},
+        timeout=20,
+    )
+    response.raise_for_status()
+    recent = response.json().get("filings", {}).get("recent", {})
+    filings: list[dict[str, str]] = []
+    for form, accession, filed, document in zip(
+        recent.get("form", []),
+        recent.get("accessionNumber", []),
+        recent.get("filingDate", []),
+        recent.get("primaryDocument", []),
+    ):
+        if form not in SEC_FORMS:
+            continue
+        accession_compact = str(accession).replace("-", "")
+        filings.append({
+            "id": str(accession),
+            "form": str(form),
+            "date": str(filed),
+            "url": f"https://www.sec.gov/Archives/edgar/data/37996/{accession_compact}/{document}",
+        })
+        if len(filings) >= 8:
+            break
+    return filings
+
+
+def sync_ford_events(discord: "DiscordTracker", state: dict[str, Any]) -> None:
+    if not discord.ready:
+        return
+    filings = fetch_recent_ford_filings()
+    if not filings:
+        return
+    seen = set(str(value) for value in state.get("seen_ford_filings", []))
+    newest = [filing for filing in filings if filing["id"] not in seen]
+    lines = [
+        "## 🗓️ Ford Event Monitor",
+        "### Official Sources",
+        f"[Ford investor events]({FORD_IR_EVENTS_URL}) · [Ford SEC filings](https://www.sec.gov/edgar/browse/?CIK=37996)",
+        "### Recent Market-Moving Filings",
+    ]
+    for filing in filings[:5]:
+        marker = "🆕 " if filing in newest else ""
+        lines.append(f"{marker}**{filing['date']} · {filing['form']}** · [Open filing]({filing['url']})")
+    lines.extend([
+        "### How the bot uses this",
+        "Events raise caution and add context; they never override price confirmation, liquidity rules, or max-risk controls.",
+    ])
+    discord.upsert_channel_message("scanner_feed", state, "ford-event-monitor", "\n".join(lines))
+    state["seen_ford_filings"] = [filing["id"] for filing in filings]
 
 # ---------------------------------------------------------------------------
 # CSV state and migration
@@ -1823,6 +2073,54 @@ class DiscordTracker:
             payload["embeds"] = [embed]
         return self._request("POST", f"/channels/{channel_id}/messages", payload)
 
+    def send_channel_file(
+        self,
+        logical_name: str,
+        file_path: Path,
+        *,
+        content: str,
+    ) -> dict[str, Any] | None:
+        channel_id = self.channels.get(logical_name)
+        if not self.ready or not channel_id or not file_path.exists():
+            return None
+        self.ensure_private_system_route(logical_name)
+        url = f"{self.API_BASE}/channels/{channel_id}/messages"
+        headers = {
+            "Authorization": f"Bot {self.token}",
+            "User-Agent": "DiscordBot (Tradysquids TradeBot, 1.0)",
+        }
+        payload = {
+            "content": content[:2000],
+            "allowed_mentions": {"parse": []},
+        }
+        for attempt in range(4):
+            try:
+                with file_path.open("rb") as handle:
+                    response = SESSION.post(
+                        url,
+                        headers=headers,
+                        data={"payload_json": json.dumps(payload)},
+                        files={"files[0]": (file_path.name, handle, "image/png")},
+                        timeout=30,
+                    )
+            except requests.RequestException as exc:
+                if attempt == 3:
+                    raise DiscordError(f"Discord chart upload failed: {exc}") from exc
+                time.sleep(2**attempt)
+                continue
+            if response.status_code == 429 and attempt < 3:
+                retry_after = as_float(response.json().get("retry_after"), 1.0) or 1.0
+                time.sleep(min(retry_after + 0.25, 10))
+                continue
+            if response.status_code >= 500 and attempt < 3:
+                time.sleep(2**attempt)
+                continue
+            if not response.ok:
+                body = response.text[:700].replace(self.token, "[REDACTED]")
+                raise DiscordError(f"Discord chart upload HTTP {response.status_code}: {body}")
+            return response.json()
+        raise DiscordError("Discord chart upload retries exhausted")
+
     def upsert_channel_message(
         self,
         logical_name: str,
@@ -2335,6 +2633,15 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
         discord.upsert_trade_result(result_channel, report_state, row.get("trade_id", ""), content)
         mark_closed_result_routed(row, report_state)
     discord.delete_trade_message("updates", report_state, "position", row.get("trade_id", ""))
+    discord.send_channel_file(
+        "charts",
+        CHART_SCREENSHOT_PATH,
+        content=(
+            f"📉 **EXIT SNAPSHOT · {row.get('trade_id')} · {row.get('outcome')}**\n"
+            f"{row.get('play_type')} · {row.get('strike')} · {row.get('expiration')} · "
+            f"return {fmt_pct(as_float(evaluation.get('pl_pct')))}\n{link}"
+        ),
+    )
     row["discord_status"] = row["outcome"]
     row["last_discord_signal"] = evaluation.get("signal", "CLOSE")
     row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 0)
@@ -2350,6 +2657,16 @@ def post_new_trade(
     if not row.get("discord_thread_id"):
         discord.create_trade_thread(row, "OPEN")
     sync_open_trade_cards(row, discord, report_state)
+    discord.send_channel_file(
+        "charts",
+        CHART_SCREENSHOT_PATH,
+        content=(
+            f"📸 **ENTRY SNAPSHOT · {row.get('trade_id')}**\n"
+            f"{row.get('play_type')} · {row.get('strike')} · {row.get('expiration')} · "
+            f"entry {fmt_money(as_float(row.get('entry_price')))}\n"
+            f"{thread_link(row.get('discord_thread_id', ''))}"
+        ),
+    )
 
 # ---------------------------------------------------------------------------
 # Discord server pages and performance reporting
@@ -3293,6 +3610,36 @@ def main() -> int:
         if not spot or as_float(spot.get("last")) is None:
             raise TradierError("Ford spot quote was unavailable")
         spot_price = float(spot["last"])
+        history = get_daily_history(TICKER, days=120)
+        if history:
+            render_market_chart(history, spot_price)
+            safe_discord_call(
+                "Ford market map",
+                lambda: discord.upsert_channel_message(
+                    "charts",
+                    report_state,
+                    "ford-market-map",
+                    market_map_text(history, spot_price),
+                    search_token="Ford Market Map",
+                ),
+            )
+            if report_state.get("chart_snapshot_date") != timestamp.date().isoformat():
+                safe_discord_call(
+                    "daily Ford chart screenshot",
+                    lambda: discord.send_channel_file(
+                        "charts",
+                        CHART_SCREENSHOT_PATH,
+                        content=(
+                            f"📊 **DAILY FORD CHART · {timestamp.date().isoformat()}**\n"
+                            f"Spot ${spot_price:.2f} · indicators, support, and resistance are marked."
+                        ),
+                    ),
+                )
+                report_state["chart_snapshot_date"] = timestamp.date().isoformat()
+        safe_discord_call(
+            "Ford event monitor",
+            lambda: sync_ford_events(discord, report_state),
+        )
 
         # Reprice every existing open play in one or more batched quote calls.
         currently_open = open_rows(rows)
