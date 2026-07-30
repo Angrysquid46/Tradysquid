@@ -38,7 +38,7 @@ def git(*arguments: str) -> str:
     )
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "Git command failed")
-    return result.stdout.strip()
+    return result.stdout.rstrip()
 
 
 def atomic_json(path: Path, value: Any) -> None:
