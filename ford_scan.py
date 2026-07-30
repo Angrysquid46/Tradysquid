@@ -3599,7 +3599,63 @@ def report_error(discord: DiscordTracker | None, message: str) -> None:
         safe_discord_call("error alert", lambda: discord.send_channel("errors", content=f"🚨 **Ford scanner error**\n```{safe_message[:1500]}```"))
 
 
+def intelligence_only_main() -> int:
+    """Run the low-frequency Ford briefing without scanning option chains."""
+    timestamp = now_ct()
+    rows = read_log()
+    try:
+        discord = initialize_discord()
+    except DiscordError as exc:
+        report_error(None, f"TradeBot setup failed: {exc}")
+        return 1
+    report_state = read_report_state()
+    try:
+        spot = get_quote(TICKER)
+        spot_price = as_float((spot or {}).get("last"))
+        history = get_daily_history(TICKER, days=120)
+        if spot_price is None or not history:
+            raise TradierError("Ford quote or daily history was unavailable for the intelligence briefing")
+        render_market_chart(history, spot_price)
+        publish_ford_intelligence(
+            discord,
+            report_state,
+            rows,
+            history,
+            spot_price,
+            timestamp,
+        )
+        sync_ford_events(discord, report_state)
+        before_open = (
+            timestamp.hour < MARKET_OPEN[0]
+            or (timestamp.hour == MARKET_OPEN[0] and timestamp.minute < MARKET_OPEN[1])
+        )
+        session_label = "premarket" if before_open else "after-market"
+        if (
+            session_label == "premarket"
+            and report_state.get("chart_snapshot_date") != timestamp.date().isoformat()
+        ):
+            upload = discord.send_channel_file(
+                "charts",
+                CHART_SCREENSHOT_PATH,
+                content=(
+                    f"📊 **PREMARKET FORD CHART · {timestamp.date().isoformat()}**\n"
+                    f"Last price ${spot_price:.2f} · indicators, support, and resistance are marked."
+                ),
+            )
+            if upload:
+                report_state["chart_snapshot_date"] = timestamp.date().isoformat()
+        write_report_state(report_state)
+        print(f"Ford {session_label} intelligence briefing complete.")
+        return 0
+    except (TradierError, DiscordError, requests.RequestException, ValueError, KeyError) as exc:
+        report_error(discord, f"Ford intelligence briefing failed: {type(exc).__name__}: {exc}")
+        write_report_state(report_state)
+        return 1
+
+
 def main() -> int:
+    if "--intelligence-only" in sys.argv[1:]:
+        return intelligence_only_main()
     timestamp = now_ct()
     rows = read_log()
     write_log(rows)  # immediately migrate old CSV headers/IDs safely
@@ -3659,50 +3715,6 @@ def main() -> int:
 
     is_open, timestamp = market_is_open_now()
     if not is_open:
-        try:
-            closed_spot = get_quote(TICKER)
-            closed_spot_price = as_float((closed_spot or {}).get("last"))
-            closed_history = get_daily_history(TICKER, days=120)
-            if closed_spot_price is not None and closed_history:
-                render_market_chart(closed_history, closed_spot_price)
-                safe_discord_call(
-                    "closed-market Ford map",
-                    lambda: discord.upsert_channel_message(
-                        "charts",
-                        report_state,
-                        "ford-market-map",
-                        market_map_text(closed_history, closed_spot_price),
-                        search_token="Ford Market Map",
-                    ),
-                )
-                if report_state.get("chart_snapshot_date") != timestamp.date().isoformat():
-                    upload = discord.send_channel_file(
-                        "charts",
-                        CHART_SCREENSHOT_PATH,
-                        content=(
-                            f"📊 **DAILY FORD CHART · {timestamp.date().isoformat()}**\n"
-                            f"Last price ${closed_spot_price:.2f} · indicators, support, and resistance are marked."
-                        ),
-                    )
-                    if upload:
-                        report_state["chart_snapshot_date"] = timestamp.date().isoformat()
-                safe_discord_call(
-                    "closed-market Ford intelligence",
-                    lambda: publish_ford_intelligence(
-                        discord,
-                        report_state,
-                        rows,
-                        closed_history,
-                        closed_spot_price,
-                        timestamp,
-                    ),
-                )
-            safe_discord_call(
-                "closed-market Ford event monitor",
-                lambda: sync_ford_events(discord, report_state),
-            )
-        except (TradierError, DiscordError, requests.RequestException, ValueError, KeyError) as exc:
-            print(f"Closed-market chart refresh skipped: {exc}", file=sys.stderr)
         closed_summary = (
             f"Market closed · maintenance sync complete · "
             f"{len(open_rows(rows))} open trade(s)"
@@ -3785,21 +3797,6 @@ def main() -> int:
                 )
                 if upload:
                     report_state["chart_snapshot_date"] = timestamp.date().isoformat()
-            safe_discord_call(
-                "Ford intelligence",
-                lambda: publish_ford_intelligence(
-                    discord,
-                    report_state,
-                    rows,
-                    history,
-                    spot_price,
-                    timestamp,
-                ),
-            )
-        safe_discord_call(
-            "Ford event monitor",
-            lambda: sync_ford_events(discord, report_state),
-        )
 
         # Reprice every existing open play in one or more batched quote calls.
         currently_open = open_rows(rows)
