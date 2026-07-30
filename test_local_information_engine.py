@@ -80,6 +80,7 @@ class InformationEngineTests(unittest.TestCase):
         ticker_commands = {
             "quote", "trend", "chart", "levels", "events", "chain",
             "setup", "watchlist", "performance", "dataage", "filings", "calendar",
+            "why", "option", "risk", "status", "schedule", "lastscan",
         }
         commands = {
             command["name"]: command
@@ -178,6 +179,35 @@ class InformationEngineTests(unittest.TestCase):
             self.assertIn("VALE", discord_command_bot.quote_reply("VALE"))
             self.assertIn("VALE", discord_command_bot.trend_reply("VALE"))
             self.assertIn("VALE", discord_command_bot.watchlist_reply("VALE"))
+
+    def test_ticker_desk_blocks_other_ticker_trade_and_contract_data(self) -> None:
+        rows = [{
+            "trade_id": "F-20260730-001",
+            "ticker": "F",
+            "outcome": "OPEN",
+        }]
+        with patch.object(
+            discord_command_bot.ford_scan, "read_log", return_value=rows
+        ):
+            self.assertIn(
+                "No tracked VALE trade",
+                discord_command_bot.why_reply("VALE", "F-20260730-001"),
+            )
+        contract = {
+            "symbol": "F260821C00015000",
+            "underlying": "F",
+        }
+        with patch.object(engine, "contract_snapshot", return_value=contract):
+            self.assertIn(
+                "belongs to F, not VALE",
+                discord_command_bot.option_reply(
+                    "VALE", "F260821C00015000"
+                ),
+            )
+        self.assertIn(
+            "VALE",
+            discord_command_bot.risk_reply("VALE", 0.25, 1, "call"),
+        )
 
     def test_health_probe_queue_is_drained(self) -> None:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

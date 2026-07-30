@@ -314,6 +314,11 @@ def option_quality(option: dict[str, Any], spot: float) -> dict[str, Any]:
         score += max(0, 20 - abs(abs(delta) - 0.65) * 50)
     return {
         "symbol": option.get("symbol"),
+        "underlying": str(
+            option.get("root_symbol")
+            or option.get("underlying")
+            or ""
+        ).upper(),
         "type": option_type,
         "strike": strike,
         "expiration": option.get("expiration_date"),

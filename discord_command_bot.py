@@ -229,14 +229,18 @@ def events_reply(ticker: str) -> str:
     return "\n".join(lines)
 
 
-def why_reply(trade_id: str) -> str:
+def why_reply(ticker: str, trade_id: str) -> str:
     trade_id = trade_id.strip().upper()
     row = next(
-        (item for item in ford_scan.read_log() if item.get("trade_id", "").upper() == trade_id),
+        (
+            item for item in ford_scan.read_log()
+            if item.get("trade_id", "").upper() == trade_id
+            and str(item.get("ticker") or "F").upper() == ticker
+        ),
         None,
     )
     if not row:
-        return f"❌ No tracked trade matched `{trade_id}`."
+        return f"❌ No tracked {ticker} trade matched `{trade_id}`."
     reason = row.get("setup_reason") or (
         "The original detailed rationale was not recorded for this legacy/imported trade. "
         "The bot will not invent an after-the-fact justification."
@@ -510,10 +514,16 @@ def watchlist_reply(ticker: str) -> str:
     ])
 
 
-def option_reply(symbol: str) -> str:
+def option_reply(ticker: str, symbol: str) -> str:
     item = info_engine.contract_snapshot(symbol)
     if not item:
         return f"❌ Tradier did not return option contract `{symbol.strip().upper()}`."
+    underlying = str(item.get("underlying") or "").upper()
+    if underlying and underlying != ticker:
+        return (
+            f"`{symbol.strip().upper()}` belongs to {underlying}, not {ticker}. "
+            f"Use the {underlying} desk or explicitly select ticker:{underlying}."
+        )
     return "\n".join([
         f"🔬 **Option inspection · `{item['symbol']}`**",
         (
@@ -538,7 +548,7 @@ def option_reply(symbol: str) -> str:
     ])
 
 
-def risk_reply(premium: float, contracts: int, side: str) -> str:
+def risk_reply(ticker: str, premium: float, contracts: int, side: str) -> str:
     premium = max(0.0, float(premium))
     contracts = max(1, min(int(contracts), 100))
     capital = premium * 100 * contracts
@@ -547,7 +557,7 @@ def risk_reply(premium: float, contracts: int, side: str) -> str:
     target_dollars = (target_value - premium) * 100 * contracts
     stop_dollars = (stop_value - premium) * 100 * contracts
     return "\n".join([
-        "🛡️ **Long-option risk calculator**",
+        f"🛡️ **{ticker} long-option risk calculator**",
         f"Example: {contracts} contract(s) at ${premium:.2f} · {side.lower()}",
         f"Premium committed / maximum long-option loss: **${capital:,.0f}**",
         (
@@ -585,11 +595,14 @@ def performance_reply(ticker: str) -> str:
     ])
 
 
-def status_reply() -> str:
-    latest_market = info_engine.latest_observation("market")
+def status_reply(ticker: str) -> str:
+    market_kind = "market" if ticker == "F" else f"ticker-market:{ticker}"
+    latest_market = info_engine.latest_observation(market_kind)
     latest_status = info_engine.latest_observation("status")
+    ticker_state = ticker_registry.get(ticker) or {}
     return "\n".join([
-        "🩺 **Tradysquids status**",
+        f"🩺 **{ticker} Tradysquids status**",
+        f"Ticker strategy: **{ticker_state.get('status', 'UNKNOWN')}**",
         "Command service: **ONLINE**",
         f"Tradier configured: **{'YES' if ford_scan.TRADIER_TOKEN else 'NO'}**",
         (
@@ -613,11 +626,11 @@ def status_reply() -> str:
     ])
 
 
-def schedule_reply() -> str:
+def schedule_reply(ticker: str) -> str:
     return "\n".join([
-        "⏰ **Local information schedule**",
+        f"⏰ **{ticker} local information schedule**",
         f"Market and technical snapshot: every {info_engine.MARKET_REFRESH_MINUTES} minutes",
-        f"Ford official filing check: every {info_engine.FILINGS_REFRESH_MINUTES} minutes",
+        f"{ticker} news/event check: every {info_engine.FILINGS_REFRESH_MINUTES} minutes",
         "Integrated ticker dashboards/options: every 15 minutes; ticker news: every 30 minutes",
         f"Health snapshot: every {info_engine.STATUS_REFRESH_MINUTES} minutes",
         "Material alerts: regime changes, tracked-level crosses, unusual relative volume and new filings",
@@ -639,10 +652,10 @@ def dataage_reply(ticker: str) -> str:
         rows.append(
             f"{label}: {info_engine.data_age_text(item['observed_at'] if item else None)} ago"
         )
-    return "🕒 **Local data freshness**\n" + "\n".join(rows)
+    return f"🕒 **{ticker} local data freshness**\n" + "\n".join(rows)
 
 
-def lastscan_reply() -> str:
+def lastscan_reply(ticker: str) -> str:
     connection = info_engine.connect_db()
     try:
         rows = connection.execute(
@@ -651,14 +664,25 @@ def lastscan_reply() -> str:
             FROM job_runs
             WHERE status != 'RUNNING'
             ORDER BY id DESC
-            LIMIT 6
+            LIMIT 30
             """
         ).fetchall()
     finally:
         connection.close()
+    rows = [
+        row for row in rows
+        if ticker in str(row["detail"]).upper()
+        or (
+            ticker == "F"
+            and row["job_name"] in {
+                "market-monitor", "options-dashboard", "official-ford-news",
+                "filings-monitor",
+            }
+        )
+    ][:6]
     if not rows:
-        return "No local scheduled jobs have completed yet."
-    lines = ["🧾 **Recent local jobs**"]
+        return f"No recent {ticker} scheduled jobs have completed yet."
+    lines = [f"🧾 **Recent {ticker} local jobs**"]
     for row in rows:
         lines.append(
             f"**{row['job_name']}** · {row['status']} · {row['finished_at']} · "
@@ -741,10 +765,13 @@ def process_command(interaction: dict[str, Any]) -> None:
             ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=events_reply(ticker))
         elif name == "why":
+            ticker = interaction_ticker(interaction)
             patch_original(
                 application_id,
                 token,
-                content=why_reply(str(option_value(interaction, "trade_id", ""))),
+                content=why_reply(
+                    ticker, str(option_value(interaction, "trade_id", ""))
+                ),
             )
         elif name == "help":
             patch_original(application_id, token, content=help_reply())
@@ -770,16 +797,21 @@ def process_command(interaction: dict[str, Any]) -> None:
             ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=watchlist_reply(ticker))
         elif name == "option":
+            ticker = interaction_ticker(interaction)
             patch_original(
                 application_id,
                 token,
-                content=option_reply(str(option_value(interaction, "symbol", ""))),
+                content=option_reply(
+                    ticker, str(option_value(interaction, "symbol", ""))
+                ),
             )
         elif name == "risk":
+            ticker = interaction_ticker(interaction)
             patch_original(
                 application_id,
                 token,
                 content=risk_reply(
+                    ticker,
                     float(option_value(interaction, "premium", 0)),
                     int(option_value(interaction, "contracts", 1)),
                     str(option_value(interaction, "side", "call")),
@@ -789,14 +821,17 @@ def process_command(interaction: dict[str, Any]) -> None:
             ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=performance_reply(ticker))
         elif name == "status":
-            patch_original(application_id, token, content=status_reply())
+            ticker = interaction_ticker(interaction)
+            patch_original(application_id, token, content=status_reply(ticker))
         elif name == "schedule":
-            patch_original(application_id, token, content=schedule_reply())
+            ticker = interaction_ticker(interaction)
+            patch_original(application_id, token, content=schedule_reply(ticker))
         elif name == "dataage":
             ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=dataage_reply(ticker))
         elif name == "lastscan":
-            patch_original(application_id, token, content=lastscan_reply())
+            ticker = interaction_ticker(interaction)
+            patch_original(application_id, token, content=lastscan_reply(ticker))
         elif name == "filings":
             ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=filings_reply(ticker))

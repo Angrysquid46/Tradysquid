@@ -152,7 +152,7 @@ COMMANDS = [
     {
         "name": "why",
         "type": 1,
-        "description": "Explain the recorded rationale for a tracked Ford trade",
+        "description": "Explain a tracked trade for the current ticker desk",
         "options": [{
             "name": "trade_id",
             "description": "Example: F-20260729-005",
@@ -160,7 +160,7 @@ COMMANDS = [
             "required": True,
             "min_length": 10,
             "max_length": 40,
-        }],
+        }, dict(TICKER_ARGUMENT)],
     },
     {
         "name": "chain",
@@ -192,7 +192,7 @@ COMMANDS = [
     {
         "name": "option",
         "type": 1,
-        "description": "Inspect one Ford option contract",
+        "description": "Inspect an option contract for the current ticker desk",
         "options": [{
             "name": "symbol",
             "description": "Tradier OCC option symbol",
@@ -200,7 +200,7 @@ COMMANDS = [
             "required": True,
             "min_length": 8,
             "max_length": 32,
-        }],
+        }, dict(TICKER_ARGUMENT)],
     },
     {
         "name": "risk",
@@ -233,6 +233,7 @@ COMMANDS = [
                     {"name": "Put", "value": "put"},
                 ],
             },
+            dict(TICKER_ARGUMENT),
         ],
     },
     {
@@ -244,12 +245,14 @@ COMMANDS = [
     {
         "name": "status",
         "type": 1,
-        "description": "Check bot, Tradier, scheduler, Discord, and SEC status",
+        "description": "Check current ticker and system status",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "schedule",
         "type": 1,
-        "description": "Show the local no-GitHub monitoring schedule",
+        "description": "Show the current ticker monitoring schedule",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "dataage",
@@ -260,7 +263,8 @@ COMMANDS = [
     {
         "name": "lastscan",
         "type": 1,
-        "description": "Show recent local monitoring job results",
+        "description": "Show recent monitoring results for the current ticker",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "filings",
