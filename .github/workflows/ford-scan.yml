@@ -7,9 +7,10 @@ on:
     # Every 15 minutes on weekdays across the UTC window covering
     # Central Time market hours during both CDT and CST.
     #
-    # Runs at :08, :23, :38, and :53.
+    # Runs at :07, :22, :37, and :52. Keeping the jobs away from the
+    # top of the hour reduces GitHub Actions schedule congestion.
     # ford_scan.py performs the exact Central-Time market-hours check.
-    - cron: "8,23,38,53 13-21 * * 1-5"
+    - cron: "7,22,37,52 13-21 * * 1-5"
 
   # Keeps the manual Run workflow button available.
   workflow_dispatch:
