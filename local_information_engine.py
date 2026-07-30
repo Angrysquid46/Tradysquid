@@ -376,15 +376,25 @@ def ranked_option_chain(
 def contract_snapshot(symbol: str) -> dict[str, Any] | None:
     symbol = symbol.strip().upper()
     option = ford_scan.get_quotes([symbol], include_greeks=True).get(symbol)
-    spot_quote = ford_scan.get_quote(ford_scan.TICKER) or {}
+    underlying = str(
+        (option or {}).get("root_symbol")
+        or (option or {}).get("underlying")
+        or ford_scan.TICKER
+    ).upper()
+    spot_quote = ford_scan.get_quote(underlying) or {}
     spot = ford_scan.as_float(spot_quote.get("last"))
     if not option or spot is None:
         return None
     return option_quality(option, spot)
 
 
-def performance_snapshot() -> dict[str, Any]:
+def performance_snapshot(ticker: str | None = None) -> dict[str, Any]:
     rows = ford_scan.read_log()
+    if ticker:
+        rows = [
+            row for row in rows
+            if str(row.get("ticker") or "F").upper() == ticker.upper()
+        ]
     closed = ford_scan.closed_rows(rows)
     metrics = ford_scan.result_metrics(closed)
     open_count = len(ford_scan.open_rows(rows))

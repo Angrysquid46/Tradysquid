@@ -8,7 +8,7 @@ CATEGORY_NAME = "Start Here"
 CHANNEL_NAME = "bot-commands"
 GUIDE_MARKER = "Tradysquids Command Guide"
 CHANNEL_TOPIC = (
-    "How to use TradeBot's Ford market, options, chart, risk, research, "
+    "How to use TradeBot's dynamic ticker market, options, chart, risk, research, "
     "performance, and reliability commands."
 )
 
@@ -22,21 +22,21 @@ GUIDE = """# 🧭 Tradysquids Command Guide
 5. Press **Send**.
 
 ## Market and charts
-- `/quote` — Ford price, daily change, volume, bid/ask and timestamp.
-- `/trend` — SMA20/50/200, RSI, MACD, ATR and Bollinger range.
-- `/levels` — trend regime plus support and resistance.
-- `/chart days:` — generate a fresh 30, 60, 90 or 120-day chart.
-- `/watchlist` — reactive levels and monitored conditions.
-- `/setup` — qualified direction and a research shortlist, or NO TRADE.
+- `/quote ticker:` — price, daily change, volume, bid/ask and timestamp.
+- `/trend ticker:` — SMA20/50/200, RSI, MACD, ATR and Bollinger range.
+- `/levels ticker:` — trend regime plus support and resistance.
+- `/chart ticker: days:` — generate a fresh 30, 60, 90 or 120-day chart.
+- `/watchlist ticker:` — reactive levels and monitored conditions.
+- `/setup ticker:` — qualified direction and a research shortlist, or NO TRADE.
 
-## Ford options
-- `/chain side:` — rank calls or puts by liquidity and contract quality.
+## Ticker options
+- `/chain ticker: side:` — rank calls or puts by liquidity and contract quality.
 - `/option symbol:` — inspect bid/ask, spread, OI, volume, Greeks and IV.
 - `/risk premium: contracts: side:` — premium risk and management examples.
 
 ## Research and learning
-- `/events` or `/calendar` — official Ford event and filing links.
-- `/filings` — recent official Ford SEC filings.
+- `/events ticker:` or `/calendar ticker:` — ticker event, news, and filing links.
+- `/filings ticker:` — ticker filing links and recent news.
 - `/explain topic:` — delta, theta, IV, spread, OI, DTE, RSI or ATR.
 - `/why trade_id:` — recorded evidence and rationale for a tracked trade.
 
@@ -49,9 +49,9 @@ GUIDE = """# 🧭 Tradysquids Command Guide
 - `/ticker-status ticker:` — inspect one ticker's registry and desk status.
 
 ## Tracking and reliability
-- `/performance` — recorded wins, losses, open trades and P/L.
+- `/performance ticker:` — recorded wins, losses, open trades and P/L.
 - `/status` — bot, Tradier, scheduler, Discord and SEC configuration.
-- `/dataage` — freshness of locally cached data.
+- `/dataage ticker:` — freshness of locally cached ticker data.
 - `/lastscan` — recent local monitoring results.
 - `/schedule` — the no-GitHub local monitoring schedule.
 - `/help` — display the command list in any channel.

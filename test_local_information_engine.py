@@ -4,7 +4,9 @@ import tempfile
 import unittest
 import socket
 from pathlib import Path
+from unittest.mock import patch
 
+import discord_command_bot
 import local_information_engine as engine
 import register_discord_commands
 import ticker_registry
@@ -73,6 +75,78 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn("help", names)
         self.assertIn("chain", names)
         self.assertIn("status", names)
+
+    def test_every_ticker_market_command_accepts_dynamic_ticker(self) -> None:
+        ticker_commands = {
+            "quote", "trend", "chart", "levels", "events", "chain",
+            "setup", "watchlist", "performance", "dataage", "filings", "calendar",
+        }
+        commands = {
+            command["name"]: command
+            for command in register_discord_commands.COMMANDS
+        }
+        for name in ticker_commands:
+            options = commands[name].get("options") or []
+            ticker = next(
+                (option for option in options if option.get("name") == "ticker"),
+                None,
+            )
+            self.assertIsNotNone(ticker, name)
+            self.assertFalse(ticker["required"], name)
+
+    def test_dynamic_command_ticker_accepts_active_and_rejects_unknown_or_archived(self) -> None:
+        original = ticker_registry.DB_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            ticker_registry.DB_PATH = Path(temp) / "registry.db"
+            ticker_registry.save("VALE", status="ACTIVE", note="test")
+            self.assertEqual(discord_command_bot.command_ticker("vale"), "VALE")
+            with self.assertRaises(ValueError):
+                discord_command_bot.command_ticker("XYZ")
+            ticker_registry.archive("VALE")
+            with self.assertRaises(ValueError):
+                discord_command_bot.command_ticker("VALE")
+        ticker_registry.DB_PATH = original
+
+    def test_performance_snapshot_filters_each_ticker(self) -> None:
+        rows = [
+            {"ticker": "F", "outcome": "OPEN"},
+            {"ticker": "VALE", "outcome": "OPEN"},
+        ]
+        with patch.object(engine.ford_scan, "read_log", return_value=rows):
+            ford = engine.performance_snapshot("F")
+            vale = engine.performance_snapshot("VALE")
+        self.assertEqual(ford["tracked"], 1)
+        self.assertEqual(vale["tracked"], 1)
+
+    def test_dynamic_market_replies_use_requested_ticker(self) -> None:
+        snapshot = {
+            "price": 14.77,
+            "change_pct": 0.5,
+            "bid": 14.76,
+            "ask": 14.78,
+            "spread_pct": 0.001,
+            "volume": 1000,
+            "relative_volume": 1.1,
+            "day_low": 14.5,
+            "day_high": 15.0,
+            "observed_at": "2026-07-30T10:00:00-05:00",
+            "regime": "NEUTRAL / RANGE",
+            "sma20": 14.5,
+            "sma50": 14.0,
+            "sma200": 13.0,
+            "rsi14": 56,
+            "macd": 0.1,
+            "atr14": 0.3,
+            "bollinger_lower": 14.0,
+            "bollinger_upper": 15.2,
+            "support20": 14.05,
+            "resistance20": 15.09,
+            "reason": "range",
+        }
+        with patch.object(engine, "market_snapshot", return_value=snapshot):
+            self.assertIn("VALE", discord_command_bot.quote_reply("VALE"))
+            self.assertIn("VALE", discord_command_bot.trend_reply("VALE"))
+            self.assertIn("VALE", discord_command_bot.watchlist_reply("VALE"))
 
     def test_health_probe_queue_is_drained(self) -> None:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

@@ -100,20 +100,50 @@ def patch_original(
     response.raise_for_status()
 
 
-def live_market_data(days: int = 120) -> tuple[float, list[dict[str, Any]]]:
-    quote = ford_scan.get_quote(ford_scan.TICKER)
+def command_ticker(value: str | None) -> str:
+    ticker = ticker_registry.normalize_ticker(value or "F")
+    item = ticker_registry.get(ticker)
+    if not item:
+        raise ValueError(
+            f"{ticker} is not integrated. Use `/ticker-add ticker:{ticker}` first."
+        )
+    if item.get("status") == "ARCHIVED":
+        raise ValueError(
+            f"{ticker} is archived. Use `/ticker-resume ticker:{ticker}` first."
+        )
+    return ticker
+
+
+def live_market_data(ticker: str, days: int = 120) -> tuple[float, list[dict[str, Any]]]:
+    quote = ford_scan.get_quote(ticker)
     spot = ford_scan.as_float((quote or {}).get("last"))
-    history = ford_scan.get_daily_history(ford_scan.TICKER, days=max(60, days))
+    history = ford_scan.get_daily_history(ticker, days=max(60, days))
     if spot is None or not history:
-        raise ford_scan.TradierError("Ford quote or price history is unavailable")
+        raise ford_scan.TradierError(f"{ticker} quote or price history is unavailable")
     return spot, history
 
 
-def chart_reply(days: int) -> tuple[str, Path]:
+def chart_reply(ticker: str, days: int) -> tuple[str, Path]:
     with CHART_LOCK:
-        spot, history = live_market_data(days)
-        ford_scan.render_market_chart(history[-days:], spot)
+        spot, history = live_market_data(ticker, days)
         context = ford_scan.directional_market_context(history, spot)
+        closes = [
+            value for day in history[-days:]
+            if (value := ford_scan.as_float(day.get("close"))) is not None
+        ]
+        chart_path = (
+            info_engine.TICKER_CHART_DIR
+            / f"{ticker.lower()}-command-chart.png"
+        )
+        ford_scan.render_market_chart_png(
+            history[-days:],
+            spot,
+            context,
+            min(closes[-20:]) if closes else spot,
+            max(closes[-20:]) if closes else spot,
+            symbol=ticker,
+            output_path=chart_path,
+        )
         rsi = context.get("rsi14")
         rsi_text = f"{rsi:.1f}" if rsi is not None else "Unavailable"
         content = (
@@ -122,11 +152,14 @@ def chart_reply(days: int) -> tuple[str, Path]:
             f"{context['reason']}\n"
             "Educational decision support only—not financial advice."
         )
-        return content, ford_scan.CHART_SCREENSHOT_PATH
+        return (
+            content.replace("Ford", ticker).replace("F $", f"{ticker} $"),
+            chart_path,
+        )
 
 
-def levels_reply() -> str:
-    spot, history = live_market_data()
+def levels_reply(ticker: str) -> str:
+    spot, history = live_market_data(ticker)
     context = ford_scan.directional_market_context(history, spot)
     closes = [
         value for day in history
@@ -137,7 +170,7 @@ def levels_reply() -> str:
     rsi = context.get("rsi14")
     rsi_text = f"{rsi:.1f}" if rsi is not None else "Unavailable"
     return (
-        "🧭 **Ford levels**\n"
+        f"🧭 **{ticker} levels**\n"
         f"Price: ${spot:.2f}\n"
         f"Regime: {context['regime']}\n"
         f"SMA20: {ford_scan.fmt_money(context.get('sma20'))}\n"
@@ -149,7 +182,18 @@ def levels_reply() -> str:
     )
 
 
-def events_reply() -> str:
+def events_reply(ticker: str) -> str:
+    if ticker != "F":
+        items = info_engine.fetch_ticker_news(ticker)
+        lines = [
+            f"**{ticker} news and events**",
+            f"[SEC company search](https://www.sec.gov/edgar/search/#/q={ticker})",
+        ]
+        lines.extend(
+            f"• [{item['title']}]({item['url']})" for item in items[:8]
+        )
+        lines.append("Verify the original publisher before acting on a headline.")
+        return "\n".join(lines)
     filings = ford_scan.fetch_recent_ford_filings()
     lines = [
         "🗓️ **Ford events and filings**",
@@ -178,7 +222,7 @@ def why_reply(trade_id: str) -> str:
         None,
     )
     if not row:
-        return f"❌ No tracked Ford trade matched `{trade_id}`."
+        return f"❌ No tracked trade matched `{trade_id}`."
     reason = row.get("setup_reason") or (
         "The original detailed rationale was not recorded for this legacy/imported trade. "
         "The bot will not invent an after-the-fact justification."
@@ -211,15 +255,15 @@ def value_text(value: Any, *, digits: int = 2, prefix: str = "", suffix: str = "
 
 def help_reply() -> str:
     return "\n".join([
-        "🧭 **Tradysquids Ford command guide**",
-        "`/quote` — price, daily change, volume, bid/ask and data timestamp",
+        "🧭 **Tradysquids dynamic ticker command guide**",
+        "`/quote ticker:` — price, daily change, volume, bid/ask and timestamp",
         "`/trend` or `/levels` — trend regime, indicators, support and resistance",
-        "`/chart` — generate and upload a Ford chart",
-        "`/chain side:` — rank liquid Ford calls or puts",
+        "`/chart ticker:` — generate and upload a ticker chart",
+        "`/chain ticker: side:` — rank liquid calls or puts",
         "`/setup` and `/watchlist` — show qualified direction and monitored conditions",
         "`/option symbol:` — inspect one option contract",
         "`/risk premium: contracts:` — calculate premium at risk and break-even examples",
-        "`/events` or `/filings` — official Ford events and SEC filings",
+        "`/events ticker:` or `/filings ticker:` — ticker news and filings",
         "`/performance` — tracked trade results and open-position count",
         "`/why trade_id:` — show the recorded rationale for a tracked trade",
         "`/status`, `/dataage`, `/lastscan`, `/schedule` — system reliability",
@@ -276,7 +320,7 @@ def ticker_pause_reply(interaction: dict[str, Any]) -> str:
     return (
         f"⏸️ **{item['ticker']} paused.** No new positions will be generated."
         f"{resume} Existing positions continue to be tracked."
-    )
+    ).replace("Ford", ticker)
 
 
 def ticker_resume_reply(interaction: dict[str, Any]) -> str:
@@ -333,12 +377,12 @@ def ticker_status_reply(ticker: str) -> str:
     ])
 
 
-def quote_reply() -> str:
-    snapshot = info_engine.market_snapshot()
+def quote_reply(ticker: str) -> str:
+    snapshot = info_engine.market_snapshot(ticker)
     return "\n".join([
-        "💵 **Ford quote**",
+        f"💵 **{ticker} quote**",
         (
-            f"F **{value_text(snapshot['price'], prefix='$')}** · "
+            f"{ticker} **{value_text(snapshot['price'], prefix='$')}** · "
             f"{value_text(snapshot.get('change_pct'), suffix='%')}"
         ),
         (
@@ -355,10 +399,10 @@ def quote_reply() -> str:
     ])
 
 
-def trend_reply() -> str:
-    snapshot = info_engine.market_snapshot()
+def trend_reply(ticker: str) -> str:
+    snapshot = info_engine.market_snapshot(ticker)
     return "\n".join([
-        "📐 **Ford technical dashboard**",
+        f"📐 **{ticker} technical dashboard**",
         f"Regime: **{snapshot['regime']}** · Price {value_text(snapshot['price'], prefix='$')}",
         (
             f"SMA20 {value_text(snapshot.get('sma20'), prefix='$')} · "
@@ -383,12 +427,12 @@ def trend_reply() -> str:
     ])
 
 
-def chain_reply(side: str) -> str:
+def chain_reply(ticker: str, side: str) -> str:
     side = side.lower()
     if side not in {"call", "put"}:
         side = "call"
-    ranked = info_engine.ranked_option_chain(side=side, limit=8)
-    lines = [f"🔗 **Ford {side} liquidity ranking**"]
+    ranked = info_engine.ranked_option_chain(side=side, limit=8, symbol=ticker)
+    lines = [f"🔗 **{ticker} {side} liquidity ranking**"]
     if not ranked:
         return "\n".join(lines + ["No contracts were available for the configured DTE range."])
     for item in ranked:
@@ -405,12 +449,12 @@ def chain_reply(side: str) -> str:
     return "\n".join(lines)
 
 
-def setup_reply() -> str:
-    snapshot = info_engine.market_snapshot()
+def setup_reply(ticker: str) -> str:
+    snapshot = info_engine.market_snapshot(ticker)
     regime = str(snapshot.get("regime") or "NO TRADE")
     if regime == "NO TRADE":
         return "\n".join([
-            "🚦 **Ford setup check**",
+            f"🚦 **{ticker} setup check**",
             "**Current state: NO TRADE**",
             f"Reason: {snapshot.get('reason') or '; '.join(snapshot.get('failures') or [])}",
             (
@@ -422,9 +466,9 @@ def setup_reply() -> str:
             "The bot will not force an options idea when the configured regime gate fails.",
         ])
     side = "call" if "BULLISH" in regime else "put"
-    ranked = info_engine.ranked_option_chain(side=side, limit=3)
+    ranked = info_engine.ranked_option_chain(side=side, limit=3, symbol=ticker)
     lines = [
-        "🚦 **Ford setup check**",
+        f"🚦 **{ticker} setup check**",
         f"Qualified direction: **{regime}**",
         f"Reason: {snapshot.get('reason')}",
         f"Highest-ranked liquid {side}s for research:",
@@ -439,10 +483,10 @@ def setup_reply() -> str:
     return "\n".join(lines)
 
 
-def watchlist_reply() -> str:
-    snapshot = info_engine.market_snapshot()
+def watchlist_reply(ticker: str) -> str:
+    snapshot = info_engine.market_snapshot(ticker)
     return "\n".join([
-        "👀 **Ford reactive watchlist**",
+        f"👀 **{ticker} reactive watchlist**",
         f"Current price: {value_text(snapshot['price'], prefix='$')} · {snapshot['regime']}",
         f"Upside confirmation: sustained trade above {value_text(snapshot.get('resistance20'), prefix='$')}",
         f"Downside warning: sustained trade below {value_text(snapshot.get('support20'), prefix='$')}",
@@ -508,12 +552,12 @@ def risk_reply(premium: float, contracts: int, side: str) -> str:
     ])
 
 
-def performance_reply() -> str:
-    snapshot = info_engine.performance_snapshot()
+def performance_reply(ticker: str) -> str:
+    snapshot = info_engine.performance_snapshot(ticker)
     metrics = snapshot["metrics"]
     win_rate = ford_scan.as_float(metrics.get("win_rate"), 0.0) or 0.0
     return "\n".join([
-        "📊 **Tracked Ford performance**",
+        f"📊 **Tracked {ticker} performance**",
         (
             f"Tracked {snapshot['tracked']} · open {snapshot['open']} · "
             f"closed {snapshot['closed']}"
@@ -559,7 +603,8 @@ def schedule_reply() -> str:
     return "\n".join([
         "⏰ **Local information schedule**",
         f"Market and technical snapshot: every {info_engine.MARKET_REFRESH_MINUTES} minutes",
-        f"Ford SEC filing check: every {info_engine.FILINGS_REFRESH_MINUTES} minutes",
+        f"Ford official filing check: every {info_engine.FILINGS_REFRESH_MINUTES} minutes",
+        "Integrated ticker dashboards/options: every 15 minutes; ticker news: every 30 minutes",
         f"Health snapshot: every {info_engine.STATUS_REFRESH_MINUTES} minutes",
         "Material alerts: regime changes, tracked-level crosses, unusual relative volume and new filings",
         "Duplicate/unchanged alerts are suppressed.",
@@ -567,12 +612,18 @@ def schedule_reply() -> str:
     ])
 
 
-def dataage_reply() -> str:
+def dataage_reply(ticker: str) -> str:
     rows = []
-    for kind in ("market", "filings", "status"):
+    kinds = (
+        ("market", "filings", "status")
+        if ticker == "F"
+        else (f"ticker-market:{ticker}", f"ticker-news:{ticker}")
+    )
+    for kind in kinds:
         item = info_engine.latest_observation(kind)
+        label = kind.split(":")[0].replace("ticker-", "").title()
         rows.append(
-            f"{kind.title()}: {info_engine.data_age_text(item['observed_at'] if item else None)} ago"
+            f"{label}: {info_engine.data_age_text(item['observed_at'] if item else None)} ago"
         )
     return "🕒 **Local data freshness**\n" + "\n".join(rows)
 
@@ -625,7 +676,9 @@ def explain_reply(topic: str) -> str:
     return f"📚 **{topic.strip().title()}**\n{explanation}\nEducational explanation only."
 
 
-def filings_reply() -> str:
+def filings_reply(ticker: str) -> str:
+    if ticker != "F":
+        return events_reply(ticker)
     filings = ford_scan.fetch_recent_ford_filings()
     if not filings:
         return (
@@ -664,12 +717,15 @@ def process_command(interaction: dict[str, Any]) -> None:
             )
         elif name == "chart":
             days = int(option_value(interaction, "days", 90))
-            content, chart_path = chart_reply(days)
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            content, chart_path = chart_reply(ticker, days)
             patch_original(application_id, token, content=content, file_path=chart_path)
         elif name == "levels":
-            patch_original(application_id, token, content=levels_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=levels_reply(ticker))
         elif name == "events":
-            patch_original(application_id, token, content=events_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=events_reply(ticker))
         elif name == "why":
             patch_original(
                 application_id,
@@ -679,19 +735,26 @@ def process_command(interaction: dict[str, Any]) -> None:
         elif name == "help":
             patch_original(application_id, token, content=help_reply())
         elif name == "quote":
-            patch_original(application_id, token, content=quote_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=quote_reply(ticker))
         elif name == "trend":
-            patch_original(application_id, token, content=trend_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=trend_reply(ticker))
         elif name == "chain":
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
             patch_original(
                 application_id,
                 token,
-                content=chain_reply(str(option_value(interaction, "side", "call"))),
+                content=chain_reply(
+                    ticker, str(option_value(interaction, "side", "call"))
+                ),
             )
         elif name == "setup":
-            patch_original(application_id, token, content=setup_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=setup_reply(ticker))
         elif name == "watchlist":
-            patch_original(application_id, token, content=watchlist_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=watchlist_reply(ticker))
         elif name == "option":
             patch_original(
                 application_id,
@@ -709,19 +772,23 @@ def process_command(interaction: dict[str, Any]) -> None:
                 ),
             )
         elif name == "performance":
-            patch_original(application_id, token, content=performance_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=performance_reply(ticker))
         elif name == "status":
             patch_original(application_id, token, content=status_reply())
         elif name == "schedule":
             patch_original(application_id, token, content=schedule_reply())
         elif name == "dataage":
-            patch_original(application_id, token, content=dataage_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=dataage_reply(ticker))
         elif name == "lastscan":
             patch_original(application_id, token, content=lastscan_reply())
         elif name == "filings":
-            patch_original(application_id, token, content=filings_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=filings_reply(ticker))
         elif name == "calendar":
-            patch_original(application_id, token, content=events_reply())
+            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            patch_original(application_id, token, content=events_reply(ticker))
         elif name == "explain":
             patch_original(
                 application_id,

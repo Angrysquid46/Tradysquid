@@ -11,6 +11,15 @@ APPLICATION_ID = os.environ.get("DISCORD_APPLICATION_ID", "").strip()
 BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 
+TICKER_ARGUMENT = {
+    "name": "ticker",
+    "description": "Integrated ticker symbol; defaults to F",
+    "type": 3,
+    "required": False,
+    "min_length": 1,
+    "max_length": 10,
+}
+
 COMMANDS = [
     {
         "name": "ticker-add",
@@ -97,23 +106,25 @@ COMMANDS = [
     {
         "name": "help",
         "type": 1,
-        "description": "Show every Tradysquids Ford command and how to use it",
+        "description": "Show every dynamic Tradysquids command and how to use it",
     },
     {
         "name": "quote",
         "type": 1,
-        "description": "Show the current Ford quote, volume, spread, and timestamp",
+        "description": "Show a ticker quote, volume, spread, and timestamp",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "trend",
         "type": 1,
-        "description": "Show the full Ford technical dashboard",
+        "description": "Show a ticker technical dashboard",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "chart",
         "type": 1,
-        "description": "Generate a current Ford price chart",
-        "options": [{
+        "description": "Generate a current ticker price chart",
+        "options": [dict(TICKER_ARGUMENT), {
             "name": "days",
             "description": "Number of trading days",
             "type": 4,
@@ -129,12 +140,14 @@ COMMANDS = [
     {
         "name": "levels",
         "type": 1,
-        "description": "Show Ford trend, RSI, support, and resistance",
+        "description": "Show ticker trend, RSI, support, and resistance",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "events",
         "type": 1,
-        "description": "Show official Ford events, news, and recent SEC filings",
+        "description": "Show ticker events, news, and filing links",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "why",
@@ -152,8 +165,8 @@ COMMANDS = [
     {
         "name": "chain",
         "type": 1,
-        "description": "Rank liquid Ford option contracts",
-        "options": [{
+        "description": "Rank liquid option contracts for an integrated ticker",
+        "options": [dict(TICKER_ARGUMENT), {
             "name": "side",
             "description": "Calls or puts",
             "type": 3,
@@ -167,12 +180,14 @@ COMMANDS = [
     {
         "name": "setup",
         "type": 1,
-        "description": "Check the qualified Ford direction and research shortlist",
+        "description": "Check a ticker direction and research shortlist",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "watchlist",
         "type": 1,
-        "description": "Show reactive Ford levels and monitored conditions",
+        "description": "Show ticker levels and monitored conditions",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "option",
@@ -223,7 +238,8 @@ COMMANDS = [
     {
         "name": "performance",
         "type": 1,
-        "description": "Summarize recorded Ford trade performance",
+        "description": "Summarize recorded performance for one ticker",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "status",
@@ -238,7 +254,8 @@ COMMANDS = [
     {
         "name": "dataage",
         "type": 1,
-        "description": "Show the age of locally cached Ford information",
+        "description": "Show cached information age for one ticker",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "lastscan",
@@ -248,12 +265,14 @@ COMMANDS = [
     {
         "name": "filings",
         "type": 1,
-        "description": "Show recent official Ford SEC filings",
+        "description": "Show ticker filing links and recent news",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "calendar",
         "type": 1,
-        "description": "Show Ford event links and recent material filings",
+        "description": "Show ticker event, news, and filing links",
+        "options": [dict(TICKER_ARGUMENT)],
     },
     {
         "name": "explain",
