@@ -3,16 +3,8 @@ name: Ford Options Scan
 run-name: "Ford scan • ${{ github.event_name }} • #${{ github.run_number }}"
 
 on:
-  schedule:
-    # Every 15 minutes on weekdays across the UTC window covering
-    # Central Time market hours during both CDT and CST.
-    #
-    # Runs at :07, :22, :37, and :52. Keeping the jobs away from the
-    # top of the hour reduces GitHub Actions schedule congestion.
-    # ford_scan.py performs the exact Central-Time market-hours check.
-    - cron: "7,22,37,52 13-21 * * 1-5"
-
-  # Keeps the manual Run workflow button available.
+  # Local monitoring is the primary scheduler. Keep this as an on-demand
+  # cloud backup without consuming recurring GitHub Actions minutes.
   workflow_dispatch:
 
 permissions:
