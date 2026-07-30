@@ -38,6 +38,8 @@ In the Discord Developer Portal, open the existing TradeBot application:
 5. Add the existing Tradier values.
 6. For SEC filing detail, use an identifiable value such as
    `Tradysquids TradeBot your-email@example.com` for `SEC_USER_AGENT`.
+7. Copy the ngrok account authtoken to `NGROK_AUTHTOKEN`. The launcher passes
+   it privately through the process environment.
 
 ## 3. Register the commands
 

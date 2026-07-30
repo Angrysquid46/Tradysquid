@@ -10,6 +10,7 @@ REQUIRED = {
     "DISCORD_PUBLIC_KEY": "Discord Developer Portal > General Information > Public Key",
     "DISCORD_GUILD_ID": "Discord server ID",
     "TRADIER_TOKEN": "Tradier market-data token",
+    "NGROK_AUTHTOKEN": "ngrok dashboard > Your Authtoken",
 }
 
 

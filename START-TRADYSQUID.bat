@@ -25,6 +25,7 @@ if not defined NGROK_EXE if exist "%LOCALAPPDATA%\Microsoft\WinGet\Links\ngrok.e
 if not defined NGROK_EXE if exist "%LOCALAPPDATA%\ngrok\ngrok.exe" set "NGROK_EXE=%LOCALAPPDATA%\ngrok\ngrok.exe"
 if not defined NGROK_EXE if exist "%USERPROFILE%\Downloads\ngrok.exe" set "NGROK_EXE=%USERPROFILE%\Downloads\ngrok.exe"
 if not defined NGROK_EXE if exist "%~dp0ngrok.exe" set "NGROK_EXE=%~dp0ngrok.exe"
+if not defined NGROK_EXE for /f "delims=" %%G in ('dir /b /s "%LOCALAPPDATA%\Microsoft\WinGet\Packages\Ngrok.Ngrok_*\ngrok.exe" 2^>nul') do if not defined NGROK_EXE set "NGROK_EXE=%%G"
 
 if not defined NGROK_EXE (
     echo.
@@ -41,7 +42,7 @@ start "Tradysquids Command Bot" cmd /k "cd /d ""%~dp0"" && python run_with_env.p
 timeout /t 2 /nobreak >nul
 
 echo Starting the secure ngrok tunnel...
-start "Tradysquids ngrok Tunnel" cmd /k ""%NGROK_EXE%" http 8080"
+start "Tradysquids ngrok Tunnel" cmd /k "cd /d ""%~dp0"" && python run_ngrok.py ""%NGROK_EXE%"""
 
 timeout /t 3 /nobreak >nul
 
