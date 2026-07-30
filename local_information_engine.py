@@ -21,8 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urljoin
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus, urljoin
 
 import ford_scan
 import requests
@@ -467,6 +466,54 @@ def discord_tracker() -> ford_scan.DiscordTracker | None:
         return None
     tracker = ford_scan.initialize_discord()
     return tracker if tracker.ready else None
+
+
+def upgrade_request_reactions_job(connection: sqlite3.Connection) -> str:
+    """Keep member upgrade requests limited to approve/decline reactions."""
+    tracker = discord_tracker()
+    if not tracker:
+        return "waiting for Discord configuration"
+    channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
+    channel = next(
+        (
+            item
+            for item in channels
+            if item.get("name") == "upgrade-requests" and item.get("type") == 0
+        ),
+        None,
+    )
+    if not channel:
+        return "#upgrade-requests is missing"
+
+    messages = tracker._request(
+        "GET", f"/channels/{channel['id']}/messages?limit=100"
+    )
+    updated = 0
+    allowed = {"✅", "❌"}
+    for message in messages:
+        author = message.get("author") or {}
+        if author.get("bot") or not (message.get("content") or "").strip():
+            continue
+        message_id = str(message["id"])
+        existing = {
+            str((reaction.get("emoji") or {}).get("name") or "")
+            for reaction in message.get("reactions") or []
+        }
+        for emoji in sorted(existing - allowed):
+            tracker._request(
+                "DELETE",
+                f"/channels/{channel['id']}/messages/{message_id}"
+                f"/reactions/{quote(emoji, safe='')}",
+            )
+        for emoji in allowed - existing:
+            tracker._request(
+                "PUT",
+                f"/channels/{channel['id']}/messages/{message_id}"
+                f"/reactions/{quote(emoji, safe='')}/@me",
+            )
+        if existing != allowed:
+            updated += 1
+    return f"{updated} upgrade request(s) normalized"
 
 
 def upsert_dashboard(
@@ -1206,6 +1253,11 @@ JOBS = [
     Job("health-snapshot", timedelta(minutes=STATUS_REFRESH_MINUTES), status_job),
     Job("session-briefing", timedelta(minutes=15), briefing_job),
     Job("weekly-review", timedelta(minutes=30), weekly_review_job),
+    Job(
+        "upgrade-request-reactions",
+        timedelta(minutes=1),
+        upgrade_request_reactions_job,
+    ),
     Job(
         "full-options-scan",
         timedelta(minutes=15),
