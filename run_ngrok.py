@@ -1,4 +1,4 @@
-"""Start ngrok with the auth token loaded privately from .env."""
+"""Start ngrok using its secure per-user configuration."""
 
 from __future__ import annotations
 
@@ -18,4 +18,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
