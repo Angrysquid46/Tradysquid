@@ -490,6 +490,7 @@ def upgrade_request_reactions_job(connection: sqlite3.Connection) -> str:
     )
     updated = 0
     allowed = {"✅", "❌"}
+    approver_id = os.environ.get("DISCORD_ALLOWED_USER_ID", "").strip()
     for message in messages:
         author = message.get("author") or {}
         if author.get("bot") or not (message.get("content") or "").strip():
@@ -511,6 +512,21 @@ def upgrade_request_reactions_job(connection: sqlite3.Connection) -> str:
                 f"/channels/{channel['id']}/messages/{message_id}"
                 f"/reactions/{quote(emoji, safe='')}/@me",
             )
+        if approver_id:
+            for emoji in allowed:
+                users = tracker._request(
+                    "GET",
+                    f"/channels/{channel['id']}/messages/{message_id}"
+                    f"/reactions/{quote(emoji, safe='')}?limit=100",
+                )
+                for user in users:
+                    if user.get("bot") or str(user.get("id")) == approver_id:
+                        continue
+                    tracker._request(
+                        "DELETE",
+                        f"/channels/{channel['id']}/messages/{message_id}"
+                        f"/reactions/{quote(emoji, safe='')}/{user['id']}",
+                    )
         if existing != allowed:
             updated += 1
     return f"{updated} upgrade request(s) normalized"
