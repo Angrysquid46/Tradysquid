@@ -24,6 +24,7 @@ COMMANDS = [
     {
         "name": "ticker-add",
         "type": 1,
+        "default_member_permissions": "0",
         "description": "Owner: fully integrate a ticker and create its information desk",
         "options": [{
             "name": "ticker",
@@ -37,6 +38,7 @@ COMMANDS = [
     {
         "name": "ticker-pause",
         "type": 1,
+        "default_member_permissions": "0",
         "description": "Owner: pause new setups for a ticker",
         "options": [
             {
@@ -62,6 +64,7 @@ COMMANDS = [
     {
         "name": "ticker-resume",
         "type": 1,
+        "default_member_permissions": "0",
         "description": "Owner: resume scheduled setups for an integrated ticker",
         "options": [{
             "name": "ticker",
@@ -75,6 +78,7 @@ COMMANDS = [
     {
         "name": "ticker-remove",
         "type": 1,
+        "default_member_permissions": "0",
         "description": "Owner: archive a ticker while preserving trades and history",
         "options": [{
             "name": "ticker",

@@ -77,6 +77,20 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn("chain", names)
         self.assertIn("status", names)
 
+    def test_github_syncing_ticker_commands_are_owner_locked(self) -> None:
+        owner_commands = {
+            "ticker-add",
+            "ticker-pause",
+            "ticker-resume",
+            "ticker-remove",
+        }
+        definitions = {
+            command["name"]: command
+            for command in register_discord_commands.COMMANDS
+        }
+        for name in owner_commands:
+            self.assertEqual(definitions[name]["default_member_permissions"], "0")
+
     def test_every_ticker_market_command_accepts_dynamic_ticker(self) -> None:
         ticker_commands = {
             "quote", "trend", "chart", "levels", "events", "chain",
