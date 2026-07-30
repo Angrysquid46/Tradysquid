@@ -318,8 +318,8 @@ function handle(message) {
     respond(message.id, {
       protocolVersion: "2025-06-18",
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "tradysquid-maintainer", version: "1.0.0" },
-      instructions: "Read coordination_status before work. Acquire begin_update before every write. Preserve unrelated changes. Run tests, publish explicit files, then finish_update. Never expose secrets or execute brokerage trades.",
+      serverInfo: { name: "tradysquid-maintainer", version: "1.0.1" },
+      instructions: "This is the private maintenance connector for Cody's Tradysquid trading-information system: its dynamic ticker scanners, Tradier market data, Discord TradeBot, TradingView charts/webhooks, paper-trade lifecycle, GitHub Actions, and sanitized learning archive. When Cody mentions Tradysquid, the scanner, the bot, Discord, Ford/F, VALE, another tracked ticker, options, spreads, charts, news, schedules, or upgrades, treat this repository as the project he means and call coordination_status before answering or working. Read CLAUDE.md and AI_COLLABORATION.md when deeper project context is needed. Acquire begin_update before every write. Preserve unrelated changes. Run tests, publish explicit files, then finish_update. Never expose secrets, bypass the shared lock, force-push, or execute brokerage trades.",
     });
     return;
   }

@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "tradysquid-maintainer",
   "display_name": "Tradysquid Maintainer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Private Codex/Claude coordination, repository maintenance, tests, learning review, and controlled Git publication for Tradysquid.",
   "author": {
     "name": "Tradysquid"
