@@ -42,13 +42,15 @@ TradeBot permissions needed in the server/forum:
 Behavior:
 
   - No brokerage orders are placed.
-  - New scans consider bullish Ford calls only.
-  - Entries require a bullish daily trend gate, 21-45 DTE, delta 0.60-0.75,
-    open interest of at least 100, option volume of at least 10, and a
-    bid/ask spread no wider than 20% of midpoint.
-  - New contracts are capped at $150 risk each, one new play per scan,
-    and two simultaneous open plays. Existing legacy positions continue
-    to be monitored until they close.
+  - New scans support long calls, long puts, bull put-credit spreads, and
+    bear call-credit spreads. The current Ford trend determines which
+    direction is eligible.
+  - Entries require a controlled daily market regime, 21-45 DTE, open
+    interest of at least 100, option volume of at least 10, and a bid/ask
+    spread no wider than 20% of midpoint.
+  - There is no arbitrary per-scan or simultaneous-trade count cap.
+    Every qualifying trade must still have defined maximum loss of $150
+    or less. Existing positions continue to be monitored until they close.
   - Existing OPEN CSV plays are imported into trade-journal once.
   - New scanner plays get one forum post and permanent trade ID.
   - Open plays are repriced every scheduled run.

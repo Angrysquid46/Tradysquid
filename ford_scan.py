@@ -77,18 +77,17 @@ MIN_OPTION_VOLUME = int(os.environ.get("MIN_OPTION_VOLUME", "10"))
 MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.20"))
 # Retained only so legacy credit-spread rows/functions remain readable; new scans do not use them.
 SPREAD_SHORT_DELTA_MIN = float(os.environ.get("SPREAD_SHORT_DELTA_MIN", "0.10"))
-SPREAD_SHORT_DELTA_MAX = float(os.environ.get("SPREAD_SHORT_DELTA_MAX", "0.35"))
+SPREAD_SHORT_DELTA_MAX = float(os.environ.get("SPREAD_SHORT_DELTA_MAX", "0.25"))
 SINGLE_LEG_DELTA_MIN = float(os.environ.get("SINGLE_LEG_DELTA_MIN", "0.60"))
 SINGLE_LEG_DELTA_MAX = float(os.environ.get("SINGLE_LEG_DELTA_MAX", "0.75"))
-MAX_CONTRACT_COST = float(os.environ.get("MAX_CONTRACT_COST", "150"))
+MAX_RISK_PER_TRADE = float(os.environ.get("MAX_RISK_PER_TRADE", "150"))
+MIN_SPREAD_CREDIT = float(os.environ.get("MIN_SPREAD_CREDIT", "0.05"))
 STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
 MIN_DTE = int(os.environ.get("MIN_DTE", "21"))
 MAX_DTE = int(os.environ.get("MAX_DTE", "45"))
-MAX_NEW_PLAYS_PER_SCAN = int(os.environ.get("MAX_NEW_PLAYS_PER_SCAN", "1"))
-MAX_OPEN_PLAYS = int(os.environ.get("MAX_OPEN_PLAYS", "2"))
 REENTRY_COOLDOWN_MINUTES = int(os.environ.get("REENTRY_COOLDOWN_MINUTES", "1440"))
 
-# Conservative bullish trend gate
+# Conservative directional-regime gate
 RSI_MIN = float(os.environ.get("RSI_MIN", "45"))
 RSI_MAX = float(os.environ.get("RSI_MAX", "68"))
 MAX_EXTENSION_ABOVE_SMA20_PCT = float(os.environ.get("MAX_EXTENSION_ABOVE_SMA20_PCT", "0.05"))
@@ -565,9 +564,9 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
         market_data,
         "### Why This Qualified",
         (
-            f"**Regime:** {row.get('market_regime') or 'BULLISH / CONTROLLED'}\n"
+            f"**Regime:** {row.get('market_regime') or 'CONTROLLED'}\n"
             f"**Score:** {row.get('setup_score') or '—'} *(ranking only; not a win probability)*\n"
-            f"**Evidence:** {row.get('setup_reason') or 'Conservative bullish filters passed'}"
+            f"**Evidence:** {row.get('setup_reason') or 'Conservative directional filters passed'}"
         ),
     ]
     if include_link:
@@ -741,7 +740,7 @@ def qualified_trade_text(row: dict[str, str], include_link: str = "") -> str:
             f"**Bid/ask width:** {fmt_option_price(width)}"
         ),
         "### Why This Qualified",
-        row.get("setup_reason") or "Conservative bullish filters passed.",
+        row.get("setup_reason") or "Conservative directional filters passed.",
     ]
     if include_link:
         lines.extend(["### Journal", f"[Open trade journal]({include_link})"])
@@ -890,7 +889,7 @@ def relative_strength_index(values: list[float], period: int = 14) -> float | No
     return 100 - (100 / (1 + gains / losses))
 
 
-def bullish_market_context(history: list[dict[str, Any]], spot_price: float) -> dict[str, Any]:
+def directional_market_context(history: list[dict[str, Any]], spot_price: float) -> dict[str, Any]:
     closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
     volumes = [value for day in history if (value := as_float(day.get("volume"))) is not None]
     sma20 = simple_moving_average(closes, 20)
@@ -905,30 +904,55 @@ def bullish_market_context(history: list[dict[str, Any]], spot_price: float) -> 
     )
     reasons: list[str] = []
     failures: list[str] = []
+    regime = "NO TRADE"
     if sma20 is None or sma50 is None or rsi14 is None:
         failures.append("insufficient daily history")
     else:
-        (reasons if spot_price >= sma20 else failures).append(
-            f"price {'above' if spot_price >= sma20 else 'below'} 20-day average"
-        )
-        (reasons if sma20 >= sma50 else failures).append(
-            f"20-day average {'above' if sma20 >= sma50 else 'below'} 50-day average"
-        )
-        (reasons if RSI_MIN <= rsi14 <= RSI_MAX else failures).append(
-            f"RSI {rsi14:.1f} {'inside' if RSI_MIN <= rsi14 <= RSI_MAX else 'outside'} {RSI_MIN:.0f}-{RSI_MAX:.0f}"
-        )
         extension = (spot_price / sma20) - 1
-        (reasons if extension <= MAX_EXTENSION_ABOVE_SMA20_PCT else failures).append(
-            f"price {extension * 100:.1f}% above 20-day average"
+        bullish = (
+            spot_price >= sma20 >= sma50
+            and RSI_MIN <= rsi14 <= RSI_MAX
+            and extension <= MAX_EXTENSION_ABOVE_SMA20_PCT
         )
+        bearish = (
+            spot_price <= sma20 <= sma50
+            and (100 - RSI_MAX) <= rsi14 <= (100 - RSI_MIN)
+            and extension >= -MAX_EXTENSION_ABOVE_SMA20_PCT
+        )
+        neutral = 40 <= rsi14 <= 60 and abs(extension) <= MAX_EXTENSION_ABOVE_SMA20_PCT
+        if bullish:
+            regime = "BULLISH / CONTROLLED"
+            reasons.extend([
+                "price above 20-day average",
+                "20-day average above 50-day average",
+                f"RSI {rsi14:.1f} supports controlled upside",
+            ])
+        elif bearish:
+            regime = "BEARISH / CONTROLLED"
+            reasons.extend([
+                "price below 20-day average",
+                "20-day average below 50-day average",
+                f"RSI {rsi14:.1f} supports controlled downside",
+            ])
+        elif neutral:
+            regime = "NEUTRAL / RANGE"
+            reasons.extend([
+                "price remains near its 20-day average",
+                f"RSI {rsi14:.1f} is neutral",
+            ])
+        else:
+            failures.append(
+                f"trend/RSI is not controlled enough for a high-probability setup "
+                f"(RSI {rsi14:.1f}, extension {extension * 100:+.1f}%)"
+            )
     return {
         "qualified": not failures,
         "sma20": sma20,
         "sma50": sma50,
         "rsi14": rsi14,
         "volume_ratio": volume_ratio,
-        "regime": "BULLISH / CONTROLLED" if not failures else "NO TRADE",
-        "reason": "; ".join(reasons) if reasons else "No bullish confirmations",
+        "regime": regime,
+        "reason": "; ".join(reasons) if reasons else "No controlled directional setup",
         "failures": failures,
     }
 
@@ -1186,7 +1210,12 @@ def iv_value(option: dict[str, Any] | None) -> float | None:
                 return value
     return None
 
-def scan_credit_spreads(chain: list[dict[str, Any]], kind: str, expiration: str) -> list[dict[str, Any]]:
+def scan_credit_spreads(
+    chain: list[dict[str, Any]],
+    kind: str,
+    expiration: str,
+    market_context: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     liquid = {float(option["strike"]): option for option in chain if option_has_liquidity(option)}
     strikes = sorted(liquid)
@@ -1208,10 +1237,17 @@ def scan_credit_spreads(chain: list[dict[str, Any]], kind: str, expiration: str)
         long_ask = as_float(long_option.get("ask"), 0.0) or 0.0
         credit = short_bid - long_ask
         width = abs(short_strike - long_strike)
-        if credit <= 0 or width <= 0 or credit >= width:
+        max_risk = (width - credit) * 100
+        if (
+            credit < MIN_SPREAD_CREDIT
+            or width <= 0
+            or credit >= width
+            or max_risk > MAX_RISK_PER_TRADE
+        ):
             continue
         short_oi = open_interest_value(short_option)
         long_oi = open_interest_value(long_option)
+        option_volume = min(option_volume_value(short_option), option_volume_value(long_option))
         combined_width = max(short_ask - short_bid, 0) + max(long_ask - long_bid, 0)
         theta = -(greek(short_option, "theta") or 0.0) + (greek(long_option, "theta") or 0.0)
         reward_risk = credit / max(width - credit, 0.01)
@@ -1231,13 +1267,16 @@ def scan_credit_spreads(chain: list[dict[str, Any]], kind: str, expiration: str)
                 "iv": round(iv_value(short_option), 4) if iv_value(short_option) is not None else "",
                 "pop": round((1 - delta) * 100, 1),
                 "max_profit": round(credit * 100, 2),
-                "max_risk": round((width - credit) * 100, 2),
+                "max_risk": round(max_risk, 2),
                 "breakeven": round(short_strike - credit if kind == "put" else short_strike + credit, 2),
                 "open_interest": min(short_oi, long_oi),
+                "option_volume": option_volume,
                 "bid_ask_width": round(combined_width, 2),
                 "short_symbol": short_option.get("symbol") or option_symbol(TICKER, expiration, kind, short_strike),
                 "long_symbol": long_option.get("symbol") or option_symbol(TICKER, expiration, kind, long_strike),
                 "score": score,
+                "setup_reason": (market_context or {}).get("reason", "Controlled regime filters passed"),
+                "market_regime": (market_context or {}).get("regime", "CONTROLLED"),
             }
         )
     return candidates
@@ -1262,7 +1301,7 @@ def scan_single_legs(
         bid = as_float(option.get("bid"), 0.0) or 0.0
         if ask <= 0:
             continue
-        if ask * 100 > MAX_CONTRACT_COST:
+        if ask * 100 > MAX_RISK_PER_TRADE:
             continue
         strike = float(option["strike"])
         open_interest = open_interest_value(option)
@@ -1275,7 +1314,7 @@ def scan_single_legs(
             + math.log1p(open_interest) * 2
             + math.log1p(option_volume)
             - spread_pct * 50
-            - (ask * 100 / max(MAX_CONTRACT_COST, 1)) * 5
+            - (ask * 100 / max(MAX_RISK_PER_TRADE, 1)) * 5
         )
         max_profit: str | float
         if kind == "call":
@@ -1303,7 +1342,7 @@ def scan_single_legs(
                 "option_symbol": option.get("symbol") or option_symbol(TICKER, expiration, kind, strike),
                 "score": score,
                 "setup_reason": (market_context or {}).get("reason", "Bullish trend gate passed"),
-                "market_regime": (market_context or {}).get("regime", "BULLISH / CONTROLLED"),
+                "market_regime": (market_context or {}).get("regime", "CONTROLLED"),
             }
         )
     return candidates
@@ -2738,7 +2777,7 @@ def format_qualified_scan(
     timestamp: datetime,
 ) -> str:
     lines = [
-        "## ✅ Qualified Ford Call Setups",
+        "## ✅ Qualified Ford Option Setups",
         "### Filter Results",
         (
             f"**Passed all filters:** {len(qualified)}\n"
@@ -2790,7 +2829,7 @@ def format_scanner_feed(
         f"• **{label}:** {count}" for label, count in by_strategy.items() if count
     ) or "None"
     return "\n".join([
-        "## 📡 Ford Call Scanner",
+        "## 📡 Ford Options Scanner",
         "### Market",
         (
             f"**Time:** {portable_strftime(timestamp, '%m/%d/%y %-I:%M %p CT')}\n"
@@ -2798,7 +2837,7 @@ def format_scanner_feed(
         ),
         "### Expirations",
         expiration_text,
-        "### Bullish Trend Gate",
+        "### Market Regime Gate",
         trend_text,
         "### Contracts",
         (
@@ -2825,7 +2864,7 @@ def format_scanner_feed(
 
 def format_closed_scanner_feed(rows: list[dict[str, str]], timestamp: datetime) -> str:
     return "\n".join([
-        "## 📡 Ford Call Scanner",
+        "## 📡 Ford Options Scanner",
         "### Market",
         (
             f"**Status:** Closed\n"
@@ -3071,7 +3110,7 @@ def scan_candidates(
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
     expirations = get_expirations(TICKER)
     near_expirations, swing_expirations = pick_expirations(expirations, now_ct().date())
-    market_context = bullish_market_context(get_daily_history(TICKER), spot_price)
+    market_context = directional_market_context(get_daily_history(TICKER), spot_price)
     candidate_expirations: list[tuple[str, str]] = []
     if swing_expirations:
         candidate_expirations.append((swing_expirations[0], "CONSERVATIVE"))
@@ -3110,11 +3149,19 @@ def scan_candidates(
             if option.get("symbol"):
                 quote_map[option["symbol"]] = option
         calls = [option for option in chain if option.get("option_type") == "call"]
+        puts = [option for option in chain if option.get("option_type") == "put"]
         stats["calls"] += len(calls)
-        add_candidates(
-            "Conservative calls",
-            scan_single_legs(calls, "call", expiration, "SWING", market_context),
-        )
+        stats["puts"] += len(puts)
+        regime = market_context["regime"]
+        if regime == "BULLISH / CONTROLLED":
+            add_candidates("Long calls", scan_single_legs(calls, "call", expiration, "SWING", market_context))
+            add_candidates("Bull put spreads", scan_credit_spreads(puts, "put", expiration, market_context))
+        elif regime == "BEARISH / CONTROLLED":
+            add_candidates("Long puts", scan_single_legs(puts, "put", expiration, "SWING", market_context))
+            add_candidates("Bear call spreads", scan_credit_spreads(calls, "call", expiration, market_context))
+        elif regime == "NEUTRAL / RANGE":
+            add_candidates("Call credit spreads", scan_credit_spreads(calls, "call", expiration, market_context))
+            add_candidates("Put credit spreads", scan_credit_spreads(puts, "put", expiration, market_context))
     stats["qualified_candidates"] = len(candidates)
     return candidates, quote_map, stats
 
@@ -3285,8 +3332,7 @@ def main() -> int:
         candidates, candidate_quote_map, scan_stats = scan_candidates(spot_price)
         eligible = [candidate for candidate in candidates if not recently_tracked(rows, candidate, timestamp)]
         eligible.sort(key=lambda candidate: candidate.get("score", 0), reverse=True)
-        available_slots = max(MAX_OPEN_PLAYS - len(open_rows(rows)), 0)
-        selected = eligible[:min(MAX_NEW_PLAYS_PER_SCAN, available_slots)]
+        selected = eligible
 
         new_rows: list[dict[str, str]] = []
         for candidate in selected:
@@ -3349,7 +3395,7 @@ def main() -> int:
                 report_state,
                 f"qualified-scan:{run_number}",
                 format_qualified_scan(candidates, eligible, selected, timestamp),
-                search_token="Qualified Ford Call Setups",
+                search_token="Qualified Ford Option Setups",
             ),
         )
         safe_discord_call(
@@ -3368,7 +3414,7 @@ def main() -> int:
                     open_count=len(open_rows(rows)),
                     timestamp=timestamp,
                 ),
-                search_token="Ford Call Scanner",
+                search_token="Ford Options Scanner",
             ),
         )
         safe_discord_call(
