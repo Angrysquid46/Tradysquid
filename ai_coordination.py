@@ -173,7 +173,7 @@ def finish(
         raise RuntimeError(
             f"Lock belongs to {lock.get('actor')}; {actor} cannot release it."
         )
-    commit = commit or git("rev-parse", "HEAD")
+    commit = git("rev-parse", commit or "HEAD")
     event = {
         "event": "COMPLETE",
         "actor": actor,
