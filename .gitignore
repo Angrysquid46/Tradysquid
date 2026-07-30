@@ -1,4 +1,6 @@
 .env
 __pycache__/
 *.pyc
-
+state/local-information.db
+state/local-information.db-shm
+state/local-information.db-wal

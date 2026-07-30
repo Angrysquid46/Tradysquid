@@ -55,5 +55,10 @@ Behavior:
   - New scanner plays get one forum post and permanent trade ID.
   - Open plays are repriced every scheduled run.
   - Discord receives material updates, not repetitive quote spam.
+  - The local information engine monitors Ford without GitHub Actions,
+    suppresses unchanged alerts, and stores recent observations in SQLite.
+  - Slash commands provide quotes, technicals, charts, option-chain rankings,
+    contract inspection, risk calculations, filings, education, performance,
+    schedules, and health information.
   - Closed plays are tagged and routed to wins/losses/scratches.
   - The CSV is migrated automatically without deleting old rows.

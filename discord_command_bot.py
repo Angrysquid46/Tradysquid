@@ -18,6 +18,7 @@ from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
 
 import ford_scan
+import local_information_engine as info_engine
 
 HOST = os.environ.get("COMMAND_BOT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("COMMAND_BOT_PORT", "8080"))
@@ -186,6 +187,342 @@ def why_reply(trade_id: str) -> str:
     )
 
 
+def value_text(value: Any, *, digits: int = 2, prefix: str = "", suffix: str = "") -> str:
+    number = ford_scan.as_float(value)
+    if number is None:
+        return "Unavailable"
+    return f"{prefix}{number:.{digits}f}{suffix}"
+
+
+def help_reply() -> str:
+    return "\n".join([
+        "🧭 **Tradysquids Ford command guide**",
+        "`/quote` — price, daily change, volume, bid/ask and data timestamp",
+        "`/trend` or `/levels` — trend regime, indicators, support and resistance",
+        "`/chart` — generate and upload a Ford chart",
+        "`/chain side:` — rank liquid Ford calls or puts",
+        "`/setup` and `/watchlist` — show qualified direction and monitored conditions",
+        "`/option symbol:` — inspect one option contract",
+        "`/risk premium: contracts:` — calculate premium at risk and break-even examples",
+        "`/events` or `/filings` — official Ford events and SEC filings",
+        "`/performance` — tracked trade results and open-position count",
+        "`/why trade_id:` — show the recorded rationale for a tracked trade",
+        "`/status`, `/dataage`, `/lastscan`, `/schedule` — system reliability",
+        "`/explain topic:` — plain-language options education",
+        "",
+        "Select a command after typing `/`, complete its fields, then press Send.",
+        "Educational information only—not professional financial advice.",
+    ])
+
+
+def quote_reply() -> str:
+    snapshot = info_engine.market_snapshot()
+    return "\n".join([
+        "💵 **Ford quote**",
+        (
+            f"F **{value_text(snapshot['price'], prefix='$')}** · "
+            f"{value_text(snapshot.get('change_pct'), suffix='%')}"
+        ),
+        (
+            f"Bid {value_text(snapshot.get('bid'), prefix='$')} · "
+            f"Ask {value_text(snapshot.get('ask'), prefix='$')} · "
+            f"Spread {value_text((snapshot.get('spread_pct') or 0) * 100, suffix='%')}"
+        ),
+        (
+            f"Volume {int(snapshot.get('volume') or 0):,} · "
+            f"Relative volume {value_text(snapshot.get('relative_volume'), suffix='x')}"
+        ),
+        f"Day range {value_text(snapshot.get('day_low'), prefix='$')}–{value_text(snapshot.get('day_high'), prefix='$')}",
+        f"Data timestamp: {snapshot['observed_at']}",
+    ])
+
+
+def trend_reply() -> str:
+    snapshot = info_engine.market_snapshot()
+    return "\n".join([
+        "📐 **Ford technical dashboard**",
+        f"Regime: **{snapshot['regime']}** · Price {value_text(snapshot['price'], prefix='$')}",
+        (
+            f"SMA20 {value_text(snapshot.get('sma20'), prefix='$')} · "
+            f"SMA50 {value_text(snapshot.get('sma50'), prefix='$')} · "
+            f"SMA200 {value_text(snapshot.get('sma200'), prefix='$')}"
+        ),
+        (
+            f"RSI14 {value_text(snapshot.get('rsi14'), digits=1)} · "
+            f"MACD {value_text(snapshot.get('macd'), digits=3)} · "
+            f"ATR14 {value_text(snapshot.get('atr14'), prefix='$')}"
+        ),
+        (
+            f"Bollinger range {value_text(snapshot.get('bollinger_lower'), prefix='$')}–"
+            f"{value_text(snapshot.get('bollinger_upper'), prefix='$')}"
+        ),
+        (
+            f"20-day support {value_text(snapshot.get('support20'), prefix='$')} · "
+            f"resistance {value_text(snapshot.get('resistance20'), prefix='$')}"
+        ),
+        f"Read: {snapshot.get('reason') or 'No controlled setup.'}",
+        "Indicators describe conditions; they do not guarantee direction.",
+    ])
+
+
+def chain_reply(side: str) -> str:
+    side = side.lower()
+    if side not in {"call", "put"}:
+        side = "call"
+    ranked = info_engine.ranked_option_chain(side=side, limit=8)
+    lines = [f"🔗 **Ford {side} liquidity ranking**"]
+    if not ranked:
+        return "\n".join(lines + ["No contracts were available for the configured DTE range."])
+    for item in ranked:
+        marker = "✅" if item["liquidity_pass"] else "⚠️"
+        lines.append(
+            f"{marker} `{item['symbol']}` · strike ${item['strike']:g} · "
+            f"mid {value_text(item['mid'], prefix='$')} · "
+            f"Δ {value_text(item['delta'])} · OI {item['open_interest']:,} · "
+            f"vol {item['volume']:,} · spread "
+            f"{value_text((item['width_pct'] or 0) * 100, suffix='%')} · "
+            f"score {item['quality_score']:.0f}"
+        )
+    lines.append("✅ meets configured liquidity rules; ⚠️ is informational only.")
+    return "\n".join(lines)
+
+
+def setup_reply() -> str:
+    snapshot = info_engine.market_snapshot()
+    regime = str(snapshot.get("regime") or "NO TRADE")
+    if regime == "NO TRADE":
+        return "\n".join([
+            "🚦 **Ford setup check**",
+            "**Current state: NO TRADE**",
+            f"Reason: {snapshot.get('reason') or '; '.join(snapshot.get('failures') or [])}",
+            (
+                f"Price {value_text(snapshot['price'], prefix='$')} · "
+                f"RSI14 {value_text(snapshot.get('rsi14'), digits=1)} · "
+                f"support {value_text(snapshot.get('support20'), prefix='$')} · "
+                f"resistance {value_text(snapshot.get('resistance20'), prefix='$')}"
+            ),
+            "The bot will not force an options idea when the configured regime gate fails.",
+        ])
+    side = "call" if "BULLISH" in regime else "put"
+    ranked = info_engine.ranked_option_chain(side=side, limit=3)
+    lines = [
+        "🚦 **Ford setup check**",
+        f"Qualified direction: **{regime}**",
+        f"Reason: {snapshot.get('reason')}",
+        f"Highest-ranked liquid {side}s for research:",
+    ]
+    for item in ranked:
+        lines.append(
+            f"• `{item['symbol']}` · ${item['strike']:g} · "
+            f"Δ {value_text(item['delta'])} · spread "
+            f"{value_text((item['width_pct'] or 0) * 100, suffix='%')}"
+        )
+    lines.append("Research shortlist only—not an instruction to enter a trade.")
+    return "\n".join(lines)
+
+
+def watchlist_reply() -> str:
+    snapshot = info_engine.market_snapshot()
+    return "\n".join([
+        "👀 **Ford reactive watchlist**",
+        f"Current price: {value_text(snapshot['price'], prefix='$')} · {snapshot['regime']}",
+        f"Upside confirmation: sustained trade above {value_text(snapshot.get('resistance20'), prefix='$')}",
+        f"Downside warning: sustained trade below {value_text(snapshot.get('support20'), prefix='$')}",
+        f"Momentum: RSI14 {value_text(snapshot.get('rsi14'), digits=1)}",
+        f"Unusual-volume trigger: 1.75x · current {value_text(snapshot.get('relative_volume'), suffix='x')}",
+        "Alerts require material change and are deduplicated to limit noise.",
+    ])
+
+
+def option_reply(symbol: str) -> str:
+    item = info_engine.contract_snapshot(symbol)
+    if not item:
+        return f"❌ Tradier did not return option contract `{symbol.strip().upper()}`."
+    return "\n".join([
+        f"🔬 **Option inspection · `{item['symbol']}`**",
+        (
+            f"Bid {value_text(item['bid'], prefix='$')} · "
+            f"Ask {value_text(item['ask'], prefix='$')} · "
+            f"Mid {value_text(item['mid'], prefix='$')}"
+        ),
+        (
+            f"Spread {value_text((item['width_pct'] or 0) * 100, suffix='%')} · "
+            f"OI {item['open_interest']:,} · volume {item['volume']:,}"
+        ),
+        (
+            f"Delta {value_text(item['delta'])} · theta {value_text(item['theta'], digits=3)} · "
+            f"IV {value_text((item['iv'] or 0) * 100, suffix='%')}"
+        ),
+        (
+            f"Intrinsic {value_text(item['intrinsic'], prefix='$')} · "
+            f"extrinsic {value_text(item['extrinsic'], prefix='$')}"
+        ),
+        f"Configured liquidity test: **{'PASS' if item['liquidity_pass'] else 'FAIL'}**",
+        "Use executable bid/ask prices; a midpoint is not a guaranteed fill.",
+    ])
+
+
+def risk_reply(premium: float, contracts: int, side: str) -> str:
+    premium = max(0.0, float(premium))
+    contracts = max(1, min(int(contracts), 100))
+    capital = premium * 100 * contracts
+    target_value = premium * (1 + ford_scan.SINGLE_TAKE_PROFIT_PCT)
+    stop_value = premium * (1 - ford_scan.SINGLE_STOP_PCT)
+    target_dollars = (target_value - premium) * 100 * contracts
+    stop_dollars = (stop_value - premium) * 100 * contracts
+    return "\n".join([
+        "🛡️ **Long-option risk calculator**",
+        f"Example: {contracts} contract(s) at ${premium:.2f} · {side.lower()}",
+        f"Premium committed / maximum long-option loss: **${capital:,.0f}**",
+        (
+            f"Configured +{ford_scan.SINGLE_TAKE_PROFIT_PCT * 100:.0f}% target: "
+            f"${target_value:.2f} · approximately **+${target_dollars:,.0f}**"
+        ),
+        (
+            f"Configured -{ford_scan.SINGLE_STOP_PCT * 100:.0f}% stop reference: "
+            f"${stop_value:.2f} · approximately **${stop_dollars:,.0f}**"
+        ),
+        (
+            "Underlying break-even at expiration requires a strike; use `/option` for "
+            "contract details. Stops can gap and fills are not guaranteed."
+        ),
+        "Calculator only—not individualized financial advice.",
+    ])
+
+
+def performance_reply() -> str:
+    snapshot = info_engine.performance_snapshot()
+    metrics = snapshot["metrics"]
+    win_rate = ford_scan.as_float(metrics.get("win_rate"), 0.0) or 0.0
+    return "\n".join([
+        "📊 **Tracked Ford performance**",
+        (
+            f"Tracked {snapshot['tracked']} · open {snapshot['open']} · "
+            f"closed {snapshot['closed']}"
+        ),
+        (
+            f"Wins {int(metrics.get('wins', 0))} · losses {int(metrics.get('losses', 0))} · "
+            f"scratches {int(metrics.get('scratches', 0))} · win rate {win_rate:.1f}%"
+        ),
+        f"Recorded realized P/L: {ford_scan.fmt_money(metrics.get('total_pnl'))}",
+        "Results are based only on recorded rows and may include incomplete legacy data.",
+    ])
+
+
+def status_reply() -> str:
+    latest_market = info_engine.latest_observation("market")
+    latest_status = info_engine.latest_observation("status")
+    return "\n".join([
+        "🩺 **Tradysquids status**",
+        "Command service: **ONLINE**",
+        f"Tradier configured: **{'YES' if ford_scan.TRADIER_TOKEN else 'NO'}**",
+        (
+            "Scheduled Discord posting: **"
+            + (
+                "ON"
+                if ford_scan.DISCORD_BOT_TOKEN or ford_scan.DISCORD_WEBHOOK_URL
+                else "WAITING FOR LOCAL BOT TOKEN OR WEBHOOK"
+            )
+            + "**"
+        ),
+        f"SEC filing detail: **{'ON' if ford_scan.SEC_USER_AGENT else 'WAITING FOR SEC_USER_AGENT'}**",
+        (
+            "Latest local market observation: **"
+            + info_engine.data_age_text(
+                latest_market["observed_at"] if latest_market else None
+            )
+            + " ago**"
+        ),
+        f"Local scheduler state: **{'RECORDED' if latest_status else 'NOT YET RECORDED'}**",
+    ])
+
+
+def schedule_reply() -> str:
+    return "\n".join([
+        "⏰ **Local information schedule**",
+        f"Market and technical snapshot: every {info_engine.MARKET_REFRESH_MINUTES} minutes",
+        f"Ford SEC filing check: every {info_engine.FILINGS_REFRESH_MINUTES} minutes",
+        f"Health snapshot: every {info_engine.STATUS_REFRESH_MINUTES} minutes",
+        "Material alerts: regime changes, tracked-level crosses, unusual relative volume and new filings",
+        "Duplicate/unchanged alerts are suppressed.",
+        "These jobs run on the laptop and do not consume GitHub Actions minutes.",
+    ])
+
+
+def dataage_reply() -> str:
+    rows = []
+    for kind in ("market", "filings", "status"):
+        item = info_engine.latest_observation(kind)
+        rows.append(
+            f"{kind.title()}: {info_engine.data_age_text(item['observed_at'] if item else None)} ago"
+        )
+    return "🕒 **Local data freshness**\n" + "\n".join(rows)
+
+
+def lastscan_reply() -> str:
+    connection = info_engine.connect_db()
+    try:
+        rows = connection.execute(
+            """
+            SELECT job_name, finished_at, status, detail
+            FROM job_runs
+            WHERE status != 'RUNNING'
+            ORDER BY id DESC
+            LIMIT 6
+            """
+        ).fetchall()
+    finally:
+        connection.close()
+    if not rows:
+        return "No local scheduled jobs have completed yet."
+    lines = ["🧾 **Recent local jobs**"]
+    for row in rows:
+        lines.append(
+            f"**{row['job_name']}** · {row['status']} · {row['finished_at']} · "
+            f"{str(row['detail'])[:180]}"
+        )
+    return "\n".join(lines)
+
+
+EXPLANATIONS = {
+    "delta": "Delta estimates how much an option may move for a $1 underlying move and is not a fixed probability.",
+    "theta": "Theta estimates daily time-value decay, with decay generally accelerating near expiration.",
+    "iv": "Implied volatility reflects option-market expectations embedded in premium; high IV makes options more expensive.",
+    "spread": "The bid/ask spread is a trading cost and liquidity signal. Wide spreads make displayed midpoint prices less reliable.",
+    "open-interest": "Open interest is the number of outstanding contracts. It helps assess liquidity but does not predict direction.",
+    "dte": "DTE means days to expiration. More time usually costs more but reduces near-term time-decay pressure.",
+    "rsi": "RSI measures recent momentum. Overbought does not automatically mean sell, and oversold does not automatically mean buy.",
+    "atr": "ATR measures average price range and helps describe volatility; it does not predict direction.",
+}
+
+
+def explain_reply(topic: str) -> str:
+    normalized = topic.strip().lower().replace("_", "-").replace(" ", "-")
+    explanation = EXPLANATIONS.get(normalized)
+    if not explanation:
+        return (
+            "Available topics: `" + "`, `".join(EXPLANATIONS) + "`. "
+            "Use `/explain topic:` followed by one topic."
+        )
+    return f"📚 **{topic.strip().title()}**\n{explanation}\nEducational explanation only."
+
+
+def filings_reply() -> str:
+    filings = ford_scan.fetch_recent_ford_filings()
+    if not filings:
+        return (
+            "No detailed SEC filing feed is available yet. Add a truthful "
+            "`SEC_USER_AGENT` locally; official Ford filings remain available at "
+            "https://www.sec.gov/edgar/browse/?CIK=37996"
+        )
+    lines = ["📄 **Recent Ford SEC filings**"]
+    for filing in filings[:8]:
+        lines.append(
+            f"• {filing['date']} · **{filing['form']}** · [Open]({filing['url']})"
+        )
+    return "\n".join(lines)
+
+
 def process_command(interaction: dict[str, Any]) -> None:
     application_id = str(interaction.get("application_id") or "")
     token = str(interaction.get("token") or "")
@@ -204,6 +541,58 @@ def process_command(interaction: dict[str, Any]) -> None:
                 application_id,
                 token,
                 content=why_reply(str(option_value(interaction, "trade_id", ""))),
+            )
+        elif name == "help":
+            patch_original(application_id, token, content=help_reply())
+        elif name == "quote":
+            patch_original(application_id, token, content=quote_reply())
+        elif name == "trend":
+            patch_original(application_id, token, content=trend_reply())
+        elif name == "chain":
+            patch_original(
+                application_id,
+                token,
+                content=chain_reply(str(option_value(interaction, "side", "call"))),
+            )
+        elif name == "setup":
+            patch_original(application_id, token, content=setup_reply())
+        elif name == "watchlist":
+            patch_original(application_id, token, content=watchlist_reply())
+        elif name == "option":
+            patch_original(
+                application_id,
+                token,
+                content=option_reply(str(option_value(interaction, "symbol", ""))),
+            )
+        elif name == "risk":
+            patch_original(
+                application_id,
+                token,
+                content=risk_reply(
+                    float(option_value(interaction, "premium", 0)),
+                    int(option_value(interaction, "contracts", 1)),
+                    str(option_value(interaction, "side", "call")),
+                ),
+            )
+        elif name == "performance":
+            patch_original(application_id, token, content=performance_reply())
+        elif name == "status":
+            patch_original(application_id, token, content=status_reply())
+        elif name == "schedule":
+            patch_original(application_id, token, content=schedule_reply())
+        elif name == "dataage":
+            patch_original(application_id, token, content=dataage_reply())
+        elif name == "lastscan":
+            patch_original(application_id, token, content=lastscan_reply())
+        elif name == "filings":
+            patch_original(application_id, token, content=filings_reply())
+        elif name == "calendar":
+            patch_original(application_id, token, content=events_reply())
+        elif name == "explain":
+            patch_original(
+                application_id,
+                token,
+                content=explain_reply(str(option_value(interaction, "topic", ""))),
             )
         else:
             patch_original(application_id, token, content=f"Unknown command: `{name}`")

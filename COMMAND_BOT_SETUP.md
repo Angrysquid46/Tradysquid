@@ -1,15 +1,17 @@
 # Tradysquids Discord Command Bot with ngrok
 
-This local service adds private Discord slash commands for Ford charts and
-trade information:
+This local service adds private Discord slash commands, a local SQLite
+information store, and frequent monitoring that does not use GitHub Actions.
 
-- `/chart [days]`
-- `/levels`
-- `/events`
-- `/why trade_id`
+- Market: `/quote`, `/trend`, `/levels`, `/chart`
+- Options: `/chain`, `/option`, `/risk`
+- Research: `/events`, `/filings`, `/explain`
+- Tracking: `/performance`, `/why`
+- Reliability: `/status`, `/dataage`, `/lastscan`, `/schedule`
+- Instructions: `/help`
 
-The laptop must remain awake, connected to the internet, and running both the
-Python service and ngrok.
+The laptop must remain awake, connected to the internet, and running the
+Command Bot, Information Engine, and ngrok.
 
 ## 1. Install the Python packages
 
@@ -38,8 +40,8 @@ In the Discord Developer Portal, open the existing TradeBot application:
 5. Add the existing Tradier values.
 6. For SEC filing detail, use an identifiable value such as
    `Tradysquids TradeBot your-email@example.com` for `SEC_USER_AGENT`.
-7. Copy the ngrok account authtoken to `NGROK_AUTHTOKEN`. The launcher passes
-   it privately through the process environment.
+7. Configure ngrok once with `ngrok config add-authtoken`. The token is stored
+   in ngrok's private per-user configuration, not this repository.
 
 ## 3. Register the commands
 
@@ -104,12 +106,17 @@ use the endpoint.
 
 ## 7. Test in Discord
 
-In the Tradysquids server, type:
+Start with `/help`. Examples:
 
 ```text
+/quote
+/trend
 /levels
 /chart days:30
+/chain side:Calls
+/risk premium:0.42 contracts:1 side:Call
 /events
+/status
 /why trade_id:F-20260729-005
 ```
 
@@ -121,13 +128,31 @@ Discord response with the chart attached.
 After restarting the laptop:
 
 1. Double-click `START-TRADYSQUID.bat`.
-2. Keep the Command Bot and ngrok windows open.
+2. Keep the Command Bot, Information Engine, and ngrok windows open.
 3. If the ngrok HTTPS domain changed, update Discord's Interactions Endpoint
    URL before using commands.
 
-The launcher checks the private configuration, locates ngrok, starts both
+The launcher checks the private configuration, locates ngrok, starts all three
 services in visible windows, and opens Discord, TradingView, GitHub Actions,
-and the local ngrok inspector.
+and the local ngrok inspector. It detects already-running services, so opening
+the launcher twice does not start a duplicate ngrok endpoint.
+
+## Local information engine
+
+`local_information_engine.py` performs frequent monitoring on the laptop:
+
+- Ford price and technical snapshots every five minutes.
+- Official SEC filing checks every 30 minutes when `SEC_USER_AGENT` is set.
+- Reliability snapshots every 15 minutes.
+- SQLite history in `state/local-information.db`.
+- Change-only alerts for regime changes, tracked-level crosses, unusual
+  relative volume, and new filings.
+- Optional full options scans every 15 minutes during market hours when
+  `LOCAL_FULL_SCAN_ENABLED=true` and the bot token is configured locally.
+
+These jobs consume no GitHub Actions minutes. Scheduled Discord posts require
+either `DISCORD_BOT_TOKEN` or a channel-specific `DISCORD_WEBHOOK_URL` in the
+private local `.env`; commands and local storage still work without either.
 
 Run `CREATE-DESKTOP-SHORTCUT.cmd` once if you want a **Start Tradysquids**
 shortcut on the Windows desktop.
