@@ -13,7 +13,7 @@ GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 
 TICKER_ARGUMENT = {
     "name": "ticker",
-    "description": "Integrated ticker symbol; defaults to F",
+    "description": "Ticker; defaults to this ticker channel, otherwise F",
     "type": 3,
     "required": False,
     "min_length": 1,

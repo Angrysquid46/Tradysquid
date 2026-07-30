@@ -107,6 +107,37 @@ class InformationEngineTests(unittest.TestCase):
                 discord_command_bot.command_ticker("VALE")
         ticker_registry.DB_PATH = original
 
+    def test_ticker_channel_context_is_used_when_command_omits_ticker(self) -> None:
+        original = ticker_registry.DB_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            ticker_registry.DB_PATH = Path(temp) / "registry.db"
+            ticker_registry.save(
+                "VALE",
+                status="ACTIVE",
+                channels={"charts": "vale-chart-channel"},
+                note="test",
+            )
+            interaction = {
+                "channel_id": "vale-chart-channel",
+                "data": {"options": []},
+            }
+            self.assertEqual(
+                discord_command_bot.interaction_ticker(interaction), "VALE"
+            )
+            interaction["data"]["options"] = [
+                {"name": "ticker", "value": "F"}
+            ]
+            self.assertEqual(
+                discord_command_bot.interaction_ticker(interaction), "F"
+            )
+            self.assertEqual(
+                discord_command_bot.interaction_ticker(
+                    {"channel_id": "unmapped", "data": {"options": []}}
+                ),
+                "F",
+            )
+        ticker_registry.DB_PATH = original
+
     def test_performance_snapshot_filters_each_ticker(self) -> None:
         rows = [
             {"ticker": "F", "outcome": "OPEN"},

@@ -114,6 +114,20 @@ def command_ticker(value: str | None) -> str:
     return ticker
 
 
+def interaction_ticker(interaction: dict[str, Any]) -> str:
+    """Use an explicit ticker, then the ticker desk channel, then Ford."""
+    explicit = str(option_value(interaction, "ticker", "") or "").strip()
+    if explicit:
+        return command_ticker(explicit)
+    channel_id = str(interaction.get("channel_id") or "")
+    if channel_id:
+        for item in ticker_registry.all_tickers():
+            channels = item.get("channels") or {}
+            if channel_id in {str(value) for value in channels.values()}:
+                return command_ticker(str(item["ticker"]))
+    return command_ticker("F")
+
+
 def live_market_data(ticker: str, days: int = 120) -> tuple[float, list[dict[str, Any]]]:
     quote = ford_scan.get_quote(ticker)
     spot = ford_scan.as_float((quote or {}).get("last"))
@@ -717,14 +731,14 @@ def process_command(interaction: dict[str, Any]) -> None:
             )
         elif name == "chart":
             days = int(option_value(interaction, "days", 90))
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             content, chart_path = chart_reply(ticker, days)
             patch_original(application_id, token, content=content, file_path=chart_path)
         elif name == "levels":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=levels_reply(ticker))
         elif name == "events":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=events_reply(ticker))
         elif name == "why":
             patch_original(
@@ -735,13 +749,13 @@ def process_command(interaction: dict[str, Any]) -> None:
         elif name == "help":
             patch_original(application_id, token, content=help_reply())
         elif name == "quote":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=quote_reply(ticker))
         elif name == "trend":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=trend_reply(ticker))
         elif name == "chain":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(
                 application_id,
                 token,
@@ -750,10 +764,10 @@ def process_command(interaction: dict[str, Any]) -> None:
                 ),
             )
         elif name == "setup":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=setup_reply(ticker))
         elif name == "watchlist":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=watchlist_reply(ticker))
         elif name == "option":
             patch_original(
@@ -772,22 +786,22 @@ def process_command(interaction: dict[str, Any]) -> None:
                 ),
             )
         elif name == "performance":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=performance_reply(ticker))
         elif name == "status":
             patch_original(application_id, token, content=status_reply())
         elif name == "schedule":
             patch_original(application_id, token, content=schedule_reply())
         elif name == "dataage":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=dataage_reply(ticker))
         elif name == "lastscan":
             patch_original(application_id, token, content=lastscan_reply())
         elif name == "filings":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=filings_reply(ticker))
         elif name == "calendar":
-            ticker = command_ticker(str(option_value(interaction, "ticker", "F")))
+            ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=events_reply(ticker))
         elif name == "explain":
             patch_original(
