@@ -3,11 +3,8 @@ name: Ford Intelligence Briefing
 run-name: "Ford intelligence • ${{ github.event_name }} • #${{ github.run_number }}"
 
 on:
-  schedule:
-    # Weekday premarket and after-market briefings.
-    # These UTC times remain outside regular Central Time market hours
-    # during both daylight and standard time.
-    - cron: "15 13,22 * * 1-5"
+  # Local monitoring handles recurring briefings. This workflow remains an
+  # on-demand cloud backup without recurring GitHub Actions usage.
   workflow_dispatch:
 
 permissions:

@@ -158,6 +158,10 @@ These jobs consume no GitHub Actions minutes. Scheduled Discord posts require
 either `DISCORD_BOT_TOKEN` or a channel-specific `DISCORD_WEBHOOK_URL` in the
 private local `.env`; commands and local storage still work without either.
 
+The GitHub Ford scan and intelligence workflows are manual backup buttons only.
+They no longer have recurring cron schedules, so routine monitoring does not
+consume GitHub Actions minutes.
+
 Run `CREATE-DESKTOP-SHORTCUT.cmd` once if you want a **Start Tradysquids**
 shortcut on the Windows desktop.
 
