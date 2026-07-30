@@ -91,6 +91,14 @@ class InformationEngineTests(unittest.TestCase):
         for name in owner_commands:
             self.assertEqual(definitions[name]["default_member_permissions"], "0")
 
+    def test_learning_bot_answers_calls_and_refuses_unknown_topics(self) -> None:
+        call_answer = discord_command_bot.ask_reply("What's a call option?")
+        self.assertIn("Call option", call_answer)
+        self.assertIn("100 shares", call_answer)
+        unknown = discord_command_bot.ask_reply("Predict tomorrow's exact winner")
+        self.assertIn("do not have a reliable curated answer", unknown)
+        self.assertIn("will not invent", unknown)
+
     def test_every_ticker_market_command_accepts_dynamic_ticker(self) -> None:
         ticker_commands = {
             "quote", "trend", "chart", "levels", "events", "chain",

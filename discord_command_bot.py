@@ -33,6 +33,51 @@ ALLOWED_USER_ID = os.environ.get("DISCORD_ALLOWED_USER_ID", "").strip()
 APP = Flask(__name__)
 CHART_LOCK = threading.Lock()
 
+LEARNING_ANSWERS = [
+    (("call option", "what is a call", "what's a call", "whats a call"),
+     "**Call option:** The buyer receives the right, but not the obligation, to buy 100 shares at the strike before expiration. Call buyers generally want the stock to rise. Maximum loss is normally the premium paid, but time decay and volatility can still cause a loss."),
+    (("put option", "what is a put", "what's a put", "whats a put"),
+     "**Put option:** The buyer receives the right, but not the obligation, to sell 100 shares at the strike before expiration. Put buyers generally want the stock to fall. Maximum loss is normally the premium paid."),
+    (("strike price", "what is a strike", "what's a strike"),
+     "**Strike price:** The fixed stock price at which an option can be exercised. It helps determine whether the option is in, at, or out of the money."),
+    (("premium", "option price", "option cost"),
+     "**Premium:** The quoted option price per share. One standard contract represents 100 shares, so a $0.42 premium normally costs $42 per contract, plus fees."),
+    (("expiration", "dte", "days to expiration"),
+     "**Expiration and DTE:** Expiration is the contract's final date; DTE means days to expiration. Less time usually means faster decay and more expiration, exercise, assignment, and pin-risk urgency."),
+    (("in the money", "out of the money", "at the money", "itm", "otm", "atm"),
+     "**Moneyness:** A call is in the money above its strike; a put is in the money below its strike. At-the-money is near the stock price. Out-of-the-money options have no intrinsic value."),
+    (("breakeven", "break even"),
+     "**Expiration breakeven:** For a long call it is strike plus premium; for a long put it is strike minus premium. Before expiration, remaining time and volatility also affect value."),
+    (("bid ask", "bid/ask", "spread"),
+     "**Bid/ask spread:** The bid is what buyers offer and the ask is what sellers request. A wide gap can mean weak liquidity and more slippage. A limit order controls price better than a market order."),
+    (("open interest", "volume"),
+     "**Volume and open interest:** Volume is contracts traded today. Open interest is contracts still open. Neither guarantees a good fill, but low values often signal weak liquidity."),
+    (("delta",),
+     "**Delta:** An estimate of how much an option may change for a $1 stock move, all else equal. It is sometimes used as a rough probability proxy, but it is not a guarantee."),
+    (("theta", "time decay"),
+     "**Theta:** An estimate of daily option value lost from passing time, all else equal. Decay often accelerates near expiration."),
+    (("implied volatility", " iv ", "volatility"),
+     "**Implied volatility (IV):** The market's priced expectation of movement. Higher IV usually raises premiums. An IV drop can hurt a long option even when direction is correct."),
+    (("credit spread", "call spread", "put spread"),
+     "**Credit spread:** A defined-risk position that sells one option and buys another for protection. Maximum loss still exists, and the short leg can face early assignment and expiration risk."),
+    (("assignment", "assigned"),
+     "**Assignment:** An option seller must fulfill the contract, potentially creating a 100-share position per contract. American-style equity options can be assigned early."),
+    (("exercise",),
+     "**Exercise:** An option buyer uses the right to buy or sell 100 shares at the strike. Exercise can require substantial capital and differs from selling the option to close."),
+    (("limit order", "market order"),
+     "**Order types:** A market order prioritizes execution, not price. A limit order controls the worst acceptable price but may not fill."),
+    (("support", "resistance"),
+     "**Support and resistance:** Areas where price previously found buying or selling pressure. They are context zones, not guaranteed barriers or entry prices."),
+    (("rsi",),
+     "**RSI:** A 0-100 momentum indicator. High or low readings can show strong or stretched momentum, but do not independently predict a reversal."),
+    (("atr", "average true range"),
+     "**ATR:** Average True Range estimates recent movement size. It describes volatility, not direction or probability of profit."),
+    (("paper trade", "paper trading"),
+     "**Paper trading:** Practicing with simulated orders. It tests a process without risking cash, although simulated fills may be better than real fills."),
+    (("risk reward", "risk/reward", "position size"),
+     "**Risk and sizing:** Define maximum possible loss before entry and consider total exposure. Low dollar risk is not the same as high probability. Never trade money needed for necessities."),
+]
+
 
 def acquire_instance_lock() -> socket.socket:
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -765,6 +810,29 @@ def explain_reply(topic: str) -> str:
     return f"📚 **{topic.strip().title()}**\n{explanation}\nEducational explanation only."
 
 
+def ask_reply(question: str) -> str:
+    normalized = " ".join(question.lower().replace("?", " ").split())
+    padded = f" {normalized} "
+    for phrases, answer in LEARNING_ANSWERS:
+        if any(phrase in padded or phrase in normalized for phrase in phrases):
+            return (
+                f"**Question:** {question.strip()}\n\n{answer}\n\n"
+                "Educational information only. Use `/help` for live ticker "
+                "commands, or ask in #general-chat if this did not cover what "
+                "you meant."
+            )
+    return (
+        f"**Question:** {question.strip()}\n\n"
+        "I do not have a reliable curated answer for that yet. Try asking about "
+        "calls, puts, strikes, premiums, expiration, moneyness, breakeven, "
+        "bid/ask spreads, liquidity, Greeks, credit spreads, assignment, order "
+        "types, support/resistance, RSI, ATR, paper trading, or risk sizing. "
+        "For live ticker information use `/quote`, `/levels`, `/chart`, "
+        "`/chain`, or `/events`. You can also ask in #general-chat.\n\n"
+        "I will not invent an answer or provide personalized financial advice."
+    )
+
+
 def filings_reply(ticker: str) -> str:
     if ticker != "F":
         return events_reply(ticker)
@@ -894,6 +962,12 @@ def process_command(interaction: dict[str, Any]) -> None:
                 application_id,
                 token,
                 content=explain_reply(str(option_value(interaction, "topic", ""))),
+            )
+        elif name == "ask":
+            patch_original(
+                application_id,
+                token,
+                content=ask_reply(str(option_value(interaction, "question", ""))),
             )
         else:
             patch_original(application_id, token, content=f"Unknown command: `{name}`")

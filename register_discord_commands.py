@@ -303,6 +303,19 @@ COMMANDS = [
             ],
         }],
     },
+    {
+        "name": "ask",
+        "type": 1,
+        "description": "Ask TradeBot a beginner trading or options question",
+        "options": [{
+            "name": "question",
+            "description": "Example: What is a call option?",
+            "type": 3,
+            "required": True,
+            "min_length": 3,
+            "max_length": 300,
+        }],
+    },
 ]
 
 
