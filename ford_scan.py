@@ -1684,6 +1684,9 @@ class DiscordTracker:
                     retry_after = 1.0
                 time.sleep(min(retry_after + 0.25, 10))
                 continue
+            if response.status_code >= 500 and attempt < 3:
+                time.sleep(2**attempt)
+                continue
             if not response.ok:
                 body = response.text[:700].replace(self.token, "[REDACTED]")
                 raise DiscordError(f"Discord HTTP {response.status_code} for {path}: {body}")
@@ -3135,7 +3138,7 @@ def main() -> int:
         discord = initialize_discord()
     except DiscordError as exc:
         report_error(None, f"TradeBot setup failed: {exc}")
-        discord = DiscordTracker("", "")
+        return 1
 
     report_state = read_report_state()
     migrated_cards = 0
