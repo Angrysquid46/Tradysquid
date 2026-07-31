@@ -31,6 +31,7 @@ def git(*arguments: str) -> str:
     result = subprocess.run(
         ["git", *arguments],
         cwd=ROOT,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=30,

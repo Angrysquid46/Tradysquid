@@ -40,13 +40,16 @@ GUIDE = """# 🧭 Tradysquids Command Guide
 - `/explain topic:` — delta, theta, IV, spread, OI, DTE, RSI or ATR.
 - `/why trade_id:` — recorded evidence and rationale for a tracked trade.
 
-## Ticker management (owner only)
-- `/ticker-add ticker:` — integrate a ticker and create its five-channel desk.
+## Shared ticker universe
+- `/ticker-add ticker:` — anyone may add a verified optionable ticker to the shared universe.
+- Adding a ticker never creates a ticker category or ticker-specific channels.
+
+## Owner-only ticker controls
 - `/ticker-pause ticker: duration:` — stop new positions today or indefinitely.
 - `/ticker-resume ticker:` — reactivate a paused or archived ticker.
 - `/ticker-remove ticker:` — archive without deleting trades or history.
 - `/ticker-list` — show active, paused, and archived strategies.
-- `/ticker-status ticker:` — inspect one ticker's registry and desk status.
+- `/ticker-status ticker:` — inspect one ticker's shared-universe status.
 
 ## Tracking and reliability
 - `/performance ticker:` — recorded wins, losses, open trades and P/L.

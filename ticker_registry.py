@@ -1,4 +1,4 @@
-"""Persistent ticker registry and Discord desk provisioning."""
+"""Persistent ticker registry for the shared scanner universe."""
 
 from __future__ import annotations
 

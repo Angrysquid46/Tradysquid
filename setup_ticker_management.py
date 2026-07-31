@@ -14,15 +14,15 @@ CHANNEL_TOPIC = (
 
 GUIDE = """# Tradysquids Ticker Management
 
-This channel explains the owner-only controls for dynamically managing scanner
-tickers. Ford is the protected founding strategy and cannot be paused or removed.
+This channel explains the shared scanner universe. Any member may add a verified
+optionable ticker. Pausing, resuming, and removing remain owner-only.
 
 ## Add a ticker
 `/ticker-add ticker:VALE`
 
-The bot verifies the stock and options chain, creates a five-channel information
-desk, initializes isolated state, and enables scheduled research and eligible
-trade generation.
+The bot verifies the stock and options chain, adds the symbol to the shared
+universe, and enables scheduled research and eligible trade generation. It does
+not create a ticker category or ticker-specific channels.
 
 ## Pause a ticker for today
 `/ticker-pause ticker:VALE duration:Today only`
@@ -38,22 +38,22 @@ Use `/ticker-resume ticker:VALE` when you want it active again.
 ## Remove a ticker from active scanning
 `/ticker-remove ticker:VALE`
 
-Remove means **archive**, not delete. New positions stop, its category is marked
-archived, and all channels, trades, filters, and performance history remain.
+Remove means **archive**, not delete. New positions stop while trades, filters,
+and performance history remain.
 Existing positions continue through the normal lifecycle.
 
 ## Inspect the registry
 - `/ticker-list` — active, paused, and archived strategies.
-- `/ticker-status ticker:VALE` — one strategy's state and Discord desk.
+- `/ticker-status ticker:VALE` — one symbol's shared-universe state.
 
 ## Shared trade lifecycle
 All tickers use the same channels:
-`qualified-trades` → `new-positions` → `held-positions` → `exit-alerts` →
-`wins`, `losses`, `scratches`, or `expired`.
+`scanner-feed` → `new-positions` → `held-positions` → `wins` or `losses`.
 
-Ticker categories contain research and information only. A setup becomes a trade
-only when every configured chart, event, liquidity, DTE, delta, spread, and risk
-rule passes. Educational information only—not professional financial advice."""
+Charts, news, market intelligence, and performance also stay in their shared
+channels. A setup becomes a trade only when every configured chart, event,
+liquidity, DTE, delta, spread, and risk rule passes. Educational information
+only—not professional financial advice."""
 
 
 def main() -> int:

@@ -431,7 +431,7 @@ class InformationEngineTests(unittest.TestCase):
             self.assertIn("VALE", discord_command_bot.trend_reply("VALE"))
             self.assertIn("VALE", discord_command_bot.watchlist_reply("VALE"))
 
-    def test_ticker_desk_blocks_other_ticker_trade_and_contract_data(self) -> None:
+    def test_ticker_context_blocks_other_ticker_trade_and_contract_data(self) -> None:
         rows = [{
             "trade_id": "F-20260730-001",
             "ticker": "F",
@@ -458,6 +458,27 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn(
             "VALE",
             discord_command_bot.risk_reply("VALE", 0.25, 1, "call"),
+        )
+
+    def test_any_member_can_add_ticker_to_shared_universe_without_desk(self) -> None:
+        interaction = {
+            "member": {"user": {"id": "member-123"}},
+            "data": {"options": [{"name": "ticker", "value": "vale"}]},
+        }
+        with (
+            patch.object(discord_command_bot.ford_scan, "get_quote", return_value={"last": 14.77}),
+            patch.object(discord_command_bot.ford_scan, "get_expirations", return_value=["2026-08-07"]),
+            patch.object(discord_command_bot.dynamic_universe, "upsert_candidates") as upsert,
+            patch.object(discord_command_bot.ticker_registry, "save") as save,
+        ):
+            reply = discord_command_bot.ticker_add_reply(interaction)
+        self.assertIn("shared scanner universe", reply)
+        self.assertIn("No ticker category", reply)
+        upsert.assert_called_once()
+        save.assert_called_once_with(
+            "VALE",
+            status="ACTIVE",
+            note="Added to the shared scanner universe through Discord",
         )
 
     def test_health_probe_queue_is_drained(self) -> None:

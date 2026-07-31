@@ -32,7 +32,6 @@ ALLOWED_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 ALLOWED_USER_ID = os.environ.get("DISCORD_ALLOWED_USER_ID", "").strip()
 OWNER_ONLY_COMMANDS = {
     "filter-set",
-    "ticker-add",
     "ticker-pause",
     "ticker-resume",
     "ticker-remove",
@@ -330,7 +329,8 @@ def help_reply() -> str:
         "`/status`, `/dataage`, `/lastscan`, `/schedule` — system reliability",
         "`/scan-now scope:` — owner-only manual discovery, options, intelligence, positions, health, or everything",
         "`/explain topic:` — plain-language options education",
-        "`/ticker-add`, `/ticker-pause`, `/ticker-resume`, `/ticker-remove` — owner ticker controls",
+        "`/ticker-add ticker:` — add a verified optionable symbol to the shared universe",
+        "`/ticker-pause`, `/ticker-resume`, `/ticker-remove` — owner-only universe controls",
         "`/ticker-list` and `/ticker-status` — integrated strategy status",
         "",
         "Select a command after typing `/`, complete its fields, then press Send.",
@@ -485,7 +485,6 @@ def universe_status_reply(ticker: str) -> str:
 
 
 def ticker_add_reply(interaction: dict[str, Any]) -> str:
-    require_ticker_admin(interaction)
     ticker = ticker_registry.normalize_ticker(
         str(option_value(interaction, "ticker", ""))
     )
@@ -496,15 +495,28 @@ def ticker_add_reply(interaction: dict[str, Any]) -> str:
     expirations = ford_scan.get_expirations(ticker)
     if not expirations:
         raise ValueError(f"{ticker} does not currently have a usable options chain.")
-    item = ticker_registry.provision_discord_desk(ticker)
+    dynamic_universe.upsert_candidates([
+        dynamic_universe.Candidate(
+            ticker,
+            "discord_member",
+            score=25,
+            last_price=price,
+            options_available=True,
+            reason=f"Added through Discord by user {command_user_id(interaction)}",
+        )
+    ])
+    ticker_registry.save(
+        ticker,
+        status="ACTIVE",
+        note="Added to the shared scanner universe through Discord",
+    )
     sync_status = publish_ticker_configuration()
     return "\n".join([
-        f"✅ **{ticker} fully integrated**",
+        f"✅ **{ticker} added to the shared scanner universe**",
         f"Verified price: **${price:.2f}** · listed expirations: **{len(expirations)}**",
-        "Created or connected its five-channel information desk.",
-        "Status: **ACTIVE** · scheduled research and eligible trade scanning enabled.",
-        f"Category ID: `{item.get('category_id')}`",
-        "Existing positions remain in the shared lifecycle desk.",
+        "No ticker category or ticker-specific channels were created.",
+        "Scheduled research, charts, news, and eligible options scans are enabled.",
+        "Results use the shared scanner, intelligence, lifecycle, and performance channels.",
         sync_status,
     ])
 
@@ -528,8 +540,12 @@ def ticker_pause_reply(interaction: dict[str, Any]) -> str:
 def ticker_resume_reply(interaction: dict[str, Any]) -> str:
     require_ticker_admin(interaction)
     ticker = str(option_value(interaction, "ticker", ""))
-    ticker_registry.rename_category(ticker, archived=False)
     item = ticker_registry.resume(ticker)
+    dynamic_universe.upsert_candidates([
+        dynamic_universe.Candidate(
+            item["ticker"], "owner_resume", score=25, reason="Restored by owner"
+        )
+    ])
     sync_status = publish_ticker_configuration()
     return (
         f"▶️ **{item['ticker']} resumed.** Scheduled research and eligible "
@@ -541,12 +557,12 @@ def ticker_remove_reply(interaction: dict[str, Any]) -> str:
     require_ticker_admin(interaction)
     ticker = str(option_value(interaction, "ticker", ""))
     item = ticker_registry.archive(ticker)
-    ticker_registry.rename_category(ticker, archived=True)
+    set_universe_symbol(item["ticker"], False)
     sync_status = publish_ticker_configuration()
     return "\n".join([
         f"📦 **{item['ticker']} archived.**",
         "No new positions will be generated.",
-        "Channels, trade history, performance, and filters were preserved.",
+        "Trade history, performance, and filters were preserved.",
         "Any existing position will continue through the shared lifecycle until closed.",
         "Use `/ticker-resume` to restore it.",
         sync_status,
@@ -575,8 +591,7 @@ def ticker_status_reply(ticker: str) -> str:
         f"🧩 **{item['ticker']} ticker strategy**",
         f"Status: **{item['status']}**",
         f"Resume date: **{item.get('resume_on') or 'manual / not applicable'}**",
-        f"Discord desk: **{'connected' if item.get('category_id') else 'not provisioned'}**",
-        f"Information channels: **{len(item.get('channels') or {})}/5**",
+        "Discord routing: **shared universe channels**",
         f"Last registry update: {item['updated_at']}",
         f"Note: {item.get('note') or 'None'}",
     ])

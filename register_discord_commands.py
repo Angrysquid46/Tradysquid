@@ -13,7 +13,6 @@ GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 
 OWNER_ONLY_COMMANDS = {
     "filter-set",
-    "ticker-add",
     "ticker-pause",
     "ticker-resume",
     "ticker-remove",
@@ -88,8 +87,7 @@ COMMANDS = [
     {
         "name": "ticker-add",
         "type": 1,
-        "default_member_permissions": "0",
-        "description": "Owner: add an optionable ticker to the shared scan universe",
+        "description": "Add a verified optionable ticker to the shared scan universe",
         "options": [{
             "name": "ticker",
             "description": "Stock symbol, such as VALE",
@@ -220,7 +218,7 @@ COMMANDS = [
     {
         "name": "why",
         "type": 1,
-        "description": "Explain a tracked trade for the current ticker desk",
+        "description": "Explain a tracked trade for the selected ticker",
         "options": [{
             "name": "trade_id",
             "description": "Example: F-20260729-005",
@@ -260,7 +258,7 @@ COMMANDS = [
     {
         "name": "option",
         "type": 1,
-        "description": "Inspect an option contract for the current ticker desk",
+        "description": "Inspect an option contract for the selected ticker",
         "options": [{
             "name": "symbol",
             "description": "Tradier OCC option symbol",
