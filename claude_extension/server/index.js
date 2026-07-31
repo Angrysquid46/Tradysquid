@@ -22,6 +22,11 @@ function fail(message) {
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd || REPO,
+    env: {
+      ...process.env,
+      AI_CONTROL_DIR: CONTROL,
+      TRADYSQUID_CONTROL: CONTROL,
+    },
     encoding: "utf8",
     windowsHide: true,
     timeout: options.timeout || 120000,

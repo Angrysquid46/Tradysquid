@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "tradysquid-maintainer",
   "display_name": "Tradysquid Maintainer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Private Codex/Claude coordination, repository maintenance, tests, learning review, and controlled Git publication for Tradysquid.",
   "author": {
     "name": "Tradysquid"
@@ -18,6 +18,7 @@
       "env": {
         "TRADYSQUID_REPO": "C:\\Users\\strea\\OneDrive\\Desktop\\repo\\Tradysquid",
         "TRADYSQUID_CONTROL": "C:\\Users\\strea\\OneDrive\\Tradysquid-AI-Control",
+        "AI_CONTROL_DIR": "C:\\Users\\strea\\OneDrive\\Tradysquid-AI-Control",
         "TRADYSQUID_LEARNING": "C:\\Users\\strea\\OneDrive\\Tradysquid-Learning"
       }
     }
