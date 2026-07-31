@@ -41,6 +41,7 @@ import math
 import os
 import re
 import sys
+import tempfile
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -1584,6 +1585,10 @@ def blank_row() -> dict[str, str]:
 def read_log() -> list[dict[str, str]]:
     if not LOG_PATH.exists():
         return []
+    if LOG_PATH.stat().st_size == 0:
+        raise RuntimeError(
+            f"Trade history {LOG_PATH} is empty; refusing to continue until it is recovered."
+        )
     with LOG_PATH.open(newline="", encoding="utf-8") as handle:
         raw_rows = list(csv.DictReader(handle))
     rows = [migrate_row(row) for row in raw_rows]
@@ -1593,11 +1598,28 @@ def read_log() -> list[dict[str, str]]:
 
 def write_log(rows: list[dict[str, str]]) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    with LOG_PATH.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=LOG_HEADER, extrasaction="ignore")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({column: row.get(column, "") for column in LOG_HEADER})
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            newline="",
+            encoding="utf-8",
+            dir=STATE_DIR,
+            prefix=f"{LOG_PATH.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            writer = csv.DictWriter(handle, fieldnames=LOG_HEADER, extrasaction="ignore")
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({column: row.get(column, "") for column in LOG_HEADER})
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, LOG_PATH)
+    finally:
+        if temporary_path and temporary_path.exists():
+            temporary_path.unlink()
 
 
 def migrate_row(raw: dict[str, Any]) -> dict[str, str]:

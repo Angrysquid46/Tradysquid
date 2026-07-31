@@ -768,6 +768,25 @@ class InformationEngineTests(unittest.TestCase):
             route_close.assert_called_once()
         ford_scan.LOG_PATH = original_log
 
+    def test_trade_log_writes_atomically_and_rejects_zero_byte_history(self) -> None:
+        original_log = ford_scan.LOG_PATH
+        original_state = ford_scan.STATE_DIR
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                ford_scan.STATE_DIR = Path(temp)
+                ford_scan.LOG_PATH = Path(temp) / "plays.csv"
+                row = {field: "" for field in ford_scan.LOG_HEADER}
+                row.update({"trade_id": "TEST-001", "ticker": "TEST", "outcome": "OPEN"})
+                ford_scan.write_log([row])
+                self.assertEqual(ford_scan.read_log()[0]["trade_id"], "TEST-001")
+                self.assertEqual(list(Path(temp).glob("*.tmp")), [])
+                ford_scan.LOG_PATH.write_bytes(b"")
+                with self.assertRaisesRegex(RuntimeError, "is empty"):
+                    ford_scan.read_log()
+        finally:
+            ford_scan.LOG_PATH = original_log
+            ford_scan.STATE_DIR = original_state
+
     def test_github_backup_workflow_runs_multi_ticker_entrypoint(self) -> None:
         workflow = (
             Path(__file__).resolve().parent
