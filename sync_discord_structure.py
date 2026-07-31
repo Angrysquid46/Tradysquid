@@ -14,6 +14,8 @@ BOT_CHANNEL_ALLOW = (
     | 16384  # embed links
     | 32768  # attach files
     | 65536  # read message history
+    | (1 << 34)  # manage threads and forum posts
+    | (1 << 38)  # send messages in threads
 )
 ADMINISTRATOR_PERMISSION = 1 << 3
 BAN_MEMBERS_PERMISSION = 1 << 2
@@ -36,6 +38,7 @@ BOT_ROLE_REQUIRED_PERMISSIONS = {
     "Use Application Commands": 1 << 31,
     "Manage Events": 1 << 33,
     "Manage Threads and Posts": 1 << 34,
+    "Send Messages in Threads": 1 << 38,
     "Timeout Members": 1 << 40,
 }
 
