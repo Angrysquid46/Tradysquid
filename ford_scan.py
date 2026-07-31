@@ -2796,7 +2796,6 @@ def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discor
         status = "STOP WARNING"
     try:
         discord.send_thread(row["discord_thread_id"], content)
-        discord.set_thread_status(row["discord_thread_id"], status)
     except DiscordError as exc:
         if not discord_route_is_missing(exc):
             raise
@@ -2804,6 +2803,10 @@ def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discor
         row["discord_status"] = ""
         row["discord_format_version"] = ""
         return
+    try:
+        discord.set_thread_status(row["discord_thread_id"], status)
+    except DiscordError as exc:
+        print(f"Could not update optional forum status for {row.get('trade_id')}: {exc}", file=sys.stderr)
     row["discord_status"] = status
     row["last_discord_signal"] = evaluation.get("signal", "HOLD")
     row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 0)
@@ -2861,11 +2864,7 @@ def sync_open_trade_cards(
             discord.set_thread_status(thread_id, "HOLDING")
             row["discord_status"] = "HOLDING"
         except DiscordError as exc:
-            if not discord_route_is_missing(exc):
-                raise
-            row["discord_thread_id"] = ""
-            row["discord_status"] = ""
-            row["discord_format_version"] = ""
+            print(f"Could not update optional forum status for {trade_id}: {exc}", file=sys.stderr)
 
 
 def sync_all_open_trade_cards(
@@ -2955,7 +2954,6 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     if thread_id:
         try:
             discord.send_thread(thread_id, close_alert_text(row, evaluation))
-            discord.set_thread_status(thread_id, row["outcome"], archive=True)
         except DiscordError as exc:
             if not discord_route_is_missing(exc):
                 raise
@@ -2963,6 +2961,11 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
             row["discord_status"] = ""
             link = ""
             content = close_alert_text(row, evaluation)
+        else:
+            try:
+                discord.set_thread_status(thread_id, row["outcome"], archive=True)
+            except DiscordError as exc:
+                print(f"Could not update optional forum status for {row.get('trade_id')}: {exc}", file=sys.stderr)
     discord.upsert_trade_message("exit", report_state, "exit", row.get("trade_id", ""), content)
     result_channel = {
         "WIN": "wins",
