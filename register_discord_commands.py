@@ -17,6 +17,7 @@ OWNER_ONLY_COMMANDS = {
     "ticker-pause",
     "ticker-resume",
     "ticker-remove",
+    "scan-now",
 }
 
 TICKER_ARGUMENT = {
@@ -33,6 +34,26 @@ COMMANDS = [
         "name": "filters",
         "type": 1,
         "description": "Show active paper-scanner risk and liquidity filters",
+    },
+    {
+        "name": "scan-now",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: run local discovery, scanning, or reporting immediately",
+        "options": [{
+            "name": "scope",
+            "description": "Choose the manual local job to run",
+            "type": 3,
+            "required": True,
+            "choices": [
+                {"name": "Everything", "value": "all"},
+                {"name": "Universe discovery", "value": "discovery"},
+                {"name": "Options scanner", "value": "options"},
+                {"name": "Market intelligence", "value": "intelligence"},
+                {"name": "Open positions", "value": "positions"},
+                {"name": "System health", "value": "health"}
+            ]
+        }]
     },
     {
         "name": "filter-set",

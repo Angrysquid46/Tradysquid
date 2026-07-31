@@ -36,6 +36,7 @@ OWNER_ONLY_COMMANDS = {
     "ticker-pause",
     "ticker-resume",
     "ticker-remove",
+    "scan-now",
 }
 TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
 
@@ -330,6 +331,7 @@ def help_reply() -> str:
         "`/performance` — tracked trade results and open-position count",
         "`/why trade_id:` — show the recorded rationale for a tracked trade",
         "`/status`, `/dataage`, `/lastscan`, `/schedule` — system reliability",
+        "`/scan-now scope:` — owner-only manual discovery, options, intelligence, positions, health, or everything",
         "`/explain topic:` — plain-language options education",
         "`/ticker-add`, `/ticker-pause`, `/ticker-resume`, `/ticker-remove` — owner ticker controls",
         "`/ticker-list` and `/ticker-status` — integrated strategy status",
@@ -950,7 +952,20 @@ def process_command(interaction: dict[str, Any]) -> None:
     try:
         if name in OWNER_ONLY_COMMANDS:
             require_ticker_admin(interaction)
-        if name == "filters":
+        if name == "scan-now":
+            scope = str(option_value(interaction, "scope", "all"))
+            result = info_engine.run_manual_scan(scope)
+            patch_original(
+                application_id,
+                token,
+                content=(
+                    "✅ **Manual local run finished**\n"
+                    f"Scope: **{scope}**\n{result}\n"
+                    "Results were routed to their normal Discord channels. "
+                    "Options entries are created only while the market is open."
+                )[:1900],
+            )
+        elif name == "filters":
             patch_original(application_id, token, content=filters_reply())
         elif name == "filter-set":
             patch_original(

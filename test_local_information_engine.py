@@ -147,6 +147,7 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn("help", names)
         self.assertIn("chain", names)
         self.assertIn("status", names)
+        self.assertIn("scan-now", names)
 
     def test_discord_redesign_channel_names_are_unique(self) -> None:
         names = [item.name for item in sync_discord_structure.CHANNELS]
@@ -168,6 +169,37 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(ford_scan.CHANNEL_NAMES["qualified"], "new-positions")
         self.assertEqual(ford_scan.CHANNEL_NAMES["scratches"], "losses")
         self.assertEqual(ford_scan.CHANNEL_NAMES["charts"], "charts-and-levels")
+        self.assertEqual(ford_scan.CHANNEL_NAMES["universe_watch"], "universe-watch")
+        self.assertEqual(ford_scan.CHANNEL_NAMES["premarket"], "premarket")
+
+    def test_manual_full_scan_runs_every_local_section_in_order(self) -> None:
+        original = engine.DB_PATH
+        calls: list[str] = []
+
+        def callback(name: str):
+            def run(_connection):
+                calls.append(name)
+                return f"{name} complete"
+            return run
+
+        with tempfile.TemporaryDirectory() as temp:
+            engine.DB_PATH = Path(temp) / "manual.db"
+            with (
+                patch.object(engine, "provider_event_job", callback("events")),
+                patch.object(engine, "universe_refresh_job", callback("discovery")),
+                patch.object(engine, "manual_intelligence_job", callback("intelligence")),
+                patch.object(engine, "manual_options_scan_job", callback("options")),
+                patch.object(engine, "position_tracker_job", callback("positions")),
+                patch.object(engine, "status_job", callback("health")),
+            ):
+                result = engine.run_manual_scan("all")
+        engine.DB_PATH = original
+        self.assertEqual(
+            calls,
+            ["events", "discovery", "intelligence", "options", "positions", "health"],
+        )
+        self.assertEqual(result.count("**"), 12)
+        self.assertNotIn("ERROR", result)
 
     def test_env_runner_preserves_safe_script_arguments(self) -> None:
         self.assertIn(

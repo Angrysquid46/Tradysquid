@@ -152,6 +152,7 @@ Type `/`, choose a command, complete its fields, and send it.
 • `/performance`, `/why`, `/status`, `/dataage`, `/lastscan` — tracking.
 • `/ask`, `/explain` — beginner education.
 • `/filters`, `/ticker-list`, `/ticker-status` — public configuration status.
+• `/scan-now scope:` — owner-only manual discovery, scanning, and reporting.
 Universe and filter changes are owner-only. Commands use local services and do
 not consume GitHub Actions minutes. Discord maintenance is reviewed manually on
 Monday, Wednesday, and Friday. Upgrade suggestions are never auto-approved.""",
@@ -166,8 +167,10 @@ not automatically mean safe. Review the complete risk before every decision.""",
 `/filters` shows active limits. `/filter-set` changes a guarded local value.
 `/ticker-add`, `/ticker-pause`, `/ticker-resume`, and `/ticker-remove` manage
 the rotating universe without creating ticker-specific desks or triggering
-GitHub. Existing paper positions remain tracked after removal. The runtime is
-read-only toward brokerages and cannot place trades.""",
+GitHub. `/scan-now scope:Everything` immediately runs discovery, market
+intelligence, every active ticker, position tracking, and health reporting.
+Existing paper positions remain tracked after removal. The runtime is read-only
+toward brokerages and cannot place trades.""",
 }
 
 

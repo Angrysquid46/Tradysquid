@@ -199,6 +199,9 @@ LOG_HEADER = [
 CHANNEL_NAMES = {
     "forum": "trade-journal",
     "scanner_feed": "scanner-feed",
+    "premarket": "premarket",
+    "breaking_alerts": "breaking-alerts",
+    "universe_watch": "universe-watch",
     "charts": "charts-and-levels",
     "intelligence": "market-regime",
     "market_pulse": "market-regime",
@@ -245,6 +248,9 @@ TAG_KEYS = {
 
 AUTOMATED_CHANNEL_KEYS = [
     "scanner_feed",
+    "premarket",
+    "breaking_alerts",
+    "universe_watch",
     "charts",
     "intelligence",
     "market_pulse",

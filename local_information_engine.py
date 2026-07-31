@@ -51,6 +51,7 @@ FORD_NEWS_FEED_URL = (
 GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
 TICKER_CHART_DIR = ROOT / "docs" / "tickers"
 POSITION_FILE_LOCK = threading.RLock()
+MANUAL_SCAN_LOCK = threading.Lock()
 STREAM_QUOTES: dict[str, dict[str, Any]] = {}
 STREAM_LAST_WRITTEN: dict[str, float] = {}
 POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
@@ -1236,6 +1237,199 @@ def full_scanner_job(connection: sqlite3.Connection) -> str:
     if failed:
         raise RuntimeError(f"Scanner failed for: {', '.join(failed)}")
     return f"Options scan completed for {', '.join(results) or 'no active tickers'}"
+
+
+def manual_options_scan_job(connection: sqlite3.Connection) -> str:
+    """Scan every currently active symbol instead of the scheduled rotating batch."""
+    if not FULL_SCAN_ENABLED:
+        return "disabled until LOCAL_FULL_SCAN_ENABLED=true"
+    if not ford_scan.DISCORD_BOT_TOKEN:
+        return "waiting for local DISCORD_BOT_TOKEN"
+    tickers = dynamic_universe.active_symbols()
+    with POSITION_FILE_LOCK:
+        result = multi_ticker_scan.main(tickers)
+    results = {ticker: result for ticker in tickers}
+    store_observation(
+        connection,
+        "manual-full-scan",
+        {"results": results, "completed_at": iso_now()},
+    )
+    failed = [ticker for ticker, exit_code in results.items() if exit_code]
+    if failed:
+        raise RuntimeError(f"Scanner failed for: {', '.join(failed)}")
+    market_open, _ = ford_scan.market_is_open_now()
+    session = "live option chains" if market_open else "market-closed routing checks"
+    return (
+        f"{len(tickers)} active tickers processed using {session}: "
+        f"{', '.join(tickers) or 'none'}"
+    )
+
+
+def manual_intelligence_job(connection: sqlite3.Connection) -> str:
+    """Publish a timestamped broad-market and universe snapshot on demand."""
+    symbols = dynamic_universe.active_symbols()
+    quotes = ford_scan.get_quotes(symbols, include_greeks=False) if symbols else {}
+    tracker = discord_tracker()
+    if not tracker:
+        return "Discord tracker is unavailable"
+    observed_at = iso_now()
+    market_open, _ = ford_scan.market_is_open_now()
+    session = "MARKET OPEN" if market_open else "MARKET CLOSED / LAST QUOTES"
+
+    ranked = sorted(
+        symbols,
+        key=lambda symbol: ford_scan.as_float((quotes.get(symbol) or {}).get("volume"), 0)
+        or 0,
+        reverse=True,
+    )
+    universe_lines = [
+        "## Manual Universe Discovery",
+        f"**{session}** · **{len(symbols)} active symbols**",
+    ]
+    for symbol in ranked[:30]:
+        quote = quotes.get(symbol) or {}
+        price = ford_scan.as_float(quote.get("last"))
+        volume = int(ford_scan.as_float(quote.get("volume"), 0) or 0)
+        universe_lines.append(
+            f"• **{symbol}** · "
+            f"{ford_scan.fmt_money(price) if price is not None else 'quote unavailable'} "
+            f"· volume {volume:,}"
+        )
+    if len(ranked) > 30:
+        universe_lines.append(f"• …and {len(ranked) - 30} more active symbols")
+    universe_lines.append(
+        f"Updated {observed_at}. Discovery ranking is informational only."
+    )
+    tracker.send_channel("universe_watch", content="\n".join(universe_lines))
+
+    benchmark_lines = [
+        "## Manual Market-Regime Snapshot",
+        f"**{session}**",
+    ]
+    for benchmark in ("SPY", "QQQ"):
+        try:
+            snapshot = market_snapshot(benchmark)
+            benchmark_lines.append(
+                f"• **{benchmark}** {ford_scan.fmt_money(snapshot['price'])} · "
+                f"{snapshot['regime']} · RSI {float(snapshot.get('rsi14') or 0):.1f} · "
+                f"support {ford_scan.fmt_money(snapshot.get('support20'))} · "
+                f"resistance {ford_scan.fmt_money(snapshot.get('resistance20'))}"
+            )
+        except Exception as exc:
+            benchmark_lines.append(
+                f"• **{benchmark}** unavailable · {type(exc).__name__}"
+            )
+    benchmark_lines.append(
+        f"Updated {observed_at}. Conditions are not an automatic trade entry."
+    )
+    tracker.send_channel("intelligence", content="\n".join(benchmark_lines))
+
+    tracker.send_channel(
+        "premarket",
+        content="\n".join([
+            "## Manual Session Briefing",
+            f"**{session}**",
+            f"Universe refreshed: **{len(symbols)} symbols**.",
+            f"Highest current stock-volume names: **{', '.join(ranked[:10]) or 'none'}**.",
+            "The options scanner reports each ticker separately in #scanner-feed.",
+            f"Generated {observed_at}. Quotes may be stale while markets are closed.",
+        ]),
+    )
+
+    headlines: list[str] = []
+    for symbol in ranked[:8]:
+        try:
+            items = fetch_ticker_news(symbol, limit=1)
+            if items:
+                headlines.append(
+                    f"• **{symbol}** · [{items[0]['title']}]({items[0]['url']})"
+                )
+        except Exception:
+            continue
+    tracker.send_channel(
+        "news_events",
+        content="\n".join([
+            "## Manual News and Events Digest",
+            *(headlines or ["No current headlines were returned by the public feed."]),
+            f"Checked {observed_at}. Verify original sources before acting.",
+        ]),
+    )
+    store_observation(
+        connection,
+        "manual-intelligence",
+        {"symbols": symbols, "ranked": ranked, "observed_at": observed_at},
+    )
+    return (
+        f"market regime, session briefing, universe watch, and "
+        f"{len(headlines)} headlines published"
+    )
+
+
+def _run_manual_step(
+    connection: sqlite3.Connection,
+    name: str,
+    callback: Callable[[sqlite3.Connection], str],
+) -> str:
+    started = iso_now()
+    cursor = connection.execute(
+        "INSERT INTO job_runs(job_name, started_at, status) VALUES (?, ?, ?)",
+        (f"manual-{name}", started, "RUNNING"),
+    )
+    connection.commit()
+    try:
+        detail = callback(connection)
+        status = "OK"
+    except Exception as exc:
+        detail = f"{type(exc).__name__}: {exc}"[:1000]
+        status = "ERROR"
+    connection.execute(
+        "UPDATE job_runs SET finished_at=?, status=?, detail=? WHERE id=?",
+        (iso_now(), status, detail, cursor.lastrowid),
+    )
+    connection.commit()
+    return f"**{name}:** {status} · {detail}"
+
+
+def run_manual_scan(scope: str = "all") -> str:
+    """Run one owner-requested local suite and return a Discord-ready summary."""
+    normalized = str(scope or "all").strip().lower()
+    allowed = {"all", "discovery", "options", "intelligence", "positions", "health"}
+    if normalized not in allowed:
+        raise ValueError(f"Unknown manual scan scope: {normalized}")
+    if not MANUAL_SCAN_LOCK.acquire(blocking=False):
+        raise RuntimeError("Another manual scan is already running.")
+    try:
+        connection = connect_db()
+        try:
+            steps = {
+                "discovery": [
+                    ("provider events", provider_event_job),
+                    ("universe discovery", universe_refresh_job),
+                ],
+                "options": [("options scanner", manual_options_scan_job)],
+                "intelligence": [("market intelligence", manual_intelligence_job)],
+                "positions": [("open positions", position_tracker_job)],
+                "health": [("system health", status_job)],
+            }
+            selected = (
+                [
+                    *steps["discovery"],
+                    *steps["intelligence"],
+                    *steps["options"],
+                    *steps["positions"],
+                    *steps["health"],
+                ]
+                if normalized == "all"
+                else steps[normalized]
+            )
+            return "\n".join(
+                _run_manual_step(connection, name, callback)
+                for name, callback in selected
+            )
+        finally:
+            connection.close()
+    finally:
+        MANUAL_SCAN_LOCK.release()
 
 
 def provider_event_job(connection: sqlite3.Connection) -> str:
