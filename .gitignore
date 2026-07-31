@@ -11,4 +11,6 @@ state/dynamic-universe.db
 state/dynamic-universe.db-shm
 state/dynamic-universe.db-wal
 state/universe-scan-cursor.json
+state/local-engine.db
+docs/trade-snapshots/
 docs/tickers/
