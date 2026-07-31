@@ -23,16 +23,15 @@ def load_env() -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        raise SystemExit("Usage: python run_with_env.py <script.py>")
+    if len(sys.argv) < 2:
+        raise SystemExit("Usage: python run_with_env.py <script.py> [arguments...]")
     load_env()
     target = (ROOT / sys.argv[1]).resolve()
     if target.parent != ROOT or not target.is_file() or target.suffix != ".py":
         raise SystemExit("Target must be a Python file in this repository.")
-    sys.argv = [str(target)]
+    sys.argv = [str(target), *sys.argv[2:]]
     runpy.run_path(str(target), run_name="__main__")
 
 
 if __name__ == "__main__":
     main()
-

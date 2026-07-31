@@ -15,6 +15,7 @@ import local_information_engine as engine
 import multi_ticker_scan
 import outcome_learning
 import register_discord_commands
+import run_with_env
 import ticker_registry
 import sync_discord_structure
 
@@ -155,6 +156,12 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(ford_scan.CHANNEL_NAMES["qualified"], "new-positions")
         self.assertEqual(ford_scan.CHANNEL_NAMES["scratches"], "losses")
         self.assertEqual(ford_scan.CHANNEL_NAMES["charts"], "charts-and-levels")
+
+    def test_env_runner_preserves_safe_script_arguments(self) -> None:
+        self.assertIn(
+            "Usage: python run_with_env.py <script.py> [arguments...]",
+            run_with_env.main.__code__.co_consts,
+        )
 
     def test_github_syncing_ticker_commands_are_owner_locked(self) -> None:
         owner_commands = {
