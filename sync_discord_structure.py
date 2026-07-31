@@ -130,6 +130,9 @@ def main() -> int:
     )
     if not tracker.enabled:
         raise SystemExit("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required")
+    bot_user = tracker._request("GET", "/users/@me")
+    bot_user_id = str(bot_user["id"])
+    bot_allow = str(1024 | 2048 | 8192 | 16384 | 32768 | 65536 | 16)
     existing = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
     by_name = {normalized(item.get("name")): item for item in existing}
     categories: dict[str, dict] = {}
@@ -147,11 +150,19 @@ def main() -> int:
             if apply:
                 overwrites = []
                 if name == OWNER_CATEGORY:
-                    overwrites = [{
-                        "id": tracker.guild_id,
-                        "type": 0,
-                        "deny": str(1024),
-                    }]
+                    overwrites = [
+                        {
+                            "id": tracker.guild_id,
+                            "type": 0,
+                            "deny": str(1024),
+                        },
+                        {
+                            "id": bot_user_id,
+                            "type": 1,
+                            "allow": bot_allow,
+                            "deny": "0",
+                        },
+                    ]
                 elif name in READ_ONLY_CATEGORIES:
                     overwrites = [{
                         "id": tracker.guild_id,
@@ -179,6 +190,11 @@ def main() -> int:
             elif name in READ_ONLY_CATEGORIES:
                 deny = 2048
             if deny:
+                tracker._request(
+                    "PUT",
+                    f"/channels/{category['id']}/permissions/{bot_user_id}",
+                    {"type": 1, "allow": bot_allow, "deny": "0"},
+                )
                 tracker._request(
                     "PUT",
                     f"/channels/{category['id']}/permissions/{tracker.guild_id}",
