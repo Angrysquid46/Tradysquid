@@ -1643,6 +1643,7 @@ def discord_card_migration_job(connection: sqlite3.Connection) -> str:
         raise RuntimeError("Discord tracker is unavailable")
     refreshed_ids: list[str] = []
     refreshed_threads: dict[str, str] = {}
+    report_state = ford_scan.read_report_state()
     for row in pending:
         try:
             tracker.refresh_trade_thread(row)
@@ -1655,6 +1656,13 @@ def discord_card_migration_job(connection: sqlite3.Connection) -> str:
             tracker.create_trade_thread(row, "OPEN")
         refreshed_ids.append(row.get("trade_id", ""))
         refreshed_threads[row.get("trade_id", "")] = row.get("discord_thread_id", "")
+        ford_scan.sync_open_trade_cards(
+            row,
+            tracker,
+            report_state,
+            ford_scan.stored_open_evaluation(row),
+            include_entry=True,
+        )
         time.sleep(1.0)
     with POSITION_FILE_LOCK:
         latest = ford_scan.read_log()
@@ -1666,6 +1674,7 @@ def discord_card_migration_job(connection: sqlite3.Connection) -> str:
                 )
                 row["discord_format_version"] = ford_scan.DISCORD_FORMAT_VERSION
         ford_scan.write_log(latest)
+    ford_scan.write_report_state(report_state)
     store_observation(
         connection,
         "discord-card-migration",
@@ -1742,6 +1751,7 @@ JOBS = [
         timedelta(minutes=5),
         discord_card_migration_job,
         background=True,
+        provider_heavy=True,
         retry_interval=timedelta(minutes=5),
     ),
     Job(

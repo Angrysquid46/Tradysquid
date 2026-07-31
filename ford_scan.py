@@ -2825,6 +2825,8 @@ def sync_open_trade_cards(
     discord: DiscordTracker,
     report_state: dict[str, Any],
     evaluation: dict[str, Any] | None = None,
+    *,
+    include_entry: bool = False,
 ) -> None:
     if not discord.ready or row.get("outcome") != "OPEN":
         return
@@ -2832,20 +2834,21 @@ def sync_open_trade_cards(
     thread_id = row.get("discord_thread_id", "")
     link = thread_link(thread_id)
     current = evaluation or stored_open_evaluation(row)
-    discord.upsert_trade_message(
-        "qualified",
-        report_state,
-        "qualified",
-        trade_id,
-        qualified_trade_text(row, link),
-    )
-    discord.upsert_trade_message(
-        "entry",
-        report_state,
-        "entry",
-        trade_id,
-        entry_alert_text(row, link),
-    )
+    if include_entry:
+        discord.upsert_trade_message(
+            "qualified",
+            report_state,
+            "qualified",
+            trade_id,
+            qualified_trade_text(row, link),
+        )
+        discord.upsert_trade_message(
+            "entry",
+            report_state,
+            "entry",
+            trade_id,
+            entry_alert_text(row, link),
+        )
     discord.upsert_trade_message(
         "updates",
         report_state,
@@ -2923,6 +2926,7 @@ def sync_closed_result_channels(
     if not discord.ready:
         return 0
     updated = 0
+    routed = set(report_state.get("routed_closed_trade_ids") or [])
     for row in sorted(closed_rows(rows), key=lambda item: item.get("closed_at") or item.get("timestamp") or ""):
         trade_id = row.get("trade_id", "")
         result_channel = {
@@ -2931,7 +2935,7 @@ def sync_closed_result_channels(
             "SCRATCH": "scratches",
             "EXPIRED": "expired",
         }.get(row.get("outcome", ""))
-        if not trade_id or not result_channel:
+        if not trade_id or not result_channel or trade_id in routed:
             continue
         link = thread_link(row.get("discord_thread_id", ""))
         content = close_alert_text(row, stored_close_evaluation(row), link)
@@ -2993,7 +2997,7 @@ def post_new_trade(
         return
     if not row.get("discord_thread_id"):
         discord.create_trade_thread(row, "OPEN")
-    sync_open_trade_cards(row, discord, report_state)
+    sync_open_trade_cards(row, discord, report_state, include_entry=True)
     discord.send_channel_file(
         "charts",
         CHART_SCREENSHOT_PATH,
@@ -3962,12 +3966,6 @@ def main(*, publish_shared: bool = True) -> int:
             ),
         )
         print(f"Discord backfill: created {backfilled} open-trade forum thread(s).")
-
-    if publish_shared:
-        safe_discord_call(
-            "open trade channel sync",
-            lambda: sync_all_open_trade_cards(rows, discord, report_state),
-        )
 
     is_open, timestamp = market_is_open_now()
     if not is_open:
