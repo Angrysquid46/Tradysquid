@@ -481,6 +481,29 @@ class InformationEngineTests(unittest.TestCase):
             note="Added to the shared scanner universe through Discord",
         )
 
+    def test_routed_closed_trade_is_removed_from_held_positions(self) -> None:
+        calls: list[tuple[str, str, str, str]] = []
+
+        class Tracker:
+            ready = True
+
+            def delete_trade_message(self, *args: str) -> None:
+                calls.append(args)
+
+        row = {
+            "trade_id": "VALE-20260731-001",
+            "ticker": "VALE",
+            "outcome": "WIN",
+            "closed_at": "2026-07-31T13:00:00-05:00",
+        }
+        state = {"routed_closed_trade_ids": [row["trade_id"]]}
+        updated = ford_scan.sync_closed_result_channels([row], Tracker(), state)
+        self.assertEqual(updated, 0)
+        self.assertEqual(
+            calls,
+            [("updates", state, "position", "VALE-20260731-001")],
+        )
+
     def test_health_probe_queue_is_drained(self) -> None:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(("127.0.0.1", 0))

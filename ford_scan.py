@@ -2949,7 +2949,14 @@ def sync_closed_result_channels(
             "SCRATCH": "scratches",
             "EXPIRED": "expired",
         }.get(row.get("outcome", ""))
-        if not trade_id or not result_channel or trade_id in routed:
+        if not trade_id or not result_channel:
+            continue
+        if trade_id in routed:
+            # A completed destination card may predate held-card cleanup.  Do
+            # not repost the result, but keep enforcing the channel lifecycle.
+            discord.delete_trade_message(
+                "updates", report_state, "position", trade_id
+            )
             continue
         link = thread_link(row.get("discord_thread_id", ""))
         content = close_alert_text(row, stored_close_evaluation(row), link)
