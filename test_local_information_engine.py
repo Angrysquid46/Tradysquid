@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 import socket
+import json
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
@@ -20,6 +21,7 @@ import ticker_registry
 import sync_discord_structure
 import ensure_tradingview_secret
 import robinhood_readonly_bridge
+import tradier_stream
 
 
 class InformationEngineTests(unittest.TestCase):
@@ -482,6 +484,82 @@ class InformationEngineTests(unittest.TestCase):
     def test_contract_price_guard_is_one_dollar(self) -> None:
         self.assertEqual(ford_scan.MAX_CONTRACT_ASK, 1.0)
         self.assertEqual(ford_scan.MAX_RISK_PER_TRADE, 100.0)
+
+    def test_open_position_symbols_are_dynamic_and_deduplicated(self) -> None:
+        rows = [
+            {
+                "ticker": "VALE",
+                "play_type": "LONG",
+                "option_symbol": "VALE260821C00015000",
+            },
+            {
+                "ticker": "F",
+                "play_type": "SPREAD",
+                "short_symbol": "F260821P00014000",
+                "long_symbol": "F260821P00013500",
+            },
+        ]
+        self.assertEqual(
+            ford_scan.symbols_for_rows(rows),
+            [
+                "VALE",
+                "VALE260821C00015000",
+                "F",
+                "F260821P00014000",
+                "F260821P00013500",
+            ],
+        )
+
+    def test_tradier_stream_subscribes_only_to_quote_events(self) -> None:
+        payload = json.loads(
+            tradier_stream.TradierPositionStream._payload(
+                "session", ["VALE260821C00015000"]
+            )
+        )
+        self.assertEqual(payload["filter"], ["quote"])
+        self.assertEqual(payload["symbols"], ["VALE260821C00015000"])
+        self.assertTrue(payload["validOnly"])
+
+    def test_streamed_quote_closes_paper_position_immediately(self) -> None:
+        original_log = ford_scan.LOG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            ford_scan.LOG_PATH = Path(temp) / "plays.csv"
+            row = {field: "" for field in ford_scan.LOG_HEADER}
+            row.update(
+                {
+                    "trade_id": "VALE-STREAM-001",
+                    "ticker": "VALE",
+                    "play_type": "LONG",
+                    "option_symbol": "VALE260821C00015000",
+                    "expiration": "2026-08-21",
+                    "entry_price": "0.50",
+                    "outcome": "OPEN",
+                }
+            )
+            ford_scan.write_log([row])
+            engine.STREAM_QUOTES.clear()
+            engine.STREAM_LAST_WRITTEN.clear()
+            with (
+                patch.object(
+                    engine.ford_scan,
+                    "market_is_open_now",
+                    return_value=(True, ford_scan.now_ct()),
+                ),
+                patch.object(engine, "_route_stream_close") as route_close,
+            ):
+                engine._stream_quote_event(
+                    {
+                        "type": "quote",
+                        "symbol": "VALE260821C00015000",
+                        "bid": 0.61,
+                        "ask": 0.63,
+                    }
+                )
+            closed = ford_scan.read_log()[0]
+            self.assertEqual(closed["outcome"], "WIN")
+            self.assertEqual(closed["last_signal"], "TAKE PROFIT")
+            route_close.assert_called_once()
+        ford_scan.LOG_PATH = original_log
 
     def test_github_backup_workflow_runs_multi_ticker_entrypoint(self) -> None:
         workflow = (

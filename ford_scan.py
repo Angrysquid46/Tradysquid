@@ -1949,13 +1949,14 @@ def refresh_open_entry_market_data(
 
 
 def symbols_for_rows(rows: list[dict[str, str]]) -> list[str]:
-    symbols: list[str] = [TICKER]
+    symbols: list[str] = []
     for row in rows:
+        symbols.append(row.get("ticker", ""))
         if row.get("play_type") == "SPREAD":
             symbols.extend([row.get("short_symbol", ""), row.get("long_symbol", "")])
         else:
             symbols.append(row.get("option_symbol", ""))
-    return [symbol for symbol in symbols if symbol]
+    return list(dict.fromkeys(symbol for symbol in symbols if symbol))
 
 
 def conservative_option_exit(quote: dict[str, Any]) -> float:

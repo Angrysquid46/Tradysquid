@@ -29,7 +29,8 @@
     "max_bid_ask_pct": 0.25
   },
   "schedules": {
-    "position_poll_seconds": 30,
+    "position_stream": true,
+    "position_safety_poll_seconds": 300,
     "discord_position_heartbeat_minutes": 15,
     "universe_refresh_minutes": 60,
     "full_scan_minutes": 15,

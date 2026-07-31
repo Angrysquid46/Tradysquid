@@ -12,15 +12,17 @@ GitHub Actions remains a manual backup.
 ## Runtime cadence
 
 - Provider event queue: every 15 seconds.
-- Open paper positions: every 30 seconds during market hours.
+- Open paper positions: one live Tradier quote stream during market hours.
+- Position safety fallback: one batched REST refresh every 5 minutes.
 - Full options discovery: rotating batch every 15 minutes during market hours.
 - Universe quote/liquidity refresh: hourly, or every two hours after market.
 - Health: every 15 minutes.
 - Outcome-learning archive: every six hours.
 - Weekly evidence review: Friday after the market.
 
-The Discord publisher should edit existing held-position cards on material
-changes and heartbeat intervals, rather than post a new message every 30 seconds.
+The Discord publisher edits existing held-position cards on material changes and
+heartbeat intervals. Profit targets, stops, and expiry exits route immediately
+when the live stream receives a qualifying option quote.
 
 ## TradingView webhook
 

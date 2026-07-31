@@ -29,6 +29,7 @@ import multi_ticker_scan
 import outcome_learning
 import requests
 import ticker_registry
+import tradier_stream
 from run_with_env import load_env
 
 ROOT = Path(__file__).resolve().parent
@@ -40,12 +41,19 @@ MARKET_REFRESH_MINUTES = int(os.environ.get("LOCAL_MARKET_REFRESH_MINUTES", "5")
 FILINGS_REFRESH_MINUTES = int(os.environ.get("LOCAL_FILINGS_REFRESH_MINUTES", "30"))
 STATUS_REFRESH_MINUTES = int(os.environ.get("LOCAL_STATUS_REFRESH_MINUTES", "15"))
 FULL_SCAN_ENABLED = os.environ.get("LOCAL_FULL_SCAN_ENABLED", "true").lower() == "true"
+POSITION_SAFETY_POLL_SECONDS = int(
+    os.environ.get("POSITION_SAFETY_POLL_SECONDS", "300")
+)
 FORD_NEWS_URL = "https://shareholder.ford.com/news/default.aspx"
 FORD_NEWS_FEED_URL = (
     "https://shareholder.ford.com/feed/PressRelease.svc/GetPressReleaseList"
 )
 GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
 TICKER_CHART_DIR = ROOT / "docs" / "tickers"
+POSITION_FILE_LOCK = threading.RLock()
+STREAM_QUOTES: dict[str, dict[str, Any]] = {}
+STREAM_LAST_WRITTEN: dict[str, float] = {}
+POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
 
 
 def utc_now() -> datetime:
@@ -1216,7 +1224,8 @@ def full_scanner_job(connection: sqlite3.Connection) -> str:
     if not ford_scan.DISCORD_BOT_TOKEN:
         return "waiting for local DISCORD_BOT_TOKEN"
     tickers = multi_ticker_scan.configured_active_tickers()
-    result = multi_ticker_scan.main(tickers)
+    with POSITION_FILE_LOCK:
+        result = multi_ticker_scan.main(tickers)
     results = {ticker: result for ticker in tickers}
     store_observation(
         connection,
@@ -1291,41 +1300,106 @@ def universe_refresh_job(connection: sqlite3.Connection) -> str:
     return f"{updated}/{len(symbols)} universe quotes refreshed"
 
 
+def _route_stream_close(
+    row: dict[str, str], evaluation: dict[str, Any]
+) -> None:
+    tracker = discord_tracker()
+    if not tracker:
+        return
+    report_state = ford_scan.read_report_state()
+    ford_scan.post_close(row, evaluation, tracker, report_state)
+    ford_scan.write_report_state(report_state)
+
+
+def _position_symbols() -> list[str]:
+    with POSITION_FILE_LOCK:
+        rows = ford_scan.read_log()
+        return ford_scan.symbols_for_rows(ford_scan.open_rows(rows))
+
+
+def _stream_quote_event(event: dict[str, Any]) -> None:
+    """Evaluate exits immediately when a streamed option quote changes."""
+    symbol = str(event.get("symbol") or "")
+    if not symbol or not ford_scan.market_is_open_now()[0]:
+        return
+    STREAM_QUOTES.setdefault(symbol, {}).update(event)
+    timestamp = ford_scan.now_ct()
+    now_monotonic = time.monotonic()
+    with POSITION_FILE_LOCK:
+        rows = ford_scan.read_log()
+        changed = False
+        closed_events: list[tuple[dict[str, str], dict[str, Any]]] = []
+        for row in ford_scan.open_rows(rows):
+            required = set(ford_scan.symbols_for_rows([row]))
+            option_symbols = required - {row.get("ticker", "")}
+            if symbol not in option_symbols or not option_symbols.issubset(STREAM_QUOTES):
+                continue
+            evaluation = ford_scan.evaluate_open_row(row, STREAM_QUOTES, timestamp)
+            if evaluation.get("pl_pct") is None:
+                continue
+            signal = evaluation.get("signal")
+            if signal in {"STOP OUT", "TAKE PROFIT", "EXPIRY CLOSE"}:
+                ford_scan.close_row(row, evaluation, timestamp)
+                closed_events.append((row, evaluation))
+                changed = True
+            else:
+                trade_id = row.get("trade_id", "")
+                last_write = STREAM_LAST_WRITTEN.get(trade_id, 0.0)
+                if now_monotonic - last_write >= 2:
+                    STREAM_LAST_WRITTEN[trade_id] = now_monotonic
+                    changed = True
+        if changed:
+            ford_scan.write_log(rows)
+        for row, evaluation in closed_events:
+            _route_stream_close(row, evaluation)
+
+
 def position_tracker_job(connection: sqlite3.Connection) -> str:
-    """Refresh every open paper position without running a discovery scan."""
-    rows = ford_scan.read_log()
-    opened = ford_scan.open_rows(rows)
+    """REST safety refresh used if a stream tick is missed or disconnected."""
+    with POSITION_FILE_LOCK:
+        rows = ford_scan.read_log()
+        opened = ford_scan.open_rows(rows)
     if not opened:
-        return "no open positions"
+        stream_state = (
+            "connected" if POSITION_STREAM and POSITION_STREAM.connected else "idle"
+        )
+        return f"no open positions; stream {stream_state}"
     timestamp = ford_scan.now_ct()
     quotes = ford_scan.get_quotes(
         ford_scan.symbols_for_rows(opened), include_greeks=True
     )
     closed = 0
     refreshed = 0
-    for row in list(opened):
-        evaluation = ford_scan.evaluate_open_row(row, quotes, timestamp)
-        if evaluation.get("pl_pct") is None:
-            continue
-        if evaluation.get("signal") in {"STOP OUT", "TAKE PROFIT", "EXPIRY CLOSE"}:
-            ford_scan.close_row(row, evaluation, timestamp)
-            closed += 1
-        else:
-            row["current_pl_pct"] = ford_scan.round_or_blank(
-                evaluation.get("pl_pct"), 1
-            )
-            row["current_pl_dollars"] = ford_scan.round_or_blank(
-                evaluation.get("pl_dollars"), 0
-            )
-        refreshed += 1
-    if refreshed:
-        ford_scan.write_log(rows)
+    with POSITION_FILE_LOCK:
+        for row in list(opened):
+            evaluation = ford_scan.evaluate_open_row(row, quotes, timestamp)
+            if evaluation.get("pl_pct") is None:
+                continue
+            if evaluation.get("signal") in {
+                "STOP OUT", "TAKE PROFIT", "EXPIRY CLOSE"
+            }:
+                ford_scan.close_row(row, evaluation, timestamp)
+                _route_stream_close(row, evaluation)
+                closed += 1
+            else:
+                row["current_pl_pct"] = ford_scan.round_or_blank(
+                    evaluation.get("pl_pct"), 1
+                )
+                row["current_pl_dollars"] = ford_scan.round_or_blank(
+                    evaluation.get("pl_dollars"), 0
+                )
+            refreshed += 1
+        if refreshed:
+            ford_scan.write_log(rows)
     store_observation(
         connection,
         "position-tracker",
         {"open": len(opened) - closed, "closed": closed, "refreshed": refreshed},
     )
-    return f"{refreshed} refreshed · {closed} closed"
+    stream_state = (
+        "connected" if POSITION_STREAM and POSITION_STREAM.connected else "fallback"
+    )
+    return f"{refreshed} refreshed · {closed} closed · stream {stream_state}"
 
 
 def outcome_learning_job(connection: sqlite3.Connection) -> str:
@@ -1362,7 +1436,7 @@ JOBS = [
     ),
     Job(
         "position-tracker",
-        timedelta(seconds=30),
+        timedelta(seconds=POSITION_SAFETY_POLL_SECONDS),
         position_tracker_job,
         market_hours_only=True,
     ),
@@ -1492,6 +1566,7 @@ def run_once() -> int:
 
 
 def main() -> int:
+    global POSITION_STREAM
     load_env()
     if "--once" in sys.argv:
         return run_once()
@@ -1508,6 +1583,21 @@ def main() -> int:
         name="engine-health-listener",
         daemon=True,
     ).start()
+    POSITION_STREAM = tradier_stream.TradierPositionStream(
+        ford_scan.TRADIER_TOKEN,
+        ford_scan.TRADIER_BASE_URL,
+        _position_symbols,
+        _stream_quote_event,
+    )
+    threading.Thread(
+        target=POSITION_STREAM.run_forever,
+        name="tradier-position-stream",
+        daemon=True,
+    ).start()
+    print(
+        "Open paper positions use one live Tradier quote stream; "
+        "REST checks are a five-minute safety fallback."
+    )
     connection = connect_db()
     try:
         with instance_lock:
