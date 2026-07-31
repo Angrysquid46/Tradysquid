@@ -3860,7 +3860,7 @@ def intelligence_only_main() -> int:
         return 1
 
 
-def main() -> int:
+def main(*, publish_shared: bool = True) -> int:
     if "--intelligence-only" in sys.argv[1:]:
         return intelligence_only_main()
     timestamp = now_ct()
@@ -3876,34 +3876,36 @@ def main() -> int:
 
     report_state = read_report_state()
     migrated_cards = 0
-    try:
-        migrated_cards = migrate_recent_bot_messages_to_cards(discord, report_state)
-    except DiscordError as exc:
-        print(f"Discord card migration failed: {exc}", file=sys.stderr)
-    if migrated_cards:
-        print(f"Discord card migration: converted {migrated_cards} recent message(s).")
-    safe_discord_call(
-        "channel audit",
-        lambda: publish_channel_audit(discord, report_state, timestamp),
-    )
-    safe_discord_call(
-        "server pages",
-        lambda: ensure_static_server_pages(discord, report_state),
-    )
-    safe_discord_call(
-        "performance pages",
-        lambda: update_performance_pages(discord, report_state, rows),
-    )
+    if publish_shared:
+        try:
+            migrated_cards = migrate_recent_bot_messages_to_cards(discord, report_state)
+        except DiscordError as exc:
+            print(f"Discord card migration failed: {exc}", file=sys.stderr)
+        if migrated_cards:
+            print(f"Discord card migration: converted {migrated_cards} recent message(s).")
+        safe_discord_call(
+            "channel audit",
+            lambda: publish_channel_audit(discord, report_state, timestamp),
+        )
+        safe_discord_call(
+            "server pages",
+            lambda: ensure_static_server_pages(discord, report_state),
+        )
+        safe_discord_call(
+            "performance pages",
+            lambda: update_performance_pages(discord, report_state, rows),
+        )
 
     closed_results_backfilled = 0
-    try:
-        closed_results_backfilled = sync_closed_result_channels(rows, discord, report_state)
-    except DiscordError as exc:
-        print(f"Discord closed-result backfill failed: {exc}", file=sys.stderr)
+    if publish_shared:
+        try:
+            closed_results_backfilled = sync_closed_result_channels(rows, discord, report_state)
+        except DiscordError as exc:
+            print(f"Discord closed-result backfill failed: {exc}", file=sys.stderr)
     if closed_results_backfilled:
         print(f"Discord result backfill: posted {closed_results_backfilled} closed result(s).")
 
-    backfilled = sync_existing_open_threads(rows, discord)
+    backfilled = sync_existing_open_threads(rows, discord) if publish_shared else 0
     if backfilled:
         write_log(rows)
         safe_discord_call(
@@ -3915,10 +3917,11 @@ def main() -> int:
         )
         print(f"Discord backfill: created {backfilled} open-trade forum thread(s).")
 
-    safe_discord_call(
-        "open trade channel sync",
-        lambda: sync_all_open_trade_cards(rows, discord, report_state),
-    )
+    if publish_shared:
+        safe_discord_call(
+            "open trade channel sync",
+            lambda: sync_all_open_trade_cards(rows, discord, report_state),
+        )
 
     is_open, timestamp = market_is_open_now()
     if not is_open:
@@ -3993,7 +3996,8 @@ def main() -> int:
                     search_token=f"{TICKER} Market Map",
                 ),
             )
-            if report_state.get("chart_snapshot_date") != timestamp.date().isoformat():
+            chart_date_key = f"chart_snapshot_date:{TICKER}"
+            if report_state.get(chart_date_key) != timestamp.date().isoformat():
                 upload = discord.send_channel_file(
                     "charts",
                     CHART_SCREENSHOT_PATH,
@@ -4003,10 +4007,10 @@ def main() -> int:
                     ),
                 )
                 if upload:
-                    report_state["chart_snapshot_date"] = timestamp.date().isoformat()
+                    report_state[chart_date_key] = timestamp.date().isoformat()
 
         # Reprice every existing open play in one or more batched quote calls.
-        currently_open = open_rows(rows)
+        currently_open = open_rows(rows) if publish_shared else []
         open_quote_map = get_quotes(symbols_for_rows(currently_open), include_greeks=True)
         refreshed_market_fields = refresh_open_entry_market_data(currently_open, open_quote_map)
         if refreshed_market_fields:
@@ -4073,31 +4077,32 @@ def main() -> int:
             f"{closed_count} closed · {hold_count} HOLD · {len(open_rows(rows))} open total."
         )
         render_dashboard(spot, rows, summary)
-        safe_discord_call(
-            "open status",
-            lambda: update_scanner_status(
-                discord,
-                report_state,
-                market_open=True,
-                summary=summary,
-                rows=rows,
-                timestamp=timestamp,
-            ),
-        )
-        safe_discord_call(
-            "performance pages",
-            lambda: update_performance_pages(discord, report_state, rows),
-        )
-        safe_discord_call(
-            "report sync",
-            lambda: sync_reports(
-                discord,
-                report_state,
-                rows,
-                timestamp,
-                market_open=True,
-            ),
-        )
+        if publish_shared:
+            safe_discord_call(
+                "open status",
+                lambda: update_scanner_status(
+                    discord,
+                    report_state,
+                    market_open=True,
+                    summary=summary,
+                    rows=rows,
+                    timestamp=timestamp,
+                ),
+            )
+            safe_discord_call(
+                "performance pages",
+                lambda: update_performance_pages(discord, report_state, rows),
+            )
+            safe_discord_call(
+                "report sync",
+                lambda: sync_reports(
+                    discord,
+                    report_state,
+                    rows,
+                    timestamp,
+                    market_open=True,
+                ),
+            )
         run_number = os.environ.get("GITHUB_RUN_NUMBER", timestamp.strftime("%Y%m%d%H%M"))
         safe_discord_call(
             "qualified scan feed",
@@ -4128,14 +4133,15 @@ def main() -> int:
                 search_token=f"{TICKER} Options Scanner",
             ),
         )
-        safe_discord_call(
-            "workflow log",
-            lambda: post_workflow_log(
-                discord,
-                timestamp=timestamp,
-                result=f"OK · {summary}",
-            ),
-        )
+        if publish_shared:
+            safe_discord_call(
+                "workflow log",
+                lambda: post_workflow_log(
+                    discord,
+                    timestamp=timestamp,
+                    result=f"OK · {summary}",
+                ),
+            )
 
         if not discord.ready and (new_rows or closed_count):
             notify_webhook([summary], title=f"{TICKER} options scan")

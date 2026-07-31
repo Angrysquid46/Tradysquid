@@ -181,6 +181,35 @@ class InformationEngineTests(unittest.TestCase):
         self.assertNotIn("upgrade-request-reactions", job_names)
         self.assertIn("upgrade-review", sync_discord_structure.CHANNEL_STARTERS)
 
+    def test_all_automatic_information_jobs_are_registered(self) -> None:
+        job_names = {job.name for job in engine.JOBS}
+        self.assertTrue({
+            "full-options-scan",
+            "position-tracker",
+            "dynamic-universe-refresh",
+            "managed-ticker-information",
+            "managed-ticker-news",
+            "session-briefing",
+            "health-snapshot",
+            "outcome-learning",
+        }.issubset(job_names))
+
+    def test_multi_ticker_scan_publishes_each_ticker_and_syncs_once(self) -> None:
+        calls: list[tuple[str, bool]] = []
+
+        def scanner(*, publish_shared: bool = True) -> int:
+            calls.append((ford_scan.TICKER, publish_shared))
+            return 0
+
+        with patch.object(multi_ticker_scan.ford_scan, "main", scanner):
+            result = multi_ticker_scan.main(["BAC", "CCL", "RIVN"])
+        self.assertEqual(result, 0)
+        self.assertEqual(calls, [
+            ("BAC", False),
+            ("CCL", False),
+            ("RIVN", True),
+        ])
+
     def test_scanner_outputs_use_consolidated_channels(self) -> None:
         self.assertEqual(ford_scan.CHANNEL_NAMES["qualified"], "new-positions")
         self.assertEqual(ford_scan.CHANNEL_NAMES["scratches"], "losses")

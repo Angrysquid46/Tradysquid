@@ -217,7 +217,7 @@ def market_snapshot(symbol: str = ford_scan.TICKER) -> dict[str, Any]:
     history = ford_scan.get_daily_history(symbol, days=400)
     spot = ford_scan.as_float(quote.get("last"))
     if spot is None or not history:
-        raise ford_scan.TradierError("Ford quote or price history is unavailable")
+        raise ford_scan.TradierError(f"{symbol} quote or price history is unavailable")
     try:
         intraday = ford_scan.get_intraday_history(symbol)
     except (ford_scan.TradierError, requests.RequestException):
@@ -455,16 +455,16 @@ def data_age_text(observed_at: str | None) -> str:
     return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
 
 
-def market_alert_text(snapshot: dict[str, Any]) -> str:
+def market_alert_text(snapshot: dict[str, Any], ticker: str = "F") -> str:
     def number(key: str, digits: int = 2, suffix: str = "") -> str:
         value = snapshot.get(key)
         return "Unavailable" if value is None else f"{float(value):.{digits}f}{suffix}"
 
     return "\n".join(
         [
-            "## Ford Local Market Monitor",
+            f"## {ticker} Local Market Monitor",
             (
-                f"**F ${number('price')}** · **{number('change_pct', 2, '%')}** · "
+                f"**{ticker} ${number('price')}** · **{number('change_pct', 2, '%')}** · "
                 f"regime **{snapshot.get('regime', 'Unavailable')}**"
             ),
             (
@@ -628,33 +628,16 @@ def send_ticker_chart(
     content: str,
 ) -> bool:
     """Upload one fresh chart per ticker per market date."""
-    item = ticker_registry.get(ticker)
-    channel_id = str((item or {}).get("channels", {}).get("charts") or "")
     tracker = discord_tracker()
-    if not tracker or not channel_id or not file_path.exists():
+    if not tracker or not file_path.exists():
         return False
     state_key = f"ticker-chart-date:{ticker}"
     today = ford_scan.now_ct().date().isoformat()
     if get_state(connection, state_key) == today:
         return True
-    url = f"{tracker.API_BASE}/channels/{channel_id}/messages"
-    headers = {
-        "Authorization": f"Bot {tracker.token}",
-        "User-Agent": "DiscordBot (Tradysquids TradeBot, 1.0)",
-    }
-    payload = {"content": content[:2000], "allowed_mentions": {"parse": []}}
-    with file_path.open("rb") as handle:
-        response = requests.post(
-            url,
-            headers=headers,
-            data={"payload_json": json.dumps(payload)},
-            files={"files[0]": (file_path.name, handle, "image/png")},
-            timeout=30,
-        )
-    if not response.ok:
-        raise ford_scan.DiscordError(
-            f"Discord ticker chart upload HTTP {response.status_code}: {response.text[:500]}"
-        )
+    response = tracker.send_channel_file("charts", file_path, content=content)
+    if not response:
+        return False
     set_state(connection, state_key, today)
     return True
 
@@ -684,9 +667,7 @@ def fetch_ticker_news(ticker: str, limit: int = 8) -> list[dict[str, str]]:
 def managed_ticker_news_job(connection: sqlite3.Connection) -> str:
     completed: list[str] = []
     failed: list[str] = []
-    for ticker in ticker_registry.active_tickers():
-        if ticker == "F":
-            continue
+    for ticker in dynamic_universe.active_symbols():
         try:
             items = fetch_ticker_news(ticker)
             lines = [
@@ -702,8 +683,8 @@ def managed_ticker_news_job(connection: sqlite3.Connection) -> str:
             lines.append(
                 f"Checked {iso_now()}. Headlines are informational, not automatic trade signals."
             )
-            upsert_ticker_dashboard(
-                connection, ticker, "news_events", "news", "\n".join(lines)
+            upsert_dashboard(
+                connection, "news_events", f"news:{ticker}", "\n".join(lines)
             )
             store_observation(connection, f"ticker-news:{ticker}", {"items": items})
             completed.append(ticker)
@@ -719,7 +700,7 @@ def market_is_open() -> bool:
     return bool(ford_scan.market_is_open_now()[0])
 
 
-def technicals_text(snapshot: dict[str, Any]) -> str:
+def technicals_text(snapshot: dict[str, Any], ticker: str = "F") -> str:
     def value(key: str, digits: int = 2) -> str:
         item = snapshot.get(key)
         return "Unavailable" if item is None else f"{float(item):.{digits}f}"
@@ -727,7 +708,7 @@ def technicals_text(snapshot: dict[str, Any]) -> str:
     session = "LIVE MARKET" if market_is_open() else "AFTER-HOURS / LAST SNAPSHOT"
     return "\n".join([
         "## Tradysquids Technical Dashboard",
-        f"**{session}** · F **${value('price')}** · regime **{snapshot.get('regime')}**",
+        f"**{session}** · {ticker} **${value('price')}** · regime **{snapshot.get('regime')}**",
         f"RSI14 **{value('rsi14', 1)}** · MACD **{value('macd', 3)}** · ATR14 **${value('atr14')}**",
         f"SMA20 **${value('sma20')}** · SMA50 **${value('sma50')}** · SMA200 **${value('sma200')}**",
         f"Bollinger range **${value('bollinger_lower')}–${value('bollinger_upper')}**",
@@ -736,23 +717,25 @@ def technicals_text(snapshot: dict[str, Any]) -> str:
     ])
 
 
-def market_pulse_text(snapshot: dict[str, Any]) -> str:
+def market_pulse_text(snapshot: dict[str, Any], ticker: str = "F") -> str:
     session = "live" if market_is_open() else "closed; showing the latest available quote"
     return (
         "## Tradysquids Market Pulse\n"
         f"Market is **{session}**.\n"
-        + market_alert_text(snapshot).replace("## Ford Local Market Monitor\n", "")
+        + market_alert_text(snapshot, ticker).replace(f"## {ticker} Local Market Monitor\n", "")
     )
 
 
-def options_dashboard_text(snapshot: dict[str, Any], options: list[dict[str, Any]]) -> str:
+def options_dashboard_text(
+    snapshot: dict[str, Any], options: list[dict[str, Any]], ticker: str = "F"
+) -> str:
     lines = [
         "## Tradysquids Options Chain",
         (
             "**Live scan**" if market_is_open()
             else "**Market closed — quotes are the last available snapshot, not tradable prices.**"
         ),
-        f"Ford spot **${float(snapshot['price']):.2f}** · ranked for liquidity and conservative delta.",
+        f"{ticker} spot **${float(snapshot['price']):.2f}** · ranked for liquidity and conservative delta.",
     ]
     if not options:
         lines.append("No contract currently passes the available chain filters.")
@@ -944,12 +927,9 @@ def options_job(connection: sqlite3.Connection) -> str:
 def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
     completed: list[str] = []
     failed: list[str] = []
-    for ticker in ticker_registry.active_tickers():
-        if ticker == "F":
-            continue
+    for ticker in dynamic_universe.active_symbols():
         try:
             snapshot = market_snapshot(ticker)
-            options = ranked_option_chain("call", limit=8, symbol=ticker)
             store_observation(
                 connection,
                 f"ticker-market:{ticker}",
@@ -977,37 +957,34 @@ def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
                     f"· ${float(snapshot['price']):.2f} · {snapshot.get('regime')}"
                 ),
             )
-            upsert_ticker_dashboard(
+            upsert_dashboard(
                 connection,
-                ticker,
-                "dashboard",
-                "market",
-                market_pulse_text(snapshot).replace("Ford", ticker),
+                "market_pulse",
+                f"market:{ticker}",
+                market_pulse_text(snapshot, ticker),
             )
-            upsert_ticker_dashboard(
+            upsert_dashboard(
                 connection,
-                ticker,
-                "options_setups",
-                "options",
-                options_dashboard_text(snapshot, options).replace("Ford", ticker),
-            )
-            upsert_ticker_dashboard(
-                connection,
-                ticker,
-                "research_performance",
-                "research",
+                "technicals",
+                f"technicals:{ticker}",
                 "\n".join([
-                    f"## {ticker} Research and Strategy Status",
+                    f"## {ticker} Technical and Strategy Status",
                     f"Regime: **{snapshot.get('regime')}**",
                     f"Qualified chart: **{'yes' if snapshot.get('qualified') else 'no'}**",
                     f"Evidence: {snapshot.get('reason') or 'No controlled setup.'}",
-                    f"Active option candidates reviewed: **{len(options)}**",
+                    f"RSI14: **{snapshot.get('rsi14')}** · ATR14: **{ford_scan.fmt_money(snapshot.get('atr14'))}**",
+                    f"Support: **{ford_scan.fmt_money(snapshot.get('support20'))}** · resistance: **{ford_scan.fmt_money(snapshot.get('resistance20'))}**",
                     f"Updated {snapshot.get('observed_at')}. Educational information only.",
                 ]),
             )
             completed.append(ticker)
         except Exception as exc:
             failed.append(f"{ticker}:{type(exc).__name__}")
+    store_observation(
+        connection,
+        "market",
+        {"completed": completed, "failed": failed, "observed_at": iso_now()},
+    )
     return (
         f"updated {', '.join(completed) if completed else 'no additional tickers'}"
         + (f" · failed {', '.join(failed)}" if failed else "")
@@ -1147,40 +1124,65 @@ def briefing_job(connection: sqlite3.Connection) -> str:
     key = f"briefing:{session}:{now.date().isoformat()}"
     if get_state(connection, key) == "sent":
         return f"{session} already sent"
-    snapshot = market_snapshot()
-    content = (
-        f"## Ford {session.replace('-', ' ').title()} Briefing\n"
-        + market_alert_text(snapshot).replace("## Ford Local Market Monitor\n", "")
+    symbols = dynamic_universe.active_symbols()
+    quotes = ford_scan.get_quotes(symbols, include_greeks=False) if symbols else {}
+    ranked = sorted(
+        symbols,
+        key=lambda symbol: ford_scan.as_float((quotes.get(symbol) or {}).get("volume"), 0) or 0,
+        reverse=True,
     )
+    lines = [
+        f"## Tradysquids {session.replace('-', ' ').title()} Briefing",
+        f"**{len(symbols)} active universe symbols** · {ford_scan.portable_strftime(now, '%m/%d/%y %-I:%M %p CT')}",
+        "### Highest-Volume Universe Names",
+    ]
+    for symbol in ranked[:12]:
+        quote = quotes.get(symbol) or {}
+        price = ford_scan.as_float(quote.get("last"))
+        change = ford_scan.as_float(quote.get("change_percentage"))
+        volume = int(ford_scan.as_float(quote.get("volume"), 0) or 0)
+        change_text = "n/a" if change is None else f"{change:+.2f}%"
+        lines.append(
+            f"• **{symbol}** · {ford_scan.fmt_money(price)} · {change_text} · volume {volume:,}"
+        )
+    lines.extend([
+        "### Broad Market Regime",
+    ])
+    benchmark_payload: dict[str, Any] = {}
+    for benchmark in ("SPY", "QQQ"):
+        try:
+            snapshot = market_snapshot(benchmark)
+            benchmark_payload[benchmark] = {
+                key: value for key, value in snapshot.items() if key != "history"
+            }
+            lines.append(
+                f"• **{benchmark}** {ford_scan.fmt_money(snapshot.get('price'))} · "
+                f"{snapshot.get('regime')} · RSI14 {snapshot.get('rsi14')}"
+            )
+        except Exception as exc:
+            lines.append(f"• **{benchmark}:** unavailable ({type(exc).__name__})")
+    lines.append(
+        "Quotes are timestamped research inputs, not trade instructions or guarantees."
+    )
+    content = "\n".join(lines)
     store_observation(
         connection,
         "briefing",
         {
             "session": session,
             "date": now.date().isoformat(),
-            "market": {k: v for k, v in snapshot.items() if k != "history"},
+            "symbols": symbols,
+            "benchmarks": benchmark_payload,
         },
     )
-    sent = publish_change_only(
+    sent = upsert_dashboard(
         connection,
+        "premarket" if session == "premarket" else "intelligence",
         key,
         content,
-        logical_channel="intelligence",
-        minimum_minutes=0,
     )
     if sent:
         set_state(connection, key, "sent")
-        ford_scan.render_market_chart(snapshot["history"], snapshot["price"])
-        tracker = discord_tracker()
-        if tracker and ford_scan.CHART_SCREENSHOT_PATH.exists():
-            tracker.send_channel_file(
-                "charts",
-                ford_scan.CHART_SCREENSHOT_PATH,
-                content=(
-                    f"Ford {session.replace('-', ' ')} chart · "
-                    f"{now.date().isoformat()} · ${snapshot['price']:.2f}"
-                ),
-            )
     return f"{session} {'sent' if sent else 'stored locally'}"
 
 
@@ -1639,6 +1641,22 @@ JOBS = [
         timedelta(minutes=60),
         universe_refresh_job,
         after_hours_interval=timedelta(hours=2),
+    ),
+    Job(
+        "managed-ticker-information",
+        timedelta(minutes=60),
+        managed_ticker_information_job,
+        after_hours_interval=timedelta(hours=4),
+    ),
+    Job(
+        "managed-ticker-news",
+        timedelta(hours=2),
+        managed_ticker_news_job,
+    ),
+    Job(
+        "session-briefing",
+        timedelta(minutes=10),
+        briefing_job,
     ),
     Job("health-snapshot", timedelta(minutes=STATUS_REFRESH_MINUTES), status_job),
     Job("weekly-review", timedelta(minutes=30), weekly_review_job),

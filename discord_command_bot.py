@@ -207,15 +207,12 @@ def chart_reply(ticker: str, days: int) -> tuple[str, Path]:
         rsi = context.get("rsi14")
         rsi_text = f"{rsi:.1f}" if rsi is not None else "Unavailable"
         content = (
-            f"📊 **Ford chart · {days} trading days**\n"
-            f"F ${spot:.2f} · {context['regime']} · RSI14 {rsi_text}\n"
+            f"📊 **{ticker} chart · {days} trading days**\n"
+            f"{ticker} ${spot:.2f} · {context['regime']} · RSI14 {rsi_text}\n"
             f"{context['reason']}\n"
             "Educational decision support only—not financial advice."
         )
-        return (
-            content.replace("Ford", ticker).replace("F $", f"{ticker} $"),
-            chart_path,
-        )
+        return content, chart_path
 
 
 def levels_reply(ticker: str) -> str:
