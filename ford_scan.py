@@ -141,6 +141,9 @@ SCRATCH_BAND_PCT = float(os.environ.get("SCRATCH_BAND_PCT", "5.0"))
 DISCORD_PL_CHANGE_THRESHOLD = float(os.environ.get("DISCORD_PL_CHANGE_THRESHOLD", "10.0"))
 DISCORD_HEARTBEAT_MINUTES = int(os.environ.get("DISCORD_HEARTBEAT_MINUTES", "15"))
 DISCORD_SYNC_EXISTING_OPEN = os.environ.get("DISCORD_SYNC_EXISTING_OPEN", "true").lower() == "true"
+DISCORD_MIGRATE_LEGACY_MESSAGES = os.environ.get(
+    "DISCORD_MIGRATE_LEGACY_MESSAGES", "false"
+).lower() == "true"
 DISCORD_FORMAT_VERSION = "10"
 
 SESSION = requests.Session()
@@ -3879,10 +3882,11 @@ def main(*, publish_shared: bool = True) -> int:
     report_state = read_report_state()
     migrated_cards = 0
     if publish_shared:
-        try:
-            migrated_cards = migrate_recent_bot_messages_to_cards(discord, report_state)
-        except DiscordError as exc:
-            print(f"Discord card migration failed: {exc}", file=sys.stderr)
+        if DISCORD_MIGRATE_LEGACY_MESSAGES:
+            try:
+                migrated_cards = migrate_recent_bot_messages_to_cards(discord, report_state)
+            except DiscordError as exc:
+                print(f"Discord card migration failed: {exc}", file=sys.stderr)
         if migrated_cards:
             print(f"Discord card migration: converted {migrated_cards} recent message(s).")
         safe_discord_call(
