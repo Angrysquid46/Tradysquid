@@ -172,6 +172,12 @@ class InformationEngineTests(unittest.TestCase):
         self.assertNotIn("scratches", names)
         self.assertIn("new-positions", names)
         self.assertIn("losses", names)
+        self.assertIn("how-trades-are-found", names)
+        methodology = sync_discord_structure.GUIDES["how-trades-are-found"]
+        self.assertLessEqual(len(methodology), 2000)
+        self.assertIn("7–20 DTE", methodology)
+        self.assertIn("$100 or less", methodology)
+        self.assertIn("not a probability of winning", methodology)
         self.assertNotIn("ARCHIVE - LEGACY", sync_discord_structure.CATEGORY_ORDER)
         self.assertIn("TICKER • F", sync_discord_structure.DELETE_CATEGORIES)
         self.assertIn("TICKER • VALE", sync_discord_structure.DELETE_CATEGORIES)
