@@ -52,6 +52,9 @@ GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
 TICKER_CHART_DIR = ROOT / "docs" / "tickers"
 POSITION_FILE_LOCK = threading.RLock()
 MANUAL_SCAN_LOCK = threading.Lock()
+PROVIDER_JOB_LOCK = threading.Lock()
+RUNNING_JOBS: set[str] = set()
+RUNNING_JOBS_LOCK = threading.Lock()
 STREAM_QUOTES: dict[str, dict[str, Any]] = {}
 STREAM_LAST_WRITTEN: dict[str, float] = {}
 POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
@@ -69,6 +72,8 @@ def connect_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=10)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA busy_timeout=10000")
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS observations (
@@ -1622,6 +1627,8 @@ class Job:
     callback: Callable[[sqlite3.Connection], str]
     market_hours_only: bool = False
     after_hours_interval: timedelta | None = None
+    background: bool = False
+    provider_heavy: bool = False
 
 
 JOBS = [
@@ -1647,16 +1654,22 @@ JOBS = [
         timedelta(minutes=60),
         managed_ticker_information_job,
         after_hours_interval=timedelta(hours=4),
+        background=True,
+        provider_heavy=True,
     ),
     Job(
         "managed-ticker-news",
         timedelta(hours=2),
         managed_ticker_news_job,
+        background=True,
+        provider_heavy=True,
     ),
     Job(
         "session-briefing",
         timedelta(minutes=10),
         briefing_job,
+        background=True,
+        provider_heavy=True,
     ),
     Job("health-snapshot", timedelta(minutes=STATUS_REFRESH_MINUTES), status_job),
     Job("weekly-review", timedelta(minutes=30), weekly_review_job),
@@ -1670,6 +1683,8 @@ JOBS = [
         timedelta(minutes=15),
         full_scanner_job,
         market_hours_only=True,
+        background=True,
+        provider_heavy=True,
     ),
 ]
 
@@ -1712,6 +1727,35 @@ def run_job(connection: sqlite3.Connection, job: Job) -> None:
     set_state(connection, f"job:{job.name}", utc_now().isoformat())
     connection.commit()
     print(f"{job.name}: {status} · {detail}")
+
+
+def run_background_job(job: Job) -> None:
+    """Run a slow provider job without blocking health and event polling."""
+    connection = connect_db()
+    try:
+        if job.provider_heavy:
+            with PROVIDER_JOB_LOCK:
+                run_job(connection, job)
+        else:
+            run_job(connection, job)
+    finally:
+        connection.close()
+        with RUNNING_JOBS_LOCK:
+            RUNNING_JOBS.discard(job.name)
+
+
+def start_background_job(job: Job) -> bool:
+    with RUNNING_JOBS_LOCK:
+        if job.name in RUNNING_JOBS:
+            return False
+        RUNNING_JOBS.add(job.name)
+    threading.Thread(
+        target=run_background_job,
+        args=(job,),
+        name=f"job-{job.name}",
+        daemon=True,
+    ).start()
+    return True
 
 
 def acquire_instance_lock() -> socket.socket:
@@ -1812,7 +1856,10 @@ def main() -> int:
                 current = utc_now()
                 for job in JOBS:
                     if due(connection, job, current):
-                        run_job(connection, job)
+                        if job.background:
+                            start_background_job(job)
+                        else:
+                            run_job(connection, job)
                 time.sleep(max(POLL_SECONDS, 10))
     finally:
         connection.close()

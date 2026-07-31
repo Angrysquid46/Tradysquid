@@ -193,6 +193,13 @@ class InformationEngineTests(unittest.TestCase):
             "health-snapshot",
             "outcome-learning",
         }.issubset(job_names))
+        background = {job.name for job in engine.JOBS if job.background}
+        self.assertTrue({
+            "full-options-scan",
+            "managed-ticker-information",
+            "managed-ticker-news",
+            "session-briefing",
+        }.issubset(background))
 
     def test_multi_ticker_scan_publishes_each_ticker_and_syncs_once(self) -> None:
         calls: list[tuple[str, bool]] = []
