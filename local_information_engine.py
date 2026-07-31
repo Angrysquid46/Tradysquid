@@ -1633,8 +1633,7 @@ def discord_card_migration_job(connection: sqlite3.Connection) -> str:
         pending = [
             dict(row)
             for row in ford_scan.open_rows(rows)
-            if row.get("discord_thread_id")
-            and row.get("discord_format_version") != ford_scan.DISCORD_FORMAT_VERSION
+            if row.get("discord_format_version") != ford_scan.DISCORD_FORMAT_VERSION
         ][:5]
     if not pending:
         return "all open trade forum cards are current"
@@ -1645,15 +1644,18 @@ def discord_card_migration_job(connection: sqlite3.Connection) -> str:
     refreshed_threads: dict[str, str] = {}
     report_state = ford_scan.read_report_state()
     for row in pending:
-        try:
-            tracker.refresh_trade_thread(row)
-        except ford_scan.DiscordError as exc:
-            if not ford_scan.discord_route_is_missing(exc):
-                raise
-            row["discord_thread_id"] = ""
-            row["discord_status"] = ""
-            row["discord_format_version"] = ""
+        if not row.get("discord_thread_id"):
             tracker.create_trade_thread(row, "OPEN")
+        else:
+            try:
+                tracker.refresh_trade_thread(row)
+            except ford_scan.DiscordError as exc:
+                if not ford_scan.discord_route_is_missing(exc):
+                    raise
+                row["discord_thread_id"] = ""
+                row["discord_status"] = ""
+                row["discord_format_version"] = ""
+                tracker.create_trade_thread(row, "OPEN")
         refreshed_ids.append(row.get("trade_id", ""))
         refreshed_threads[row.get("trade_id", "")] = row.get("discord_thread_id", "")
         ford_scan.sync_open_trade_cards(
