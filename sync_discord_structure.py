@@ -17,6 +17,27 @@ BOT_CHANNEL_ALLOW = (
 )
 ADMINISTRATOR_PERMISSION = 1 << 3
 BAN_MEMBERS_PERMISSION = 1 << 2
+BOT_ROLE_REQUIRED_PERMISSIONS = {
+    "Kick Members": 1 << 1,
+    "Manage Channels": 1 << 4,
+    "Manage Server": 1 << 5,
+    "View Audit Log": 1 << 7,
+    "View Channels": 1 << 10,
+    "Send Messages": 1 << 11,
+    "Manage Messages": 1 << 13,
+    "Embed Links": 1 << 14,
+    "Attach Files": 1 << 15,
+    "Read Message History": 1 << 16,
+    "Change Nickname": 1 << 26,
+    "Manage Nicknames": 1 << 27,
+    "Manage Roles": 1 << 28,
+    "Manage Webhooks": 1 << 29,
+    "Manage Expressions": 1 << 30,
+    "Use Application Commands": 1 << 31,
+    "Manage Events": 1 << 33,
+    "Manage Threads and Posts": 1 << 34,
+    "Timeout Members": 1 << 40,
+}
 
 
 @dataclass(frozen=True)
@@ -190,12 +211,23 @@ def main() -> int:
     )
     bot_role_id = str((bot_role or {}).get("id") or "")
     bot_permissions = int((bot_role or {}).get("permissions") or 0)
-    if bot_permissions & ADMINISTRATOR_PERMISSION:
+    if not apply and bot_permissions & ADMINISTRATOR_PERMISSION:
         warnings.append(
             "TradeBot has Administrator; remove it because Administrator includes bans."
         )
-    if bot_permissions & BAN_MEMBERS_PERMISSION:
+    if not apply and bot_permissions & BAN_MEMBERS_PERMISSION:
         warnings.append("TradeBot has Ban Members; remove that permission.")
+    missing_bot_permissions = [
+        name
+        for name, permission in BOT_ROLE_REQUIRED_PERMISSIONS.items()
+        if not bot_permissions & permission
+    ]
+    if not apply and missing_bot_permissions:
+        warnings.append(
+            "TradeBot is missing required non-ban permissions: "
+            + ", ".join(missing_bot_permissions)
+            + "."
+        )
     by_name = {normalized(item.get("name")): item for item in existing}
     categories: dict[str, dict] = {}
 
