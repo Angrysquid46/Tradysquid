@@ -510,6 +510,41 @@ class InformationEngineTests(unittest.TestCase):
             [("updates", state, "position", "VALE-20260731-001")],
         )
 
+    def test_entry_snapshot_is_sent_to_trade_thread_not_chart_channel(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        class Tracker:
+            ready = True
+
+            def create_trade_thread(self, row: dict[str, str], status: str) -> str:
+                row["discord_thread_id"] = "thread-1"
+                return "thread-1"
+
+            def send_thread_file(self, thread_id: str, path: Path, *, content: str):
+                calls.append((thread_id, content))
+
+            def send_channel_file(self, *args, **kwargs):
+                self.fail("entry snapshot must not use a shared chart channel")
+
+        row = {
+            "trade_id": "VALE-20260731-001",
+            "ticker": "VALE",
+            "play_type": "REGULAR",
+            "strike": "15",
+            "entry_price": "0.25",
+            "discord_thread_id": "",
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / "entry.png"
+            image.write_bytes(b"png")
+            with (
+                patch.object(ford_scan, "sync_open_trade_cards"),
+                patch.object(ford_scan, "build_trade_snapshot", return_value=image),
+            ):
+                ford_scan.post_new_trade(row, Tracker(), {})
+        self.assertEqual(calls[0][0], "thread-1")
+        self.assertIn("5-minute underlying session", calls[0][1])
+
     def test_health_probe_queue_is_drained(self) -> None:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(("127.0.0.1", 0))

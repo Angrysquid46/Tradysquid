@@ -81,6 +81,8 @@ DASHBOARD_PATH = DOCS_DIR / "index.html"
 REPORT_STATE_PATH = STATE_DIR / "discord-report-state.json"
 CHART_PATH = DOCS_DIR / "ford-market-chart.svg"
 CHART_SCREENSHOT_PATH = DOCS_DIR / "ford-market-chart.png"
+TRADE_SNAPSHOT_DIR = DOCS_DIR / "trade-snapshots"
+INTRADAY_SNAPSHOT_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 CHART_PUBLIC_URL = os.environ.get(
     "CHART_PUBLIC_URL",
     "https://angrysquid46.github.io/Tradysquid/ford-market-chart.svg",
@@ -1294,6 +1296,95 @@ def render_market_chart_png(
     image.save(destination, format="PNG", optimize=True)
 
 
+def trade_intraday_history(symbol: str) -> list[dict[str, Any]]:
+    """Reuse one five-minute session history across same-ticker lifecycle cards."""
+    symbol = symbol.strip().upper()
+    cached = INTRADAY_SNAPSHOT_CACHE.get(symbol)
+    now = time.monotonic()
+    if cached and now - cached[0] < 60:
+        return cached[1]
+    bars = get_intraday_history(symbol, interval="5min")
+    INTRADAY_SNAPSHOT_CACHE[symbol] = (now, bars)
+    return bars
+
+
+def render_trade_intraday_snapshot(
+    row: dict[str, str],
+    event: str,
+    bars: list[dict[str, Any]],
+) -> Path | None:
+    """Render today's five-minute underlying chart for a journal entry or exit."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    points: list[tuple[str, float]] = []
+    for bar in bars:
+        price = as_float(bar.get("close") or bar.get("price"))
+        if price is None:
+            continue
+        label = str(bar.get("time") or bar.get("timestamp") or bar.get("date") or "")
+        points.append((label[-8:-3] if len(label) >= 8 else label, price))
+    if len(points) < 2:
+        return None
+    prices = [point[1] for point in points]
+    reference = (
+        as_float(row.get("entry_price"))
+        if event == "entry"
+        else as_float(row.get("exit_price") or row.get("last_mark"))
+    )
+    # The option premium is not comparable with the underlying chart. Use the
+    # final underlying bar as the event marker and label the contract premium.
+    marker_price = prices[-1]
+    width, height = 1200, 630
+    left, right, top, bottom = 85, 35, 90, 100
+    plot_width, plot_height = width - left - right, height - top - bottom
+    low, high = min(prices), max(prices)
+    padding = max((high - low) * 0.10, 0.05)
+    low, high = low - padding, high + padding
+    image = Image.new("RGB", (width, height), "#0d1520")
+    draw = ImageDraw.Draw(image)
+    small = ImageFont.load_default(size=15)
+    normal = ImageFont.load_default(size=18)
+    title_font = ImageFont.load_default(size=25)
+
+    def xy(index: int, value: float) -> tuple[int, int]:
+        return (
+            left + int(index / max(len(prices) - 1, 1) * plot_width),
+            top + int((high - value) / max(high - low, 0.01) * plot_height),
+        )
+
+    for step in range(6):
+        value = low + (high - low) * step / 5
+        y = xy(0, value)[1]
+        draw.line((left, y, width - right, y), fill="#243244", width=1)
+        draw.text((12, y - 9), f"${value:.2f}", fill="#9fb0c3", font=small)
+    draw.line([xy(i, price) for i, price in enumerate(prices)], fill="#f4f7fb", width=4, joint="curve")
+    mx, my = xy(len(prices) - 1, marker_price)
+    color = "#22c55e" if event == "entry" else "#ef4444"
+    draw.ellipse((mx - 8, my - 8, mx + 8, my + 8), fill=color)
+    symbol = row.get("ticker") or "Ticker"
+    event_label = event.upper()
+    draw.text((left, 25), f"{symbol} 5-Minute Session | {event_label} | ${marker_price:.2f} underlying", fill="#f4f7fb", font=title_font)
+    draw.text((left, 58), f"{row.get('trade_id')} | {row.get('play_type')} | contract premium {fmt_money(reference)}", fill="#9fb0c3", font=normal)
+    draw.text((left, height - 66), f"Session {points[0][0] or 'open'} to {points[-1][0] or 'now'} | marker shows snapshot time", fill="#dbe7f3", font=normal)
+    draw.text((left, height - 36), "Paper-trade context only - five-minute bars can omit fast moves and are not execution prices", fill="#9fb0c3", font=small)
+    destination = TRADE_SNAPSHOT_DIR / f"{row.get('trade_id', 'trade')}-{event}.png"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    image.save(destination, format="PNG", optimize=True)
+    return destination
+
+
+def build_trade_snapshot(row: dict[str, str], event: str) -> Path | None:
+    try:
+        return render_trade_intraday_snapshot(
+            row,
+            event,
+            trade_intraday_history(row.get("ticker") or TICKER),
+        )
+    except (TradierError, requests.RequestException, ValueError, OSError) as exc:
+        print(f"Could not render {event} snapshot for {row.get('trade_id')}: {exc}", file=sys.stderr)
+        return None
+
+
 def market_map_text(history: list[dict[str, Any]], spot_price: float) -> str:
     context = directional_market_context(history, spot_price)
     closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
@@ -2389,6 +2480,26 @@ class DiscordTracker:
         if not self.ready or not channel_id or not file_path.exists():
             return None
         self.ensure_private_system_route(logical_name)
+        return self._send_file_to_channel(channel_id, file_path, content=content)
+
+    def send_thread_file(
+        self,
+        thread_id: str,
+        file_path: Path,
+        *,
+        content: str,
+    ) -> dict[str, Any] | None:
+        if not self.ready or not thread_id or not file_path.exists():
+            return None
+        return self._send_file_to_channel(thread_id, file_path, content=content)
+
+    def _send_file_to_channel(
+        self,
+        channel_id: str,
+        file_path: Path,
+        *,
+        content: str,
+    ) -> dict[str, Any] | None:
         url = f"{self.API_BASE}/channels/{channel_id}/messages"
         headers = {
             "Authorization": f"Bot {self.token}",
@@ -2415,7 +2526,7 @@ class DiscordTracker:
                 continue
             if response.status_code == 429 and attempt < 3:
                 retry_after = as_float(response.json().get("retry_after"), 1.0) or 1.0
-                time.sleep(min(retry_after + 0.25, 10))
+                time.sleep(min(retry_after + 0.25, 65))
                 continue
             if response.status_code >= 500 and attempt < 3:
                 time.sleep(2**attempt)
@@ -2976,6 +3087,17 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     if thread_id:
         try:
             discord.send_thread(thread_id, close_alert_text(row, evaluation))
+            snapshot = build_trade_snapshot(row, "exit")
+            if snapshot:
+                discord.send_thread_file(
+                    thread_id,
+                    snapshot,
+                    content=(
+                        f"📉 **EXIT SNAPSHOT · {row.get('trade_id')} · {row.get('outcome')}**\n"
+                        f"5-minute underlying session · contract return "
+                        f"{fmt_pct(as_float(evaluation.get('pl_pct')))}"
+                    ),
+                )
         except DiscordError as exc:
             if not discord_route_is_missing(exc):
                 raise
@@ -2999,15 +3121,6 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
         discord.upsert_trade_result(result_channel, report_state, row.get("trade_id", ""), content)
         mark_closed_result_routed(row, report_state)
     discord.delete_trade_message("updates", report_state, "position", row.get("trade_id", ""))
-    discord.send_channel_file(
-        "charts",
-        CHART_SCREENSHOT_PATH,
-        content=(
-            f"📉 **EXIT SNAPSHOT · {row.get('trade_id')} · {row.get('outcome')}**\n"
-            f"{row.get('play_type')} · {row.get('strike')} · {row.get('expiration')} · "
-            f"return {fmt_pct(as_float(evaluation.get('pl_pct')))}\n{link}"
-        ),
-    )
     row["discord_status"] = row["outcome"]
     row["last_discord_signal"] = evaluation.get("signal", "CLOSE")
     row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 0)
@@ -3023,16 +3136,19 @@ def post_new_trade(
     if not row.get("discord_thread_id"):
         discord.create_trade_thread(row, "OPEN")
     sync_open_trade_cards(row, discord, report_state, include_entry=True)
-    discord.send_channel_file(
-        "charts",
-        CHART_SCREENSHOT_PATH,
-        content=(
-            f"📸 **ENTRY SNAPSHOT · {row.get('trade_id')}**\n"
-            f"{row.get('play_type')} · {row.get('strike')} · {row.get('expiration')} · "
-            f"entry {fmt_money(as_float(row.get('entry_price')))}\n"
-            f"{thread_link(row.get('discord_thread_id', ''))}"
-        ),
-    )
+    thread_id = row.get("discord_thread_id", "")
+    snapshot = build_trade_snapshot(row, "entry")
+    if thread_id and snapshot:
+        discord.send_thread_file(
+            thread_id,
+            snapshot,
+            content=(
+                f"📸 **ENTRY SNAPSHOT · {row.get('trade_id')}**\n"
+                f"5-minute underlying session · {row.get('play_type')} · "
+                f"{row.get('strike')} · contract entry "
+                f"{fmt_money(as_float(row.get('entry_price')))}"
+            ),
+        )
 
 # ---------------------------------------------------------------------------
 # Discord server pages and performance reporting
