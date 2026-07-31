@@ -1729,6 +1729,21 @@ def run_job(connection: sqlite3.Connection, job: Job) -> None:
     print(f"{job.name}: {status} · {detail}")
 
 
+def recover_interrupted_jobs(connection: sqlite3.Connection) -> int:
+    """Close stale RUNNING rows left behind by a service restart or crash."""
+    cursor = connection.execute(
+        """
+        UPDATE job_runs
+        SET finished_at=?, status='INTERRUPTED',
+            detail='Service restarted before this job reported completion'
+        WHERE status='RUNNING'
+        """,
+        (iso_now(),),
+    )
+    connection.commit()
+    return int(cursor.rowcount or 0)
+
+
 def run_background_job(job: Job) -> None:
     """Run a slow provider job without blocking health and event polling."""
     connection = connect_db()
@@ -1851,6 +1866,9 @@ def main() -> int:
     )
     connection = connect_db()
     try:
+        recovered = recover_interrupted_jobs(connection)
+        if recovered:
+            print(f"Recovered {recovered} interrupted scheduler job(s).")
         with instance_lock:
             while True:
                 current = utc_now()

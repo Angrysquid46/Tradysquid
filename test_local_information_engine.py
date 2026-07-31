@@ -465,6 +465,24 @@ class InformationEngineTests(unittest.TestCase):
             client.close()
             listener.close()
 
+    def test_stale_running_jobs_are_marked_interrupted(self) -> None:
+        original = engine.DB_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            engine.DB_PATH = Path(temp) / "scheduler.db"
+            connection = engine.connect_db()
+            connection.execute(
+                "INSERT INTO job_runs(job_name, started_at, status) VALUES (?, ?, ?)",
+                ("stale-job", engine.iso_now(), "RUNNING"),
+            )
+            connection.commit()
+            self.assertEqual(engine.recover_interrupted_jobs(connection), 1)
+            row = connection.execute(
+                "SELECT status FROM job_runs WHERE job_name='stale-job'"
+            ).fetchone()
+            self.assertEqual(row["status"], "INTERRUPTED")
+            connection.close()
+        engine.DB_PATH = original
+
     def test_ticker_symbols_are_normalized(self) -> None:
         self.assertEqual(ticker_registry.normalize_ticker(" vale "), "VALE")
         with self.assertRaises(ValueError):
