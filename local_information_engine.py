@@ -695,6 +695,9 @@ def managed_ticker_news_job(connection: sqlite3.Connection) -> str:
             completed.append(ticker)
         except Exception as exc:
             failed.append(f"{ticker}:{type(exc).__name__}")
+        time.sleep(1.0)
+    if failed:
+        raise RuntimeError("Ticker news failed for " + ", ".join(failed))
     return (
         f"updated {', '.join(completed) if completed else 'no additional tickers'}"
         + (f" · failed {', '.join(failed)}" if failed else "")
@@ -985,11 +988,14 @@ def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
             completed.append(ticker)
         except Exception as exc:
             failed.append(f"{ticker}:{type(exc).__name__}")
+        time.sleep(1.0)
     store_observation(
         connection,
         "market",
         {"completed": completed, "failed": failed, "observed_at": iso_now()},
     )
+    if failed:
+        raise RuntimeError("Ticker intelligence failed for " + ", ".join(failed))
     return (
         f"updated {', '.join(completed) if completed else 'no additional tickers'}"
         + (f" · failed {', '.join(failed)}" if failed else "")
@@ -1120,7 +1126,7 @@ def briefing_job(connection: sqlite3.Connection) -> str:
     session = ""
     if weekday and (7 <= now.hour < 8 or (now.hour == 8 and now.minute < 25)):
         session = "premarket"
-    elif weekday and 11 <= now.hour < 12:
+    elif weekday and 11 <= now.hour < 13:
         session = "midday"
     elif weekday and 15 <= now.hour < 17:
         session = "after-market"
@@ -1629,6 +1635,7 @@ class Job:
     after_hours_interval: timedelta | None = None
     background: bool = False
     provider_heavy: bool = False
+    retry_interval: timedelta | None = None
 
 
 JOBS = [
@@ -1656,6 +1663,7 @@ JOBS = [
         after_hours_interval=timedelta(hours=4),
         background=True,
         provider_heavy=True,
+        retry_interval=timedelta(minutes=15),
     ),
     Job(
         "managed-ticker-news",
@@ -1663,6 +1671,7 @@ JOBS = [
         managed_ticker_news_job,
         background=True,
         provider_heavy=True,
+        retry_interval=timedelta(minutes=15),
     ),
     Job(
         "session-briefing",
@@ -1693,6 +1702,8 @@ def due(connection: sqlite3.Connection, job: Job, now: datetime) -> bool:
     interval = job.interval
     if job.after_hours_interval and not market_is_open():
         interval = job.after_hours_interval
+    if job.retry_interval and get_state(connection, f"job-error:{job.name}") == "1":
+        interval = job.retry_interval
     last = get_state(connection, f"job:{job.name}")
     if last:
         try:
@@ -1725,6 +1736,7 @@ def run_job(connection: sqlite3.Connection, job: Job) -> None:
         (iso_now(), status, detail, cursor.lastrowid),
     )
     set_state(connection, f"job:{job.name}", utc_now().isoformat())
+    set_state(connection, f"job-error:{job.name}", "1" if status == "ERROR" else "0")
     connection.commit()
     print(f"{job.name}: {status} · {detail}")
 
