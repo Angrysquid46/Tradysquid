@@ -186,18 +186,22 @@ class InformationEngineTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), first)
 
     def test_github_syncing_ticker_commands_are_owner_locked(self) -> None:
-        owner_commands = {
-            "ticker-add",
-            "ticker-pause",
-            "ticker-resume",
-            "ticker-remove",
-        }
+        owner_commands = register_discord_commands.OWNER_ONLY_COMMANDS
         definitions = {
             command["name"]: command
             for command in register_discord_commands.COMMANDS
         }
         for name in owner_commands:
             self.assertEqual(definitions[name]["default_member_permissions"], "0")
+        self.assertEqual(owner_commands, discord_command_bot.OWNER_ONLY_COMMANDS)
+        self.assertEqual(
+            {
+                name
+                for name, definition in definitions.items()
+                if definition.get("default_member_permissions") == "0"
+            },
+            owner_commands,
+        )
 
     def test_learning_bot_answers_calls_and_refuses_unknown_topics(self) -> None:
         call_answer = discord_command_bot.ask_reply("What's a call option?")

@@ -30,6 +30,13 @@ LOCK_PORT = int(os.environ.get("COMMAND_BOT_LOCK_PORT", "8081"))
 PUBLIC_KEY = os.environ.get("DISCORD_PUBLIC_KEY", "").strip()
 ALLOWED_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 ALLOWED_USER_ID = os.environ.get("DISCORD_ALLOWED_USER_ID", "").strip()
+OWNER_ONLY_COMMANDS = {
+    "filter-set",
+    "ticker-add",
+    "ticker-pause",
+    "ticker-resume",
+    "ticker-remove",
+}
 TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
 
 APP = Flask(__name__)
@@ -338,7 +345,9 @@ def require_ticker_admin(interaction: dict[str, Any]) -> None:
             "Ticker editing is locked until DISCORD_ALLOWED_USER_ID is configured."
         )
     if command_user_id(interaction) != ALLOWED_USER_ID:
-        raise PermissionError("Only the configured server owner can manage tickers.")
+        raise PermissionError(
+            "Only the configured server owner can change TradeBot state."
+        )
 
 
 EDITABLE_FILTERS = {
@@ -939,6 +948,8 @@ def process_command(interaction: dict[str, Any]) -> None:
     token = str(interaction.get("token") or "")
     name = str(interaction.get("data", {}).get("name") or "")
     try:
+        if name in OWNER_ONLY_COMMANDS:
+            require_ticker_admin(interaction)
         if name == "filters":
             patch_original(application_id, token, content=filters_reply())
         elif name == "filter-set":

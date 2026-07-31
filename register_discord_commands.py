@@ -11,6 +11,14 @@ APPLICATION_ID = os.environ.get("DISCORD_APPLICATION_ID", "").strip()
 BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 
+OWNER_ONLY_COMMANDS = {
+    "filter-set",
+    "ticker-add",
+    "ticker-pause",
+    "ticker-resume",
+    "ticker-remove",
+}
+
 TICKER_ARGUMENT = {
     "name": "ticker",
     "description": "Active-universe ticker; defaults to the highest-ranked symbol",

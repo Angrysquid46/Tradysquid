@@ -15,6 +15,8 @@ BOT_CHANNEL_ALLOW = (
     | 32768  # attach files
     | 65536  # read message history
 )
+ADMINISTRATOR_PERMISSION = 1 << 3
+BAN_MEMBERS_PERMISSION = 1 << 2
 
 
 @dataclass(frozen=True)
@@ -174,6 +176,7 @@ def main() -> int:
             parent = category_names.get(str(item.get("parent_id") or ""), "(root)")
             print(f"{item.get('type')}\t{parent}\t{item.get('name')}\t{item.get('id')}")
         return 0
+    warnings: list[str] = []
     bot_user = tracker._request("GET", "/users/@me")
     roles = tracker._request("GET", f"/guilds/{tracker.guild_id}/roles")
     bot_role = next(
@@ -186,9 +189,15 @@ def main() -> int:
         None,
     )
     bot_role_id = str((bot_role or {}).get("id") or "")
+    bot_permissions = int((bot_role or {}).get("permissions") or 0)
+    if bot_permissions & ADMINISTRATOR_PERMISSION:
+        warnings.append(
+            "TradeBot has Administrator; remove it because Administrator includes bans."
+        )
+    if bot_permissions & BAN_MEMBERS_PERMISSION:
+        warnings.append("TradeBot has Ban Members; remove that permission.")
     by_name = {normalized(item.get("name")): item for item in existing}
     categories: dict[str, dict] = {}
-    warnings: list[str] = []
 
     for position, name in enumerate(CATEGORY_ORDER):
         item = next(
