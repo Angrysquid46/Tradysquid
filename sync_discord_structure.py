@@ -124,6 +124,7 @@ def main() -> int:
     existing = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
     by_name = {normalized(item.get("name")): item for item in existing}
     categories: dict[str, dict] = {}
+    warnings: list[str] = []
 
     for position, name in enumerate(CATEGORY_ORDER):
         item = next(
@@ -174,7 +175,10 @@ def main() -> int:
         if changes:
             print(f"{'UPDATE' if apply else 'WOULD UPDATE'} #{spec.name}")
             if apply:
-                tracker._request("PATCH", f"/channels/{item['id']}", changes)
+                try:
+                    tracker._request("PATCH", f"/channels/{item['id']}", changes)
+                except ford_scan.DiscordError as exc:
+                    warnings.append(f"#{spec.name}: {exc}")
 
     archive = categories.get("ARCHIVE - LEGACY")
     for name in sorted(LEGACY_CHANNELS):
@@ -182,42 +186,50 @@ def main() -> int:
         if item and archive and str(item.get("parent_id") or "") != str(archive["id"]):
             print(f"{'ARCHIVE' if apply else 'WOULD ARCHIVE'} #{name}")
             if apply:
-                tracker._request(
-                    "PATCH",
-                    f"/channels/{item['id']}",
-                    {"parent_id": archive["id"]},
-                )
+                try:
+                    tracker._request(
+                        "PATCH",
+                        f"/channels/{item['id']}",
+                        {"parent_id": archive["id"]},
+                    )
+                except ford_scan.DiscordError as exc:
+                    warnings.append(f"archive #{name}: {exc}")
 
     if apply:
         for channel_name, content in GUIDES.items():
             channel = by_name.get(normalized(channel_name))
             if not channel:
                 continue
-            recent = tracker._request(
-                "GET", f"/channels/{channel['id']}/messages?limit=50"
-            )
-            marker = content.splitlines()[0]
-            message = next(
-                (
-                    item for item in recent
-                    if (item.get("author") or {}).get("bot")
-                    and marker in ford_scan.message_search_text(item)
-                ),
-                None,
-            )
-            payload = {"content": content[:2000], "allowed_mentions": {"parse": []}}
-            if message:
-                tracker._request(
-                    "PATCH",
-                    f"/channels/{channel['id']}/messages/{message['id']}",
-                    payload,
+            try:
+                recent = tracker._request(
+                    "GET", f"/channels/{channel['id']}/messages?limit=50"
                 )
-            else:
-                tracker._request(
-                    "POST", f"/channels/{channel['id']}/messages", payload
+                marker = content.splitlines()[0]
+                message = next(
+                    (
+                        item for item in recent
+                        if (item.get("author") or {}).get("bot")
+                        and marker in ford_scan.message_search_text(item)
+                    ),
+                    None,
                 )
+                payload = {"content": content[:2000], "allowed_mentions": {"parse": []}}
+                if message:
+                    tracker._request(
+                        "PATCH",
+                        f"/channels/{channel['id']}/messages/{message['id']}",
+                        payload,
+                    )
+                else:
+                    tracker._request(
+                        "POST", f"/channels/{channel['id']}/messages", payload
+                    )
+            except ford_scan.DiscordError as exc:
+                warnings.append(f"guide #{channel_name}: {exc}")
 
     print("Discord structure synchronized." if apply else "Dry run complete; no Discord changes made.")
+    for warning in warnings:
+        print(f"WARNING: {warning}")
     return 0
 
 
