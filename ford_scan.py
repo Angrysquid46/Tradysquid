@@ -1,5 +1,5 @@
 """
-Ford (F) options scanner + Discord trade tracker.
+Tradysquids dynamic options scanner + Discord paper-trade tracker.
 
 Purpose
 -------
@@ -53,7 +53,7 @@ import requests
 # Config
 # ---------------------------------------------------------------------------
 
-TICKER = "F"
+TICKER = os.environ.get("SCAN_TICKER", "F").strip().upper() or "F"
 TRADIER_BASE_URL = os.environ.get("TRADIER_BASE_URL", "https://api.tradier.com/v1").rstrip("/")
 TRADIER_TOKEN = os.environ.get("TRADIER_TOKEN", "").strip()
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
@@ -62,6 +62,17 @@ DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT", "").strip()
 
 REPO_ROOT = Path(__file__).resolve().parent
+SCANNER_CONFIG_PATH = REPO_ROOT / "config" / "scanner.json"
+
+
+def configured(name: str, default: Any) -> Any:
+    try:
+        payload = json.loads(SCANNER_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    return payload.get(name, default)
+
+
 STATE_DIR = REPO_ROOT / "state"
 DOCS_DIR = REPO_ROOT / "docs"
 LOG_PATH = STATE_DIR / "ford-plays-log.csv"
@@ -84,14 +95,19 @@ MARKET_CLOSE = (15, 0)
 
 # Candidate screening
 MIN_OPEN_INTEREST = int(os.environ.get("MIN_OPEN_INTEREST", "100"))
-MIN_OPTION_VOLUME = int(os.environ.get("MIN_OPTION_VOLUME", "10"))
-MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.20"))
+MIN_OPTION_VOLUME = int(os.environ.get("MIN_OPTION_VOLUME", "1"))
+MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.25"))
 # Retained only so legacy credit-spread rows/functions remain readable; new scans do not use them.
 SPREAD_SHORT_DELTA_MIN = float(os.environ.get("SPREAD_SHORT_DELTA_MIN", "0.10"))
 SPREAD_SHORT_DELTA_MAX = float(os.environ.get("SPREAD_SHORT_DELTA_MAX", "0.25"))
-SINGLE_LEG_DELTA_MIN = float(os.environ.get("SINGLE_LEG_DELTA_MIN", "0.60"))
-SINGLE_LEG_DELTA_MAX = float(os.environ.get("SINGLE_LEG_DELTA_MAX", "0.75"))
-MAX_RISK_PER_TRADE = float(os.environ.get("MAX_RISK_PER_TRADE", "50"))
+SINGLE_LEG_DELTA_MIN = float(os.environ.get("SINGLE_LEG_DELTA_MIN", "0.20"))
+SINGLE_LEG_DELTA_MAX = float(os.environ.get("SINGLE_LEG_DELTA_MAX", "0.80"))
+MAX_RISK_PER_TRADE = float(os.environ.get(
+    "MAX_RISK_PER_TRADE", configured("max_position_risk_dollars", 100)
+))
+MAX_CONTRACT_ASK = float(os.environ.get(
+    "MAX_CONTRACT_ASK", configured("max_contract_ask", 1.00)
+))
 MIN_SPREAD_CREDIT = float(os.environ.get("MIN_SPREAD_CREDIT", "0.05"))
 STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
 MIN_DTE = int(os.environ.get("MIN_DTE", "21"))
@@ -106,16 +122,24 @@ RSI_MAX = float(os.environ.get("RSI_MAX", "68"))
 MAX_EXTENSION_ABOVE_SMA20_PCT = float(os.environ.get("MAX_EXTENSION_ABOVE_SMA20_PCT", "0.05"))
 
 # Management rules
-SPREAD_STOP_MULTIPLE = float(os.environ.get("SPREAD_STOP_MULTIPLE", "2.0"))
-SPREAD_TAKE_PROFIT_PCT = float(os.environ.get("SPREAD_TAKE_PROFIT_PCT", "0.50"))
+SPREAD_STOP_MULTIPLE = float(os.environ.get(
+    "SPREAD_STOP_MULTIPLE", configured("spread_stop_multiple", 2.0)
+))
+SPREAD_TAKE_PROFIT_PCT = float(os.environ.get(
+    "SPREAD_TAKE_PROFIT_PCT", configured("spread_profit_target_pct", 0.50)
+))
 SPREAD_EXIT_DTE = int(os.environ.get("SPREAD_EXIT_DTE", "5"))
-SINGLE_TAKE_PROFIT_PCT = float(os.environ.get("SINGLE_TAKE_PROFIT_PCT", "0.20"))
-SINGLE_STOP_PCT = float(os.environ.get("SINGLE_STOP_PCT", "0.15"))
+SINGLE_TAKE_PROFIT_PCT = float(os.environ.get(
+    "SINGLE_TAKE_PROFIT_PCT", configured("single_leg_profit_target_pct", 0.20)
+))
+SINGLE_STOP_PCT = float(os.environ.get(
+    "SINGLE_STOP_PCT", configured("single_leg_stop_pct", 0.15)
+))
 SCRATCH_BAND_PCT = float(os.environ.get("SCRATCH_BAND_PCT", "5.0"))
 
 # Discord update throttling
 DISCORD_PL_CHANGE_THRESHOLD = float(os.environ.get("DISCORD_PL_CHANGE_THRESHOLD", "10.0"))
-DISCORD_HEARTBEAT_MINUTES = int(os.environ.get("DISCORD_HEARTBEAT_MINUTES", "60"))
+DISCORD_HEARTBEAT_MINUTES = int(os.environ.get("DISCORD_HEARTBEAT_MINUTES", "15"))
 DISCORD_SYNC_EXISTING_OPEN = os.environ.get("DISCORD_SYNC_EXISTING_OPEN", "true").lower() == "true"
 DISCORD_FORMAT_VERSION = "9"
 
@@ -175,35 +199,35 @@ LOG_HEADER = [
 CHANNEL_NAMES = {
     "forum": "trade-journal",
     "scanner_feed": "scanner-feed",
-    "charts": "f-charts",
-    "intelligence": "f-research-performance",
-    "market_pulse": "f-dashboard",
-    "technicals": "f-dashboard",
-    "options_chain": "f-options-setups",
-    "risk_desk": "f-options-setups",
-    "news_events": "f-news-events",
-    "sec_filings": "f-news-events",
-    "research_summary": "f-research-performance",
-    "qualified": "qualified-trades",
+    "charts": "charts-and-levels",
+    "intelligence": "market-regime",
+    "market_pulse": "market-regime",
+    "technicals": "charts-and-levels",
+    "options_chain": "scanner-feed",
+    "risk_desk": "scanner-controls",
+    "news_events": "news-and-events",
+    "sec_filings": "news-and-events",
+    "research_summary": "strategy-results",
+    "qualified": "new-positions",
     "entry": "new-positions",
     "updates": "held-positions",
-    "exit": "exit-alerts",
+    "exit": "held-positions",
     "wins": "wins",
     "losses": "losses",
-    "scratches": "scratches",
-    "expired": "expired",
-    "daily_recap": "daily-recap",
-    "weekly_report": "weekly-report",
-    "performance_stats": "performance-stats",
-    "strategy_breakdown": "strategy-breakdown",
-    "status": "scanner-status",
-    "errors": "api-errors",
+    "scratches": "losses",
+    "expired": "losses",
+    "daily_recap": "performance-dashboard",
+    "weekly_report": "performance-dashboard",
+    "performance_stats": "performance-dashboard",
+    "strategy_breakdown": "strategy-results",
+    "status": "system-health",
+    "errors": "provider-status",
     "workflow_log": "workflow-log",
-    "admin_notes": "admin-notes",
+    "admin_notes": "scanner-controls",
     "welcome": "welcome",
-    "strategy_rules": "strategy-rules",
-    "risk_management": "risk-management",
-    "server_guide": "server-guide",
+    "strategy_rules": "rules-and-risk",
+    "risk_management": "rules-and-risk",
+    "server_guide": "how-to-use-tradebot",
 }
 
 TAG_KEYS = {
@@ -1794,7 +1818,7 @@ def scan_single_legs(
         bid = as_float(option.get("bid"), 0.0) or 0.0
         if ask <= 0:
             continue
-        if ask * 100 > MAX_RISK_PER_TRADE:
+        if ask > MAX_CONTRACT_ASK or ask * 100 > MAX_RISK_PER_TRADE:
             continue
         strike = float(option["strike"])
         open_interest = open_interest_value(option)
@@ -2052,9 +2076,9 @@ def close_row(row: dict[str, str], evaluation: dict[str, Any], timestamp: dateti
         outcome = "WIN"
     elif signal == "STOP OUT":
         outcome = "LOSS"
-    elif abs(pnl_pct) <= SCRATCH_BAND_PCT:
-        outcome = "SCRATCH"
     else:
+        # New lifecycle is intentionally binary: a closed paper trade either
+        # made money or did not. Legacy SCRATCH rows remain readable.
         outcome = "WIN" if pnl_pct > 0 else "LOSS"
 
     row["outcome"] = outcome

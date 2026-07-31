@@ -13,7 +13,7 @@ GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 
 TICKER_ARGUMENT = {
     "name": "ticker",
-    "description": "Ticker; defaults to this ticker channel, otherwise F",
+    "description": "Active-universe ticker; defaults to the highest-ranked symbol",
     "type": 3,
     "required": False,
     "min_length": 1,
@@ -22,10 +22,45 @@ TICKER_ARGUMENT = {
 
 COMMANDS = [
     {
+        "name": "filters",
+        "type": 1,
+        "description": "Show active paper-scanner risk and liquidity filters",
+    },
+    {
+        "name": "filter-set",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: change one guarded scanner filter locally",
+        "options": [
+            {
+                "name": "filter",
+                "description": "Guarded filter to change",
+                "type": 3,
+                "required": True,
+                "choices": [
+                    {"name": "Maximum contract ask", "value": "max_contract_ask"},
+                    {"name": "Maximum position risk", "value": "max_position_risk_dollars"},
+                    {"name": "Long profit target", "value": "single_leg_profit_target_pct"},
+                    {"name": "Long stop", "value": "single_leg_stop_pct"},
+                    {"name": "Spread profit target", "value": "spread_profit_target_pct"},
+                    {"name": "Spread stop multiple", "value": "spread_stop_multiple"}
+                ]
+            },
+            {
+                "name": "value",
+                "description": "New decimal value; percentages use 0.20 for 20%",
+                "type": 10,
+                "required": True,
+                "min_value": 0.01,
+                "max_value": 100
+            }
+        ]
+    },
+    {
         "name": "ticker-add",
         "type": 1,
         "default_member_permissions": "0",
-        "description": "Owner: fully integrate a ticker and create its information desk",
+        "description": "Owner: add an optionable ticker to the shared scan universe",
         "options": [{
             "name": "ticker",
             "description": "Stock symbol, such as VALE",
@@ -39,7 +74,7 @@ COMMANDS = [
         "name": "ticker-pause",
         "type": 1,
         "default_member_permissions": "0",
-        "description": "Owner: pause new setups for a ticker",
+        "description": "Owner: exclude a ticker from new scans",
         "options": [
             {
                 "name": "ticker",
@@ -65,7 +100,7 @@ COMMANDS = [
         "name": "ticker-resume",
         "type": 1,
         "default_member_permissions": "0",
-        "description": "Owner: resume scheduled setups for an integrated ticker",
+        "description": "Owner: restore a ticker to the shared scan universe",
         "options": [{
             "name": "ticker",
             "description": "Integrated ticker symbol",
@@ -79,7 +114,7 @@ COMMANDS = [
         "name": "ticker-remove",
         "type": 1,
         "default_member_permissions": "0",
-        "description": "Owner: archive a ticker while preserving trades and history",
+        "description": "Owner: remove a ticker from new scans but preserve history",
         "options": [{
             "name": "ticker",
             "description": "Integrated ticker symbol",
@@ -92,12 +127,12 @@ COMMANDS = [
     {
         "name": "ticker-list",
         "type": 1,
-        "description": "List active, paused, and archived ticker strategies",
+        "description": "List the current dynamic scanner universe and exclusions",
     },
     {
         "name": "ticker-status",
         "type": 1,
-        "description": "Show one ticker strategy and Discord desk status",
+        "description": "Show whether a ticker is active in the shared universe",
         "options": [{
             "name": "ticker",
             "description": "Integrated ticker symbol",

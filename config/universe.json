@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "mode": "dynamic",
+  "seed_symbols": [
+    "AAL",
+    "AMD",
+    "BAC",
+    "CCL",
+    "F",
+    "INTC",
+    "NIO",
+    "NU",
+    "PLTR",
+    "RIVN",
+    "SOFI",
+    "T",
+    "VALE"
+  ],
+  "exclude_symbols": [],
+  "max_active_symbols": 75,
+  "sources": [
+    "seed",
+    "tradingview",
+    "robinhood_read_only",
+    "tradier_liquidity"
+  ]
+}

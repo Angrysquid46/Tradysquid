@@ -9,12 +9,14 @@ from unittest.mock import patch
 
 import discord_command_bot
 import ai_coordination
+import dynamic_universe
 import ford_scan
 import local_information_engine as engine
 import multi_ticker_scan
 import outcome_learning
 import register_discord_commands
 import ticker_registry
+import sync_discord_structure
 
 
 class InformationEngineTests(unittest.TestCase):
@@ -141,6 +143,19 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn("chain", names)
         self.assertIn("status", names)
 
+    def test_discord_redesign_channel_names_are_unique(self) -> None:
+        names = [item.name for item in sync_discord_structure.CHANNELS]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertNotIn("qualified-trades", names)
+        self.assertNotIn("scratches", names)
+        self.assertIn("new-positions", names)
+        self.assertIn("losses", names)
+
+    def test_scanner_outputs_use_consolidated_channels(self) -> None:
+        self.assertEqual(ford_scan.CHANNEL_NAMES["qualified"], "new-positions")
+        self.assertEqual(ford_scan.CHANNEL_NAMES["scratches"], "losses")
+        self.assertEqual(ford_scan.CHANNEL_NAMES["charts"], "charts-and-levels")
+
     def test_github_syncing_ticker_commands_are_owner_locked(self) -> None:
         owner_commands = {
             "ticker-add",
@@ -217,48 +232,38 @@ class InformationEngineTests(unittest.TestCase):
             self.assertFalse(ticker["required"], name)
 
     def test_dynamic_command_ticker_accepts_active_and_rejects_unknown_or_archived(self) -> None:
-        original = ticker_registry.DB_PATH
+        original_db = dynamic_universe.DB_PATH
+        original_config = dynamic_universe.CONFIG_PATH
         with tempfile.TemporaryDirectory() as temp:
-            ticker_registry.DB_PATH = Path(temp) / "registry.db"
-            ticker_registry.save("VALE", status="ACTIVE", note="test")
+            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
+            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
+            dynamic_universe.CONFIG_PATH.write_text(
+                '{"seed_symbols":["VALE"],"exclude_symbols":[],"max_active_symbols":10}',
+                encoding="utf-8",
+            )
             self.assertEqual(discord_command_bot.command_ticker("vale"), "VALE")
             with self.assertRaises(ValueError):
                 discord_command_bot.command_ticker("XYZ")
-            ticker_registry.archive("VALE")
+            dynamic_universe.CONFIG_PATH.write_text(
+                '{"seed_symbols":["VALE"],"exclude_symbols":["VALE"],"max_active_symbols":10}',
+                encoding="utf-8",
+            )
             with self.assertRaises(ValueError):
                 discord_command_bot.command_ticker("VALE")
-        ticker_registry.DB_PATH = original
+        dynamic_universe.DB_PATH = original_db
+        dynamic_universe.CONFIG_PATH = original_config
 
-    def test_ticker_channel_context_is_used_when_command_omits_ticker(self) -> None:
-        original = ticker_registry.DB_PATH
-        with tempfile.TemporaryDirectory() as temp:
-            ticker_registry.DB_PATH = Path(temp) / "registry.db"
-            ticker_registry.save(
-                "VALE",
-                status="ACTIVE",
-                channels={"charts": "vale-chart-channel"},
-                note="test",
-            )
-            interaction = {
-                "channel_id": "vale-chart-channel",
-                "data": {"options": []},
-            }
-            self.assertEqual(
-                discord_command_bot.interaction_ticker(interaction), "VALE"
-            )
-            interaction["data"]["options"] = [
-                {"name": "ticker", "value": "F"}
-            ]
-            self.assertEqual(
-                discord_command_bot.interaction_ticker(interaction), "F"
-            )
-            self.assertEqual(
-                discord_command_bot.interaction_ticker(
-                    {"channel_id": "unmapped", "data": {"options": []}}
-                ),
-                "F",
-            )
-        ticker_registry.DB_PATH = original
+    def test_consolidated_channels_do_not_force_a_ticker_context(self) -> None:
+        interaction = {
+            "channel_id": "former-ticker-channel",
+            "data": {"options": []},
+        }
+        self.assertEqual(
+            discord_command_bot.interaction_ticker(interaction),
+            discord_command_bot.command_ticker(None),
+        )
+        interaction["data"]["options"] = [{"name": "ticker", "value": "F"}]
+        self.assertEqual(discord_command_bot.interaction_ticker(interaction), "F")
 
     def test_performance_snapshot_filters_each_ticker(self) -> None:
         rows = [
@@ -357,29 +362,77 @@ class InformationEngineTests(unittest.TestCase):
         finally:
             engine.ford_scan.TICKER = original
 
-    def test_tracked_config_drives_all_active_backup_tickers(self) -> None:
-        original = multi_ticker_scan.TICKER_CONFIG_PATH
+    def test_dynamic_universe_rotates_provider_safe_batches(self) -> None:
+        original_db = dynamic_universe.DB_PATH
+        original_config = dynamic_universe.CONFIG_PATH
         with tempfile.TemporaryDirectory() as temp:
-            config = Path(temp) / "tickers.json"
+            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
+            config = Path(temp) / "universe.json"
             config.write_text(
                 """
                 {
-                  "version": 1,
-                  "tickers": [
-                    {"ticker": "F", "status": "ACTIVE", "resume_on": ""},
-                    {"ticker": "VALE", "status": "ACTIVE", "resume_on": ""},
-                    {"ticker": "XYZ", "status": "ARCHIVED", "resume_on": ""}
-                  ]
+                  "version": 2,
+                  "seed_symbols": ["F", "VALE", "XYZ"],
+                  "exclude_symbols": ["XYZ"],
+                  "max_active_symbols": 10
                 }
                 """,
                 encoding="utf-8",
             )
-            multi_ticker_scan.TICKER_CONFIG_PATH = config
-            self.assertEqual(
-                multi_ticker_scan.configured_active_tickers(),
-                ["VALE", "F"],
+            dynamic_universe.CONFIG_PATH = config
+            dynamic_universe.initialize()
+            self.assertEqual(set(dynamic_universe.active_symbols()), {"F", "VALE"})
+        dynamic_universe.DB_PATH = original_db
+        dynamic_universe.CONFIG_PATH = original_config
+
+    def test_tradingview_webhook_is_authenticated_and_deduplicated(self) -> None:
+        original_secret = discord_command_bot.TRADINGVIEW_WEBHOOK_SECRET
+        original_db = dynamic_universe.DB_PATH
+        original_config = dynamic_universe.CONFIG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            discord_command_bot.TRADINGVIEW_WEBHOOK_SECRET = "test-secret"
+            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
+            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
+            dynamic_universe.CONFIG_PATH.write_text(
+                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":10}',
+                encoding="utf-8",
             )
-        multi_ticker_scan.TICKER_CONFIG_PATH = original
+            client = discord_command_bot.APP.test_client()
+            denied = client.post("/tradingview", json={"ticker": "AMD"})
+            self.assertEqual(denied.status_code, 401)
+            first = client.post(
+                "/tradingview?secret=test-secret",
+                json={"id": "same-alert", "ticker": "NASDAQ:AMD", "event": "breakout"},
+            )
+            second = client.post(
+                "/tradingview?secret=test-secret",
+                json={"id": "same-alert", "ticker": "NASDAQ:AMD", "event": "breakout"},
+            )
+            self.assertEqual(first.status_code, 202)
+            self.assertTrue(first.get_json()["queued"])
+            self.assertFalse(second.get_json()["queued"])
+        discord_command_bot.TRADINGVIEW_WEBHOOK_SECRET = original_secret
+        dynamic_universe.DB_PATH = original_db
+        dynamic_universe.CONFIG_PATH = original_config
+
+    def test_robinhood_adapter_rejects_order_shaped_payloads(self) -> None:
+        with self.assertRaises(ValueError):
+            dynamic_universe.import_robinhood_snapshot({
+                "orders": [{"symbol": "F", "side": "buy"}]
+            })
+
+    def test_new_closed_trades_are_binary_not_scratch(self) -> None:
+        row = {"play_type": "LONG", "entry_price": "0.50"}
+        ford_scan.close_row(
+            row,
+            {"signal": "EXPIRY CLOSE", "mark": 0.50, "pl_dollars": 0},
+            ford_scan.now_ct(),
+        )
+        self.assertEqual(row["outcome"], "LOSS")
+
+    def test_contract_price_guard_is_one_dollar(self) -> None:
+        self.assertEqual(ford_scan.MAX_CONTRACT_ASK, 1.0)
+        self.assertEqual(ford_scan.MAX_RISK_PER_TRADE, 100.0)
 
     def test_github_backup_workflow_runs_multi_ticker_entrypoint(self) -> None:
         workflow = (

@@ -77,7 +77,7 @@ echo Opening the working tabs...
 echo Opening Codex...
 powershell -NoProfile -Command "if (-not (Get-Process ChatGPT -ErrorAction SilentlyContinue)) { $p = Get-AppxPackage OpenAI.Codex -ErrorAction SilentlyContinue; if ($p) { $exe = Join-Path $p.InstallLocation 'app\ChatGPT.exe'; if (Test-Path $exe) { Start-Process $exe } } }"
 start "" "https://discord.com/channels/1532077258099917020/1532235137469780139"
-start "" "https://www.tradingview.com/chart/1OTbDz14/?symbol=NYSE:F"
+start "" "https://www.tradingview.com/chart/"
 start "" "https://github.com/Angrysquid46/Tradysquid/actions"
 start "" "http://127.0.0.1:4040"
 

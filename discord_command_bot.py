@@ -1,4 +1,4 @@
-"""HTTP Discord slash-command service for the Ford scanner.
+"""HTTP Discord slash-command and provider-signal gateway.
 
 Run locally and expose only the /interactions endpoint through ngrok.
 Discord request signatures are verified before any command is processed.
@@ -20,6 +20,7 @@ from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
 
 import ford_scan
+import dynamic_universe
 import local_information_engine as info_engine
 import ticker_registry
 
@@ -29,6 +30,7 @@ LOCK_PORT = int(os.environ.get("COMMAND_BOT_LOCK_PORT", "8081"))
 PUBLIC_KEY = os.environ.get("DISCORD_PUBLIC_KEY", "").strip()
 ALLOWED_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 ALLOWED_USER_ID = os.environ.get("DISCORD_ALLOWED_USER_ID", "").strip()
+TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
 
 APP = Flask(__name__)
 CHART_LOCK = threading.Lock()
@@ -147,31 +149,21 @@ def patch_original(
 
 
 def command_ticker(value: str | None) -> str:
-    ticker = ticker_registry.normalize_ticker(value or "F")
-    item = ticker_registry.get(ticker)
-    if not item:
-        raise ValueError(
-            f"{ticker} is not integrated. Use `/ticker-add ticker:{ticker}` first."
-        )
-    if item.get("status") == "ARCHIVED":
-        raise ValueError(
-            f"{ticker} is archived. Use `/ticker-resume ticker:{ticker}` first."
-        )
+    active = dynamic_universe.initialize()
+    ticker = dynamic_universe.normalize_symbol(
+        value or (active[0] if active else "SPY")
+    )
+    if ticker not in active:
+        raise ValueError(f"{ticker} is not active in the scanner universe.")
     return ticker
 
 
 def interaction_ticker(interaction: dict[str, Any]) -> str:
-    """Use an explicit ticker, then the ticker desk channel, then Ford."""
+    """Use the requested ticker or the highest-ranked active universe symbol."""
     explicit = str(option_value(interaction, "ticker", "") or "").strip()
     if explicit:
         return command_ticker(explicit)
-    channel_id = str(interaction.get("channel_id") or "")
-    if channel_id:
-        for item in ticker_registry.all_tickers():
-            channels = item.get("channels") or {}
-            if channel_id in {str(value) for value in channels.values()}:
-                return command_ticker(str(item["ticker"]))
-    return command_ticker("F")
+    return command_ticker(None)
 
 
 def live_market_data(ticker: str, days: int = 120) -> tuple[float, list[dict[str, Any]]]:
@@ -349,48 +341,139 @@ def require_ticker_admin(interaction: dict[str, Any]) -> None:
         raise PermissionError("Only the configured server owner can manage tickers.")
 
 
+EDITABLE_FILTERS = {
+    "max_contract_ask": (0.01, 1.00),
+    "max_position_risk_dollars": (1.0, 100.0),
+    "single_leg_profit_target_pct": (0.01, 2.0),
+    "single_leg_stop_pct": (0.01, 1.0),
+    "spread_profit_target_pct": (0.01, 1.0),
+    "spread_stop_multiple": (1.0, 5.0),
+}
+RUNTIME_FILTER_ATTRIBUTES = {
+    "max_contract_ask": "MAX_CONTRACT_ASK",
+    "max_position_risk_dollars": "MAX_RISK_PER_TRADE",
+    "single_leg_profit_target_pct": "SINGLE_TAKE_PROFIT_PCT",
+    "single_leg_stop_pct": "SINGLE_STOP_PCT",
+    "spread_profit_target_pct": "SPREAD_TAKE_PROFIT_PCT",
+    "spread_stop_multiple": "SPREAD_STOP_MULTIPLE",
+}
+
+
+def filters_reply() -> str:
+    config = dynamic_universe.scanner_config()
+    liquidity = config.get("liquidity") or {}
+    delta = config.get("single_leg_delta") or {}
+    return "\n".join([
+        "🎛️ **Active scanner controls**",
+        f"Maximum contract ask: **${float(config['max_contract_ask']):.2f}**",
+        f"Maximum position risk: **${float(config['max_position_risk_dollars']):.0f}**",
+        f"Long option target/stop: **+{float(config['single_leg_profit_target_pct']) * 100:.0f}% / -{float(config['single_leg_stop_pct']) * 100:.0f}%**",
+        f"Spread target/stop: **{float(config['spread_profit_target_pct']) * 100:.0f}% / {float(config['spread_stop_multiple']):.1f}× credit**",
+        f"Delta range: **{delta.get('min')}–{delta.get('max')}**",
+        f"Minimum OI/volume: **{liquidity.get('min_option_open_interest')} / {liquidity.get('min_option_volume')}**",
+        f"Maximum bid/ask width: **{float(liquidity.get('max_bid_ask_pct', 0)) * 100:.0f}%**",
+        "Paper trading only. Filters never place brokerage orders.",
+    ])
+
+
+def filter_set_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    name = str(option_value(interaction, "filter", "")).strip()
+    value = float(option_value(interaction, "value", 0))
+    bounds = EDITABLE_FILTERS.get(name)
+    if not bounds:
+        raise ValueError("That filter is not editable from Discord.")
+    if not bounds[0] <= value <= bounds[1]:
+        raise ValueError(f"{name} must be between {bounds[0]} and {bounds[1]}.")
+    config = dynamic_universe.scanner_config()
+    old = config.get(name)
+    config[name] = value
+    dynamic_universe.SCANNER_CONFIG_PATH.write_text(
+        json.dumps(config, indent=2) + "\n", encoding="utf-8"
+    )
+    setattr(ford_scan, RUNTIME_FILTER_ATTRIBUTES[name], value)
+    return (
+        f"✅ **{name}** changed locally from **{old}** to **{value}**.\n"
+        "The next local scan reads the reviewed value. No GitHub run or trade was triggered."
+    )
+
+
 def publish_ticker_configuration() -> str:
-    """Commit and push only the tracked ticker list for cloud-backup parity."""
-    root = Path(__file__).resolve().parent
-    add = subprocess.run(
-        ["git", "add", "--", "config/tickers.json"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        timeout=20,
+    """Legacy compatibility: configuration changes stay local until reviewed."""
+    return "Saved locally; no GitHub commit, workflow, or push was triggered."
+
+
+def set_universe_symbol(symbol: str, active: bool) -> None:
+    symbol = dynamic_universe.normalize_symbol(symbol)
+    payload = dynamic_universe.universe_config()
+    seeds = {str(item).upper() for item in payload.get("seed_symbols") or []}
+    excluded = {str(item).upper() for item in payload.get("exclude_symbols") or []}
+    seeds.add(symbol)
+    if active:
+        excluded.discard(symbol)
+    else:
+        excluded.add(symbol)
+    payload["seed_symbols"] = sorted(seeds)
+    payload["exclude_symbols"] = sorted(excluded)
+    dynamic_universe.CONFIG_PATH.write_text(
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
     )
-    if add.returncode:
-        raise RuntimeError("Could not stage the tracked ticker configuration.")
-    changed = subprocess.run(
-        ["git", "diff", "--cached", "--quiet", "--", "config/tickers.json"],
-        cwd=root,
-        timeout=20,
-    )
-    if changed.returncode == 0:
-        return "GitHub ticker configuration already matched."
-    if changed.returncode != 1:
-        raise RuntimeError("Could not verify the tracked ticker configuration.")
-    commit = subprocess.run(
-        ["git", "commit", "-m", "Sync active ticker configuration"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if commit.returncode:
-        raise RuntimeError("Could not commit the tracked ticker configuration.")
-    push = subprocess.run(
-        ["git", "push", "origin", "HEAD:main"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    if push.returncode:
-        raise RuntimeError(
-            "Ticker changed locally, but GitHub sync failed. Run the sync again."
+
+
+def universe_add_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    ticker = dynamic_universe.normalize_symbol(str(option_value(interaction, "ticker", "")))
+    quote = ford_scan.get_quote(ticker) or {}
+    price = ford_scan.as_float(quote.get("last"))
+    if price is None or not ford_scan.get_expirations(ticker):
+        raise ValueError(f"Tradier could not verify optionable ticker {ticker}.")
+    set_universe_symbol(ticker, True)
+    dynamic_universe.upsert_candidates([
+        dynamic_universe.Candidate(
+            ticker, "owner", 200, price, options_available=True,
+            reason="owner-added universe symbol",
         )
-    return "GitHub backup ticker configuration synchronized."
+    ])
+    return (
+        f"✅ **{ticker} added to the shared scanner universe** at ${price:.2f}.\n"
+        "It will enter the rotating scan pool. No channel, GitHub run, or trade was created."
+    )
+
+
+def universe_pause_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    ticker = dynamic_universe.normalize_symbol(str(option_value(interaction, "ticker", "")))
+    set_universe_symbol(ticker, False)
+    return (
+        f"⏸️ **{ticker} removed from new scans.** Existing positions remain tracked."
+    )
+
+
+def universe_resume_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    ticker = dynamic_universe.normalize_symbol(str(option_value(interaction, "ticker", "")))
+    set_universe_symbol(ticker, True)
+    return f"▶️ **{ticker} restored to the rotating scanner universe.**"
+
+
+def universe_list_reply() -> str:
+    active = dynamic_universe.initialize()
+    excluded = dynamic_universe.universe_config().get("exclude_symbols") or []
+    return "\n".join([
+        "📚 **Dynamic scanner universe**",
+        f"**Active ({len(active)}):** {', '.join(active) if active else 'None'}",
+        f"**Excluded:** {', '.join(excluded) if excluded else 'None'}",
+        "Open positions remain tracked even after a ticker is excluded.",
+    ])
+
+
+def universe_status_reply(ticker: str) -> str:
+    symbol = dynamic_universe.normalize_symbol(ticker)
+    active = symbol in dynamic_universe.initialize()
+    return (
+        f"🧩 **{symbol}** · **{'ACTIVE' if active else 'NOT ACTIVE'}**\n"
+        "Shared filters, lifecycle channels, and performance tracking apply."
+    )
 
 
 def ticker_add_reply(interaction: dict[str, Any]) -> str:
@@ -856,21 +939,27 @@ def process_command(interaction: dict[str, Any]) -> None:
     token = str(interaction.get("token") or "")
     name = str(interaction.get("data", {}).get("name") or "")
     try:
-        if name == "ticker-add":
-            patch_original(application_id, token, content=ticker_add_reply(interaction))
+        if name == "filters":
+            patch_original(application_id, token, content=filters_reply())
+        elif name == "filter-set":
+            patch_original(
+                application_id, token, content=filter_set_reply(interaction)
+            )
+        elif name == "ticker-add":
+            patch_original(application_id, token, content=universe_add_reply(interaction))
         elif name == "ticker-pause":
-            patch_original(application_id, token, content=ticker_pause_reply(interaction))
+            patch_original(application_id, token, content=universe_pause_reply(interaction))
         elif name == "ticker-resume":
-            patch_original(application_id, token, content=ticker_resume_reply(interaction))
+            patch_original(application_id, token, content=universe_resume_reply(interaction))
         elif name == "ticker-remove":
-            patch_original(application_id, token, content=ticker_remove_reply(interaction))
+            patch_original(application_id, token, content=universe_pause_reply(interaction))
         elif name == "ticker-list":
-            patch_original(application_id, token, content=ticker_list_reply())
+            patch_original(application_id, token, content=universe_list_reply())
         elif name == "ticker-status":
             patch_original(
                 application_id,
                 token,
-                content=ticker_status_reply(str(option_value(interaction, "ticker", ""))),
+                content=universe_status_reply(str(option_value(interaction, "ticker", ""))),
             )
         elif name == "chart":
             days = int(option_value(interaction, "days", 90))
@@ -985,7 +1074,55 @@ def process_command(interaction: dict[str, Any]) -> None:
 
 @APP.get("/health")
 def health() -> Response:
-    return jsonify({"ok": True, "service": "Tradysquids Ford command bot"})
+    return jsonify({
+        "ok": True,
+        "service": "Tradysquids local command and signal gateway",
+        "tradingview_ready": bool(TRADINGVIEW_WEBHOOK_SECRET),
+        "paper_trading_only": True,
+    })
+
+
+@APP.post("/tradingview")
+def tradingview_webhook() -> Response:
+    """Acknowledge TradingView quickly and enqueue the signal for local processing."""
+    if not TRADINGVIEW_WEBHOOK_SECRET:
+        abort(503, "TRADINGVIEW_WEBHOOK_SECRET is not configured")
+    supplied = (
+        request.headers.get("X-Tradysquids-Secret", "")
+        or request.args.get("secret", "")
+    )
+    if supplied != TRADINGVIEW_WEBHOOK_SECRET:
+        abort(401, "invalid webhook secret")
+    if request.content_length and request.content_length > 32_768:
+        abort(413, "payload too large")
+    payload = request.get_json(force=True)
+    ticker = (
+        payload.get("ticker")
+        or payload.get("symbol")
+        or payload.get("syminfo", {}).get("ticker")
+        or ""
+    )
+    symbol = dynamic_universe.normalize_symbol(str(ticker).split(":")[-1])
+    event_type = str(payload.get("event") or payload.get("action") or "alert")[:80]
+    event_key = str(payload.get("id") or payload.get("event_id") or "")[:200]
+    inserted = dynamic_universe.enqueue_event(
+        "tradingview",
+        event_type,
+        symbol,
+        payload,
+        priority=100,
+        event_key=event_key,
+    )
+    dynamic_universe.upsert_candidates([
+        dynamic_universe.Candidate(
+            symbol,
+            "tradingview",
+            score=100,
+            reason=f"TradingView {event_type}",
+            ttl_minutes=240,
+        )
+    ])
+    return jsonify({"ok": True, "queued": inserted, "symbol": symbol}), 202
 
 
 @APP.post("/interactions")
@@ -1003,11 +1140,6 @@ def interactions() -> Response:
         return jsonify({
             "type": 4,
             "data": {"content": "This command is not enabled in this server.", "flags": 64},
-        })
-    if ALLOWED_USER_ID and command_user_id(interaction) != ALLOWED_USER_ID:
-        return jsonify({
-            "type": 4,
-            "data": {"content": "This command is private.", "flags": 64},
         })
     threading.Thread(target=process_command, args=(interaction,), daemon=True).start()
     return jsonify({"type": 5})

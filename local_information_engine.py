@@ -1,4 +1,4 @@
-"""Local Ford information engine.
+"""Local dynamic-market information engine.
 
 This process performs frequent monitoring on the user's laptop instead of
 GitHub Actions.  It stores observations in SQLite, suppresses duplicate alerts,
@@ -24,6 +24,8 @@ from typing import Any, Callable
 from urllib.parse import quote, quote_plus, urljoin
 
 import ford_scan
+import dynamic_universe
+import multi_ticker_scan
 import outcome_learning
 import requests
 import ticker_registry
@@ -37,7 +39,7 @@ POLL_SECONDS = int(os.environ.get("LOCAL_ENGINE_POLL_SECONDS", "30"))
 MARKET_REFRESH_MINUTES = int(os.environ.get("LOCAL_MARKET_REFRESH_MINUTES", "5"))
 FILINGS_REFRESH_MINUTES = int(os.environ.get("LOCAL_FILINGS_REFRESH_MINUTES", "30"))
 STATUS_REFRESH_MINUTES = int(os.environ.get("LOCAL_STATUS_REFRESH_MINUTES", "15"))
-FULL_SCAN_ENABLED = os.environ.get("LOCAL_FULL_SCAN_ENABLED", "false").lower() == "true"
+FULL_SCAN_ENABLED = os.environ.get("LOCAL_FULL_SCAN_ENABLED", "true").lower() == "true"
 FORD_NEWS_URL = "https://shareholder.ford.com/news/default.aspx"
 FORD_NEWS_FEED_URL = (
     "https://shareholder.ford.com/feed/PressRelease.svc/GetPressReleaseList"
@@ -1184,7 +1186,7 @@ def weekly_review_job(connection: sqlite3.Connection) -> str:
     store_observation(connection, "weekly-performance", snapshot)
     metrics = snapshot["metrics"]
     content = "\n".join([
-        "## Weekly Ford System Review",
+        "## Weekly Tradysquids System Review",
         (
             f"Closed {snapshot['closed']} · open {snapshot['open']} · "
             f"wins {int(metrics.get('wins', 0))} · losses {int(metrics.get('losses', 0))}"
@@ -1213,27 +1215,9 @@ def full_scanner_job(connection: sqlite3.Connection) -> str:
         return "disabled until LOCAL_FULL_SCAN_ENABLED=true"
     if not ford_scan.DISCORD_BOT_TOKEN:
         return "waiting for local DISCORD_BOT_TOKEN"
-    original_ticker = ford_scan.TICKER
-    original_bot_token = ford_scan.DISCORD_BOT_TOKEN
-    original_webhook = ford_scan.DISCORD_WEBHOOK_URL
-    results: dict[str, int] = {}
-    try:
-        active = ticker_registry.active_tickers()
-        ordered = [ticker for ticker in active if ticker != "F"]
-        if "F" in active:
-            ordered.append("F")
-        for ticker in ordered:
-            ford_scan.TICKER = ticker
-            # Additional tickers write candidates to the shared lifecycle log.
-            # Ford runs last with Discord enabled and synchronizes every ticker's
-            # new/held/result cards without overwriting Ford's information desk.
-            ford_scan.DISCORD_BOT_TOKEN = original_bot_token if ticker == "F" else ""
-            ford_scan.DISCORD_WEBHOOK_URL = original_webhook if ticker == "F" else ""
-            results[ticker] = ford_scan.main()
-    finally:
-        ford_scan.TICKER = original_ticker
-        ford_scan.DISCORD_BOT_TOKEN = original_bot_token
-        ford_scan.DISCORD_WEBHOOK_URL = original_webhook
+    tickers = multi_ticker_scan.configured_active_tickers()
+    result = multi_ticker_scan.main(tickers)
+    results = {ticker: result for ticker in tickers}
     store_observation(
         connection,
         "full-scan",
@@ -1243,6 +1227,105 @@ def full_scanner_job(connection: sqlite3.Connection) -> str:
     if failed:
         raise RuntimeError(f"Scanner failed for: {', '.join(failed)}")
     return f"Options scan completed for {', '.join(results) or 'no active tickers'}"
+
+
+def provider_event_job(connection: sqlite3.Connection) -> str:
+    events = dynamic_universe.claim_events(limit=25)
+    completed = 0
+    for event in events:
+        try:
+            dynamic_universe.upsert_candidates([
+                dynamic_universe.Candidate(
+                    event["symbol"],
+                    event["provider"],
+                    score=100 + float(event["priority"]),
+                    reason=f"{event['provider']} {event['event_type']}",
+                    ttl_minutes=240,
+                )
+            ])
+            store_observation(
+                connection,
+                f"provider-event:{event['provider']}",
+                {
+                    "symbol": event["symbol"],
+                    "event_type": event["event_type"],
+                    "payload": event["payload"],
+                },
+            )
+            dynamic_universe.complete_event(event["id"])
+            completed += 1
+        except Exception as exc:
+            dynamic_universe.complete_event(event["id"], error=str(exc))
+    return f"{completed}/{len(events)} provider events processed"
+
+
+def universe_refresh_job(connection: sqlite3.Connection) -> str:
+    """Refresh stock liquidity for the full universe in one batched quote call."""
+    symbols = dynamic_universe.initialize()
+    if not symbols:
+        return "empty universe"
+    quotes = ford_scan.get_quotes(symbols, include_greeks=False)
+    candidates: list[dynamic_universe.Candidate] = []
+    for symbol in symbols:
+        quote = quotes.get(symbol) or {}
+        price = ford_scan.as_float(quote.get("last"))
+        volume = ford_scan.as_float(quote.get("volume"))
+        if price is None:
+            continue
+        score = min((volume or 0) / 1_000_000, 20) * 5
+        candidates.append(dynamic_universe.Candidate(
+            symbol,
+            "tradier_liquidity",
+            score=score,
+            last_price=price,
+            average_volume=volume,
+            reason="batched Tradier liquidity refresh",
+            ttl_minutes=180,
+        ))
+    updated = dynamic_universe.upsert_candidates(candidates)
+    store_observation(
+        connection,
+        "universe-refresh",
+        {"symbols": len(symbols), "updated": updated, "at": iso_now()},
+    )
+    return f"{updated}/{len(symbols)} universe quotes refreshed"
+
+
+def position_tracker_job(connection: sqlite3.Connection) -> str:
+    """Refresh every open paper position without running a discovery scan."""
+    rows = ford_scan.read_log()
+    opened = ford_scan.open_rows(rows)
+    if not opened:
+        return "no open positions"
+    timestamp = ford_scan.now_ct()
+    quotes = ford_scan.get_quotes(
+        ford_scan.symbols_for_rows(opened), include_greeks=True
+    )
+    closed = 0
+    refreshed = 0
+    for row in list(opened):
+        evaluation = ford_scan.evaluate_open_row(row, quotes, timestamp)
+        if evaluation.get("pl_pct") is None:
+            continue
+        if evaluation.get("signal") in {"STOP OUT", "TAKE PROFIT", "EXPIRY CLOSE"}:
+            ford_scan.close_row(row, evaluation, timestamp)
+            closed += 1
+        else:
+            row["current_pl_pct"] = ford_scan.round_or_blank(
+                evaluation.get("pl_pct"), 1
+            )
+            row["current_pl_dollars"] = ford_scan.round_or_blank(
+                evaluation.get("pl_dollars"), 0
+            )
+        refreshed += 1
+    if refreshed:
+        ford_scan.write_log(rows)
+    store_observation(
+        connection,
+        "position-tracker",
+        {"open": len(opened) - closed, "closed": closed, "refreshed": refreshed},
+    )
+    return f"{refreshed} refreshed · {closed} closed"
 
 
 def outcome_learning_job(connection: sqlite3.Connection) -> str:
@@ -1273,28 +1356,23 @@ class Job:
 
 JOBS = [
     Job(
-        "market-monitor",
-        timedelta(minutes=MARKET_REFRESH_MINUTES),
-        market_job,
-        after_hours_interval=timedelta(minutes=30),
+        "provider-event-queue",
+        timedelta(seconds=15),
+        provider_event_job,
     ),
     Job(
-        "options-dashboard",
-        timedelta(minutes=15),
-        options_job,
+        "position-tracker",
+        timedelta(seconds=30),
+        position_tracker_job,
+        market_hours_only=True,
+    ),
+    Job(
+        "dynamic-universe-refresh",
+        timedelta(minutes=60),
+        universe_refresh_job,
         after_hours_interval=timedelta(hours=2),
     ),
-    Job(
-        "managed-ticker-information",
-        timedelta(minutes=15),
-        managed_ticker_information_job,
-        after_hours_interval=timedelta(hours=1),
-    ),
-    Job("managed-ticker-news", timedelta(minutes=30), managed_ticker_news_job),
-    Job("official-ford-news", timedelta(minutes=30), news_job),
-    Job("filings-monitor", timedelta(minutes=FILINGS_REFRESH_MINUTES), filings_job),
     Job("health-snapshot", timedelta(minutes=STATUS_REFRESH_MINUTES), status_job),
-    Job("session-briefing", timedelta(minutes=15), briefing_job),
     Job("weekly-review", timedelta(minutes=30), weekly_review_job),
     Job(
         "upgrade-request-reactions",

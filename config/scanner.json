@@ -1,0 +1,65 @@
+{
+  "version": 2,
+  "mode": "dynamic_universe",
+  "paper_trading_only": true,
+  "max_contract_ask": 1.0,
+  "max_position_risk_dollars": 100.0,
+  "single_leg_profit_target_pct": 0.2,
+  "single_leg_stop_pct": 0.15,
+  "spread_profit_target_pct": 0.5,
+  "spread_stop_multiple": 2.0,
+  "regular_dte": {
+    "min": 7,
+    "max": 20
+  },
+  "swing_dte": {
+    "min": 21,
+    "max": 45
+  },
+  "single_leg_delta": {
+    "min": 0.2,
+    "max": 0.8
+  },
+  "liquidity": {
+    "min_stock_price": 2.0,
+    "max_stock_price": 250.0,
+    "min_average_stock_volume": 1000000,
+    "min_option_open_interest": 100,
+    "min_option_volume": 1,
+    "max_bid_ask_pct": 0.25
+  },
+  "schedules": {
+    "position_poll_seconds": 30,
+    "discord_position_heartbeat_minutes": 15,
+    "universe_refresh_minutes": 60,
+    "full_scan_minutes": 15,
+    "premarket_refresh_minutes": 30,
+    "after_hours_news_minutes": 60
+  },
+  "providers": {
+    "tradier": {
+      "enabled": true,
+      "requests_per_minute": 110
+    },
+    "tradingview": {
+      "enabled": true,
+      "event_priority": 100
+    },
+    "robinhood_mcp": {
+      "enabled": false,
+      "read_only": true,
+      "allowed_capabilities": [
+        "quotes",
+        "market_data",
+        "option_chains",
+        "watchlists"
+      ],
+      "blocked_capabilities": [
+        "orders",
+        "trades",
+        "positions_write",
+        "transfers"
+      ]
+    }
+  }
+}

@@ -2,33 +2,16 @@
 
 from __future__ import annotations
 
-import json
-from datetime import date
-from pathlib import Path
-
+import dynamic_universe
 import ford_scan
 
-ROOT = Path(__file__).resolve().parent
-TICKER_CONFIG_PATH = ROOT / "config" / "tickers.json"
-
-
 def configured_active_tickers() -> list[str]:
-    payload = json.loads(TICKER_CONFIG_PATH.read_text(encoding="utf-8"))
-    active: list[str] = []
-    for item in payload.get("tickers") or []:
-        ticker = str(item.get("ticker") or "").strip().upper()
-        status = str(item.get("status") or "").upper()
-        resume_on = str(item.get("resume_on") or "")
-        resumed = status == "PAUSED" and resume_on and resume_on <= date.today().isoformat()
-        if ticker and (status == "ACTIVE" or resumed):
-            active.append(ticker)
-    if "F" in active:
-        active = [ticker for ticker in active if ticker != "F"] + ["F"]
-    return list(dict.fromkeys(active))
+    dynamic_universe.initialize()
+    return dynamic_universe.next_scan_batch()
 
 
-def main() -> int:
-    tickers = configured_active_tickers()
+def main(tickers: list[str] | None = None) -> int:
+    tickers = tickers or configured_active_tickers()
     if not tickers:
         print("No active tickers are configured.")
         return 0
@@ -37,14 +20,13 @@ def main() -> int:
     original_webhook = ford_scan.DISCORD_WEBHOOK_URL
     results: dict[str, int] = {}
     try:
-        for ticker in tickers:
+        for index, ticker in enumerate(tickers):
             ford_scan.TICKER = ticker
-            ford_scan.DISCORD_BOT_TOKEN = (
-                original_bot_token if ticker == "F" else ""
-            )
-            ford_scan.DISCORD_WEBHOOK_URL = (
-                original_webhook if ticker == "F" else ""
-            )
+            # Only the final pass publishes the consolidated lifecycle boards;
+            # every pass still records its qualifying contracts in the shared log.
+            publish = index == len(tickers) - 1
+            ford_scan.DISCORD_BOT_TOKEN = original_bot_token if publish else ""
+            ford_scan.DISCORD_WEBHOOK_URL = original_webhook if publish else ""
             results[ticker] = ford_scan.main()
     finally:
         ford_scan.TICKER = original_ticker
