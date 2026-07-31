@@ -1649,6 +1649,8 @@ JOBS = [
         timedelta(seconds=POSITION_SAFETY_POLL_SECONDS),
         position_tracker_job,
         market_hours_only=True,
+        background=True,
+        provider_heavy=True,
     ),
     Job(
         "dynamic-universe-refresh",

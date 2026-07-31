@@ -196,6 +196,7 @@ class InformationEngineTests(unittest.TestCase):
         background = {job.name for job in engine.JOBS if job.background}
         self.assertTrue({
             "full-options-scan",
+            "position-tracker",
             "managed-ticker-information",
             "managed-ticker-news",
             "session-briefing",
