@@ -41,6 +41,7 @@ import math
 import os
 import re
 import sys
+import threading
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -2224,6 +2225,9 @@ def discord_route_is_missing(exc: Exception) -> bool:
 
 class DiscordTracker:
     API_BASE = "https://discord.com/api/v10"
+    _discovery_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+    _discovery_lock = threading.Lock()
+    _discovery_ttl_seconds = 300.0
 
     def __init__(self, token: str, guild_id: str):
         self.token = token
@@ -2280,7 +2284,15 @@ class DiscordTracker:
     def discover(self) -> None:
         if not self.enabled:
             return
-        guild_channels = self._request("GET", f"/guilds/{self.guild_id}/channels")
+        now = time.monotonic()
+        with self._discovery_lock:
+            cached = self._discovery_cache.get(self.guild_id)
+        if cached and now - cached[0] < self._discovery_ttl_seconds:
+            guild_channels = cached[1]
+        else:
+            guild_channels = self._request("GET", f"/guilds/{self.guild_id}/channels")
+            with self._discovery_lock:
+                self._discovery_cache[self.guild_id] = (now, guild_channels)
         by_name: dict[str, dict[str, Any]] = {}
         for channel in guild_channels:
             name = channel.get("name")
