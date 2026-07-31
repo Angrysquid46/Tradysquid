@@ -457,7 +457,16 @@ class InformationEngineTests(unittest.TestCase):
             self.assertEqual(
                 robinhood_readonly_bridge.ingest_symbols(["f", "F"]), 1
             )
+            dynamic_universe.seed_universe()
             self.assertEqual(dynamic_universe.active_symbols(), ["F"])
+            connection = dynamic_universe.connect()
+            try:
+                row = connection.execute(
+                    "SELECT source FROM universe WHERE symbol='F'"
+                ).fetchone()
+                self.assertEqual(row["source"], "robinhood_mcp")
+            finally:
+                connection.close()
         dynamic_universe.DB_PATH = original_db
         dynamic_universe.CONFIG_PATH = original_config
 

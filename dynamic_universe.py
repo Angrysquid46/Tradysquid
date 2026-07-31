@@ -127,12 +127,18 @@ def upsert_candidates(
                 ) VALUES (?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(symbol) DO UPDATE SET
                     status='ACTIVE',
-                    source=excluded.source,
+                    source=CASE
+                        WHEN excluded.score >= universe.score THEN excluded.source
+                        ELSE universe.source
+                    END,
                     score=MAX(universe.score, excluded.score),
                     last_price=COALESCE(excluded.last_price, universe.last_price),
                     average_volume=COALESCE(excluded.average_volume, universe.average_volume),
                     options_available=MAX(universe.options_available, excluded.options_available),
-                    reason=excluded.reason,
+                    reason=CASE
+                        WHEN excluded.score >= universe.score THEN excluded.reason
+                        ELSE universe.reason
+                    END,
                     updated_at=excluded.updated_at,
                     expires_at=excluded.expires_at
                 """,
@@ -331,16 +337,19 @@ def import_robinhood_snapshot(payload: dict[str, Any]) -> int:
         )
     if forbidden.intersection(keys(payload)):
         raise ValueError("Robinhood adapter accepts read-only market discovery data only.")
+    source = str(payload.get("source") or "robinhood_read_only")
+    if source not in {"robinhood_mcp", "robinhood_read_only"}:
+        raise ValueError("Robinhood snapshot source is not allowlisted.")
     rows = payload.get("symbols") or payload.get("watchlist") or []
     candidates = []
     for row in rows:
         if isinstance(row, str):
-            candidates.append(Candidate(row, "robinhood_read_only", 30, reason="read-only discovery"))
+            candidates.append(Candidate(row, source, 30, reason="read-only discovery"))
             continue
         candidates.append(
             Candidate(
                 symbol=row.get("symbol", ""),
-                source="robinhood_read_only",
+                source=source,
                 score=float(row.get("score") or 30),
                 last_price=row.get("last_price"),
                 average_volume=row.get("average_volume"),
