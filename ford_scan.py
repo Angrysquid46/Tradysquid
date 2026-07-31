@@ -2261,7 +2261,10 @@ class DiscordTracker:
                     retry_after = float(response.json().get("retry_after", 1.0))
                 except (ValueError, TypeError):
                     retry_after = 1.0
-                time.sleep(min(retry_after + 0.25, 10))
+                # Discord can impose a guild-wide cooldown longer than ten
+                # seconds during chart/card bursts.  Sleeping for less than
+                # the advertised window only burns every retry immediately.
+                time.sleep(min(max(retry_after, 0.0) + 0.25, 65))
                 continue
             if response.status_code >= 500 and attempt < 3:
                 time.sleep(2**attempt)
