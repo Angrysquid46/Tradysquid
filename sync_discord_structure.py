@@ -67,15 +67,6 @@ LEGACY_CHANNELS = {
     "vale-charts", "vale-news-events", "vale-research-performance",
 }
 
-OWNER_CATEGORY = "OWNER CONTROL"
-READ_ONLY_CATEGORIES = {
-    "START HERE",
-    "LIVE TRADING DESK",
-    "MARKET INTELLIGENCE",
-    "PERFORMANCE",
-    "LEARNING CENTER",
-}
-
 GUIDES = {
     "welcome": """# Tradysquids
 Tradysquids is a local-first, paper-trading research system for learning how
@@ -130,9 +121,6 @@ def main() -> int:
     )
     if not tracker.enabled:
         raise SystemExit("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required")
-    bot_user = tracker._request("GET", "/users/@me")
-    bot_user_id = str(bot_user["id"])
-    bot_allow = str(1024 | 2048 | 8192 | 16384 | 32768 | 65536 | 16)
     existing = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
     by_name = {normalized(item.get("name")): item for item in existing}
     categories: dict[str, dict] = {}
@@ -148,27 +136,6 @@ def main() -> int:
         if item is None:
             print(f"{'CREATE' if apply else 'WOULD CREATE'} category {name}")
             if apply:
-                overwrites = []
-                if name == OWNER_CATEGORY:
-                    overwrites = [
-                        {
-                            "id": tracker.guild_id,
-                            "type": 0,
-                            "deny": str(1024),
-                        },
-                        {
-                            "id": bot_user_id,
-                            "type": 1,
-                            "allow": bot_allow,
-                            "deny": "0",
-                        },
-                    ]
-                elif name in READ_ONLY_CATEGORIES:
-                    overwrites = [{
-                        "id": tracker.guild_id,
-                        "type": 0,
-                        "deny": str(2048),
-                    }]
                 item = tracker._request(
                     "POST",
                     f"/guilds/{tracker.guild_id}/channels",
@@ -176,30 +143,10 @@ def main() -> int:
                         "name": name,
                         "type": 4,
                         "position": position,
-                        "permission_overwrites": overwrites,
                     },
                 )
         if item:
             categories[name] = item
-
-    if apply:
-        for name, category in categories.items():
-            deny = 0
-            if name in {OWNER_CATEGORY, "ARCHIVE - LEGACY"}:
-                deny = 1024
-            elif name in READ_ONLY_CATEGORIES:
-                deny = 2048
-            if deny:
-                tracker._request(
-                    "PUT",
-                    f"/channels/{category['id']}/permissions/{bot_user_id}",
-                    {"type": 1, "allow": bot_allow, "deny": "0"},
-                )
-                tracker._request(
-                    "PUT",
-                    f"/channels/{category['id']}/permissions/{tracker.guild_id}",
-                    {"type": 0, "allow": "0", "deny": str(deny)},
-                )
 
     for spec in CHANNELS:
         category = categories.get(spec.category)
