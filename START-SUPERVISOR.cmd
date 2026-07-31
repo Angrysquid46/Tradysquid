@@ -6,7 +6,7 @@ title Tradysquids Supervisor
 
 :restart
 echo [%date% %time%] Starting Tradysquids Supervisor...
-python run_with_env.py tradysquid_supervisor.py
+python run_with_env.py run_supervisor.py
 set "SUPERVISOR_EXIT=%ERRORLEVEL%"
 
 if "%SUPERVISOR_EXIT%"=="0" (
