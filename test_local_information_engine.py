@@ -39,6 +39,22 @@ class InformationEngineTests(unittest.TestCase):
             for index, close in enumerate(closes)
         ]
 
+    def test_trade_cards_use_each_rows_ticker(self) -> None:
+        row = {
+            "ticker": "RIVN",
+            "trade_id": "RIVN-20260731-001",
+            "play_type": "CALL",
+            "call_or_put": "CALL",
+            "strike": "15",
+            "expiration": "2026-08-07",
+            "entry_price": "0.35",
+        }
+        self.assertTrue(ford_scan.trade_title(row).startswith("RIVN #001"))
+        card = ford_scan.entry_alert_text(row)
+        self.assertIn("RIVN #001", card)
+        self.assertIn("BUY 1 RIVN 15 CALL", card)
+        self.assertNotIn("BUY 1 F 15 CALL", card)
+
     def test_intraday_selloff_can_override_slow_bullish_daily_trend(self) -> None:
         daily = self.market_history([10 + index * 0.1 for index in range(60)])
         intraday = self.intraday_history([15.9 - index * 0.08 for index in range(24)])

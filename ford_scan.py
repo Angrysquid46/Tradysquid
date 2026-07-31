@@ -141,7 +141,7 @@ SCRATCH_BAND_PCT = float(os.environ.get("SCRATCH_BAND_PCT", "5.0"))
 DISCORD_PL_CHANGE_THRESHOLD = float(os.environ.get("DISCORD_PL_CHANGE_THRESHOLD", "10.0"))
 DISCORD_HEARTBEAT_MINUTES = int(os.environ.get("DISCORD_HEARTBEAT_MINUTES", "15"))
 DISCORD_SYNC_EXISTING_OPEN = os.environ.get("DISCORD_SYNC_EXISTING_OPEN", "true").lower() == "true"
-DISCORD_FORMAT_VERSION = "9"
+DISCORD_FORMAT_VERSION = "10"
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Tradysquids-TradeBot/1.0"})
@@ -535,7 +535,8 @@ def row_key(row: dict[str, str]) -> tuple[str, str, str, str, str]:
 
 
 def trade_title(row: dict[str, str]) -> str:
-    trade_id = row.get("trade_id") or "F-UNKNOWN"
+    ticker = (row.get("ticker") or TICKER).upper()
+    trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
     sequence = trade_id.rsplit("-", 1)[-1]
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
@@ -544,12 +545,12 @@ def trade_title(row: dict[str, str]) -> str:
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         return (
-            f"F #{sequence} | {fmt_strike(sell_strike)}/{fmt_strike(buy_strike)} "
+            f"{ticker} #{sequence} | {fmt_strike(sell_strike)}/{fmt_strike(buy_strike)} "
             f"{kind} CREDIT | {expiration}"
         )
 
     strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
-    return f"F #{sequence} | BUY {strike} {kind} | {expiration}"
+    return f"{ticker} #{sequence} | BUY {strike} {kind} | {expiration}"
 
 
 def format_expiration(value: str) -> str:
@@ -561,7 +562,8 @@ def format_expiration(value: str) -> str:
 
 
 def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
-    trade_id = row.get("trade_id") or "F-UNKNOWN"
+    ticker = (row.get("ticker") or TICKER).upper()
+    trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
     sequence = trade_id.rsplit("-", 1)[-1]
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
@@ -577,8 +579,8 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         strategy = f"{kind} CREDIT SPREAD"
         setup = (
-            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind}\n"
-            f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
+            f"🔴 SELL 1 {ticker} {fmt_strike(sell_strike)} {kind}\n"
+            f"🟢 BUY 1 {ticker} {fmt_strike(buy_strike)} {kind}"
         )
         stop = round(entry * SPREAD_STOP_MULTIPLE, 2)
         target = round(entry * (1 - SPREAD_TAKE_PROFIT_PCT), 2)
@@ -597,7 +599,7 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"LONG {kind}"
-        setup = f"🟢 BUY 1 F {strike} {kind}"
+        setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
         stop = round(entry * (1 - SINGLE_STOP_PCT), 2)
         target = round(entry * (1 + SINGLE_TAKE_PROFIT_PCT), 2)
         price_line = (
@@ -618,7 +620,7 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
         f"**Theta:** {'Unavailable' if theta is None else f'{theta:+.3f}/day'}"
     )
     lines = [
-        f"## 🟦 F #{sequence} · ENTRY · {strategy}",
+        f"## 🟦 {ticker} #{sequence} · ENTRY · {strategy}",
         "### Position",
         f"{setup}\n**Expiration:** {expiration}",
         "### Entry Plan",
@@ -644,7 +646,8 @@ def position_update_text(
     evaluation: dict[str, Any],
     include_link: str = "",
 ) -> str:
-    trade_id = row.get("trade_id") or "F-UNKNOWN"
+    ticker = (row.get("ticker") or TICKER).upper()
+    trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
     sequence = trade_id.rsplit("-", 1)[-1]
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
@@ -663,8 +666,8 @@ def position_update_text(
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         strategy = f"{kind} CREDIT SPREAD"
         setup = (
-            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind}\n"
-            f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
+            f"🔴 SELL 1 {ticker} {fmt_strike(sell_strike)} {kind}\n"
+            f"🟢 BUY 1 {ticker} {fmt_strike(buy_strike)} {kind}"
         )
         price_labels = (
             f"**Entry credit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})\n"
@@ -673,7 +676,7 @@ def position_update_text(
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"LONG {kind}"
-        setup = f"🟢 BUY 1 F {strike} {kind}"
+        setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
         price_labels = (
             f"**Entry debit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})\n"
             f"**Current exit credit:** {fmt_option_price(mark)} ({fmt_money(mark * 100)})"
@@ -682,7 +685,7 @@ def position_update_text(
     quote_note = evaluation.get("note") or ""
     state_label = "HOLD" if signal == "HOLD" else signal
     lines = [
-        f"## 🟨 F #{sequence} · {state_label} · {strategy}",
+        f"## 🟨 {ticker} #{sequence} · {state_label} · {strategy}",
         "### Position",
         f"{setup}\n**Expiration:** {expiration}\n**Status:** {state_label}",
         "### Current Value",
@@ -709,7 +712,8 @@ def position_update_text(
 def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_link: str = "") -> str:
     outcome = row.get("outcome", "CLOSED")
     icon = {"WIN": "🟩", "LOSS": "🟥", "SCRATCH": "⬜"}.get(outcome, "📕")
-    trade_id = row.get("trade_id") or "F-UNKNOWN"
+    ticker = (row.get("ticker") or TICKER).upper()
+    trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
     sequence = trade_id.rsplit("-", 1)[-1]
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
@@ -724,15 +728,15 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         strategy = f"{kind} CREDIT SPREAD"
         setup = (
-            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind}\n"
-            f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
+            f"🔴 SELL 1 {ticker} {fmt_strike(sell_strike)} {kind}\n"
+            f"🟢 BUY 1 {ticker} {fmt_strike(buy_strike)} {kind}"
         )
         entry_line = f"**Entry credit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})"
         exit_line = f"**Exit debit:** {fmt_option_price(closing, approximate=approx)} ({'≈' if approx else ''}{fmt_money(exit_contract_value(row))})"
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"LONG {kind}"
-        setup = f"🟢 BUY 1 F {strike} {kind}"
+        setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
         entry_line = f"**Entry debit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})"
         exit_line = f"**Exit credit:** {fmt_option_price(closing, approximate=approx)} ({'≈' if approx else ''}{fmt_money(exit_contract_value(row))})"
 
@@ -740,7 +744,7 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
     closed_text = portable_strftime(closed_at, "%m/%d/%y %-I:%M %p CT") if closed_at else "—"
     approx_prefix = "≈" if approx else ""
     lines = [
-        f"## {icon} F #{sequence} · {outcome} · {strategy}",
+        f"## {icon} {ticker} #{sequence} · {outcome} · {strategy}",
         "### Position",
         f"{setup}\n**Expiration:** {expiration}",
         "### Entry and Exit",
@@ -762,7 +766,8 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
 
 
 def qualified_trade_text(row: dict[str, str], include_link: str = "") -> str:
-    trade_id = row.get("trade_id") or "F-UNKNOWN"
+    ticker = (row.get("ticker") or TICKER).upper()
+    trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
     sequence = trade_id.rsplit("-", 1)[-1]
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
@@ -779,18 +784,18 @@ def qualified_trade_text(row: dict[str, str], include_link: str = "") -> str:
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
         strategy = f"{kind} CREDIT SPREAD"
         setup = (
-            f"🔴 SELL 1 F {fmt_strike(sell_strike)} {kind}\n"
-            f"🟢 BUY 1 F {fmt_strike(buy_strike)} {kind}"
+            f"🔴 SELL 1 {ticker} {fmt_strike(sell_strike)} {kind}\n"
+            f"🟢 BUY 1 {ticker} {fmt_strike(buy_strike)} {kind}"
         )
         price = f"{fmt_option_price(entry)} CR ({fmt_money(entry * 100)})"
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"{play_type} LONG {kind}"
-        setup = f"🟢 BUY 1 F {strike} {kind}"
+        setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
         price = f"{fmt_option_price(entry)} DB ({fmt_money(entry * 100)})"
 
     lines = [
-        f"## 🟪 F #{sequence} · QUALIFIED · {strategy}",
+        f"## 🟪 {ticker} #{sequence} · QUALIFIED · {strategy}",
         "### Position",
         f"{setup}\n**Expiration:** {expiration}",
         "### Entry",
@@ -1193,10 +1198,11 @@ def render_market_chart(history: list[dict[str, Any]], spot_price: float) -> Non
     context = directional_market_context(history, spot_price)
     support = min(closes[-20:])
     resistance = max(closes[-20:])
+    display_name = "Ford (F)" if TICKER == "F" else TICKER
     title = html.escape(
-        f"Ford (F) market map • {dates[-1]} • {context['regime']} • RSI {context['rsi14']:.1f}"
+        f"{display_name} market map • {dates[-1]} • {context['regime']} • RSI {context['rsi14']:.1f}"
         if context.get("rsi14") is not None
-        else f"Ford (F) market map • {dates[-1]}"
+        else f"{display_name} market map • {dates[-1]}"
     )
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{chart_width}" height="{chart_height}" viewBox="0 0 {chart_width} {chart_height}">
 <rect width="100%" height="100%" fill="#0d1520"/>
@@ -1212,7 +1218,7 @@ def render_market_chart(history: list[dict[str, Any]], spot_price: float) -> Non
 </svg>"""
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     CHART_PATH.write_text(svg, encoding="utf-8")
-    render_market_chart_png(history, spot_price, context, support, resistance)
+    render_market_chart_png(history, spot_price, context, support, resistance, symbol=TICKER)
 
 
 def render_market_chart_png(
@@ -1290,13 +1296,14 @@ def market_map_text(history: list[dict[str, Any]], spot_price: float) -> str:
     support = min(closes[-20:]) if closes else spot_price
     resistance = max(closes[-20:]) if closes else spot_price
     rsi_text = f"{context['rsi14']:.1f}" if context.get("rsi14") is not None else "Unavailable"
-    chart_line = f"[Open the current Ford chart]({CHART_PUBLIC_URL})" if CHART_PUBLIC_URL else "Chart saved to the dashboard."
+    display_name = "Ford (F)" if TICKER == "F" else TICKER
+    chart_line = f"[Open the current {TICKER} chart]({CHART_PUBLIC_URL})" if CHART_PUBLIC_URL else "Chart saved to the dashboard."
     return "\n".join([
-        "## 📈 Ford Market Map",
+        f"## 📈 {display_name} Market Map",
         "### Trend",
         (
             f"**Regime:** {context['regime']}\n"
-            f"**F:** ${spot_price:.2f} · **SMA20:** {fmt_money(context.get('sma20'))} · "
+            f"**{TICKER}:** ${spot_price:.2f} · **SMA20:** {fmt_money(context.get('sma20'))} · "
             f"**SMA50:** {fmt_money(context.get('sma50'))} · **RSI14:** {rsi_text}"
         ),
         "### Decision Levels",
@@ -3383,7 +3390,7 @@ def format_qualified_scan(
     timestamp: datetime,
 ) -> str:
     lines = [
-        "## ✅ Qualified Ford Option Setups",
+        f"## ✅ Qualified {TICKER} Option Setups",
         "### Filter Results",
         (
             f"**Passed all filters:** {len(qualified)}\n"
@@ -3435,11 +3442,11 @@ def format_scanner_feed(
         f"• **{label}:** {count}" for label, count in by_strategy.items() if count
     ) or "None"
     return "\n".join([
-        "## 📡 Ford Options Scanner",
+        f"## 📡 {TICKER} Options Scanner",
         "### Market",
         (
             f"**Time:** {portable_strftime(timestamp, '%m/%d/%y %-I:%M %p CT')}\n"
-            f"**Ford spot:** {fmt_option_price(spot_price)}"
+            f"**{TICKER} spot:** {fmt_option_price(spot_price)}"
         ),
         "### Expirations",
         expiration_text,
@@ -3470,7 +3477,7 @@ def format_scanner_feed(
 
 def format_closed_scanner_feed(rows: list[dict[str, str]], timestamp: datetime) -> str:
     return "\n".join([
-        "## 📡 Ford Options Scanner",
+        f"## 📡 {TICKER} Options Scanner",
         "### Market",
         (
             f"**Status:** Closed\n"
@@ -3796,7 +3803,7 @@ def report_error(discord: DiscordTracker | None, message: str) -> None:
             safe_message = safe_message.replace(secret, "[REDACTED]")
     print(safe_message, file=sys.stderr)
     if discord and discord.ready:
-        safe_discord_call("error alert", lambda: discord.send_channel("errors", content=f"🚨 **Ford scanner error**\n```{safe_message[:1500]}```"))
+        safe_discord_call("error alert", lambda: discord.send_channel("errors", content=f"🚨 **{TICKER} scanner error**\n```{safe_message[:1500]}```"))
 
 
 def intelligence_only_main() -> int:
@@ -3971,19 +3978,19 @@ def main() -> int:
     try:
         spot = get_quote(TICKER)
         if not spot or as_float(spot.get("last")) is None:
-            raise TradierError("Ford spot quote was unavailable")
+            raise TradierError(f"{TICKER} spot quote was unavailable")
         spot_price = float(spot["last"])
         history = get_daily_history(TICKER, days=120)
         if history:
             render_market_chart(history, spot_price)
             safe_discord_call(
-                "Ford market map",
+                f"{TICKER} market map",
                 lambda: discord.upsert_channel_message(
                     "charts",
                     report_state,
-                    "ford-market-map",
+                    f"{TICKER.lower()}-market-map",
                     market_map_text(history, spot_price),
-                    search_token="Ford Market Map",
+                    search_token=f"{TICKER} Market Map",
                 ),
             )
             if report_state.get("chart_snapshot_date") != timestamp.date().isoformat():
@@ -3991,7 +3998,7 @@ def main() -> int:
                     "charts",
                     CHART_SCREENSHOT_PATH,
                     content=(
-                        f"📊 **DAILY FORD CHART · {timestamp.date().isoformat()}**\n"
+                        f"📊 **DAILY {TICKER} CHART · {timestamp.date().isoformat()}**\n"
                         f"Spot ${spot_price:.2f} · indicators, support, and resistance are marked."
                     ),
                 )
@@ -4097,9 +4104,9 @@ def main() -> int:
             lambda: discord.upsert_channel_message(
                 "qualified",
                 report_state,
-                f"qualified-scan:{run_number}",
+                f"qualified-scan:{TICKER}:{run_number}",
                 format_qualified_scan(candidates, eligible, selected, timestamp),
-                search_token="Qualified Ford Option Setups",
+                search_token=f"Qualified {TICKER} Option Setups",
             ),
         )
         safe_discord_call(
@@ -4107,7 +4114,7 @@ def main() -> int:
             lambda: discord.upsert_channel_message(
                 "scanner_feed",
                 report_state,
-                f"scanner-run:{run_number}",
+                f"scanner-run:{TICKER}:{run_number}",
                 format_scanner_feed(
                     scan_stats,
                     spot_price=spot_price,
@@ -4118,7 +4125,7 @@ def main() -> int:
                     open_count=len(open_rows(rows)),
                     timestamp=timestamp,
                 ),
-                search_token="Ford Options Scanner",
+                search_token=f"{TICKER} Options Scanner",
             ),
         )
         safe_discord_call(
@@ -4131,7 +4138,7 @@ def main() -> int:
         )
 
         if not discord.ready and (new_rows or closed_count):
-            notify_webhook([summary], title="Ford options scan")
+            notify_webhook([summary], title=f"{TICKER} options scan")
 
         write_report_state(report_state)
         print(summary)
