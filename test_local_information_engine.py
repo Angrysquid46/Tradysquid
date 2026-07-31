@@ -18,6 +18,7 @@ import register_discord_commands
 import run_with_env
 import ticker_registry
 import sync_discord_structure
+import ensure_tradingview_secret
 
 
 class InformationEngineTests(unittest.TestCase):
@@ -162,6 +163,16 @@ class InformationEngineTests(unittest.TestCase):
             "Usage: python run_with_env.py <script.py> [arguments...]",
             run_with_env.main.__code__.co_consts,
         )
+
+    def test_tradingview_secret_initializer_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / ".env"
+            path.write_text("EXAMPLE=value\n", encoding="utf-8")
+            self.assertTrue(ensure_tradingview_secret.ensure_secret(path))
+            first = path.read_text(encoding="utf-8")
+            self.assertIn("TRADINGVIEW_WEBHOOK_SECRET=", first)
+            self.assertFalse(ensure_tradingview_secret.ensure_secret(path))
+            self.assertEqual(path.read_text(encoding="utf-8"), first)
 
     def test_github_syncing_ticker_commands_are_owner_locked(self) -> None:
         owner_commands = {

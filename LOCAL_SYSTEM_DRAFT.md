@@ -24,7 +24,8 @@ changes and heartbeat intervals, rather than post a new message every 30 seconds
 
 ## TradingView webhook
 
-Set a long random `TRADINGVIEW_WEBHOOK_SECRET` in the local `.env`. Configure a
+Run `python ensure_tradingview_secret.py` once to create a strong
+`TRADINGVIEW_WEBHOOK_SECRET` in the ignored local `.env` without displaying it. Configure a
 TradingView alert to POST JSON to:
 
 `https://YOUR-NGROK-DOMAIN/tradingview?secret=YOUR_SECRET`
