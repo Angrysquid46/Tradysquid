@@ -155,6 +155,14 @@ class InformationEngineTests(unittest.TestCase):
         self.assertNotIn("scratches", names)
         self.assertIn("new-positions", names)
         self.assertIn("losses", names)
+        self.assertNotIn("ARCHIVE - LEGACY", sync_discord_structure.CATEGORY_ORDER)
+        self.assertIn("TICKER • F", sync_discord_structure.DELETE_CATEGORIES)
+        self.assertIn("TICKER • VALE", sync_discord_structure.DELETE_CATEGORIES)
+
+    def test_upgrade_review_is_manual_not_background_polled(self) -> None:
+        job_names = [job.name for job in engine.JOBS]
+        self.assertNotIn("upgrade-request-reactions", job_names)
+        self.assertIn("upgrade-review", sync_discord_structure.CHANNEL_STARTERS)
 
     def test_scanner_outputs_use_consolidated_channels(self) -> None:
         self.assertEqual(ford_scan.CHANNEL_NAMES["qualified"], "new-positions")

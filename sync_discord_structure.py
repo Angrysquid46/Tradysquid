@@ -8,6 +8,14 @@ from dataclasses import dataclass
 import ford_scan
 from run_with_env import load_env
 
+BOT_CHANNEL_ALLOW = (
+    1024  # view channel
+    | 2048  # send messages
+    | 16384  # embed links
+    | 32768  # attach files
+    | 65536  # read message history
+)
+
 
 @dataclass(frozen=True)
 class ChannelSpec:
@@ -25,7 +33,6 @@ CATEGORY_ORDER = [
     "PERFORMANCE",
     "LEARNING CENTER",
     "OWNER CONTROL",
-    "ARCHIVE - LEGACY",
 ]
 
 CHANNELS = [
@@ -60,11 +67,42 @@ CHANNELS = [
     ChannelSpec("OWNER CONTROL", "security-log", "Rejected requests and configuration warnings without secrets."),
 ]
 
-LEGACY_CHANNELS = {
+DELETE_CHANNELS = {
     "qualified-trades", "scratches", "expired", "exit-alerts",
     "f-dashboard", "f-options-setups", "f-charts", "f-news-events",
     "f-research-performance", "vale-dashboard", "vale-options-setups",
     "vale-charts", "vale-news-events", "vale-research-performance",
+}
+
+DELETE_CATEGORIES = {
+    "ARCHIVE - LEGACY",
+    "TICKER • F",
+    "TICKER • VALE",
+}
+
+CHANNEL_STARTERS = {
+    "scanner-feed": "Runs every 15 minutes during regular market hours.",
+    "new-positions": "Updates only when a paper setup passes every active filter.",
+    "held-positions": "Updates from live streamed quotes while a paper position is open.",
+    "wins": "Updates immediately when a tracked paper position closes profitably.",
+    "losses": "Updates immediately when a tracked paper position closes without a profit.",
+    "premarket": "Updated on weekday premarket research runs.",
+    "breaking-alerts": "Event-driven TradingView and provider alerts appear here.",
+    "charts-and-levels": "Updated by scheduled research and `/chart` or `/levels` requests.",
+    "news-and-events": "Updated by scheduled news checks and `/events` requests.",
+    "market-regime": "Updated with broad-market and scanner context.",
+    "universe-watch": "Updated when the rotating scanner universe is refreshed.",
+    "performance-dashboard": "Updated as paper trades open and close.",
+    "strategy-results": "Updated from recorded paper-trade outcomes.",
+    "ticker-results": "Updated from recorded outcomes grouped by underlying.",
+    "learning-results": "Updated by the six-hour local learning review.",
+    "ask-tradebot": "Use `/ask` or `/explain`; general conversation belongs in #general-chat.",
+    "examples-and-reviews": "Paper-trade examples and completed reviews appear here.",
+    "system-health": "Updated every 15 minutes by the local engine.",
+    "provider-status": "Shows the current data-provider and webhook status.",
+    "workflow-log": "Used only for releases and rare GitHub backup runs.",
+    "upgrade-review": "Manual owner review only. No background upgrade polling.",
+    "security-log": "Receives rejected requests and configuration warnings.",
 }
 
 GUIDES = {
@@ -92,7 +130,8 @@ Type `/`, choose a command, complete its fields, and send it.
 • `/ask`, `/explain` — beginner education.
 • `/filters`, `/ticker-list`, `/ticker-status` — public configuration status.
 Universe and filter changes are owner-only. Commands use local services and do
-not consume GitHub Actions minutes.""",
+not consume GitHub Actions minutes. Discord maintenance is reviewed manually on
+Monday, Wednesday, and Friday. Upgrade suggestions are never auto-approved.""",
     "learning-index": """# Learning Center
 Learn in this order: bid/ask and limit orders; calls and puts; strike, premium,
 expiration and DTE; delta, theta and implied volatility; liquidity; maximum
@@ -122,6 +161,31 @@ def main() -> int:
     if not tracker.enabled:
         raise SystemExit("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required")
     existing = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
+    if "--inventory" in sys.argv:
+        category_names = {
+            str(item["id"]): item["name"]
+            for item in existing
+            if item.get("type") == 4
+        }
+        for item in sorted(
+            existing,
+            key=lambda row: (int(row.get("position") or 0), row.get("name") or ""),
+        ):
+            parent = category_names.get(str(item.get("parent_id") or ""), "(root)")
+            print(f"{item.get('type')}\t{parent}\t{item.get('name')}\t{item.get('id')}")
+        return 0
+    bot_user = tracker._request("GET", "/users/@me")
+    roles = tracker._request("GET", f"/guilds/{tracker.guild_id}/roles")
+    bot_role = next(
+        (
+            role
+            for role in roles
+            if str((role.get("tags") or {}).get("bot_id") or "")
+            == str(bot_user.get("id") or "")
+        ),
+        None,
+    )
+    bot_role_id = str((bot_role or {}).get("id") or "")
     by_name = {normalized(item.get("name")): item for item in existing}
     categories: dict[str, dict] = {}
     warnings: list[str] = []
@@ -148,6 +212,19 @@ def main() -> int:
                 )
         if item:
             categories[name] = item
+            if apply and bot_role_id:
+                try:
+                    tracker._request(
+                        "PUT",
+                        f"/channels/{item['id']}/permissions/{bot_role_id}",
+                        {
+                            "type": 0,
+                            "allow": str(BOT_CHANNEL_ALLOW),
+                            "deny": "0",
+                        },
+                    )
+                except ford_scan.DiscordError as exc:
+                    warnings.append(f"TradeBot access to {name}: {exc}")
 
     for spec in CHANNELS:
         category = categories.get(spec.category)
@@ -168,6 +245,19 @@ def main() -> int:
                 by_name[normalized(spec.name)] = item
             continue
         changes = {}
+        if apply and bot_role_id:
+            try:
+                tracker._request(
+                    "PUT",
+                    f"/channels/{item['id']}/permissions/{bot_role_id}",
+                    {
+                        "type": 0,
+                        "allow": str(BOT_CHANNEL_ALLOW),
+                        "deny": "0",
+                    },
+                )
+            except ford_scan.DiscordError as exc:
+                warnings.append(f"TradeBot access to #{spec.name}: {exc}")
         if category and str(item.get("parent_id") or "") != str(category["id"]):
             changes["parent_id"] = category["id"]
         if spec.channel_type == 0 and str(item.get("topic") or "") != spec.topic:
@@ -180,20 +270,33 @@ def main() -> int:
                 except ford_scan.DiscordError as exc:
                     warnings.append(f"#{spec.name}: {exc}")
 
-    archive = categories.get("ARCHIVE - LEGACY")
-    for name in sorted(LEGACY_CHANNELS):
+    for name in sorted(DELETE_CHANNELS):
         item = by_name.get(normalized(name))
-        if item and archive and str(item.get("parent_id") or "") != str(archive["id"]):
-            print(f"{'ARCHIVE' if apply else 'WOULD ARCHIVE'} #{name}")
+        if item:
+            print(f"{'DELETE' if apply else 'WOULD DELETE'} #{name}")
             if apply:
                 try:
-                    tracker._request(
-                        "PATCH",
-                        f"/channels/{item['id']}",
-                        {"parent_id": archive["id"]},
-                    )
+                    tracker._request("DELETE", f"/channels/{item['id']}")
                 except ford_scan.DiscordError as exc:
-                    warnings.append(f"archive #{name}: {exc}")
+                    warnings.append(f"delete #{name}: {exc}")
+
+    for category_name in sorted(DELETE_CATEGORIES):
+        category = next(
+            (
+                item
+                for item in existing
+                if item.get("type") == 4
+                and normalized(item.get("name")) == normalized(category_name)
+            ),
+            None,
+        )
+        if category:
+            print(f"{'DELETE' if apply else 'WOULD DELETE'} category {category_name}")
+            if apply:
+                try:
+                    tracker._request("DELETE", f"/channels/{category['id']}")
+                except ford_scan.DiscordError as exc:
+                    warnings.append(f"delete category {category_name}: {exc}")
 
     if apply:
         for channel_name, content in GUIDES.items():
@@ -226,6 +329,30 @@ def main() -> int:
                     )
             except ford_scan.DiscordError as exc:
                 warnings.append(f"guide #{channel_name}: {exc}")
+
+        for channel_name, schedule in CHANNEL_STARTERS.items():
+            channel = by_name.get(normalized(channel_name))
+            if not channel or channel.get("type") != 0:
+                continue
+            try:
+                recent = tracker._request(
+                    "GET", f"/channels/{channel['id']}/messages?limit=1"
+                )
+                if recent:
+                    continue
+                topic = str(channel.get("topic") or "").strip()
+                content = (
+                    f"# {channel_name.replace('-', ' ').title()}\n"
+                    f"{topic}\n\n**Update behavior:** {schedule}\n"
+                    "No information is shown until a real event or scheduled update occurs."
+                )
+                tracker._request(
+                    "POST",
+                    f"/channels/{channel['id']}/messages",
+                    {"content": content[:2000], "allowed_mentions": {"parse": []}},
+                )
+            except ford_scan.DiscordError as exc:
+                warnings.append(f"starter #{channel_name}: {exc}")
 
     print("Discord structure synchronized." if apply else "Dry run complete; no Discord changes made.")
     for warning in warnings:

@@ -1449,11 +1449,6 @@ JOBS = [
     Job("health-snapshot", timedelta(minutes=STATUS_REFRESH_MINUTES), status_job),
     Job("weekly-review", timedelta(minutes=30), weekly_review_job),
     Job(
-        "upgrade-request-reactions",
-        timedelta(minutes=1),
-        upgrade_request_reactions_job,
-    ),
-    Job(
         "outcome-learning",
         timedelta(hours=6),
         outcome_learning_job,
