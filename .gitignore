@@ -12,5 +12,9 @@ state/dynamic-universe.db-shm
 state/dynamic-universe.db-wal
 state/universe-scan-cursor.json
 state/local-engine.db
+state/supervisor-state.json
+state/supervisor-state.tmp
+state/supervisor-logs/
+state/supervisor-runtime-backup/
 docs/trade-snapshots/
 docs/tickers/
