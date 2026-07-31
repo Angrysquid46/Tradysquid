@@ -2217,6 +2217,11 @@ class DiscordError(RuntimeError):
     pass
 
 
+def discord_route_is_missing(exc: Exception) -> bool:
+    message = str(exc)
+    return "HTTP 403" in message or "HTTP 404" in message or "Missing Access" in message
+
+
 class DiscordTracker:
     API_BASE = "https://discord.com/api/v10"
 
@@ -2784,13 +2789,21 @@ def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discor
     if not discord.ready or not row.get("discord_thread_id") or not should_post_update(row, evaluation, timestamp):
         return
     content = position_update_text(row, evaluation)
-    discord.send_thread(row["discord_thread_id"], content)
     status = "HOLDING"
     if evaluation.get("signal") == "TAKE PROFIT":
         status = "TARGET HIT"
     elif evaluation.get("signal") == "STOP OUT":
         status = "STOP WARNING"
-    discord.set_thread_status(row["discord_thread_id"], status)
+    try:
+        discord.send_thread(row["discord_thread_id"], content)
+        discord.set_thread_status(row["discord_thread_id"], status)
+    except DiscordError as exc:
+        if not discord_route_is_missing(exc):
+            raise
+        row["discord_thread_id"] = ""
+        row["discord_status"] = ""
+        row["discord_format_version"] = ""
+        return
     row["discord_status"] = status
     row["last_discord_signal"] = evaluation.get("signal", "HOLD")
     row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 0)
@@ -2841,8 +2854,15 @@ def sync_open_trade_cards(
         position_update_text(row, current, link),
     )
     if thread_id and row.get("discord_status") != "HOLDING":
-        discord.set_thread_status(thread_id, "HOLDING")
-        row["discord_status"] = "HOLDING"
+        try:
+            discord.set_thread_status(thread_id, "HOLDING")
+            row["discord_status"] = "HOLDING"
+        except DiscordError as exc:
+            if not discord_route_is_missing(exc):
+                raise
+            row["discord_thread_id"] = ""
+            row["discord_status"] = ""
+            row["discord_format_version"] = ""
 
 
 def sync_all_open_trade_cards(
@@ -2929,8 +2949,16 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     link = thread_link(thread_id)
     content = close_alert_text(row, evaluation, link)
     if thread_id:
-        discord.send_thread(thread_id, close_alert_text(row, evaluation))
-        discord.set_thread_status(thread_id, row["outcome"], archive=True)
+        try:
+            discord.send_thread(thread_id, close_alert_text(row, evaluation))
+            discord.set_thread_status(thread_id, row["outcome"], archive=True)
+        except DiscordError as exc:
+            if not discord_route_is_missing(exc):
+                raise
+            row["discord_thread_id"] = ""
+            row["discord_status"] = ""
+            link = ""
+            content = close_alert_text(row, evaluation)
     discord.upsert_trade_message("exit", report_state, "exit", row.get("trade_id", ""), content)
     result_channel = {
         "WIN": "wins",

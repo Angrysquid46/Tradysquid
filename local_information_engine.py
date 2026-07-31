@@ -1642,15 +1642,28 @@ def discord_card_migration_job(connection: sqlite3.Connection) -> str:
     if not tracker:
         raise RuntimeError("Discord tracker is unavailable")
     refreshed_ids: list[str] = []
+    refreshed_threads: dict[str, str] = {}
     for row in pending:
-        tracker.refresh_trade_thread(row)
+        try:
+            tracker.refresh_trade_thread(row)
+        except ford_scan.DiscordError as exc:
+            if not ford_scan.discord_route_is_missing(exc):
+                raise
+            row["discord_thread_id"] = ""
+            row["discord_status"] = ""
+            row["discord_format_version"] = ""
+            tracker.create_trade_thread(row, "OPEN")
         refreshed_ids.append(row.get("trade_id", ""))
+        refreshed_threads[row.get("trade_id", "")] = row.get("discord_thread_id", "")
         time.sleep(1.0)
     with POSITION_FILE_LOCK:
         latest = ford_scan.read_log()
         refreshed = set(refreshed_ids)
         for row in latest:
             if row.get("trade_id") in refreshed:
+                row["discord_thread_id"] = refreshed_threads.get(
+                    row.get("trade_id", ""), row.get("discord_thread_id", "")
+                )
                 row["discord_format_version"] = ford_scan.DISCORD_FORMAT_VERSION
         ford_scan.write_log(latest)
     store_observation(
