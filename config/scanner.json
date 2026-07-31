@@ -46,7 +46,7 @@
       "event_priority": 100
     },
     "robinhood_mcp": {
-      "enabled": false,
+      "enabled": true,
       "read_only": true,
       "allowed_capabilities": [
         "quotes",

@@ -310,7 +310,26 @@ def complete_event(
 def import_robinhood_snapshot(payload: dict[str, Any]) -> int:
     """Import read-only discovery data; order-like fields are rejected."""
     forbidden = {"order", "orders", "trade", "trades", "transfer", "buy", "sell"}
-    if forbidden.intersection(str(key).lower() for key in payload):
+    allowed_top_level = {"symbols", "watchlist", "generated_at", "source"}
+
+    def keys(value: Any) -> set[str]:
+        found: set[str] = set()
+        if isinstance(value, dict):
+            for key, item in value.items():
+                found.add(str(key).lower())
+                found.update(keys(item))
+        elif isinstance(value, list):
+            for item in value:
+                found.update(keys(item))
+        return found
+
+    unknown = {str(key) for key in payload if str(key) not in allowed_top_level}
+    if unknown:
+        raise ValueError(
+            "Robinhood snapshot contains unsupported top-level fields: "
+            + ", ".join(sorted(unknown))
+        )
+    if forbidden.intersection(keys(payload)):
         raise ValueError("Robinhood adapter accepts read-only market discovery data only.")
     rows = payload.get("symbols") or payload.get("watchlist") or []
     candidates = []

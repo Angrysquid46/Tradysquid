@@ -19,6 +19,7 @@ import run_with_env
 import ticker_registry
 import sync_discord_structure
 import ensure_tradingview_secret
+import robinhood_readonly_bridge
 
 
 class InformationEngineTests(unittest.TestCase):
@@ -438,6 +439,27 @@ class InformationEngineTests(unittest.TestCase):
             dynamic_universe.import_robinhood_snapshot({
                 "orders": [{"symbol": "F", "side": "buy"}]
             })
+        with self.assertRaises(ValueError):
+            dynamic_universe.import_robinhood_snapshot({
+                "symbols": [{"symbol": "F", "order": {"side": "buy"}}]
+            })
+
+    def test_robinhood_bridge_accepts_symbols_without_trade_capability(self) -> None:
+        original_db = dynamic_universe.DB_PATH
+        original_config = dynamic_universe.CONFIG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
+            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
+            dynamic_universe.CONFIG_PATH.write_text(
+                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":10}',
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                robinhood_readonly_bridge.ingest_symbols(["f", "F"]), 1
+            )
+            self.assertEqual(dynamic_universe.active_symbols(), ["F"])
+        dynamic_universe.DB_PATH = original_db
+        dynamic_universe.CONFIG_PATH = original_config
 
     def test_new_closed_trades_are_binary_not_scratch(self) -> None:
         row = {"play_type": "LONG", "entry_price": "0.50"}
