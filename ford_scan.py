@@ -2580,10 +2580,12 @@ def migrate_recent_bot_messages_to_cards(
         return 0
 
     converted = 0
+    visited_channel_ids: set[str] = set()
     for logical_name in AUTOMATED_CHANNEL_KEYS:
         channel_id = discord.channels.get(logical_name)
-        if not channel_id:
+        if not channel_id or channel_id in visited_channel_ids:
             continue
+        visited_channel_ids.add(channel_id)
         recent = discord._request(
             "GET",
             f"/channels/{channel_id}/messages?limit={max(1, min(limit_per_channel, 100))}",
