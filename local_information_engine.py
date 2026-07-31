@@ -1240,15 +1240,17 @@ def full_scanner_job(connection: sqlite3.Connection) -> str:
     tickers = multi_ticker_scan.configured_active_tickers()
     with POSITION_FILE_LOCK:
         result = multi_ticker_scan.main(tickers)
-    results = {ticker: result for ticker in tickers}
+    results = dict(multi_ticker_scan.LAST_RESULTS)
     store_observation(
         connection,
         "full-scan",
         {"results": results, "completed_at": iso_now()},
     )
-    failed = [ticker for ticker, result in results.items() if result]
+    failed = [ticker for ticker, ticker_result in results.items() if ticker_result]
     if failed:
         raise RuntimeError(f"Scanner failed for: {', '.join(failed)}")
+    if result:
+        raise RuntimeError("Scanner returned failure without per-ticker results")
     return f"Options scan completed for {', '.join(results) or 'no active tickers'}"
 
 
@@ -1261,7 +1263,7 @@ def manual_options_scan_job(connection: sqlite3.Connection) -> str:
     tickers = dynamic_universe.active_symbols()
     with POSITION_FILE_LOCK:
         result = multi_ticker_scan.main(tickers)
-    results = {ticker: result for ticker in tickers}
+    results = dict(multi_ticker_scan.LAST_RESULTS)
     store_observation(
         connection,
         "manual-full-scan",
@@ -1270,6 +1272,8 @@ def manual_options_scan_job(connection: sqlite3.Connection) -> str:
     failed = [ticker for ticker, exit_code in results.items() if exit_code]
     if failed:
         raise RuntimeError(f"Scanner failed for: {', '.join(failed)}")
+    if result:
+        raise RuntimeError("Scanner returned failure without per-ticker results")
     market_open, _ = ford_scan.market_is_open_now()
     session = "live option chains" if market_open else "market-closed routing checks"
     return (

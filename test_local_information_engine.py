@@ -214,6 +214,11 @@ class InformationEngineTests(unittest.TestCase):
         with patch.object(multi_ticker_scan.ford_scan, "main", scanner):
             result = multi_ticker_scan.main(["BAC", "CCL", "RIVN"])
         self.assertEqual(result, 0)
+        self.assertEqual(multi_ticker_scan.LAST_RESULTS, {
+            "BAC": 0,
+            "CCL": 0,
+            "RIVN": 0,
+        })
         self.assertEqual(calls, [
             ("BAC", False),
             ("CCL", False),

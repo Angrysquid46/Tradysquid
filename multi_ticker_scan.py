@@ -5,12 +5,15 @@ from __future__ import annotations
 import dynamic_universe
 import ford_scan
 
+LAST_RESULTS: dict[str, int] = {}
+
 def configured_active_tickers() -> list[str]:
     dynamic_universe.initialize()
     return dynamic_universe.next_scan_batch()
 
 
 def main(tickers: list[str] | None = None) -> int:
+    global LAST_RESULTS
     tickers = tickers or configured_active_tickers()
     if not tickers:
         print("No active tickers are configured.")
@@ -28,6 +31,7 @@ def main(tickers: list[str] | None = None) -> int:
             )
     finally:
         ford_scan.TICKER = original_ticker
+    LAST_RESULTS = dict(results)
     print(
         "Multi-ticker scan results: "
         + ", ".join(
