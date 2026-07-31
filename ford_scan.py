@@ -2741,14 +2741,22 @@ def notify_webhook(lines: list[str], title: str | None = None) -> None:
         print(f"Discord webhook fallback failed: {exc}", file=sys.stderr)
 
 
-def sync_existing_open_threads(rows: list[dict[str, str]], discord: DiscordTracker) -> int:
+def sync_existing_open_threads(
+    rows: list[dict[str, str]],
+    discord: DiscordTracker,
+    *,
+    refresh_existing: bool = True,
+) -> int:
     if not DISCORD_SYNC_EXISTING_OPEN or not discord.ready:
         return 0
     created = 0
     for row in open_rows(rows):
         try:
             if row.get("discord_thread_id"):
-                if row.get("discord_format_version") != DISCORD_FORMAT_VERSION:
+                if (
+                    refresh_existing
+                    and row.get("discord_format_version") != DISCORD_FORMAT_VERSION
+                ):
                     discord.refresh_trade_thread(row)
                 continue
             thread_id = discord.create_trade_thread(row, "OPEN")
@@ -3911,7 +3919,11 @@ def main(*, publish_shared: bool = True) -> int:
     if closed_results_backfilled:
         print(f"Discord result backfill: posted {closed_results_backfilled} closed result(s).")
 
-    backfilled = sync_existing_open_threads(rows, discord) if publish_shared else 0
+    backfilled = (
+        sync_existing_open_threads(rows, discord, refresh_existing=False)
+        if publish_shared
+        else 0
+    )
     if backfilled:
         write_log(rows)
         safe_discord_call(

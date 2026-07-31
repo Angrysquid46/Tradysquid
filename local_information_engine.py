@@ -1626,6 +1626,41 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
     )
 
 
+def discord_card_migration_job(connection: sqlite3.Connection) -> str:
+    """Refresh a bounded set of legacy forum cards without delaying scans."""
+    with POSITION_FILE_LOCK:
+        rows = ford_scan.read_log()
+        pending = [
+            dict(row)
+            for row in ford_scan.open_rows(rows)
+            if row.get("discord_thread_id")
+            and row.get("discord_format_version") != ford_scan.DISCORD_FORMAT_VERSION
+        ][:5]
+    if not pending:
+        return "all open trade forum cards are current"
+    tracker = discord_tracker()
+    if not tracker:
+        raise RuntimeError("Discord tracker is unavailable")
+    refreshed_ids: list[str] = []
+    for row in pending:
+        tracker.refresh_trade_thread(row)
+        refreshed_ids.append(row.get("trade_id", ""))
+        time.sleep(1.0)
+    with POSITION_FILE_LOCK:
+        latest = ford_scan.read_log()
+        refreshed = set(refreshed_ids)
+        for row in latest:
+            if row.get("trade_id") in refreshed:
+                row["discord_format_version"] = ford_scan.DISCORD_FORMAT_VERSION
+        ford_scan.write_log(latest)
+    store_observation(
+        connection,
+        "discord-card-migration",
+        {"refreshed": refreshed_ids, "remaining_before_run": len(pending)},
+    )
+    return f"refreshed {len(refreshed_ids)} legacy forum card(s)"
+
+
 @dataclass
 class Job:
     name: str
@@ -1688,6 +1723,13 @@ JOBS = [
         "outcome-learning",
         timedelta(hours=6),
         outcome_learning_job,
+    ),
+    Job(
+        "discord-card-migration",
+        timedelta(minutes=5),
+        discord_card_migration_job,
+        background=True,
+        retry_interval=timedelta(minutes=5),
     ),
     Job(
         "full-options-scan",

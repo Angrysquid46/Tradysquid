@@ -192,6 +192,7 @@ class InformationEngineTests(unittest.TestCase):
             "session-briefing",
             "health-snapshot",
             "outcome-learning",
+            "discord-card-migration",
         }.issubset(job_names))
         background = {job.name for job in engine.JOBS if job.background}
         self.assertTrue({
@@ -200,6 +201,7 @@ class InformationEngineTests(unittest.TestCase):
             "managed-ticker-information",
             "managed-ticker-news",
             "session-briefing",
+            "discord-card-migration",
         }.issubset(background))
 
     def test_multi_ticker_scan_publishes_each_ticker_and_syncs_once(self) -> None:
