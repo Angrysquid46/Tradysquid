@@ -372,7 +372,14 @@ Get-CimInstance Win32_Process |
 def supervisor_log(message: str) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamped = f"{time.strftime('%Y-%m-%d %H:%M:%S')} | {message}"
-    print(stamped, flush=True)
+    # Scheduled tasks inherit the legacy Windows console encoding. Keep rich
+    # Unicode in the UTF-8 log while making console output incapable of
+    # crashing the supervisor during an automatic deployment.
+    console_encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+    console_text = stamped.encode(console_encoding, errors="backslashreplace").decode(
+        console_encoding
+    )
+    print(console_text, flush=True)
     with (LOG_DIR / "supervisor.log").open("a", encoding="utf-8") as handle:
         handle.write(stamped + "\n")
 
