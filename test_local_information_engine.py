@@ -50,7 +50,11 @@ class InformationEngineTests(unittest.TestCase):
             "entry_price": "0.35",
         }
         self.assertTrue(ford_scan.trade_title(row).startswith("RIVN #001"))
-        card = ford_scan.entry_alert_text(row)
+        with patch(
+            "ford_scan.learning_channel_reference",
+            side_effect=lambda channel: f"#{channel}",
+        ):
+            card = ford_scan.entry_alert_text(row)
         self.assertIn("RIVN #001", card)
         self.assertIn("BUY 1 RIVN 15 CALL", card)
         self.assertNotIn("BUY 1 F 15 CALL", card)
