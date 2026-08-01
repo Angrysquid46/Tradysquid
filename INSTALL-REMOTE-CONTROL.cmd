@@ -49,7 +49,9 @@ if not exist "%STARTUP%" mkdir "%STARTUP%"
     echo start "" wscript.exe "%~dp0start_supervisor_hidden.vbs"
 ) > "%STARTUP%\Tradysquids Supervisor.cmd"
 
-echo Installing the independent five-minute watchdog...
+echo Installing the independent five-minute watchdog task...
+echo Its initial startup attempt is best effort; recovery is proven by the
+echo acceptance tests below. Initial-run warnings are logged separately.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0INSTALL-SUPERVISOR-WATCHDOG.ps1"
 if errorlevel 1 (
     echo.
@@ -58,6 +60,7 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+echo Watchdog task created successfully.
 
 echo Starting the supervisor...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0ENSURE-SUPERVISOR.ps1"
