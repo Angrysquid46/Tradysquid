@@ -420,21 +420,50 @@ def discord_post(message: str, channel_name: str = "system-health") -> None:
     channel_id = discord_channel_id(channel_name)
     if not token or not channel_id:
         return
+    headers = {
+        "Authorization": f"Bot {token}",
+        "Content-Type": "application/json",
+        "User-Agent": "DiscordBot (Tradysquids Supervisor, 1.0)",
+    }
+    payload = {
+        "content": message[:1900],
+        "allowed_mentions": {"parse": []},
+    }
     try:
-        requests.post(
-            f"https://discord.com/api/v10/channels/{channel_id}/messages",
-            headers={
-                "Authorization": f"Bot {token}",
-                "Content-Type": "application/json",
-                "User-Agent": "DiscordBot (Tradysquids Supervisor, 1.0)",
-            },
-            json={
-                "content": message[:1900],
-                "allowed_mentions": {"parse": []},
-            },
+        title = message.splitlines()[0].strip()
+        history = requests.get(
+            f"https://discord.com/api/v10/channels/{channel_id}/messages?limit=100",
+            headers=headers,
             timeout=15,
-        ).raise_for_status()
-    except requests.RequestException as exc:
+        )
+        history.raise_for_status()
+        matches = [
+            item
+            for item in history.json()
+            if str(item.get("content") or "").splitlines()[:1] == [title]
+            and (item.get("author") or {}).get("bot")
+        ]
+        if matches:
+            requests.patch(
+                f"https://discord.com/api/v10/channels/{channel_id}/messages/{matches[0]['id']}",
+                headers=headers,
+                json=payload,
+                timeout=15,
+            ).raise_for_status()
+            for duplicate in matches[1:]:
+                requests.delete(
+                    f"https://discord.com/api/v10/channels/{channel_id}/messages/{duplicate['id']}",
+                    headers=headers,
+                    timeout=15,
+                ).raise_for_status()
+        else:
+            requests.post(
+                f"https://discord.com/api/v10/channels/{channel_id}/messages",
+                headers=headers,
+                json=payload,
+                timeout=15,
+            ).raise_for_status()
+    except (requests.RequestException, ValueError, TypeError) as exc:
         supervisor_log(f"Discord status post failed: {exc}")
 
 
