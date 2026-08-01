@@ -61,6 +61,13 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
                 "Public ticker add/remove status plus owner-only filters, pauses, and manual scans.",
                 item.channel_type,
             )
+        elif item.name == "upgrade-review":
+            item = sync.ChannelSpec(
+                item.category,
+                item.name,
+                "Unanswered TradeBot questions, member suggestions, and curriculum gaps awaiting owner review.",
+                item.channel_type,
+            )
         rebuilt.append(item)
     if not inserted_learning:
         rebuilt.extend(_learning_specs())
@@ -68,6 +75,10 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
 
 
 sync.CHANNELS = _rebuild_channel_specs()
+sync.CHANNEL_STARTERS["upgrade-review"] = (
+    "Unanswered `/ask` questions are deduplicated here with closest lesson matches, "
+    "ask counts, and the information needed to expand TradeBot safely."
+)
 
 # Long-form cards own every numbered lesson. Remove old single-message guides
 # and aliases so the base synchronizer cannot recreate duplicate beginner tabs.
@@ -105,6 +116,8 @@ Type `/`, choose a command, complete its fields, and send it.
 • `/events`, `/filings`, `/calendar` — timestamped research links.
 • `/performance`, `/why`, `/status`, `/dataage`, `/lastscan` — tracking.
 • `/ask`, `/explain` — detailed answers grounded in Learning Center lessons.
+• Ask `/ask` to **apply** a lesson to `$TICKER` for a read-only walkthrough.
+• Unanswered questions are saved and posted to #upgrade-review for expansion.
 • `/ticker-add`, `/ticker-remove` — public capped universe management.
 • `/ticker-list`, `/ticker-status` — current universe and capacity.
 • `/filters` — configuration status; guarded changes remain owner-only.
@@ -138,6 +151,18 @@ Tradier quote and usable option expirations. Removal stops new scans but never
 abandons an existing paper position or erases history.
 
 **Owner-only:** filter changes, pauses, resumes, and full manual scans."""
+
+sync.GUIDES["upgrade-review"] = """# Learning and Upgrade Review Queue
+This owner-control channel receives unanswered TradeBot questions and member
+suggestions that need deliberate review.
+
+Each unanswered-question card includes the exact wording, member, first and last
+seen time, repeat count, closest existing lesson matches, and a stable question
+ID. Repeated wording updates the same card instead of posting duplicates.
+
+To improve an answer, expand the correct Learning Center lesson, add relevant
+aliases and examples, then add the real question wording to the focused tests.
+TradeBot never invents an answer merely to avoid creating a review item."""
 
 
 def _tracker() -> ford_scan.DiscordTracker:
