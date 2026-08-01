@@ -1717,6 +1717,128 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
     return f"performance, strategy, ticker, daily, and weekly refreshed from {closed} closed trades"
 
 
+PLAYBOOK_SPECS = [
+    ("regular-call", "Regular Long Call", "REGULAR", "call"),
+    ("regular-put", "Regular Long Put", "REGULAR", "put"),
+    ("swing-call", "Swing Long Call", "SWING", "call"),
+    ("swing-put", "Swing Long Put", "SWING", "put"),
+    ("bull-put-spread", "Bull Put Credit Spread", "SPREAD", "put"),
+    ("bear-call-spread", "Bear Call Credit Spread", "SPREAD", "call"),
+]
+
+
+def playbook_card_text(
+    title: str,
+    play_type: str,
+    direction: str,
+    rows: list[dict[str, str]],
+    rotation_day: date,
+) -> str:
+    matches = [
+        row for row in rows
+        if str(row.get("play_type") or "").upper() == play_type
+        and str(row.get("call_or_put") or "").lower() == direction
+    ]
+    matches.sort(key=lambda row: row.get("closed_at") or row.get("timestamp") or "")
+    example = matches[rotation_day.toordinal() % len(matches)] if matches else None
+    bullish = direction == "call" if play_type != "SPREAD" else direction == "put"
+    thesis = (
+        "bullish evidence: price/trend confirmation and a controlled upside setup"
+        if bullish
+        else "bearish evidence: downside confirmation and a controlled decline setup"
+    )
+    if play_type == "SPREAD":
+        dte = f"{ford_scan.MIN_DTE}–{ford_scan.MAX_DTE} DTE"
+        entry = "SELL TO OPEN the short leg and BUY TO OPEN the protective long leg for one net credit."
+        risk = (
+            f"Target: BUY TO CLOSE near {ford_scan.SPREAD_TAKE_PROFIT_PCT:.0%} credit capture. "
+            f"Stop: BUY TO CLOSE if cost reaches {ford_scan.SPREAD_STOP_MULTIPLE:g}× entry credit. "
+            f"Close no later than {ford_scan.SPREAD_EXIT_DTE} DTE."
+        )
+        stat_reason = (
+            f"Short-leg |delta| {ford_scan.SPREAD_SHORT_DELTA_MIN:.2f}–"
+            f"{ford_scan.SPREAD_SHORT_DELTA_MAX:.2f}; liquid adjacent protection; "
+            "credit and maximum loss must pass the risk cap."
+        )
+    else:
+        dte = (
+            f"{ford_scan.REGULAR_MIN_DTE}–{ford_scan.REGULAR_MAX_DTE} DTE"
+            if play_type == "REGULAR"
+            else f"{ford_scan.MIN_DTE}–{ford_scan.MAX_DTE} DTE"
+        )
+        entry = "BUY TO OPEN one contract near the recorded ask after every scanner gate passes."
+        risk = (
+            f"Target: SELL TO CLOSE at approximately +{ford_scan.SINGLE_TAKE_PROFIT_PCT:.0%}. "
+            f"Stop: SELL TO CLOSE at approximately -{ford_scan.SINGLE_STOP_PCT:.0%}; "
+            "also close near expiration."
+        )
+        stat_reason = (
+            f"|Delta| {ford_scan.SINGLE_LEG_DELTA_MIN:.2f}–{ford_scan.SINGLE_LEG_DELTA_MAX:.2f}; "
+            f"premium at most {ford_scan.fmt_money(ford_scan.MAX_RISK_PER_TRADE)}; "
+            "open interest, volume, and bid/ask spread must pass liquidity gates."
+        )
+    lines = [
+        f"## {title}",
+        f"**Structure:** {dte} · paper trading · one-contract examples",
+        "### Why this play is selected",
+        f"The scanner requires {thesis}. {stat_reason}",
+        "Delta estimates directional sensitivity; IV affects option pricing; theta is time decay; "
+        "open interest, volume, and spread indicate whether entry and exit are practical.",
+        "### Entry",
+        entry,
+        "### Stop, target, and close",
+        risk,
+    ]
+    if example:
+        metrics = ford_scan.result_metrics([example])
+        reason = example.get("setup_reason") or example.get("market_regime") or thesis
+        lines.extend([
+            "### Rotating recorded example",
+            f"**{example.get('trade_id', 'Tracked trade')}** · {example.get('ticker', '—')} · "
+            f"{example.get('strike', '—')} · exp {example.get('expiration', '—')}",
+            f"Selected because: {reason}",
+            f"Entry {example.get('entry_price') or '—'} · exit {example.get('exit_price') or '—'} · "
+            f"{example.get('outcome', 'CLOSED')} · net {ford_scan.fmt_metric_money(metrics, 'total_pnl')}",
+        ])
+    else:
+        lines.extend([
+            "### Rotating recorded example",
+            "No completed example of this exact play type is recorded yet; this card will fill automatically.",
+        ])
+    lines.extend([
+        "### Review prompt",
+        "Was the direction correct? Did liquidity, delta, IV, and DTE support the entry? "
+        "Was the planned exit followed instead of improvised?",
+        "Educational paper-trade walkthrough; not financial advice.",
+    ])
+    return "\n".join(lines)[:2000]
+
+
+def examples_reviews_job(connection: sqlite3.Connection) -> str:
+    with POSITION_FILE_LOCK:
+        rows = ford_scan.read_log()
+    tracker = discord_tracker()
+    if not tracker:
+        raise RuntimeError("Discord tracker is unavailable")
+    report_state = ford_scan.read_report_state()
+    today = ford_scan.now_ct().date()
+    for key, title, play_type, direction in PLAYBOOK_SPECS:
+        tracker.upsert_channel_message(
+            "examples_reviews",
+            report_state,
+            f"playbook:{key}",
+            playbook_card_text(title, play_type, direction, rows, today),
+            search_token=title,
+        )
+    ford_scan.write_report_state(report_state)
+    store_observation(
+        connection,
+        "examples-reviews",
+        {"cards": len(PLAYBOOK_SPECS), "closed_examples": len(ford_scan.closed_rows(rows))},
+    )
+    return f"{len(PLAYBOOK_SPECS)} strategy playbook cards refreshed"
+
+
 def discord_card_migration_job(connection: sqlite3.Connection) -> str:
     """Refresh a bounded set of legacy forum cards without delaying scans."""
     with POSITION_FILE_LOCK:
@@ -1813,6 +1935,12 @@ JOBS = [
         timedelta(minutes=5),
         discord_reporting_job,
         retry_interval=timedelta(minutes=1),
+    ),
+    Job(
+        "examples-and-reviews",
+        timedelta(hours=12),
+        examples_reviews_job,
+        retry_interval=timedelta(minutes=5),
     ),
     Job(
         "dynamic-universe-refresh",

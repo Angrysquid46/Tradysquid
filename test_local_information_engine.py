@@ -194,6 +194,7 @@ class InformationEngineTests(unittest.TestCase):
             "position-tracker",
             "closed-position-cleanup",
             "discord-reporting",
+            "examples-and-reviews",
             "dynamic-universe-refresh",
             "managed-ticker-information",
             "managed-ticker-news",
@@ -202,6 +203,39 @@ class InformationEngineTests(unittest.TestCase):
             "outcome-learning",
             "discord-card-migration",
         }.issubset(job_names))
+
+    def test_playbook_covers_every_scanner_play_type(self) -> None:
+        keys = {item[0] for item in engine.PLAYBOOK_SPECS}
+        self.assertEqual(
+            keys,
+            {
+                "regular-call",
+                "regular-put",
+                "swing-call",
+                "swing-put",
+                "bull-put-spread",
+                "bear-call-spread",
+            },
+        )
+        card = engine.playbook_card_text(
+            "Regular Long Call",
+            "REGULAR",
+            "call",
+            [{
+                "trade_id": "F-1",
+                "ticker": "F",
+                "play_type": "REGULAR",
+                "call_or_put": "call",
+                "outcome": "WIN",
+                "realized_pl_dollars": "12",
+            }],
+            date(2026, 7, 31),
+        )
+        self.assertIn("Why this play is selected", card)
+        self.assertIn("BUY TO OPEN", card)
+        self.assertIn("SELL TO CLOSE", card)
+        self.assertIn("Delta estimates", card)
+        self.assertIn("F-1", card)
         background = {job.name for job in engine.JOBS if job.background}
         self.assertTrue({
             "full-options-scan",
