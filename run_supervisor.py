@@ -20,6 +20,7 @@ ORIGINAL_DEPLOY_IF_NEEDED = supervisor.deploy_if_needed
 ORIGINAL_ENSURE_SERVICES = supervisor.ensure_services
 ORIGINAL_FETCH_REMOTE_SHA = supervisor.fetch_remote_sha
 _LAST_READY_SIGNATURE: tuple[tuple[str, bool], ...] | None = None
+_ENGINE_START_GRACE_UNTIL = 0.0
 
 
 def safe_take_process_ownership() -> None:
@@ -56,6 +57,9 @@ def public_command_bot_command() -> list[str]:
 
 
 def public_information_engine_command() -> list[str]:
+    """Return the always-on engine command and start its heartbeat grace window."""
+    global _ENGINE_START_GRACE_UNTIL
+    _ENGINE_START_GRACE_UNTIL = time.monotonic() + 120.0
     return [
         sys.executable,
         str(ROOT / "run_with_env.py"),
@@ -64,8 +68,12 @@ def public_information_engine_command() -> list[str]:
 
 
 def information_engine_health() -> bool:
-    """A listening socket is insufficient; scheduled work must keep firing."""
-    return supervisor.port_healthy("127.0.0.1", 8765) and always_on_operations.heartbeat_healthy(12)
+    """Require both a live service and scheduled work after startup grace."""
+    if not supervisor.port_healthy("127.0.0.1", 8765):
+        return False
+    if always_on_operations.heartbeat_healthy(12):
+        return True
+    return time.monotonic() < _ENGINE_START_GRACE_UNTIL
 
 
 def comprehensive_validate_checkout() -> tuple[bool, str]:
@@ -74,6 +82,7 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
         "local_information_engine.py",
         "local_information_engine_public.py",
         "always_on_operations.py",
+        "operations_acceptance.py",
         "discord_command_bot.py",
         "discord_command_bot_public.py",
         "discord_cards.py",
