@@ -3,10 +3,11 @@ param(
 )
 
 $patterns = @(
-    'discord_command_bot\.py',
+    'discord_command_bot(_public)?\.py',
     'local_information_engine\.py',
     'run_ngrok\.py',
     'tradysquid_supervisor\.py',
+    'run_supervisor\.py',
     'ngrok(\.exe)?\s+http\s+8080'
 )
 

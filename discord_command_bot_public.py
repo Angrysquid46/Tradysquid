@@ -1,9 +1,9 @@
-"""Run TradeBot with public, capped ticker add/remove commands.
+"""Run TradeBot with public ticker controls and library-grounded education.
 
-This wrapper keeps sensitive scanner controls owner-only while allowing any
-server member to add or remove verified optionable tickers from the shared
-universe. Member changes are stored under state/ so automatic GitHub updates do
-not overwrite them or treat them as dirty tracked configuration.
+Sensitive scanner controls remain owner-only. Any server member may add or
+remove verified optionable tickers within the shared cap. Educational commands
+search the comprehensive Learning Center, cite its channels, apply lessons to
+read-only live ticker observations, and queue unanswered questions for review.
 """
 
 from __future__ import annotations
@@ -11,15 +11,50 @@ from __future__ import annotations
 import time
 
 import discord_command_bot as bot
+import learning_application as application
 import learning_center_content as learning
+import learning_question_gaps as question_gaps
+import learning_search_router as routed
 
 
+routed.install()
 bot.OWNER_ONLY_COMMANDS.discard("ticker-remove")
 bot.ticker_registry.CONFIG_PATH = (
     bot.ticker_registry.ROOT / "state" / "member-ticker-registry.json"
 )
 MEMBER_ADD_COOLDOWN_SECONDS = 15
 LAST_MEMBER_ADD: dict[str, float] = {}
+ORIGINAL_PROCESS_COMMAND = bot.process_command
+
+
+def card_patch_original(
+    application_id: str,
+    token: str,
+    *,
+    content: str,
+    file_path=None,
+) -> None:
+    """Allow full Discord embed-length answers instead of 2,000-char truncation."""
+    url = (
+        f"https://discord.com/api/v10/webhooks/{application_id}/{token}"
+        "/messages/@original"
+    )
+    payload = {
+        "content": str(content or "")[:3900],
+        "allowed_mentions": {"parse": []},
+    }
+    if file_path and file_path.exists():
+        payload["attachments"] = [{"id": 0, "filename": file_path.name}]
+        with file_path.open("rb") as handle:
+            response = bot.requests.patch(
+                url,
+                data={"payload_json": bot.json.dumps(payload)},
+                files={"files[0]": (file_path.name, handle, "image/png")},
+                timeout=30,
+            )
+    else:
+        response = bot.requests.patch(url, json=payload, timeout=20)
+    response.raise_for_status()
 
 
 def public_ticker_add_reply(interaction: dict) -> str:
@@ -191,13 +226,43 @@ def public_ticker_status_reply(ticker: str) -> str:
     )
 
 
+def public_process_command(interaction: dict) -> None:
+    """Preserve all commands while giving `/ask` full interaction context."""
+    name = str(interaction.get("data", {}).get("name") or "")
+    if name != "ask":
+        ORIGINAL_PROCESS_COMMAND(interaction)
+        return
+
+    application_id = str(interaction.get("application_id") or "")
+    token = str(interaction.get("token") or "")
+    try:
+        question = str(bot.option_value(interaction, "question", ""))
+        bot.patch_original(
+            application_id,
+            token,
+            content=question_gaps.answer_with_gap_tracking(interaction, question),
+        )
+    except Exception as exc:
+        safe_error = f"{type(exc).__name__}: {exc}"[:1200]
+        try:
+            bot.patch_original(
+                application_id,
+                token,
+                content=f"⚠️ Command failed safely.\n```{safe_error}```",
+            )
+        except bot.requests.RequestException:
+            pass
+
+
+bot.patch_original = card_patch_original
 bot.universe_add_reply = public_ticker_add_reply
 bot.universe_pause_reply = public_ticker_remove_reply
 bot.universe_resume_reply = owner_ticker_resume_reply
 bot.universe_list_reply = public_ticker_list_reply
 bot.universe_status_reply = public_ticker_status_reply
-bot.ask_reply = learning.answer
-bot.explain_reply = learning.explain
+bot.ask_reply = application.answer
+bot.explain_reply = routed.explain
+bot.process_command = public_process_command
 
 
 if __name__ == "__main__":

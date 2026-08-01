@@ -1,4 +1,4 @@
-"""Apply Discord structure, public ticker policy, cards, and full lessons."""
+"""Apply Discord structure, public ticker policy, cards, and complete lessons."""
 
 from __future__ import annotations
 
@@ -8,55 +8,105 @@ import ford_scan
 import sync_discord_cards
 import sync_discord_structure as sync
 import sync_learning_center
+from learning_center_catalog import (
+    LEARNING_CHANNEL_ORDER,
+    LEGACY_CHANNEL_ALIASES,
+    LESSONS,
+    ORDERED_CHANNELS,
+)
 
 
-def _channel_spec(item: sync.ChannelSpec) -> sync.ChannelSpec:
-    if item.name == "01-market-basics":
-        return sync.ChannelSpec(
-            item.category,
-            "01-stock-basics",
-            "Stocks, ETFs, indexes, market mechanics, orders, liquidity, and corporate actions.",
-            item.channel_type,
+def _learning_specs() -> list[sync.ChannelSpec]:
+    specs = [
+        sync.ChannelSpec(
+            "LEARNING CENTER",
+            "learning-index",
+            "Numbered stock-and-options curriculum, reading path, and subject map.",
         )
-    if item.name == "scanner-controls":
-        return sync.ChannelSpec(
-            item.category,
-            item.name,
-            "Public ticker add/remove status plus owner-only filters, pauses, and manual scans.",
-            item.channel_type,
-        )
-    return item
+    ]
+    specs.extend(
+        sync.ChannelSpec("LEARNING CENTER", item.channel, item.topic)
+        for item in LESSONS
+    )
+    specs.extend(
+        [
+            sync.ChannelSpec(
+                "LEARNING CENTER",
+                "ask-tradebot",
+                "Use /ask and /explain for library-grounded answers with lesson citations.",
+            ),
+            sync.ChannelSpec(
+                "LEARNING CENTER",
+                "examples-and-reviews",
+                "Evidence-based paper-trade walkthroughs, outcome causes, and learning records.",
+            ),
+        ]
+    )
+    return specs
 
 
-sync.CHANNELS = [_channel_spec(item) for item in sync.CHANNELS]
+def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
+    rebuilt: list[sync.ChannelSpec] = []
+    inserted_learning = False
+    for item in sync.CHANNELS:
+        if item.category == "LEARNING CENTER":
+            if not inserted_learning:
+                rebuilt.extend(_learning_specs())
+                inserted_learning = True
+            continue
+        if item.name == "scanner-controls":
+            item = sync.ChannelSpec(
+                item.category,
+                item.name,
+                "Public ticker add/remove status plus owner-only filters, pauses, and manual scans.",
+                item.channel_type,
+            )
+        elif item.name == "upgrade-review":
+            item = sync.ChannelSpec(
+                item.category,
+                item.name,
+                "Unanswered TradeBot questions, member suggestions, and curriculum gaps awaiting owner review.",
+                item.channel_type,
+            )
+        rebuilt.append(item)
+    if not inserted_learning:
+        rebuilt.extend(_learning_specs())
+    return rebuilt
 
-# Numbered channels are synchronized as long-form embed cards. Remove the old
-# one-message versions so users see one organized lesson, not duplicate debris.
-for lesson_channel in set(sync_learning_center.load_lessons()) | {"01-market-basics"}:
+
+sync.CHANNELS = _rebuild_channel_specs()
+sync.CHANNEL_STARTERS["upgrade-review"] = (
+    "Unanswered `/ask` questions are deduplicated here with closest lesson matches, "
+    "ask counts, and the information needed to expand TradeBot safely."
+)
+
+# Long-form cards own every numbered lesson. Remove old single-message guides
+# and aliases so the base synchronizer cannot recreate duplicate beginner tabs.
+for lesson_channel in set(ORDERED_CHANNELS) | set(LEGACY_CHANNEL_ALIASES) | set(LEGACY_CHANNEL_ALIASES.values()):
     sync.GUIDES.pop(lesson_channel, None)
 
-sync.GUIDES["learning-index"] = """# Complete Learning Center
-Use the numbered channels in order or jump directly to the subject you need.
+sync.GUIDES["learning-index"] = """# Complete Trading Learning Center
+Read the numbered channels in order or jump to the exact subject you need.
 
-**Foundations**
-#01-stock-basics → #02-options-basics → #03-option-chain
+**Stocks and business**
+01 foundations → 02 fundamentals → 03 statements → 04 valuation
 
-**Pricing and analysis**
-#04-pricing-and-greeks → #05-volatility → #06-charts → #07-technical-analysis
+**Trading mechanics and analysis**
+05 orders → 06 price action → 07 indicators → 08 volume/breadth →
+09 macro/sectors → 10 stock strategies → 11 shorting/margin → 12 portfolio risk
 
-**Structures and risk**
-#08-strategies → #09-spreads → #10-risk-management → #11-trade-management
+**Options**
+13 foundations → 14 chains/liquidity → 15 pricing/Greeks → 16 volatility →
+17 directional strategies → 18 income/hedging → 19 multi-leg spreads
 
-**Lifecycle and improvement**
-#12-expiration-assignment → #13-events-and-catalysts →
-#14-psychology-journaling → #15-backtesting-stats
+**Execution and improvement**
+20 planning/management → 21 expiration/assignment → 22 events/actions →
+23 psychology/journaling → 24 testing/statistics → 25 accounts/taxes →
+26 research/data → 27 scams/security
 
-**Real-world protection**
-#16-taxes-and-rules → #17-scams-and-myths
-
-Every lesson is presented as readable cards with examples, calculations,
-mistakes, checklists, and practical application. Use `/ask` and `/explain`
-for definitions. Educational information only—not financial advice."""
+Every topic contains detailed cards, examples, formulas, failure modes,
+checklists, and review questions. `/ask` and `/explain` search the same library
+and cite the exact channel and section used. Educational information only."""
 
 sync.GUIDES["how-to-use-tradebot"] = """# How to Use TradeBot
 Type `/`, choose a command, complete its fields, and send it.
@@ -65,83 +115,103 @@ Type `/`, choose a command, complete its fields, and send it.
 • `/chain`, `/option`, `/setup`, `/risk` — options research and risk examples.
 • `/events`, `/filings`, `/calendar` — timestamped research links.
 • `/performance`, `/why`, `/status`, `/dataage`, `/lastscan` — tracking.
-• `/ask`, `/explain` — educational answers.
-• `/ticker-add ticker:` — any member may add a verified optionable ticker.
-• `/ticker-remove ticker:` — any member may remove a ticker from new scans.
-• `/ticker-list`, `/ticker-status` — show current universe and capacity.
-• `/filters` — show configuration; guarded changes remain owner-only.
+• `/ask`, `/explain` — detailed answers grounded in Learning Center lessons.
+• Ask `/ask` to **apply** a lesson to `$TICKER` for a read-only walkthrough.
+• Unanswered questions are saved and posted to #upgrade-review for expansion.
+• `/ticker-add`, `/ticker-remove` — public capped universe management.
+• `/ticker-list`, `/ticker-status` — current universe and capacity.
+• `/filters` — configuration status; guarded changes remain owner-only.
 
-The universe has a hard cap of **25 active tickers**, with no more than **12**
-processed in one rotating scan batch. Removal preserves history and keeps any
-open paper position tracked until it closes. All TradeBot output uses readable
-Discord cards. The system is paper-trading only and cannot place orders."""
+The universe is capped at **25 active tickers** and scans no more than **12** per
+rotation. Removing a ticker preserves history and open-position tracking. All
+TradeBot output uses readable cards. Paper trading only; no orders are placed."""
 
 sync.GUIDES["how-trades-are-found"] = """# How TradeBot Finds Paper Trades
-Nothing is selected randomly. Every paper position must pass a recorded process.
+Every paper position must pass a recorded process.
 
-**1. Universe**
-Verified optionable symbols come from the baseline list, member additions, and
-approved provider discovery. The universe is capped at 25 active symbols and
-rotates through no more than 12 per scan.
+**Universe:** verified optionable symbols from baseline, member additions, and
+approved discovery. Maximum 25 active; 12 per rotating scan.
 
-**2. Market context**
-Trend, momentum, volatility, support/resistance, VWAP, and intraday evidence
-classify the setup. A score ranks candidates; it is not a win probability.
+**Context:** trend, momentum, volatility, support/resistance, VWAP, volume, and
+intraday evidence. A score ranks candidates; it is not a win probability.
 
-**3. Contract quality**
-DTE, strike distance, bid, ask, volume, open interest, spread width, delta,
-cost, and modeled maximum risk are checked.
+**Contract quality:** DTE, strike, bid, ask, volume, open interest, width, delta,
+IV, cost, and modeled risk.
 
-**4. Structure and lifecycle**
-Directional evidence must match the call, put, or spread. Duplicates are
-blocked, positions are monitored, and every close receives a trade-specific
-win/loss review with learning cause tags. Removing a ticker never abandons an
-open position."""
+**Lifecycle:** duplicates are blocked, positions are monitored, and every close
+receives a trade-specific review separating exit trigger from probable cause.
+Cause tags feed the review-first learning archive; filters never change without
+adequate evidence and owner approval."""
 
 sync.GUIDES["scanner-controls"] = """# Ticker and Scanner Controls
-**Available to every member**
-• `/ticker-add ticker:` verifies and adds an optionable symbol if space exists.
-• `/ticker-remove ticker:` stops new scans while preserving history.
-• `/ticker-list` shows active symbols and remaining capacity.
-• `/ticker-status ticker:` shows whether one symbol is active.
+**Every member:** `/ticker-add`, `/ticker-remove`, `/ticker-list`, `/ticker-status`.
 
-**Capacity**
-• Hard maximum: **25 active tickers**
-• Rotating scan batch: **12 tickers**
-• Additions require a Tradier quote and usable option expirations
-• Removal never stops tracking an existing paper position
+**Capacity:** 25 active tickers; 12 per scan rotation. Additions require a live
+Tradier quote and usable option expirations. Removal stops new scans but never
+abandons an existing paper position or erases history.
 
-**Owner-only**
-Filter changes, pauses, resumes, and full manual scans remain guarded."""
+**Owner-only:** filter changes, pauses, resumes, and full manual scans."""
+
+sync.GUIDES["upgrade-review"] = """# Learning and Upgrade Review Queue
+This owner-control channel receives unanswered TradeBot questions and member
+suggestions that need deliberate review.
+
+Each unanswered-question card includes the exact wording, member, first and last
+seen time, repeat count, closest existing lesson matches, and a stable question
+ID. Repeated wording updates the same card instead of posting duplicates.
+
+To improve an answer, expand the correct Learning Center lesson, add relevant
+aliases and examples, then add the real question wording to the focused tests.
+TradeBot never invents an answer merely to avoid creating a review item."""
+
+
+def _tracker() -> ford_scan.DiscordTracker:
+    tracker = ford_scan.DiscordTracker(
+        ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+    )
+    if not tracker.enabled:
+        raise RuntimeError("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required.")
+    return tracker
 
 
 def main() -> int:
+    apply = "--apply" in sys.argv
+    tracker: ford_scan.DiscordTracker | None = None
+    renamed = 0
+
+    # Preserve useful history by renaming old lesson channels before the base
+    # synchronizer decides the new canonical channels are missing.
+    if apply:
+        tracker = _tracker()
+        renamed = sync_discord_cards.migrate_legacy_learning_channels(tracker)
+
     result = sync.main()
     if result:
         return result
 
-    if "--apply" not in sys.argv:
+    if not apply:
         counts = sync_learning_center.validate_curriculum()
+        if tuple(counts) != ORDERED_CHANNELS:
+            raise RuntimeError("Dry-run curriculum order does not match the catalog.")
         print(
-            "Dry run: card-backed Learning Center would synchronize "
-            f"{len(counts)} channels and {sum(counts.values())} lesson cards."
+            "Dry run: comprehensive Learning Center would synchronize "
+            f"{len(counts)} channels and {sum(counts.values())} lesson cards in "
+            f"{len(LEARNING_CHANNEL_ORDER)} ordered Learning Center channels."
         )
         return 0
 
-    tracker = ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN,
-        ford_scan.DISCORD_GUILD_ID,
-    )
-    if not tracker.enabled:
-        raise RuntimeError("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required.")
-
+    tracker = tracker or _tracker()
     removed = sync_discord_cards.cleanup_duplicate_learning_channels(tracker)
-    sync_learning_center.synchronize_curriculum(tracker)
+    ordered = sync_discord_cards.order_learning_channels(tracker)
+    channel_map = sync_discord_cards.write_learning_channel_map(tracker)
+    totals = sync_learning_center.synchronize_curriculum(tracker)
     migration_pid = sync_discord_cards.launch_background_migration()
     print(
-        "Discord presentation cleanup complete: "
-        f"{removed} duplicate channels removed; "
-        f"historical card migration started as PID {migration_pid}."
+        "Learning Center release complete: "
+        f"{renamed} legacy channels renamed; {removed} duplicates removed; "
+        f"{ordered} channels ordered; {len(channel_map)} references mapped; "
+        f"{totals['cards']} lesson cards synchronized; historical card migration "
+        f"started as PID {migration_pid}."
     )
     return 0
 

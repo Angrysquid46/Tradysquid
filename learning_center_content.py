@@ -1,367 +1,412 @@
-"""Curated options-trading education used by TradeBot.
+"""Library-grounded stock and options education for TradeBot.
 
-Answers are intentionally educational, concise enough for Discord, and never
-personalized recommendations. Current broker, tax, and regulatory rules must be
-verified with primary sources and qualified professionals.
+The answer engine indexes the same Markdown lessons synchronized into Discord.
+Every answer cites one or more Learning Center channels and section headings.
+It does not provide personalized recommendations or invent missing facts.
 """
 
 from __future__ import annotations
 
+import json
 import re
-from typing import Any
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Iterable
 
+from learning_center_catalog import LESSONS, LESSON_BY_CHANNEL, ORDERED_CHANNELS
 
-def topic(title: str, aliases: list[str], answer: str, category: str) -> dict[str, Any]:
-    return {
-        "title": title,
-        "aliases": aliases,
-        "answer": answer,
-        "category": category,
-    }
+ROOT = Path(__file__).resolve().parent
+LIBRARY_PATH = ROOT / "learning_center" / "COMPREHENSIVE_TRADING_LIBRARY.md"
+CHANNEL_MAP_PATH = ROOT / "state" / "learning-channel-map.json"
+CHANNEL_PATTERN = re.compile(
+    r"<!-- CHANNEL:(?P<channel>[a-z0-9-]+) -->\s*"
+    r"(?P<body>.*?)\s*"
+    r"<!-- END:(?P=channel) -->",
+    re.DOTALL,
+)
+SECTION_PATTERN = re.compile(r"(?m)^##\s+(?P<title>.+?)\s*$")
+WORD_PATTERN = re.compile(r"[a-z0-9]+(?:'[a-z0-9]+)?")
+SENTENCE_PATTERN = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9*`])")
 
-
-TOPICS = {
-    "stocks-etfs-indexes": topic(
-        "Stocks, ETFs, and Indexes",
-        ["stock", "stocks", "etf", "etfs", "index", "indexes", "indices", "underlying"],
-        "A stock represents ownership in one company. An ETF trades like a stock but holds a basket or follows a strategy. An index is a calculated market measurement and may have cash-settled options rather than deliverable shares. Always confirm the underlying, settlement method, multiplier, trading hours, dividends, and event calendar before using options on it.",
-        "Market basics",
-    ),
-    "quotes-orders": topic(
-        "Quotes and Order Types",
-        ["bid", "ask", "mid", "midpoint", "market order", "limit order", "stop order", "stop limit", "quote"],
-        "The bid is the best displayed buying price; the ask is the best displayed selling price. The midpoint is only a reference. Market orders prioritize execution, limit orders control the worst acceptable price, stop orders become market orders after triggering, and stop-limit orders can fail to fill. Options often require patient limit orders because spreads and displayed sizes can change quickly.",
-        "Market basics",
-    ),
-    "calls": topic(
-        "Call Options",
-        ["call", "calls", "call option", "buy call", "long call", "short call"],
-        "A call buyer has the right, but not the obligation, to buy the underlying at the strike under the contract terms. A long call generally benefits from a sufficiently large and timely rise. The buyer can lose the full premium. A call seller accepts assignment risk and may face substantial or unlimited loss when uncovered.",
-        "Options basics",
-    ),
-    "puts": topic(
-        "Put Options",
-        ["put", "puts", "put option", "buy put", "long put", "short put"],
-        "A put buyer has the right, but not the obligation, to sell the underlying at the strike under the contract terms. A long put generally benefits from a sufficiently large and timely decline. The buyer can lose the full premium. A put seller can be assigned and obligated to buy shares at the strike.",
-        "Options basics",
-    ),
-    "contract-terms": topic(
-        "Option Contract Terms",
-        ["strike", "strike price", "premium", "expiration", "dte", "multiplier", "contract size", "option symbol"],
-        "The strike is the contract price, expiration is the final contract date, DTE means days to expiration, and premium is quoted per share. One standard equity option usually represents 100 shares, so a $0.45 premium normally means $45 per contract before fees. Confirm the complete OCC symbol, side, quantity, expiration, strike, and opening or closing action before sending an order.",
-        "Options basics",
-    ),
-    "moneyness": topic(
-        "Moneyness",
-        ["itm", "atm", "otm", "in the money", "at the money", "out of the money", "moneyness"],
-        "ITM means the option has intrinsic value, ATM means the strike is near the underlying price, and OTM means it has no intrinsic value. Moneyness does not tell you whether the trade is profitable. Profit depends on the premium paid or received, current value, costs, and the complete position.",
-        "Options basics",
-    ),
-    "intrinsic-extrinsic": topic(
-        "Intrinsic and Extrinsic Value",
-        ["intrinsic", "extrinsic", "time value", "option value"],
-        "Intrinsic value is immediate exercise value. Extrinsic value is premium beyond intrinsic value and reflects time, implied volatility, rates, dividends, and supply and demand. Extrinsic value generally decays toward zero by expiration, but it does not decline in a smooth or guaranteed path.",
-        "Pricing and Greeks",
-    ),
-    "breakeven": topic(
-        "Breakeven",
-        ["breakeven", "break even", "break-even"],
-        "Expiration breakeven is strike plus premium for a long call and strike minus premium for a long put. Spread breakevens depend on the net debit or credit and structure. Before expiration, an option can be profitable or unprofitable away from expiration breakeven because time and implied volatility still have value.",
-        "Options basics",
-    ),
-    "option-chain": topic(
-        "Reading an Option Chain",
-        ["option chain", "chain", "read chain", "contract selection"],
-        "Read expiration, strike, bid, ask, last-trade time, volume, open interest, implied volatility, and Greeks. The last price may be stale and the midpoint is not guaranteed. Select a contract that matches the expected holding period, move, risk limit, liquidity, event exposure, and desired Greek profile rather than choosing the cheapest premium.",
-        "Option chain",
-    ),
-    "liquidity": topic(
-        "Options Liquidity",
-        ["liquidity", "bid ask spread", "spread width", "slippage", "open interest", "volume"],
-        "Liquidity affects entry and exit quality. Narrower bid/ask spreads, useful displayed size, volume, and open interest can help, but none guarantees a fill. Wide spreads increase slippage and make stops unreliable. Volume is today's activity; open interest is outstanding contracts. Use executable bid and ask prices, not a stale last trade.",
-        "Option chain",
-    ),
-    "delta": topic(
-        "Delta",
-        ["delta"],
-        "Delta estimates how much option premium may change for a $1 underlying move, all else equal. It also describes directional exposure. Delta changes as price, time, and volatility change. It is sometimes used as a rough probability proxy, but it is not an exact probability or guarantee.",
-        "Pricing and Greeks",
-    ),
-    "gamma": topic(
-        "Gamma",
-        ["gamma"],
-        "Gamma estimates how much delta changes when the underlying moves by $1. Gamma is usually strongest near the money and close to expiration. High gamma can make gains and losses accelerate quickly, which is why short-dated options can behave far more violently than their starting delta suggests.",
-        "Pricing and Greeks",
-    ),
-    "theta": topic(
-        "Theta",
-        ["theta", "time decay", "decay"],
-        "Theta estimates the effect of one day passing, all else equal. Time decay is not perfectly linear and often becomes more urgent near expiration, especially around the money. A correct directional idea can still lose when the move is too small or too slow.",
-        "Pricing and Greeks",
-    ),
-    "vega": topic(
-        "Vega",
-        ["vega"],
-        "Vega estimates how much premium may change for a one-percentage-point change in implied volatility. Long options are generally long vega and short options are generally short vega. Direction can be correct while a long option loses after implied volatility falls.",
-        "Pricing and Greeks",
-    ),
-    "rho": topic(
-        "Rho",
-        ["rho", "interest rates greek"],
-        "Rho estimates sensitivity to interest-rate changes. It is often less important than delta, gamma, theta, and vega for short-dated equity options, but it can matter more for long-dated contracts, rate-sensitive products, and changing interest-rate environments.",
-        "Pricing and Greeks",
-    ),
-    "implied-volatility": topic(
-        "Implied Volatility",
-        ["iv", "implied volatility", "volatility"],
-        "Implied volatility is the movement priced into options, not a direction forecast. Higher IV generally increases option premiums. Compare IV across strikes and expirations and consider event risk, skew, and term structure. High IV can remain high; low IV can expand suddenly.",
-        "Volatility",
-    ),
-    "iv-rank-percentile": topic(
-        "IV Rank and Percentile",
-        ["iv rank", "iv percentile", "volatility percentile"],
-        "IV rank compares current IV with its high and low over a chosen period. IV percentile estimates how often IV was below its current value. Both depend on the lookback and data method. They describe relative history, not whether IV must rise or fall.",
-        "Volatility",
-    ),
-    "skew-term-structure": topic(
-        "Skew and Term Structure",
-        ["skew", "volatility skew", "smile", "term structure", "iv curve"],
-        "Skew describes different IV across strikes. Term structure describes different IV across expirations. Downside puts often carry different IV from upside calls, and event expirations can be priced differently from later months. One IV number cannot describe the whole surface.",
-        "Volatility",
-    ),
-    "iv-crush-expected-move": topic(
-        "IV Crush and Expected Move",
-        ["iv crush", "volatility crush", "expected move", "earnings move"],
-        "Event premiums can include an expected move. After the event, uncertainty may collapse and IV can fall sharply. A long option may lose even when direction is correct if the realized move is smaller than priced. Expected move estimates magnitude, not direction or certainty.",
-        "Volatility",
-    ),
-    "candles-timeframes": topic(
-        "Candles and Timeframes",
-        ["candles", "candlestick", "wick", "timeframe", "chart timeframe", "ohlc"],
-        "A candle shows open, high, low, and close for one period. Bodies and wicks summarize trading, not future certainty. Higher timeframes provide broader context; lower timeframes show more execution detail and noise. Use a timeframe that matches the planned holding period and confirm whether extended-hours data is included.",
-        "Charts",
-    ),
-    "trend-structure": topic(
-        "Trend and Market Structure",
-        ["trend", "higher highs", "lower lows", "market structure", "breakout", "pullback", "range"],
-        "Trend can be described by slope, moving averages, and sequences of higher highs and lows or lower highs and lows. Ranges, breakouts, failed breakouts, pullbacks, and consolidation require different tactics. A lower-timeframe reversal can be only a pullback inside a higher-timeframe trend.",
-        "Charts",
-    ),
-    "support-resistance": topic(
-        "Support and Resistance",
-        ["support", "resistance", "levels", "supply", "demand"],
-        "Support and resistance are zones where behavior previously changed. They are context, not guaranteed barriers. Prior highs and lows, gaps, volume areas, VWAP, and moving averages may help define them. A useful level includes an invalidation rule, not merely a line drawn after price turned.",
-        "Charts",
-    ),
-    "moving-averages-vwap": topic(
-        "Moving Averages and VWAP",
-        ["sma", "ema", "moving average", "vwap"],
-        "SMA gives equal weight to prices in its window; EMA weights recent prices more heavily. VWAP measures volume-weighted average price for the selected session or anchor. These tools describe trend and positioning but lag price and can fail in ranges or fast regime changes.",
-        "Technical analysis",
-    ),
-    "rsi-macd": topic(
-        "RSI and MACD",
-        ["rsi", "macd", "momentum indicator", "overbought", "oversold"],
-        "RSI summarizes recent momentum on a 0-100 scale. Overbought can mean strong momentum, not an automatic short; oversold can mean strong selling, not an automatic long. MACD compares moving-average relationships and is also lagging. Use momentum with trend, levels, volume, and invalidation.",
-        "Technical analysis",
-    ),
-    "atr-bollinger": topic(
-        "ATR and Bollinger Bands",
-        ["atr", "average true range", "bollinger", "bollinger bands", "volatility indicator"],
-        "ATR estimates recent movement size and has no directional prediction. Bollinger Bands place volatility-based bands around a moving average. Expanding bands can accompany movement; contracting bands can precede expansion but do not predict direction. These tools can inform stops and targets only when matched to the setup and timeframe.",
-        "Technical analysis",
-    ),
-    "long-options": topic(
-        "Long Calls and Puts",
-        ["long option", "long call strategy", "long put strategy", "buying options"],
-        "Long calls and puts offer defined premium risk but require direction, movement size, timing, liquidity, and volatility to cooperate. Maximum loss is generally the premium paid. Before entry define the underlying thesis, DTE, delta, IV, maximum loss, target, stop, time stop, and event policy.",
-        "Strategies",
-    ),
-    "covered-call-csp": topic(
-        "Covered Calls and Cash-Secured Puts",
-        ["covered call", "cash secured put", "csp", "wheel"],
-        "A covered call combines long shares with a short call, capping upside while retaining substantial stock downside. A cash-secured put accepts an obligation to buy shares at the strike if assigned. Premium does not eliminate stock risk. The wheel is a sequence of these obligations, not a guaranteed-income machine.",
-        "Strategies",
-    ),
-    "protective-put-collar": topic(
-        "Protective Puts and Collars",
-        ["protective put", "collar", "hedge", "insurance put"],
-        "A protective put adds downside protection to long shares at the cost of premium. A collar adds a short call to help finance the put, usually capping upside. Evaluate the net cost, protection level, expiration mismatch, tax consequences, and assignment risk.",
-        "Strategies",
-    ),
-    "straddle-strangle": topic(
-        "Straddles and Strangles",
-        ["straddle", "strangle", "long volatility", "short volatility"],
-        "Long straddles and strangles need movement large enough to overcome premium and decay; they are not simply bets that price moves. Short versions collect premium but can face substantial or unlimited risk. Compare the priced expected move, IV, event timing, and exit plan.",
-        "Strategies",
-    ),
-    "vertical-spreads": topic(
-        "Vertical Debit and Credit Spreads",
-        ["vertical", "debit spread", "credit spread", "bull call", "bear put", "bull put", "bear call"],
-        "A vertical combines options of the same type and expiration at different strikes. Debit spreads pay for defined directional exposure; credit spreads receive premium with defined but real maximum loss. Calculate width, net debit or credit, maximum profit, maximum loss, breakeven, and assignment risk before entry.",
-        "Spreads",
-    ),
-    "calendar-diagonal": topic(
-        "Calendars and Diagonals",
-        ["calendar spread", "diagonal spread", "time spread", "poor mans covered call", "pmcc"],
-        "Calendars use the same strike across different expirations; diagonals also vary strike. They depend on timing, price location, and IV differences between expirations. The front short option can be assigned, and the long option may not offset the position as expected. Model both expiration paths.",
-        "Spreads",
-    ),
-    "condor-butterfly": topic(
-        "Iron Condors and Butterflies",
-        ["iron condor", "iron butterfly", "butterfly", "broken wing butterfly"],
-        "Condors and butterflies shape range-focused risk with multiple legs. They can have narrow profit zones, poor fills, and fast gamma near expiration. Defined risk can still equal the full spread loss. Evaluate each wing, net credit or debit, breakpoints, commissions, and expiration management.",
-        "Spreads",
-    ),
-    "position-sizing": topic(
-        "Position Sizing",
-        ["position size", "sizing", "risk per trade", "max loss", "account risk"],
-        "Choose size from the planned and maximum loss, not from unused buying power. Set trade, daily, weekly, portfolio, and drawdown limits. Include slippage, fees, gaps, correlation, and assignment obligations. Low premium does not automatically mean low risk, and a stop does not guarantee the planned exit price.",
-        "Risk management",
-    ),
-    "portfolio-risk": topic(
-        "Portfolio and Correlation Risk",
-        ["portfolio risk", "correlation", "portfolio greeks", "concentration", "sector exposure"],
-        "Several small positions can combine into one large directional, volatility, theta, sector, or event bet. Track total delta, theta, vega, maximum loss, ticker and sector concentration, expiration concentration, and correlated underlyings. Diversification by ticker name is not diversification when every position depends on the same market move.",
-        "Risk management",
-    ),
-    "trade-plan": topic(
-        "Trade Planning",
-        ["trade plan", "entry plan", "exit plan", "target", "stop", "invalidation", "time stop"],
-        "Before entry write the thesis, evidence, exact contract, acceptable fill, maximum loss, size, target, stop, invalidation, time stop, event policy, overnight policy, adjustment rules, and exit method. A plan written after the trade moves is a story, not a plan.",
-        "Trade management",
-    ),
-    "rolling": topic(
-        "Rolling Options",
-        ["roll", "rolling", "roll out", "roll up", "roll down"],
-        "Rolling closes one position and opens another. It can change strike, expiration, credit, risk, and thesis, but it does not erase the original realized gain or loss. Evaluate the new position independently, including its maximum loss, buying power, assignment risk, and reason for existing.",
-        "Trade management",
-    ),
-    "exercise-assignment": topic(
-        "Exercise and Assignment",
-        ["exercise", "assignment", "assigned", "auto exercise", "early assignment"],
-        "Exercise is the buyer using the contract right; assignment is the seller being required to fulfill it. Equity options can be assigned before expiration. Exercise or assignment can create or remove 100 shares per standard contract. Broker deadlines, automatic-exercise procedures, and risk controls vary and must be verified.",
-        "Expiration and assignment",
-    ),
-    "pin-dividend-risk": topic(
-        "Pin and Dividend Assignment Risk",
-        ["pin risk", "dividend risk", "ex dividend", "ex-dividend", "expiration risk"],
-        "Pin risk occurs when the underlying finishes near a strike and exercise outcomes are uncertain, including after-hours movement. Short calls can face early assignment around ex-dividend dates when remaining extrinsic value is small. Multi-leg spreads can become unhedged if legs are handled differently.",
-        "Expiration and assignment",
-    ),
-    "earnings-events": topic(
-        "Earnings and Catalysts",
-        ["earnings", "catalyst", "fed", "cpi", "jobs report", "economic event", "news event"],
-        "Earnings, guidance, economic releases, regulatory decisions, dividends, and corporate actions can cause gaps and volatility repricing. Confirm event timing and decide before entry whether the trade intentionally holds through it. Good news can fall when expectations were higher; expected move is not a direction forecast.",
-        "Events and catalysts",
-    ),
-    "psychology": topic(
-        "Trading Psychology",
-        ["psychology", "fomo", "revenge trading", "loss aversion", "overtrading", "discipline", "bias"],
-        "Common traps include FOMO, revenge trading, anchoring, loss aversion, recency bias, confirmation bias, boredom trades, moving stops, and increasing size after losses. Use checklists, fixed limits, breaks, and cooldowns after rule violations. A winning rule violation is still a process failure.",
-        "Psychology and journaling",
-    ),
-    "journal": topic(
-        "Trading Journal",
-        ["journal", "journaling", "trade review", "post trade review"],
-        "Record setup, regime, contract, Greeks, IV, liquidity, entry, exit, reason, screenshot, emotion, mistake, and whether rules were followed. Separate good-process losses from bad-process wins. Review patterns by strategy, ticker, DTE, delta, regime, event context, and execution quality.",
-        "Psychology and journaling",
-    ),
-    "expectancy-stats": topic(
-        "Expectancy and Performance Statistics",
-        ["expectancy", "win rate", "profit factor", "average win", "average loss", "drawdown", "performance stats"],
-        "Win rate alone is incomplete. Expectancy combines win probability, average win, and average loss. Also track profit factor, maximum drawdown, consecutive losses, exposure, holding time, fees, slippage, MAE, and MFE. A high-win-rate strategy can lose when occasional losses are much larger than wins.",
-        "Backtesting and statistics",
-    ),
-    "backtesting": topic(
-        "Backtesting and Overfitting",
-        ["backtest", "backtesting", "overfitting", "look ahead bias", "survivorship bias", "out of sample"],
-        "A useful backtest uses realistic fills, costs, timing, and rules that were knowable at the time. Avoid look-ahead bias, survivorship bias, data snooping, cherry-picked periods, and repeated parameter tuning. Use validation and out-of-sample data. Historical performance is evidence under assumptions, not proof of future profit.",
-        "Backtesting and statistics",
-    ),
-    "paper-trading": topic(
-        "Paper Trading",
-        ["paper trade", "paper trading", "simulation", "simulated fills"],
-        "Paper trading tests process without cash risk, but simulated fills can be better than live fills and do not reproduce emotion, assignment, margin, or liquidity perfectly. Record conservative executable prices, follow the same rules as live trading, and require a meaningful sample before drawing conclusions.",
-        "Backtesting and statistics",
-    ),
-    "accounts-taxes-rules": topic(
-        "Accounts, Taxes, and Trading Rules",
-        ["tax", "taxes", "wash sale", "pdt", "pattern day trader", "settlement", "margin", "cash account", "broker approval"],
-        "Broker approval, margin, settlement, exercise procedures, buying power, and active-trading restrictions vary and can change. Tax treatment can depend on the underlying, holding period, exercise, assignment, straddles, wash-sale rules, and special contract status. Verify current broker, FINRA, SEC, OCC, and IRS information and use a qualified professional for personal advice.",
-        "Rules and taxes",
-    ),
-    "scams-myths": topic(
-        "Scams and Trading Myths",
-        ["scam", "guru", "signal room", "guaranteed returns", "myth", "fake trader"],
-        "Red flags include guaranteed returns, secret indicators, unverifiable screenshots, deleted losses, pressure to act, credential requests, impersonation, and payment by crypto or gift card. Myths include: high win rate guarantees profit, cheap options are safe, delta is exact probability, selling premium is always safer, and paper success guarantees live success.",
-        "Scams and myths",
-    ),
+STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "because", "but", "by",
+    "can", "could", "do", "does", "for", "from", "get", "how", "i", "if",
+    "in", "is", "it", "me", "my", "of", "on", "or", "should", "so", "that",
+    "the", "their", "this", "to", "what", "when", "where", "which", "why",
+    "will", "with", "would", "you", "your",
 }
+
+# Query expansion improves everyday wording without pretending to be an LLM.
+SYNONYM_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("stock", "stocks", "share", "shares", "equity", "equities"),
+    ("etf", "fund", "exchange traded fund"),
+    ("fundamental", "fundamentals", "business quality", "company analysis"),
+    ("income statement", "profit and loss", "p and l", "earnings statement"),
+    ("balance sheet", "assets liabilities equity"),
+    ("cash flow", "cashflow", "free cash flow", "fcf"),
+    ("valuation", "fair value", "multiple", "p e", "pe ratio", "dcf"),
+    ("bid ask", "bid and ask", "spread width", "market spread"),
+    ("stop loss", "stoploss", "stop order", "risk stop"),
+    ("chart", "candlestick", "candle", "price action"),
+    ("support", "demand zone", "floor"),
+    ("resistance", "supply zone", "ceiling"),
+    ("moving average", "sma", "ema"),
+    ("volume", "relative volume", "rvol", "participation"),
+    ("breadth", "advance decline", "market internals"),
+    ("interest rate", "interest rates", "rates", "fed", "federal reserve"),
+    ("inflation", "cpi", "pce", "producer prices"),
+    ("short selling", "short stock", "shorting", "borrow shares"),
+    ("position sizing", "size", "risk per trade", "trade size"),
+    ("option", "options", "contract", "derivative"),
+    ("call", "calls", "call option", "bullish option"),
+    ("put", "puts", "put option", "bearish option"),
+    ("expiration", "expiry", "dte", "days to expiration"),
+    ("in the money", "itm", "moneyness"),
+    ("at the money", "atm", "moneyness"),
+    ("out of the money", "otm", "moneyness"),
+    ("open interest", "oi", "outstanding contracts"),
+    ("implied volatility", "iv", "volatility pricing"),
+    ("iv crush", "volatility crush", "post earnings volatility"),
+    ("delta", "directional greek", "share equivalent"),
+    ("gamma", "delta acceleration", "gamma risk"),
+    ("theta", "time decay", "decay"),
+    ("vega", "volatility sensitivity"),
+    ("rho", "rate sensitivity"),
+    ("covered call", "buy write", "overwrite"),
+    ("cash secured put", "csp", "short put"),
+    ("protective put", "insurance put", "downside hedge"),
+    ("vertical spread", "debit spread", "credit spread", "bull put", "bear call", "bull call", "bear put"),
+    ("calendar spread", "time spread", "calendar"),
+    ("diagonal spread", "diagonal", "pmcc", "poor mans covered call"),
+    ("iron condor", "condor"),
+    ("assignment", "assigned", "option assignment"),
+    ("exercise", "exercised", "option exercise"),
+    ("pin risk", "expiration near strike"),
+    ("earnings", "earnings report", "quarterly results", "guidance"),
+    ("psychology", "fomo", "revenge trading", "emotions", "discipline"),
+    ("journal", "journaling", "trade review", "post trade review"),
+    ("expectancy", "expected value", "average trade"),
+    ("backtest", "backtesting", "historical test", "strategy test"),
+    ("overfitting", "curve fitting", "data snooping"),
+    ("broker", "brokerage", "trading account"),
+    ("tax", "taxes", "wash sale", "cost basis"),
+    ("research", "sec filing", "10 k", "10 q", "8 k", "edgar"),
+    ("scam", "fraud", "fake guru", "signal room", "guaranteed returns"),
+)
+
+
+@dataclass(frozen=True)
+class LibrarySection:
+    channel: str
+    lesson_title: str
+    heading: str
+    text: str
+    normalized: str
+    tokens: frozenset[str]
+    keywords: frozenset[str]
 
 
 def normalize(value: str) -> str:
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).split())
+    return " ".join(WORD_PATTERN.findall(str(value or "").casefold()))
 
 
-def match_topic(query: str) -> dict[str, Any] | None:
-    normalized = normalize(query)
-    if not normalized:
-        return None
-    best: tuple[int, dict[str, Any]] | None = None
-    query_tokens = set(normalized.split())
-    for item in TOPICS.values():
-        phrases = [item["title"], *item["aliases"]]
-        score = 0
-        for phrase in phrases:
-            candidate = normalize(phrase)
-            if normalized == candidate:
-                score = max(score, 1000 + len(candidate))
-            elif candidate and candidate in normalized:
-                score = max(score, 500 + len(candidate))
-            else:
-                overlap = len(query_tokens.intersection(candidate.split()))
-                score = max(score, overlap * 20)
-        if score and (best is None or score > best[0]):
-            best = (score, item)
-    return best[1] if best else None
+def tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in WORD_PATTERN.findall(str(value or "").casefold())
+        if len(token) > 1 and token not in STOPWORDS
+    }
+
+
+def _expand_query(value: str) -> tuple[str, set[str], set[str]]:
+    normalized = normalize(value)
+    query_tokens = tokens(normalized)
+    phrases = {normalized} if normalized else set()
+    for group in SYNONYM_GROUPS:
+        normalized_group = tuple(normalize(item) for item in group)
+        if any(
+            phrase == normalized
+            or phrase in normalized
+            or tokens(phrase).intersection(query_tokens)
+            for phrase in normalized_group
+        ):
+            phrases.update(normalized_group)
+            for phrase in normalized_group:
+                query_tokens.update(tokens(phrase))
+    return normalized, query_tokens, phrases
+
+
+def _strip_markdown(value: str) -> str:
+    value = re.sub(r"<!--.*?-->", " ", value, flags=re.DOTALL)
+    value = re.sub(r"^#{1,6}\s*", "", value, flags=re.MULTILINE)
+    value = value.replace("**", "").replace("__", "").replace("`", "")
+    value = re.sub(r"\[([^]]+)]\([^)]+\)", r"\1", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _parse_sections(channel: str, body: str) -> list[LibrarySection]:
+    spec = LESSON_BY_CHANNEL[channel]
+    matches = list(SECTION_PATTERN.finditer(body))
+    sections: list[LibrarySection] = []
+    if not matches:
+        matches = []
+    intro_end = matches[0].start() if matches else len(body)
+    intro = body[:intro_end].strip()
+    if intro:
+        sections.append(_build_section(channel, spec.title, "Overview", intro))
+    for index, match in enumerate(matches):
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
+        section_text = body[start:end].strip()
+        if section_text:
+            sections.append(
+                _build_section(channel, spec.title, match.group("title").strip(), section_text)
+            )
+    return sections
+
+
+def _build_section(
+    channel: str,
+    lesson_title: str,
+    heading: str,
+    text: str,
+) -> LibrarySection:
+    spec = LESSON_BY_CHANNEL[channel]
+    searchable = " ".join(
+        [lesson_title, heading, text, " ".join(spec.keywords)]
+    )
+    return LibrarySection(
+        channel=channel,
+        lesson_title=lesson_title,
+        heading=heading,
+        text=text.strip(),
+        normalized=normalize(searchable),
+        tokens=frozenset(tokens(searchable)),
+        keywords=frozenset(tokens(" ".join(spec.keywords))),
+    )
+
+
+@lru_cache(maxsize=1)
+def library_sections() -> tuple[LibrarySection, ...]:
+    text = LIBRARY_PATH.read_text(encoding="utf-8")
+    lessons = {
+        match.group("channel"): match.group("body").strip()
+        for match in CHANNEL_PATTERN.finditer(text)
+    }
+    missing = [channel for channel in ORDERED_CHANNELS if channel not in lessons]
+    if missing:
+        raise RuntimeError("Learning library is missing: " + ", ".join(missing))
+    sections: list[LibrarySection] = []
+    for channel in ORDERED_CHANNELS:
+        sections.extend(_parse_sections(channel, lessons[channel]))
+    return tuple(sections)
+
+
+def _score_section(
+    section: LibrarySection,
+    normalized_query: str,
+    query_tokens: set[str],
+    query_phrases: set[str],
+) -> float:
+    heading_norm = normalize(section.heading)
+    title_norm = normalize(section.lesson_title)
+    score = 0.0
+    if normalized_query and normalized_query == heading_norm:
+        score += 1000
+    if normalized_query and normalized_query == title_norm:
+        score += 900
+    if normalized_query and normalized_query in heading_norm:
+        score += 450
+    if normalized_query and normalized_query in section.normalized:
+        score += 260
+
+    heading_tokens = tokens(section.heading)
+    title_tokens = tokens(section.lesson_title)
+    score += len(query_tokens.intersection(heading_tokens)) * 90
+    score += len(query_tokens.intersection(title_tokens)) * 55
+    score += len(query_tokens.intersection(section.keywords)) * 45
+    overlap = query_tokens.intersection(section.tokens)
+    score += len(overlap) * 12
+    if query_tokens:
+        score += 80 * (len(overlap) / len(query_tokens))
+
+    for phrase in query_phrases:
+        if len(phrase) < 3:
+            continue
+        if phrase == heading_norm:
+            score += 400
+        elif phrase in heading_norm:
+            score += 180
+        elif phrase in section.normalized:
+            score += 45
+    return score
+
+
+def search_library(query: str, limit: int = 4) -> list[tuple[float, LibrarySection]]:
+    normalized_query, query_tokens, query_phrases = _expand_query(query)
+    if not normalized_query:
+        return []
+    ranked = [
+        (
+            _score_section(section, normalized_query, query_tokens, query_phrases),
+            section,
+        )
+        for section in library_sections()
+    ]
+    ranked = [item for item in ranked if item[0] >= 45]
+    ranked.sort(key=lambda item: (-item[0], ORDERED_CHANNELS.index(item[1].channel), item[1].heading))
+
+    selected: list[tuple[float, LibrarySection]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in ranked:
+        identity = (item[1].channel, item[1].heading)
+        if identity in seen:
+            continue
+        selected.append(item)
+        seen.add(identity)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _channel_ids() -> dict[str, str]:
+    try:
+        payload = json.loads(CHANNEL_MAP_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {}
+    channels = payload.get("channels") if isinstance(payload, dict) else {}
+    return channels if isinstance(channels, dict) else {}
+
+
+def channel_reference(channel: str) -> str:
+    channel_id = str(_channel_ids().get(channel) or "").strip()
+    return f"<#{channel_id}>" if channel_id else f"**#{channel}**"
+
+
+def _relevant_sentences(section: LibrarySection, query: str, limit: int = 1450) -> str:
+    plain = _strip_markdown(section.text)
+    sentences = [item.strip() for item in SENTENCE_PATTERN.split(plain) if item.strip()]
+    if not sentences:
+        return plain[:limit]
+    _, query_tokens, query_phrases = _expand_query(query)
+    scored: list[tuple[float, int, str]] = []
+    for index, sentence in enumerate(sentences):
+        sentence_norm = normalize(sentence)
+        sentence_tokens = tokens(sentence)
+        score = len(query_tokens.intersection(sentence_tokens)) * 8
+        score += sum(12 for phrase in query_phrases if phrase and phrase in sentence_norm)
+        if index == 0:
+            score += 3
+        scored.append((score, index, sentence))
+    best = sorted(scored, key=lambda item: (-item[0], item[1]))[:6]
+    chosen_indices = sorted(item[1] for item in best if item[0] > 0)
+    if not chosen_indices:
+        chosen_indices = list(range(min(4, len(sentences))))
+    selected = " ".join(sentences[index] for index in chosen_indices)
+    if len(selected) <= limit:
+        return selected
+    clipped = selected[:limit].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return clipped + "…"
+
+
+def _reference_line(section: LibrarySection) -> str:
+    return f"{channel_reference(section.channel)} → **{section.heading}**"
 
 
 def category_index() -> str:
-    categories: dict[str, list[str]] = {}
-    for item in TOPICS.values():
-        categories.setdefault(item["category"], []).append(item["title"])
-    lines = ["📚 **Learning Center topics**"]
-    for category, titles in categories.items():
-        preview = ", ".join(titles[:5])
-        if len(titles) > 5:
-            preview += f", +{len(titles) - 5} more"
-        lines.append(f"**{category}:** {preview}")
-    lines.append("Ask `/ask question:` in ordinary language or use `/explain topic:`.")
-    return "\n".join(lines)[:1900]
+    groups = (
+        ("Stocks and business", LESSONS[0:4]),
+        ("Mechanics and analysis", LESSONS[4:12]),
+        ("Options", LESSONS[12:19]),
+        ("Execution and improvement", LESSONS[19:27]),
+    )
+    lines = ["# Complete Trading Learning Center"]
+    for heading, items in groups:
+        lines.append(f"\n**{heading}**")
+        for item in items:
+            lines.append(f"{channel_reference(item.channel)} · {item.title}")
+    lines.append(
+        "\nUse `/ask question:` for ordinary-language questions or `/explain topic:` "
+        "for one concept. Answers cite the exact library sections used."
+    )
+    return "\n".join(lines)[:3900]
+
+
+def _answer_from_matches(question: str, matches: list[tuple[float, LibrarySection]]) -> str:
+    primary = matches[0][1]
+    lines = [
+        f"# {primary.heading}",
+        _relevant_sentences(primary, question),
+        "",
+        "## Learning Center reference",
+        _reference_line(primary),
+    ]
+    related: list[str] = []
+    for _, section in matches[1:]:
+        reference = _reference_line(section)
+        if reference not in related and section.channel != primary.channel:
+            related.append(reference)
+        if len(related) >= 2:
+            break
+    if related:
+        lines.extend(["", "## Related reading", *[f"• {item}" for item in related]])
+    lines.extend(
+        [
+            "",
+            "_Educational information only. Live quotes, current broker rules, and "
+            "personal tax or legal circumstances require separate verification._",
+        ]
+    )
+    return "\n".join(lines)[:3900]
 
 
 def explain(topic_query: str) -> str:
-    item = match_topic(topic_query)
-    if not item:
+    matches = search_library(topic_query, limit=4)
+    if not matches:
         return category_index()
-    return (
-        f"📚 **{item['title']}**\n{item['answer']}\n\n"
-        f"Category: **{item['category']}** · Educational information only."
-    )[:1950]
+    return _answer_from_matches(topic_query, matches)
 
 
 def answer(question: str) -> str:
-    item = match_topic(question)
-    if not item:
+    cleaned = str(question or "").strip()
+    matches = search_library(cleaned, limit=5)
+    if not matches:
         return (
-            f"**Question:** {question.strip()}\n\n"
-            "I do not have a confident curated match for that wording yet. "
-            "Use `/explain topic:` with a specific term or check #learning-index. "
-            "I will not invent a financial answer."
-        )[:1950]
-    return (
-        f"**Question:** {question.strip()}\n\n"
-        f"**{item['title']}:** {item['answer']}\n\n"
-        f"Category: **{item['category']}** · Educational information only."
-    )[:1950]
+            f"# No confident library match\nI could not match **{cleaned or 'that question'}** "
+            "to the curated trading library with enough confidence. I will not invent "
+            "a financial answer. Try the main term with `/explain`, or use "
+            f"{channel_reference('learning-index')} to browse all 27 subjects."
+        )[:3900]
+    return _answer_from_matches(cleaned, matches)
+
+
+def validate_library_search() -> dict[str, Any]:
+    sections = library_sections()
+    probes = {
+        "What does gamma do near expiration?": "15-option-pricing-greeks",
+        "How do I read a balance sheet?": "03-financial-statements",
+        "Why can an option lose after earnings even when direction is right?": "16-volatility",
+        "What is a stop limit order?": "05-market-mechanics-orders",
+        "How do covered calls lose money?": "18-income-and-hedging",
+        "What is pin risk?": "21-expiration-assignment",
+        "How should I test a strategy without overfitting?": "24-backtesting-statistics",
+        "How do I verify a news headline?": "26-research-data-tools",
+    }
+    failures: list[str] = []
+    for query, expected_channel in probes.items():
+        matches = search_library(query, limit=1)
+        actual = matches[0][1].channel if matches else "none"
+        if actual != expected_channel:
+            failures.append(f"{query!r}: expected {expected_channel}, got {actual}")
+    if failures:
+        raise RuntimeError("Learning search validation failed: " + "; ".join(failures))
+    return {"sections": len(sections), "probes": len(probes)}
+
+
+if __name__ == "__main__":
+    result = validate_library_search()
+    print(
+        f"Validated {result['sections']} searchable lesson sections and "
+        f"{result['probes']} representative questions."
+    )
