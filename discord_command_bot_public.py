@@ -12,6 +12,9 @@ import discord_command_bot as bot
 
 
 bot.OWNER_ONLY_COMMANDS.discard("ticker-remove")
+bot.ticker_registry.CONFIG_PATH = (
+    bot.ticker_registry.ROOT / "state" / "member-ticker-registry.json"
+)
 
 
 def public_ticker_add_reply(interaction: dict) -> str:
