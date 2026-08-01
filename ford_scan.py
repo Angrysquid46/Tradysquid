@@ -230,6 +230,8 @@ CHANNEL_NAMES = {
     "weekly_report": "performance-dashboard",
     "performance_stats": "performance-dashboard",
     "strategy_breakdown": "strategy-results",
+    "ticker_results": "ticker-results",
+    "learning_results": "learning-results",
     "status": "system-health",
     "errors": "provider-status",
     "workflow_log": "workflow-log",
@@ -279,6 +281,8 @@ AUTOMATED_CHANNEL_KEYS = [
     "weekly_report",
     "performance_stats",
     "strategy_breakdown",
+    "ticker_results",
+    "learning_results",
     "status",
     "errors",
     "workflow_log",
@@ -3390,6 +3394,34 @@ def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
     lines.extend(["### Updated", portable_strftime(now_ct(), "%m/%d/%y %-I:%M %p CT")])
     return "\n".join(lines)
 
+def format_ticker_results(rows: list[dict[str, str]]) -> str:
+    groups: dict[str, list[dict[str, str]]] = {}
+    for row in closed_rows(rows):
+        ticker = str(row.get("ticker") or "F").upper()
+        groups.setdefault(ticker, []).append(row)
+    lines = [
+        "## Ticker Results",
+        "Every completed tracked trade, grouped by underlying.",
+    ]
+    if not groups:
+        lines.append("No completed trades yet.")
+    else:
+        ranked = sorted(
+            groups.items(),
+            key=lambda item: result_metrics(item[1])["total_pnl"],
+            reverse=True,
+        )
+        for ticker, group in ranked:
+            metrics = result_metrics(group)
+            lines.append(
+                f"**{ticker}** — {int(metrics['wins'])}W / {int(metrics['losses'])}L "
+                f"/ {int(metrics['scratches'])}S · {metrics['win_rate']:.0f}% win rate · "
+                f"Net {fmt_metric_money(metrics, 'total_pnl')}"
+            )
+    lines.append(f"Updated **{portable_strftime(now_ct(), '%m/%d/%y %-I:%M %p CT')}**")
+    return "\n".join(lines)[:2000]
+
+
 def format_daily_recap(
     rows: list[dict[str, str]],
     report_date: date,
@@ -3425,7 +3457,9 @@ def format_daily_recap(
     ])
     return "\n".join(lines)[:2000]
 
-def format_weekly_report(rows: list[dict[str, str]], report_date: date) -> str:
+def format_weekly_report(
+    rows: list[dict[str, str]], report_date: date, *, final: bool = False
+) -> str:
     monday = report_date - timedelta(days=report_date.weekday())
     completed = rows_closed_between(rows, monday, report_date)
     metrics = result_metrics(completed)
@@ -3460,6 +3494,7 @@ def format_weekly_report(rows: list[dict[str, str]], report_date: date) -> str:
     else:
         lines.append("No trades closed this week.")
     lines.append(f"Updated **{portable_strftime(now_ct(), '%m/%d/%y %-I:%M %p CT')}**")
+    lines.insert(1, f"**Status:** {'FINAL' if final else 'LIVE'}")
     return "\n".join(lines)[:2000]
 
 def static_server_pages() -> dict[str, str]:
@@ -3752,6 +3787,12 @@ def update_performance_pages(
         format_strategy_breakdown(rows),
     )
     discord.upsert_channel_message(
+        "ticker_results",
+        state,
+        "ticker-results",
+        format_ticker_results(rows),
+    )
+    discord.upsert_channel_message(
         "wins",
         state,
         "wins-summary",
@@ -3788,7 +3829,7 @@ def sync_reports(
         for row in closed_rows(rows)
         if (parsed := parse_iso(row.get("closed_at"))) is not None
     }
-    daily_dates = sorted(historical_dates | {today})[-30:]
+    daily_dates = [today]
     for report_date in daily_dates:
         date_key = report_date.isoformat()
         daily = format_daily_recap(
@@ -3810,10 +3851,13 @@ def sync_reports(
     }
     for monday in sorted(week_starts)[-12:]:
         current_week = monday <= today <= monday + timedelta(days=6)
-        report_end = today if current_week else monday + timedelta(days=4)
+        friday = monday + timedelta(days=4)
+        report_end = min(today, friday) if current_week else friday
         iso_year, iso_week, _ = monday.isocalendar()
         week_key = f"{iso_year}-W{iso_week:02d}"
-        weekly = format_weekly_report(rows, report_end)
+        weekly = format_weekly_report(
+            rows, report_end, final=(not current_week or today >= friday)
+        )
         discord.upsert_channel_message(
             "weekly_report",
             state,

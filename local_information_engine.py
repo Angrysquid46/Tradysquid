@@ -1519,6 +1519,15 @@ def _route_stream_close(
         return
     report_state = ford_scan.read_report_state()
     ford_scan.post_close(row, evaluation, tracker, report_state)
+    rows = ford_scan.read_log()
+    ford_scan.update_performance_pages(tracker, report_state, rows)
+    ford_scan.sync_reports(
+        tracker,
+        report_state,
+        rows,
+        ford_scan.now_ct(),
+        market_open=ford_scan.market_is_open_now()[0],
+    )
     ford_scan.write_report_state(report_state)
 
 
@@ -1645,10 +1654,67 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
             "generated_at": summary["generated_at"],
         },
     )
+    tracker = discord_tracker()
+    if tracker:
+        report_state = ford_scan.read_report_state()
+        evidence = summary["evidence_ready_groups"]
+        lines = [
+            "## Learning Results",
+            f"Closed trades analyzed **{summary['closed_trades']}** · "
+            f"minimum sample **{summary['minimum_sample']}**",
+            "### Evidence-ready groups",
+        ]
+        if evidence:
+            for item in evidence[:12]:
+                lines.append(
+                    f"**{item['feature']}: {item['value']}** — {item['samples']} trades · "
+                    f"{item['win_rate_pct']:.0f}% wins · "
+                    f"avg {ford_scan.fmt_money(item['average_pl_dollars'])} · "
+                    f"total {ford_scan.fmt_money(item['total_pl_dollars'])}"
+                )
+        else:
+            lines.append(
+                "No group has reached the evidence threshold yet. Collection is active."
+            )
+        lines.extend([
+            "### Guardrail",
+            "Historical evidence only; this never changes scanner rules automatically.",
+            f"Updated **{ford_scan.portable_strftime(ford_scan.now_ct(), '%m/%d/%y %-I:%M %p CT')}**",
+        ])
+        tracker.upsert_channel_message(
+            "learning_results",
+            report_state,
+            "learning-results",
+            "\n".join(lines)[:2000],
+        )
+        ford_scan.write_report_state(report_state)
     return (
         f"{summary['closed_trades']} closed trades; "
         f"{len(summary['evidence_ready_groups'])} evidence-ready groups"
     )
+
+
+def discord_reporting_job(connection: sqlite3.Connection) -> str:
+    """Refresh every result dashboard from the complete tracked trade history."""
+    with POSITION_FILE_LOCK:
+        rows = ford_scan.read_log()
+    tracker = discord_tracker()
+    if not tracker:
+        raise RuntimeError("Discord tracker is unavailable")
+    report_state = ford_scan.read_report_state()
+    ford_scan.update_performance_pages(tracker, report_state, rows)
+    ford_scan.sync_reports(
+        tracker,
+        report_state,
+        rows,
+        ford_scan.now_ct(),
+        market_open=ford_scan.market_is_open_now()[0],
+    )
+    ford_scan.write_report_state(report_state)
+    outcome_learning_job(connection)
+    closed = len(ford_scan.closed_rows(rows))
+    store_observation(connection, "discord-reporting", {"closed": closed})
+    return f"performance, strategy, ticker, daily, and weekly refreshed from {closed} closed trades"
 
 
 def discord_card_migration_job(connection: sqlite3.Connection) -> str:
@@ -1740,6 +1806,12 @@ JOBS = [
         "closed-position-cleanup",
         timedelta(minutes=5),
         closed_position_cleanup_job,
+        retry_interval=timedelta(minutes=1),
+    ),
+    Job(
+        "discord-reporting",
+        timedelta(minutes=5),
+        discord_reporting_job,
         retry_interval=timedelta(minutes=1),
     ),
     Job(

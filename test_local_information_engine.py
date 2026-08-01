@@ -193,6 +193,7 @@ class InformationEngineTests(unittest.TestCase):
             "full-options-scan",
             "position-tracker",
             "closed-position-cleanup",
+            "discord-reporting",
             "dynamic-universe-refresh",
             "managed-ticker-information",
             "managed-ticker-news",
@@ -211,6 +212,46 @@ class InformationEngineTests(unittest.TestCase):
             "discord-card-migration",
         }.issubset(background))
 
+    def test_reporting_job_refreshes_all_closed_trade_views(self) -> None:
+        rows = [{"trade_id": "F-1", "ticker": "F", "outcome": "WIN"}]
+        state: dict = {}
+        tracker = object()
+        connection = object()
+        with (
+            patch.object(engine.ford_scan, "read_log", return_value=rows),
+            patch.object(engine, "discord_tracker", return_value=tracker),
+            patch.object(engine.ford_scan, "read_report_state", return_value=state),
+            patch.object(engine.ford_scan, "update_performance_pages") as pages,
+            patch.object(engine.ford_scan, "sync_reports") as reports,
+            patch.object(engine.ford_scan, "write_report_state") as write_state,
+            patch.object(engine, "outcome_learning_job") as learning,
+            patch.object(engine, "store_observation"),
+        ):
+            result = engine.discord_reporting_job(connection)
+        pages.assert_called_once_with(tracker, state, rows)
+        reports.assert_called_once()
+        write_state.assert_called_once_with(state)
+        learning.assert_called_once_with(connection)
+        self.assertIn("1 closed trades", result)
+
+    def test_ticker_results_use_all_closed_trades(self) -> None:
+        rows = [
+            {"ticker": "F", "outcome": "WIN", "realized_pl_dollars": "20"},
+            {"ticker": "F", "outcome": "LOSS", "realized_pl_dollars": "-5"},
+            {"ticker": "NU", "outcome": "LOSS", "realized_pl_dollars": "-10"},
+        ]
+        content = ford_scan.format_ticker_results(rows)
+        self.assertIn("**F**", content)
+        self.assertIn("1W / 1L", content)
+        self.assertIn("**NU**", content)
+
+    def test_weekly_report_marks_live_and_final(self) -> None:
+        report_date = date(2026, 7, 31)
+        self.assertIn("**Status:** LIVE", ford_scan.format_weekly_report([], report_date))
+        self.assertIn(
+            "**Status:** FINAL",
+            ford_scan.format_weekly_report([], report_date, final=True),
+        )
     def test_closed_position_cleanup_reconciles_without_market_scan(self) -> None:
         closed = [{"trade_id": "NU-009", "outcome": "LOSS"}]
         state: dict = {}
