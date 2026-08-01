@@ -8,6 +8,7 @@ on:
       - "learning_center_content.py"
       - "learning_search_router.py"
       - "learning_application.py"
+      - "learning_application_public.py"
       - "learning_question_gaps.py"
       - "sync_learning_center.py"
       - "sync_discord_cards.py"
@@ -52,6 +53,7 @@ jobs:
             learning_center_content.py \
             learning_search_router.py \
             learning_application.py \
+            learning_application_public.py \
             learning_question_gaps.py \
             sync_learning_center.py \
             sync_discord_cards.py \
@@ -64,7 +66,7 @@ jobs:
         run: |
           python sync_learning_center.py
           python learning_search_router.py
-          python learning_application.py
+          python learning_application_public.py
 
       - name: Run focused tests
         run: python -m unittest -q test_learning_center.py test_local_information_engine.py
