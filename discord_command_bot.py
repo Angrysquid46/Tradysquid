@@ -300,7 +300,12 @@ def why_reply(ticker: str, trade_id: str) -> str:
         f"{row.get('strike')} · expires {row.get('expiration')}\n"
         f"Entry: {ford_scan.fmt_money(ford_scan.as_float(row.get('entry_price')))}\n"
         f"Recorded regime: {row.get('market_regime') or 'Unavailable'}\n"
-        f"Recorded rationale: {reason}"
+        f"Trade thesis: {row.get('thesis') or reason}\n"
+        f"Entry confirmation: {row.get('entry_confirmation') or reason}\n"
+        f"Invalidation: {row.get('invalidation') or 'Unavailable'}\n"
+        f"Risk plan: {row.get('risk_plan') or 'Unavailable'}\n"
+        f"Learning application: {row.get('learning_plan') or 'Unavailable'}\n"
+        f"Evidence limits: {row.get('evidence_limitations') or 'Unavailable'}"
         f"{result_detail}\n"
         "Educational review only—not financial advice."
     )

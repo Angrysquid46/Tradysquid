@@ -148,7 +148,7 @@ DISCORD_SYNC_EXISTING_OPEN = os.environ.get("DISCORD_SYNC_EXISTING_OPEN", "true"
 DISCORD_MIGRATE_LEGACY_MESSAGES = os.environ.get(
     "DISCORD_MIGRATE_LEGACY_MESSAGES", "false"
 ).lower() == "true"
-DISCORD_FORMAT_VERSION = "11"
+DISCORD_FORMAT_VERSION = "12"
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Tradysquids-TradeBot/1.0"})
@@ -184,6 +184,12 @@ LOG_HEADER = [
     "setup_score",
     "setup_reason",
     "market_regime",
+    "thesis",
+    "entry_confirmation",
+    "invalidation",
+    "risk_plan",
+    "learning_plan",
+    "evidence_limitations",
     "outcome",
     "pct_gain_loss",
     "realized_pl_dollars",
@@ -619,10 +625,19 @@ def trade_learning_analysis(row: dict[str, str], *, closed: bool = False) -> str
     signal = str(row.get("last_signal") or ("OPEN" if not closed else "CLOSED"))
     strategy_lesson = "19-spreads-multi-leg" if "spread" in style else "17-directional-options"
     bias = "bullish" if style in {"regular-call", "swing-call", "bull-put-spread"} else "bearish"
-    thesis = (
-        f"This **{style.replace('-', ' ')}** expresses a **{bias}** paper thesis on "
-        f"**{row.get('ticker') or TICKER}**. The stored regime was **{regime}** and the "
-        f"trade-specific qualification record says: **{reason}**"
+    thesis = str(row.get("thesis") or "").strip() or (
+        f"This {style.replace('-', ' ')} expresses a {bias} paper thesis on "
+        f"{row.get('ticker') or TICKER}. The stored regime was {regime}; qualification: {reason}"
+    )
+    confirmation = str(row.get("entry_confirmation") or "").strip() or reason
+    invalidation = str(row.get("invalidation") or "").strip() or "Not recorded in the original trade evidence."
+    risk_plan = str(row.get("risk_plan") or "").strip() or "Not recorded in the original trade evidence."
+    learning_plan = str(row.get("learning_plan") or "").strip() or (
+        f"Apply {strategy_lesson}, option liquidity/Greeks, volatility, risk, execution, and journaling lessons."
+    )
+    limitations = str(row.get("evidence_limitations") or "").strip() or (
+        "Indicators or market observations absent from the original trade record are unavailable "
+        "and are not reconstructed as entry facts."
     )
     evidence = (
         f"**Delta:** {fmt_delta(delta)} · **IV:** {fmt_iv(iv)} · **OI:** {fmt_oi(oi)} · "
@@ -630,12 +645,13 @@ def trade_learning_analysis(row: dict[str, str], *, closed: bool = False) -> str
     )
     lines = [
         "### Applied Learning Center Analysis",
-        thesis,
+        f"**Trade thesis:** {thesis}",
+        f"**Entry confirmation:** {confirmation}",
+        f"**Invalidation:** {invalidation}",
+        f"**Risk plan:** {risk_plan}",
+        f"**Learning application:** {learning_plan}",
         f"**Recorded option evidence:** {evidence}",
-        (
-            "**Evidence limitation:** Indicators or market observations absent from the original "
-            "trade record are marked unavailable and are not reconstructed as entry facts."
-        ),
+        f"**Evidence limitation:** {limitations}",
         "**Learning Center path:** "
         + " · ".join(
             learning_channel_reference(channel)
@@ -2290,6 +2306,26 @@ def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], time
             "setup_score": round_or_blank(as_float(candidate.get("score")), 1),
             "setup_reason": str(candidate.get("setup_reason", "")),
             "market_regime": str(candidate.get("market_regime", "")),
+            "thesis": (
+                f"{candidate['play_type'].lower()} {candidate['call_or_put'].lower()} on {TICKER}: "
+                f"{candidate.get('setup_reason') or 'controlled scanner qualification'}"
+            ),
+            "entry_confirmation": str(candidate.get("setup_reason") or "Controlled scanner filters passed."),
+            "invalidation": (
+                f"Exit when the monitored contract reaches its stored stop or the underlying "
+                f"{candidate.get('market_regime') or 'entry'} regime no longer supports the position."
+            ),
+            "risk_plan": (
+                f"One paper contract; max modeled risk {fmt_money(as_float(candidate.get('max_risk')))}; "
+                "no averaging down; lifecycle monitor owns target/stop exits."
+            ),
+            "learning_plan": (
+                "Apply price action, technical confirmation, option liquidity, Greeks, volatility, "
+                "position risk, execution, and post-trade journaling lessons to this trade."
+            ),
+            "evidence_limitations": (
+                "Only evidence captured at entry is treated as fact; unavailable indicators remain unavailable."
+            ),
             "outcome": "OPEN",
             "last_mark": str(candidate["entry_price"]),
             "current_pl_dollars": "0",
@@ -2851,11 +2887,27 @@ class DiscordTracker:
             "embeds": [embed],
             "allowed_mentions": {"parse": []},
         }
+        def remove_matching_duplicates(keep_id: str) -> None:
+            if not search_token:
+                return
+            recent = self._request("GET", f"/channels/{channel_id}/messages?limit=100")
+            for message in recent if isinstance(recent, list) else []:
+                candidate_id = str(message.get("id") or "")
+                author = message.get("author") or {}
+                if (
+                    candidate_id
+                    and candidate_id != keep_id
+                    and (author.get("bot") or message.get("webhook_id"))
+                    and search_token in message_search_text(message)
+                ):
+                    self._request("DELETE", f"/channels/{channel_id}/messages/{candidate_id}")
         if message_id and hashes.get(state_key) == content_hash:
+            remove_matching_duplicates(message_id)
             return message_id
         if message_id:
             try:
                 self._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
+                remove_matching_duplicates(message_id)
                 hashes[state_key] = content_hash
                 return message_id
             except DiscordError as exc:
@@ -4208,12 +4260,14 @@ def update_performance_pages(
         state,
         "performance-stats",
         format_performance_stats(rows),
+        search_token="Performance Dashboard",
     )
     discord.upsert_channel_message(
         "strategy_breakdown",
         state,
         "strategy-breakdown",
         format_strategy_breakdown(rows),
+        search_token="Strategy Breakdown",
     )
     for style, channel_name in PLAY_STYLE_CHANNELS.items():
         logical_name = "strategy_" + style.replace("-", "_")
@@ -4229,24 +4283,28 @@ def update_performance_pages(
         state,
         "ticker-results",
         format_ticker_results(rows),
+        search_token="Ticker Results",
     )
     discord.upsert_channel_message(
         "wins",
         state,
         "wins-summary",
         format_result_channel_summary(rows, "WIN"),
+        search_token="Wins Summary",
     )
     discord.upsert_channel_message(
         "losses",
         state,
         "losses-summary",
         format_result_channel_summary(rows, "LOSS"),
+        search_token="Losses Summary",
     )
     discord.upsert_channel_message(
         "scratches",
         state,
         "scratches-summary",
         format_result_channel_summary(rows, "SCRATCH"),
+        search_token="Scratches Summary",
     )
 
 

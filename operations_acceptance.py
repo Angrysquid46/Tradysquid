@@ -8,6 +8,7 @@ required Discord channels, visible dashboard cards, and closed-market research.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 from datetime import datetime
@@ -32,6 +33,11 @@ REQUIRED_JOBS = {
 REQUIRED_CHANNELS = {
     "system-activity": "Always-On Tradysquids Activity",
     "automation-diagnostics": "Automation Diagnostics and Self-Repair",
+    "performance-stats": "Performance Dashboard",
+    "strategy-results": "Strategy Breakdown",
+    "ticker-results": "Ticker Results",
+    "wins": "Wins Summary",
+    "losses": "Losses Summary",
     "regular-calls": "Regular Call Performance",
     "regular-puts": "Regular Put Performance",
     "swing-calls": "Swing Call Performance",
@@ -83,6 +89,7 @@ def discord_channels_and_cards() -> dict[str, Any]:
         if item.get("type") == 0
     }
     result: dict[str, Any] = {}
+    card_text: dict[str, str] = {}
     for name, expected_title in REQUIRED_CHANNELS.items():
         channel = by_name.get(name.casefold())
         if not channel:
@@ -109,6 +116,49 @@ def discord_channels_and_cards() -> dict[str, Any]:
             "channel_id": str(channel["id"]),
             "message_id": str(matching.get("id") or ""),
         }
+        card_text[name] = ford_scan.message_search_text(matching)
+
+    rows = ford_scan.read_log()
+    metrics = ford_scan.result_metrics(ford_scan.closed_rows(rows))
+    expected_closed = int(metrics["closed"])
+    expected_wins = int(metrics["wins"])
+    expected_losses = int(metrics["losses"])
+    performance = card_text["performance-stats"]
+    if not re.search(rf"Closed trades\D+{expected_closed}\b", performance):
+        raise OperationsAcceptanceFailure(
+            f"#performance-stats does not reconcile to {expected_closed} canonical closed trades."
+        )
+
+    def summed_records(text: str) -> int:
+        return sum(
+            sum(int(value) for value in match)
+            for match in re.findall(r"(\d+)W\s*(?:/|·)\s*(\d+)L\s*(?:/|·)\s*(\d+)S", text)
+        )
+
+    if summed_records(card_text["ticker-results"]) != expected_closed:
+        raise OperationsAcceptanceFailure("#ticker-results trade counts do not reconcile to the canonical ledger.")
+    if summed_records(card_text["strategy-results"]) != expected_closed:
+        raise OperationsAcceptanceFailure("#strategy-results trade counts do not reconcile to the canonical ledger.")
+    style_total = sum(
+        summed_records(card_text[name])
+        for name in (
+            "regular-calls", "regular-puts", "swing-calls", "swing-puts",
+            "bull-put-spreads", "bear-call-spreads",
+        )
+    )
+    if style_total != expected_closed:
+        raise OperationsAcceptanceFailure("Play-style dashboard counts do not reconcile to the canonical ledger.")
+    if not re.search(rf"Trades\D+{expected_wins}\b", card_text["wins"]):
+        raise OperationsAcceptanceFailure("#wins summary does not reconcile to the canonical ledger.")
+    if not re.search(rf"Trades\D+{expected_losses}\b", card_text["losses"]):
+        raise OperationsAcceptanceFailure("#losses summary does not reconcile to the canonical ledger.")
+    result["reconciliation"] = {
+        "closed_trades": expected_closed,
+        "wins": expected_wins,
+        "losses": expected_losses,
+        "net_pl_dollars": metrics["total_pnl"],
+        "all_closed_trade_views_reconcile": True,
+    }
     return result
 
 
