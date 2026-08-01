@@ -87,24 +87,42 @@ def visible_ids(children: list[dict[str, Any]]) -> list[str]:
     return [str(item.get("id") or "") for item in ordered_children(children)]
 
 
+def _result(desired: list[dict[str, Any]], *, attempts: int, changed: bool) -> dict[str, Any]:
+    names = [normalized(item.get("name") or "") for item in desired]
+    return {
+        "ordered": len(desired),
+        "canonical": len(LEARNING_CHANNEL_ORDER),
+        "extras": max(0, len(desired) - len(LEARNING_CHANNEL_ORDER)),
+        "attempts": attempts,
+        "changed": changed,
+        "names": names,
+    }
+
+
 def enforce_learning_channel_order(
     tracker: ford_scan.DiscordTracker,
     *,
     attempts: int = MAX_ORDER_ATTEMPTS,
     retry_delay_seconds: float = 1.0,
 ) -> dict[str, Any]:
-    """Apply, refetch, and verify the complete Learning Center channel order."""
+    """Verify, repair when needed, refetch, and prove the complete channel order."""
     if attempts < 1:
         raise ValueError("attempts must be at least 1")
 
     last_actual: list[str] = []
     desired_names: list[str] = []
+    changed = False
     for attempt in range(1, attempts + 1):
         _, children = category_and_children(tracker)
         desired = desired_children(children)
         desired_ids = [str(item.get("id") or "") for item in desired]
         desired_names = [normalized(item.get("name") or "") for item in desired]
 
+        current_ids = visible_ids(children)
+        if current_ids == desired_ids:
+            return _result(desired, attempts=attempt, changed=changed)
+
+        changed = True
         # Preserve the category's current guild-level position block rather than
         # assigning positions from zero. The batch endpoint must contain only
         # IDs and positions. Including parent_id for several channels triggers
@@ -129,13 +147,7 @@ def enforce_learning_channel_order(
         _, refreshed = category_and_children(tracker)
         last_actual = visible_ids(refreshed)
         if last_actual == desired_ids:
-            return {
-                "ordered": len(desired_ids),
-                "canonical": len(LEARNING_CHANNEL_ORDER),
-                "extras": max(0, len(desired_ids) - len(LEARNING_CHANNEL_ORDER)),
-                "attempts": attempt,
-                "names": desired_names,
-            }
+            return _result(desired, attempts=attempt, changed=True)
         if attempt < attempts and retry_delay_seconds > 0:
             time.sleep(retry_delay_seconds)
 

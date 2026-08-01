@@ -1,4 +1,4 @@
-name: Validate Learning Center
+name: Validate Tradysquids Automation
 
 on:
   pull_request:
@@ -16,9 +16,15 @@ on:
       - "sync_discord_structure_public.py"
       - "discord_command_bot_public.py"
       - "run_supervisor.py"
+      - "automation_acceptance.py"
+      - "ENSURE-SUPERVISOR.ps1"
+      - "INSTALL-REMOTE-CONTROL.cmd"
+      - "INSTALL-SUPERVISOR-WATCHDOG.ps1"
+      - "START-SUPERVISOR.cmd"
       - "test_learning_center.py"
       - "test_strict_learning_order.py"
       - "test_supervisor_availability.py"
+      - "test_automation_acceptance.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -28,7 +34,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
 
     steps:
       - name: Check out repository
@@ -67,7 +73,8 @@ jobs:
             sync_discord_structure.py \
             sync_discord_structure_public.py \
             tradysquid_supervisor.py \
-            run_supervisor.py
+            run_supervisor.py \
+            automation_acceptance.py
 
       - name: Validate curriculum and answer engine
         run: |
@@ -76,4 +83,9 @@ jobs:
           python learning_application_public.py
 
       - name: Run focused tests
-        run: python -m unittest -q test_learning_center.py test_strict_learning_order.py test_supervisor_availability.py
+        run: |
+          python -m unittest -q \
+            test_learning_center.py \
+            test_strict_learning_order.py \
+            test_supervisor_availability.py \
+            test_automation_acceptance.py
