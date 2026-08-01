@@ -2,7 +2,8 @@
 
 Sensitive scanner controls remain owner-only. Any server member may add or
 remove verified optionable tickers within the shared cap. Educational commands
-search the comprehensive Learning Center and cite its channels.
+search the comprehensive Learning Center, cite its channels, and can apply
+lessons to read-only live ticker observations.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import time
 
 import discord_command_bot as bot
+import learning_application as application
 import learning_center_content as learning
 
 
@@ -226,7 +228,7 @@ bot.universe_pause_reply = public_ticker_remove_reply
 bot.universe_resume_reply = owner_ticker_resume_reply
 bot.universe_list_reply = public_ticker_list_reply
 bot.universe_status_reply = public_ticker_status_reply
-bot.ask_reply = learning.answer
+bot.ask_reply = application.answer
 bot.explain_reply = learning.explain
 
 
