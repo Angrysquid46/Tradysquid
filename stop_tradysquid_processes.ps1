@@ -11,10 +11,23 @@ $patterns = @(
     'ngrok(\.exe)?\s+http\s+8080'
 )
 
-Get-CimInstance Win32_Process |
+$allProcesses = @(Get-CimInstance Win32_Process)
+$keepProcessIds = [System.Collections.Generic.HashSet[int]]::new()
+$currentKeepId = $KeepProcessId
+while ($currentKeepId -gt 0 -and $keepProcessIds.Add($currentKeepId)) {
+    $currentKeepProcess = $allProcesses |
+        Where-Object { $_.ProcessId -eq $currentKeepId } |
+        Select-Object -First 1
+    if (-not $currentKeepProcess) {
+        break
+    }
+    $currentKeepId = [int]$currentKeepProcess.ParentProcessId
+}
+
+$allProcesses |
     Where-Object {
         $process = $_
-        $process.ProcessId -ne $KeepProcessId -and
+        -not $keepProcessIds.Contains([int]$process.ProcessId) -and
         $process.CommandLine -and
         ($patterns | Where-Object { $process.CommandLine -match $_ }).Count -gt 0
     } |
