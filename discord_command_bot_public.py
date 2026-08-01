@@ -115,8 +115,87 @@ def public_ticker_remove_reply(interaction: dict) -> str:
     )
 
 
+def owner_ticker_resume_reply(interaction: dict) -> str:
+    bot.require_ticker_admin(interaction)
+    ticker = bot.dynamic_universe.normalize_symbol(
+        str(bot.option_value(interaction, "ticker", ""))
+    )
+    active = bot.dynamic_universe.initialize()
+    maximum = bot.dynamic_universe.max_active_symbols()
+    if ticker in active:
+        return f"ℹ️ **{ticker} is already active.**"
+    if len(active) >= maximum:
+        raise ValueError(
+            f"The shared universe is full at {maximum} active tickers. "
+            "Remove one before resuming another."
+        )
+    quote = bot.ford_scan.get_quote(ticker) or {}
+    price = bot.ford_scan.as_float(quote.get("last"))
+    if price is None or not bot.ford_scan.get_expirations(ticker):
+        raise ValueError(f"Tradier could not verify optionable ticker {ticker}.")
+    bot.dynamic_universe.add_member_symbol(
+        ticker, user_id=bot.command_user_id(interaction)
+    )
+    bot.dynamic_universe.upsert_candidates(
+        [
+            bot.dynamic_universe.Candidate(
+                ticker,
+                "owner_resume",
+                score=200,
+                last_price=price,
+                options_available=True,
+                reason="Restored through owner-only resume command",
+            )
+        ]
+    )
+    bot.ticker_registry.save(
+        ticker,
+        status="ACTIVE",
+        note="Restored through owner-only resume command",
+    )
+    return (
+        f"▶️ **{ticker} resumed.** Universe usage: "
+        f"**{len(bot.dynamic_universe.initialize())}/{maximum} tickers**."
+    )
+
+
+def public_ticker_list_reply() -> str:
+    active = bot.dynamic_universe.initialize()
+    config = bot.dynamic_universe.universe_config()
+    excluded = config.get("exclude_symbols") or []
+    maximum = bot.dynamic_universe.max_active_symbols()
+    remaining = max(0, maximum - len(active))
+    return "\n".join(
+        [
+            "📚 **Dynamic scanner universe**",
+            f"**Active ({len(active)}/{maximum}):** {', '.join(active) if active else 'None'}",
+            f"**Open slots:** {remaining}",
+            f"**Excluded:** {', '.join(excluded) if excluded else 'None'}",
+            "Maximum rotating scan batch: **12 tickers**.",
+            "Any member may add or remove tickers; open positions remain tracked.",
+        ]
+    )
+
+
+def public_ticker_status_reply(ticker: str) -> str:
+    symbol = bot.dynamic_universe.normalize_symbol(ticker)
+    active = bot.dynamic_universe.initialize()
+    maximum = bot.dynamic_universe.max_active_symbols()
+    return "\n".join(
+        [
+            f"🧩 **{symbol}** · **{'ACTIVE' if symbol in active else 'NOT ACTIVE'}**",
+            f"Universe usage: **{len(active)}/{maximum} tickers**",
+            "Shared filters, lifecycle channels, and performance tracking apply.",
+            "Removing a ticker blocks new scans but never abandons an open paper position.",
+        ]
+    )
+
+
 bot.universe_add_reply = public_ticker_add_reply
 bot.universe_pause_reply = public_ticker_remove_reply
+bot.universe_resume_reply = owner_ticker_resume_reply
+bot.universe_list_reply = public_ticker_list_reply
+bot.universe_status_reply = public_ticker_status_reply
 bot.ask_reply = learning.answer
 bot.explain_reply = learning.explain
 
