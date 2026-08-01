@@ -32,6 +32,12 @@ REQUIRED_JOBS = {
 REQUIRED_CHANNELS = {
     "system-activity": "Always-On Tradysquids Activity",
     "automation-diagnostics": "Automation Diagnostics and Self-Repair",
+    "regular-calls": "Regular Call Performance",
+    "regular-puts": "Regular Put Performance",
+    "swing-calls": "Swing Call Performance",
+    "swing-puts": "Swing Put Performance",
+    "bull-put-spreads": "Bull Put Spread Performance",
+    "bear-call-spreads": "Bear Call Spread Performance",
 }
 
 
@@ -104,6 +110,50 @@ def discord_channels_and_cards() -> dict[str, Any]:
             "message_id": str(matching.get("id") or ""),
         }
     return result
+
+
+def trade_journals() -> dict[str, Any]:
+    """Verify every recorded trade has one usable, learning-backed Discord journal."""
+    tracker = ford_scan.DiscordTracker(ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID)
+    if not tracker.enabled:
+        raise OperationsAcceptanceFailure("Discord bot token and guild ID are required.")
+    rows = ford_scan.read_log()
+    missing_threads = [row.get("trade_id") or "unknown" for row in rows if not row.get("discord_thread_id")]
+    if missing_threads:
+        raise OperationsAcceptanceFailure(
+            f"{len(missing_threads)} trades are missing Discord journal threads: "
+            + ", ".join(missing_threads[:8])
+        )
+    thread_ids = [str(row["discord_thread_id"]) for row in rows]
+    if len(thread_ids) != len(set(thread_ids)):
+        raise OperationsAcceptanceFailure(
+            "Multiple trades share the same Discord journal thread."
+        )
+
+    closed_count = 0
+    for row in rows:
+        trade_id = row.get("trade_id") or "unknown"
+        messages = tracker._request(
+            "GET", f"/channels/{row['discord_thread_id']}/messages?limit=100"
+        )
+        combined = "\n".join(ford_scan.message_search_text(message) for message in messages)
+        if "Applied Learning Center Analysis" not in combined:
+            raise OperationsAcceptanceFailure(
+                f"Trade {trade_id} journal is missing applied Learning Center analysis."
+            )
+        if str(row.get("outcome") or "").upper() in {"WIN", "LOSS", "FLAT"}:
+            closed_count += 1
+            if "Post-Trade Learning" not in combined:
+                raise OperationsAcceptanceFailure(
+                    f"Closed trade {trade_id} journal is missing its post-trade learning review."
+                )
+    return {
+        "trade_count": len(rows),
+        "closed_trade_count": closed_count,
+        "all_have_unique_journals": True,
+        "all_apply_learning_center": True,
+        "all_closed_have_reviews": True,
+    }
 
 
 def operations_ready() -> tuple[bool, dict[str, Any]]:
@@ -192,8 +242,10 @@ def run_acceptance() -> dict[str, Any]:
             latest_detail = detail
             if ready:
                 cards = discord_channels_and_cards()
+                journals = trade_journals()
                 report["checks"]["operations"] = detail
                 report["checks"]["discord_cards"] = cards
+                report["checks"]["trade_journals"] = journals
                 report["status"] = "PASSED"
                 report["completed_at"] = now_iso()
                 write_report(report)

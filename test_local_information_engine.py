@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import socket
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -54,6 +54,96 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn("RIVN #001", card)
         self.assertIn("BUY 1 RIVN 15 CALL", card)
         self.assertNotIn("BUY 1 F 15 CALL", card)
+
+    def test_all_existing_play_types_map_to_separate_performance_styles(self) -> None:
+        cases = {
+            ("REGULAR", "call"): "regular-call",
+            ("REGULAR", "put"): "regular-put",
+            ("SWING", "call"): "swing-call",
+            ("SWING", "put"): "swing-put",
+            ("SPREAD", "put"): "bull-put-spread",
+            ("SPREAD", "call"): "bear-call-spread",
+        }
+        for (play_type, kind), expected in cases.items():
+            self.assertEqual(
+                ford_scan.play_style_key(
+                    {"play_type": play_type, "call_or_put": kind}
+                ),
+                expected,
+            )
+
+    def test_trade_cards_apply_learning_center_without_inventing_history(self) -> None:
+        row = {
+            "ticker": "F",
+            "trade_id": "F-20260731-090",
+            "play_type": "REGULAR",
+            "call_or_put": "call",
+            "strike": "15",
+            "expiration": "2026-08-07",
+            "entry_price": "0.25",
+            "market_regime": "BULLISH / CONTROLLED",
+            "setup_reason": "price held above VWAP with rising volume",
+        }
+        card = ford_scan.entry_alert_text(row)
+        self.assertIn("Applied Learning Center Analysis", card)
+        self.assertIn("price held above VWAP", card)
+        self.assertIn("#06-charts-price-action", card)
+        self.assertIn("not reconstructed", card)
+
+    def test_play_style_performance_includes_quality_and_journal_link(self) -> None:
+        rows = [
+            {
+                "trade_id": "F-1",
+                "ticker": "F",
+                "play_type": "REGULAR",
+                "call_or_put": "call",
+                "strike": "15",
+                "outcome": "WIN",
+                "realized_pl_dollars": "20",
+                "pct_gain_loss": "20",
+                "max_favorable_pct": "25",
+                "max_adverse_pct": "-5",
+                "timestamp": "2026-07-31T10:00:00-05:00",
+                "closed_at": "2026-07-31T12:00:00-05:00",
+                "discord_thread_id": "thread-1",
+            }
+        ]
+        with patch.object(ford_scan, "DISCORD_GUILD_ID", "guild-1"):
+            card = ford_scan.format_play_style_performance(rows, "regular-call")
+        self.assertIn("Regular Call Performance", card)
+        self.assertIn("Profit factor", card)
+        self.assertIn("avg hold **2.0h**", card)
+        self.assertIn("journal", card)
+
+    def test_trade_snapshot_renders_four_actionable_timeframes(self) -> None:
+        intraday = [
+            {"time": f"2026-08-01 10:{index:02d}:00", "close": 15 + index * 0.01}
+            for index in range(30)
+        ]
+        daily = [
+            {
+                "date": (date(2025, 1, 1) + timedelta(days=index)).isoformat(),
+                "close": 12 + index * 0.01,
+                "volume": 1_000_000,
+            }
+            for index in range(420)
+        ]
+        row = {
+            "trade_id": "F-20260801-001",
+            "ticker": "F",
+            "play_type": "SWING",
+            "call_or_put": "call",
+            "strike": "15",
+            "expiration": "2026-08-21",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(ford_scan, "TRADE_SNAPSHOT_DIR", Path(directory)):
+                output = ford_scan.render_trade_multitimeframe_snapshot(
+                    row, "entry", intraday, daily
+                )
+            self.assertIsNotNone(output)
+            self.assertTrue(output.exists())
+            self.assertIn("multitimeframe", output.name)
 
     def test_intraday_selloff_can_override_slow_bullish_daily_trend(self) -> None:
         daily = self.market_history([10 + index * 0.1 for index in range(60)])
@@ -297,8 +387,14 @@ class InformationEngineTests(unittest.TestCase):
             patch.object(engine, "discord_tracker", return_value=tracker),
             patch.object(engine.ford_scan, "read_report_state", return_value=state),
             patch.object(
+                engine.ford_scan,
+                "sync_all_trade_journals",
+                return_value={"created": 0, "refreshed": 0, "closed_reviews": 1},
+            ),
+            patch.object(
                 engine.ford_scan, "sync_closed_result_channels", return_value=0
             ) as sync,
+            patch.object(engine.ford_scan, "write_log"),
             patch.object(engine.ford_scan, "write_report_state") as write_state,
             patch.object(engine, "store_observation") as observe,
         ):
@@ -674,6 +770,47 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn(
             ("DELETE", "/channels/welcome-channel/messages/older"), requests
         )
+
+    def test_closed_trade_journal_backfill_is_canonical_and_idempotent(self) -> None:
+        calls: list[tuple] = []
+
+        class Tracker:
+            ready = True
+
+            def create_trade_thread(self, row, status):
+                calls.append(("create", row["trade_id"], status))
+                row["discord_thread_id"] = "thread-1"
+                return "thread-1"
+
+            def _request(self, method, path, payload=None):
+                calls.append((method, path))
+                return {}
+
+            def upsert_singleton_message(self, channel_id, content, token):
+                calls.append(("singleton", channel_id, token))
+                return "review-1", 0
+
+            def set_thread_status(self, thread_id, status, archive=False):
+                calls.append(("status", thread_id, status, archive))
+
+        row = {
+            "trade_id": "F-20260731-100",
+            "ticker": "F",
+            "play_type": "REGULAR",
+            "call_or_put": "call",
+            "strike": "15",
+            "expiration": "2026-08-07",
+            "entry_price": "0.25",
+            "outcome": "WIN",
+            "realized_pl_dollars": "5",
+            "pct_gain_loss": "20",
+            "last_signal": "TAKE PROFIT",
+        }
+        result = ford_scan.sync_all_trade_journals([row], Tracker())
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(result["closed_reviews"], 1)
+        self.assertIn(("singleton", "thread-1", "F #100 · WIN"), calls)
+        self.assertEqual(row["discord_format_version"], ford_scan.DISCORD_FORMAT_VERSION)
 
     def test_new_close_is_not_posted_back_to_held_positions(self) -> None:
         calls: list[tuple] = []
