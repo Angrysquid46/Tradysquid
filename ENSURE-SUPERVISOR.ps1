@@ -10,6 +10,7 @@ $StatePath = Join-Path $StateDir 'supervisor-state.json'
 $LogPath = Join-Path $StateDir 'supervisor-watchdog.log'
 $SupervisorScript = Join-Path $Root 'run_supervisor.py'
 $Launcher = Join-Path $Root 'start_supervisor_hidden.vbs'
+$LauncherCommand = Join-Path $Root 'START-SUPERVISOR.cmd'
 
 if (-not (Test-Path $StateDir)) {
     New-Item -ItemType Directory -Path $StateDir -Force | Out-Null
@@ -28,6 +29,16 @@ function Get-TradysquidsSupervisorProcesses {
             $_.CommandLine -and
             $_.CommandLine -match $escapedScript -and
             $_.Name -match '^python(w)?\.exe$'
+        })
+}
+
+function Get-TradysquidsLauncherProcesses {
+    $escapedLauncher = [regex]::Escape($LauncherCommand)
+    @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -match $escapedLauncher -and
+            $_.Name -eq 'cmd.exe'
         })
 }
 
@@ -96,6 +107,18 @@ else {
 if (-not (Test-Path $Launcher)) {
     Write-WatchdogLog "Launcher missing: $Launcher"
     exit 2
+}
+
+# A failed supervisor can leave the restart-loop CMD process alive. Remove any
+# old launcher before starting one replacement so five-minute watchdog runs do
+# not accumulate launchers that race and terminate each other's Python process.
+$staleLaunchers = Get-TradysquidsLauncherProcesses
+foreach ($staleLauncher in $staleLaunchers) {
+    Stop-Process -Id $staleLauncher.ProcessId -Force -ErrorAction SilentlyContinue
+}
+if ($staleLaunchers.Count -gt 0) {
+    Write-WatchdogLog "Removed $($staleLaunchers.Count) stale supervisor launcher(s) before recovery."
+    Start-Sleep -Seconds 1
 }
 
 Start-Process -FilePath 'wscript.exe' -ArgumentList ('"' + $Launcher + '"') -WindowStyle Hidden

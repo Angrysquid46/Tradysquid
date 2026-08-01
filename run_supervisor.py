@@ -394,10 +394,21 @@ def service_health_snapshot() -> dict[str, bool]:
 def ensure_services_with_readiness() -> None:
     global _LAST_READY_SIGNATURE
 
+    # Publish liveness before service startup. Starting the full stack can take
+    # longer than the watchdog's 45-second recovery window; without this early
+    # heartbeat the watchdog kills a healthy supervisor while it is still
+    # initializing, creating an endless restart loop.
+    supervisor.write_state(
+        supervisor="STARTING",
+        supervisor_heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        local_sha=supervisor.current_sha(),
+        auto_update_enabled=supervisor.AUTO_UPDATE,
+    )
     ORIGINAL_ENSURE_SERVICES()
     statuses = service_health_snapshot()
     signature = tuple((name, statuses[name]) for name in sorted(statuses))
     supervisor.write_state(
+        supervisor="ONLINE",
         service_health=statuses,
         supervisor_heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         scheduler_heartbeat_healthy=always_on_operations.heartbeat_healthy(12),
