@@ -19,6 +19,7 @@ import learning_search_router as routed
 
 
 routed.install()
+always_on_operations.install()
 bot.OWNER_ONLY_COMMANDS.discard("ticker-remove")
 bot.ticker_registry.CONFIG_PATH = (
     bot.ticker_registry.ROOT / "state" / "member-ticker-registry.json"
