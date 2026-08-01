@@ -53,32 +53,57 @@ echo Installing the independent five-minute watchdog...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0INSTALL-SUPERVISOR-WATCHDOG.ps1"
 if errorlevel 1 (
     echo.
-    echo The supervisor files are installed, but the watchdog task could not be created.
-    echo Review the error above before relying on automatic recovery.
+    echo INSTALLATION FAILED.
+    echo The watchdog task could not be created.
     pause
     exit /b 1
 )
 
-echo Starting the supervisor now...
+echo Starting the supervisor...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0ENSURE-SUPERVISOR.ps1"
+if errorlevel 1 (
+    echo.
+    echo INSTALLATION FAILED.
+    echo The supervisor did not start with a fresh heartbeat.
+    pause
+    exit /b 1
+)
 
-timeout /t 8 /nobreak >nul
+echo.
+echo Running real automation acceptance tests...
+echo This deliberately stops the supervisor and proves the Windows watchdog
+ echo restores the full stack without human help. It also verifies Discord's
+ echo actual Learning Center order is 01 through 27.
+echo.
+python "%~dp0run_with_env.py" "%~dp0automation_acceptance.py"
+if errorlevel 1 (
+    echo.
+    echo ============================================
+    echo   INSTALLATION FAILED ACCEPTANCE TESTS
+    echo ============================================
+    echo.
+    echo Tradysquids is NOT considered automatic or complete.
+    echo Review state\automation-acceptance.json and
+    echo state\supervisor-watchdog.log for the exact failed check.
+    pause
+    exit /b 1
+)
 
 echo.
-echo Installation complete.
+echo ============================================
+echo   AUTOMATION ACCEPTANCE PASSED
+ echo ============================================
 echo.
-echo Tradysquids will now:
-echo   - start automatically when you sign into Windows
-echo   - be checked and relaunched every five minutes if the supervisor dies
-echo   - keep the laptop awake while the supervisor is running
-echo   - restart the bot, scanner engine, and ngrok if they crash
-echo   - check GitHub for approved updates every two minutes
-echo   - show Git fetch failures in Discord instead of hiding them locally
-echo   - retry failed Discord structure synchronization without needing another commit
-echo   - validate updates and roll back failed deployments
-echo   - synchronize Discord commands, channels, guides, and permissions
-echo   - report deployments and verified service readiness in Discord
-echo.
-echo This is the final one-time laptop setup.
+echo Verified on this laptop:
+echo   - local main matches origin/main
+ echo   - Windows watchdog task is enabled and runs every five minutes
+ echo   - the supervisor was deliberately killed and automatically restored
+ echo   - command bot, information engine, and ngrok returned healthy
+ echo   - the local status response works after recovery
+ echo   - Discord synchronization completed
+ echo   - Learning Center is visibly ordered 01 through 27
+ echo.
+echo Installation is complete because the required behavior was proven.
 echo.
 pause
+exit /b 0
