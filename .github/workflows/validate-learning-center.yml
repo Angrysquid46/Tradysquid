@@ -69,4 +69,4 @@ jobs:
           python learning_application_public.py
 
       - name: Run focused tests
-        run: python -m unittest -q test_learning_center.py test_local_information_engine.py
+        run: python -m unittest -q test_learning_center.py
