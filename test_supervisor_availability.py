@@ -39,6 +39,67 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         self.assertEqual(stopped, ["information-engine"])
         full_stop.assert_not_called()
 
+    def test_no_deployment_runs_automatic_discord_integrity_check(self) -> None:
+        with (
+            patch.object(run_supervisor, "ORIGINAL_DEPLOY_IF_NEEDED", return_value=False),
+            patch.object(run_supervisor, "retry_pending_discord_configuration", return_value=False) as retry,
+            patch.object(run_supervisor, "verify_and_repair_discord_integrity", return_value=True) as integrity,
+        ):
+            result = run_supervisor.low_downtime_deploy_if_needed()
+        self.assertFalse(result)
+        retry.assert_called_once_with()
+        integrity.assert_called_once_with()
+
+    def test_integrity_repair_records_and_reports_changed_order(self) -> None:
+        tracker = Mock(enabled=True)
+        write_state = Mock()
+        post = Mock()
+        with (
+            patch.object(run_supervisor.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(
+                run_supervisor.strict_learning_order,
+                "enforce_learning_channel_order",
+                return_value={
+                    "canonical": 30,
+                    "extras": 1,
+                    "attempts": 1,
+                    "changed": True,
+                },
+            ) as enforce,
+            patch.object(supervisor, "state_payload", return_value={}),
+            patch.object(supervisor, "write_state", write_state),
+            patch.object(supervisor, "discord_post", post),
+        ):
+            result = run_supervisor.verify_and_repair_discord_integrity()
+
+        self.assertTrue(result)
+        enforce.assert_called_once()
+        self.assertEqual(write_state.call_args.kwargs["discord_integrity_status"], "OK")
+        post.assert_called_once()
+        self.assertIn("01 → 27", post.call_args.args[0])
+
+    def test_integrity_failure_is_saved_for_future_retry(self) -> None:
+        tracker = Mock(enabled=True)
+        write_state = Mock()
+        post = Mock()
+        with (
+            patch.object(run_supervisor.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(
+                run_supervisor.strict_learning_order,
+                "enforce_learning_channel_order",
+                side_effect=RuntimeError("Discord refused order"),
+            ),
+            patch.object(supervisor, "state_payload", return_value={}),
+            patch.object(supervisor, "write_state", write_state),
+            patch.object(supervisor, "discord_post", post),
+        ):
+            result = run_supervisor.verify_and_repair_discord_integrity()
+
+        self.assertFalse(result)
+        self.assertEqual(write_state.call_args.kwargs["discord_integrity_status"], "FAILED")
+        post.assert_called_once()
+        self.assertIn("will retry automatically", post.call_args.args[0])
+
     def test_readiness_posts_once_when_every_service_is_verified_online(self) -> None:
         ready = {service.name: True for service in supervisor.SERVICES}
         post = Mock()
@@ -96,22 +157,14 @@ class SupervisorAvailabilityTests(unittest.TestCase):
             "comprehensive Discord structure sync failed: HTTP 400",
         ]
         with (
-            patch.object(
-                supervisor,
-                "state_payload",
-                return_value={"last_update_status": "DEPLOYED"},
-            ),
+            patch.object(supervisor, "state_payload", return_value={"last_update_status": "DEPLOYED"}),
             patch.object(supervisor, "write_state", write_state),
             patch.object(supervisor, "discord_post", post),
         ):
-            succeeded = run_supervisor.record_discord_sync_results(
-                results, source="deployment"
-            )
+            succeeded = run_supervisor.record_discord_sync_results(results, source="deployment")
 
         self.assertFalse(succeeded)
-        self.assertEqual(
-            write_state.call_args.kwargs["last_discord_sync_status"], "FAILED"
-        )
+        self.assertEqual(write_state.call_args.kwargs["last_discord_sync_status"], "FAILED")
         self.assertEqual(
             write_state.call_args.kwargs["last_update_status"],
             "DEPLOYED_WITH_DISCORD_ERRORS",
@@ -126,17 +179,9 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         ]
         record = Mock(return_value=True)
         with (
-            patch.object(
-                supervisor,
-                "state_payload",
-                return_value={"last_discord_sync_status": "FAILED"},
-            ),
+            patch.object(supervisor, "state_payload", return_value={"last_discord_sync_status": "FAILED"}),
             patch.object(supervisor, "supervisor_log"),
-            patch.object(
-                run_supervisor,
-                "public_run_discord_configuration",
-                return_value=results,
-            ) as sync,
+            patch.object(run_supervisor, "public_run_discord_configuration", return_value=results) as sync,
             patch.object(run_supervisor, "record_discord_sync_results", record),
         ):
             retried = run_supervisor.retry_pending_discord_configuration()
@@ -168,18 +213,15 @@ class SupervisorAvailabilityTests(unittest.TestCase):
     def test_launcher_and_watchdog_prevent_a_single_process_failure(self) -> None:
         launcher = (ROOT / "START-SUPERVISOR.cmd").read_text(encoding="utf-8")
         watchdog = (ROOT / "ENSURE-SUPERVISOR.ps1").read_text(encoding="utf-8")
-        installer = (ROOT / "INSTALL-REMOTE-CONTROL.cmd").read_text(
-            encoding="utf-8"
-        )
-        task_installer = (ROOT / "INSTALL-SUPERVISOR-WATCHDOG.ps1").read_text(
-            encoding="utf-8"
-        )
+        installer = (ROOT / "INSTALL-REMOTE-CONTROL.cmd").read_text(encoding="utf-8")
+        task_installer = (ROOT / "INSTALL-SUPERVISOR-WATCHDOG.ps1").read_text(encoding="utf-8")
 
         self.assertIn("supervisor-stop.flag", launcher)
         self.assertIn("ENSURE-SUPERVISOR.ps1", launcher)
-        self.assertIn("run_supervisor.py", watchdog)
-        self.assertIn("Start-Process", watchdog)
+        self.assertIn("supervisor_heartbeat_at", watchdog)
+        self.assertIn("Stop-StaleSupervisor", watchdog)
         self.assertIn("INSTALL-SUPERVISOR-WATCHDOG.ps1", installer)
+        self.assertIn("automation_acceptance.py", installer)
         self.assertIn("/SC MINUTE", task_installer)
         self.assertIn("/MO 5", task_installer)
 
