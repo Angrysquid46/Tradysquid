@@ -549,7 +549,8 @@ def off_hours_universe_screen_job(connection: sqlite3.Connection) -> str:
                 }
             )
         except Exception as exc:
-            failed.append(f"{symbol}:{type(exc).__name__}")
+            detail = " ".join(str(exc).split())[:240] or "no detail"
+            failed.append(f"{symbol}:{type(exc).__name__}:{detail}")
         time.sleep(0.35)
     completed.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
 
@@ -622,7 +623,8 @@ def rotating_event_sweep_job(connection: sqlite3.Connection) -> str:
         try:
             results[symbol] = engine.fetch_ticker_news(symbol, limit=4)
         except Exception as exc:
-            failed.append(f"{symbol}:{type(exc).__name__}")
+            detail = " ".join(str(exc).split())[:240] or "no detail"
+            failed.append(f"{symbol}:{type(exc).__name__}:{detail}")
         time.sleep(0.35)
     lines = [
         "## Rotating News and Event Sweep",
