@@ -1,8 +1,11 @@
-"""Apply Discord structure with public ticker-management policy details."""
+"""Apply Discord structure with public ticker policy and expanded learning lessons."""
 
 from __future__ import annotations
 
+import sys
+
 import sync_discord_structure as sync
+import sync_learning_center
 
 
 sync.CHANNELS = [
@@ -18,6 +21,12 @@ sync.CHANNELS = [
     )
     for item in sync.CHANNELS
 ]
+
+# The numbered lesson channels are synchronized as multi-message curricula by
+# sync_learning_center. Remove the short single-message guides so Discord does
+# not retain a truncated duplicate above the complete lesson.
+for lesson_channel in sync_learning_center.load_lessons():
+    sync.GUIDES.pop(lesson_channel, None)
 
 sync.GUIDES["how-to-use-tradebot"] = """# How to Use TradeBot
 Type `/`, choose a command, complete its fields, and send it.
@@ -75,5 +84,20 @@ sync.GUIDES["scanner-controls"] = """# Ticker and Scanner Controls
 The runtime is read-only toward brokerages and cannot place trades."""
 
 
+def main() -> int:
+    result = sync.main()
+    if result:
+        return result
+    if "--apply" in sys.argv:
+        sync_learning_center.synchronize_curriculum()
+    else:
+        counts = sync_learning_center.validate_curriculum()
+        print(
+            "Dry run: expanded Learning Center would synchronize "
+            f"{len(counts)} channels and {sum(counts.values())} message parts."
+        )
+    return 0
+
+
 if __name__ == "__main__":
-    raise SystemExit(sync.main())
+    raise SystemExit(main())
