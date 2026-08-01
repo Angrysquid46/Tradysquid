@@ -60,6 +60,7 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
         "learning_center_content.py",
         "learning_search_router.py",
         "learning_application.py",
+        "learning_application_public.py",
         "learning_question_gaps.py",
         "sync_learning_center.py",
         "sync_discord_cards.py",
@@ -86,7 +87,7 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
         ],
         [sys.executable, "sync_learning_center.py"],
         [sys.executable, "learning_search_router.py"],
-        [sys.executable, "learning_application.py"],
+        [sys.executable, "learning_application_public.py"],
     ]
     for command in validations:
         result = supervisor.run(command, timeout=300)
