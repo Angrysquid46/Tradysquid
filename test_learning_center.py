@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import learning_application
-import learning_center_content
+import learning_question_gaps
+import learning_search_router
 import sync_learning_center
 from learning_center_catalog import LESSONS, ORDERED_CHANNELS
 
@@ -68,6 +72,14 @@ SAMPLE_OPTION = {
     "quality_score": 88.0,
 }
 
+SAMPLE_INTERACTION = {
+    "guild_id": "guild-1",
+    "member": {
+        "nick": "Test Learner",
+        "user": {"id": "user-1", "username": "tester"},
+    },
+}
+
 
 class LearningCenterTests(unittest.TestCase):
     def test_catalog_is_complete_and_ordered(self) -> None:
@@ -81,12 +93,12 @@ class LearningCenterTests(unittest.TestCase):
         self.assertGreater(sum(counts.values()), 27)
 
     def test_search_routes_representative_questions(self) -> None:
-        result = learning_center_content.validate_library_search()
+        result = learning_search_router.validate_search()
         self.assertGreater(result["sections"], 100)
-        self.assertEqual(result["probes"], 8)
+        self.assertEqual(result["probes"], 9)
 
     def test_static_answer_cites_learning_center(self) -> None:
-        answer = learning_center_content.answer("What is gamma risk near expiration?")
+        answer = learning_search_router.answer("What is gamma risk near expiration?")
         self.assertIn("Learning Center reference", answer)
         self.assertIn("15-option-pricing-greeks", answer)
 
@@ -129,6 +141,52 @@ class LearningCenterTests(unittest.TestCase):
         self.assertIsNotNone(request)
         self.assertEqual(request.ticker, "AAPL")
         verify_mock.assert_called()
+
+    def test_unanswered_questions_are_saved_and_deduplicated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            queue_path = Path(directory) / "question-gaps.json"
+            with (
+                patch.object(learning_question_gaps, "QUEUE_PATH", queue_path),
+                patch.object(
+                    learning_question_gaps,
+                    "post_or_update_review",
+                    return_value="<#review-1>",
+                ) as post_mock,
+            ):
+                question = "What is the lunar sandwich coefficient?"
+                first = learning_question_gaps.answer_with_gap_tracking(
+                    SAMPLE_INTERACTION, question
+                )
+                second = learning_question_gaps.answer_with_gap_tracking(
+                    SAMPLE_INTERACTION, question
+                )
+
+            payload = json.loads(queue_path.read_text(encoding="utf-8"))
+            records = payload["records"]
+            self.assertEqual(len(records), 1)
+            record = next(iter(records.values()))
+            self.assertEqual(record["times_asked"], 2)
+            self.assertEqual(record["users"][0]["id"], "user-1")
+            self.assertIn("sent it to <#review-1>", first)
+            self.assertIn("Times this question has been recorded: 2", second)
+            self.assertEqual(post_mock.call_count, 2)
+
+    def test_confident_question_does_not_enter_gap_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            queue_path = Path(directory) / "question-gaps.json"
+            with (
+                patch.object(learning_question_gaps, "QUEUE_PATH", queue_path),
+                patch.object(
+                    learning_question_gaps, "post_or_update_review"
+                ) as post_mock,
+            ):
+                answer = learning_question_gaps.answer_with_gap_tracking(
+                    SAMPLE_INTERACTION,
+                    "What does gamma do near expiration?",
+                )
+            self.assertIn("15-option-pricing-greeks", answer)
+            self.assertFalse(queue_path.exists())
+            post_mock.assert_not_called()
 
 
 if __name__ == "__main__":
