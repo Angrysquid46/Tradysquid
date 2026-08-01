@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import os
+import argparse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -119,6 +120,7 @@ def parse_closed_card(message: dict) -> dict[str, str] | None:
             "risk_plan": "Historical risk plan was not recorded in the retained closed-result card.",
             "learning_plan": "Apply the full Learning Center checklist during review; do not invent missing entry evidence.",
             "evidence_limitations": "Recovered from Discord closed-result evidence; absent entry facts remain unavailable.",
+            "archive_sequence": sequence,
             "outcome": "LOSS" if outcome in {"LOSS", "SCRATCH"} else outcome,
             "pct_gain_loss": ford_scan.round_or_blank(return_pct, 1),
             "realized_pl_dollars": ford_scan.round_or_blank(realized, 0),
@@ -132,7 +134,6 @@ def parse_closed_card(message: dict) -> dict[str, str] | None:
             "discord_format_version": "" if journal else ford_scan.DISCORD_FORMAT_VERSION,
         }
     )
-    row["archive_sequence"] = sequence
     return row
 
 
@@ -141,35 +142,61 @@ def same_trade(existing: dict[str, str], recovered: dict[str, str]) -> bool:
         return False
     if str(existing.get("outcome") or "").upper() != recovered["outcome"]:
         return False
-    if existing.get("trade_id", "").rsplit("-", 1)[-1] != recovered.get("archive_sequence"):
+    existing_sequence = existing.get("archive_sequence") or existing.get("trade_id", "").rsplit("-", 1)[-1]
+    if existing_sequence != recovered.get("archive_sequence"):
+        return False
+    if str(existing.get("closed_at") or "")[:10] != str(recovered.get("closed_at") or "")[:10]:
         return False
     old_pl = ford_scan.realized_pl_dollars(existing)
     new_pl = ford_scan.realized_pl_dollars(recovered)
     return abs(old_pl - new_pl) < 0.51
 
 
-def recover() -> dict[str, int]:
+def recover(*, dry_run: bool = False) -> dict[str, int]:
     ford_scan.DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
     ford_scan.DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
     tracker = ford_scan.initialize_discord()
     if not tracker.ready:
         raise RuntimeError("Discord is unavailable")
     rows = ford_scan.read_log()
-    parsed = [row for message in archive_messages(tracker) if (row := parse_closed_card(message))]
+    parsed_by_signature: dict[tuple[str, ...], dict[str, str]] = {}
+    for message in archive_messages(tracker):
+        recovered = parse_closed_card(message)
+        if not recovered:
+            continue
+        signature = (
+            recovered["ticker"],
+            recovered["archive_sequence"],
+            recovered["outcome"],
+            recovered["realized_pl_dollars"],
+            recovered["closed_at"][:10],
+        )
+        existing = parsed_by_signature.get(signature)
+        if not existing or (not existing.get("discord_thread_id") and recovered.get("discord_thread_id")):
+            parsed_by_signature[signature] = recovered
+    parsed = list(parsed_by_signature.values())
     added = 0
     for recovered in parsed:
         if any(same_trade(existing, recovered) for existing in rows):
             continue
-        recovered.pop("archive_sequence", None)
         rows.append(recovered)
         added += 1
-    ford_scan.write_log(rows)
-    return {"archive_cards": len(parsed), "added": added, "canonical_rows": len(rows)}
+    if not dry_run:
+        ford_scan.write_log(rows)
+    return {
+        "unique_archive_cards": len(parsed),
+        "added": added,
+        "canonical_rows": len(rows),
+        "dry_run": dry_run,
+    }
 
 
 def main() -> int:
     run_with_env.load_env()
-    print(recover())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    print(recover(dry_run=args.dry_run))
     return 0
 
 
