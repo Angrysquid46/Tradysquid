@@ -12,6 +12,9 @@ import tradysquid_supervisor as supervisor
 
 
 ROOT = Path(__file__).resolve().parent
+ORIGINAL_DEPLOY_IF_NEEDED = supervisor.deploy_if_needed
+ORIGINAL_ENSURE_SERVICES = supervisor.ensure_services
+_LAST_READY_SIGNATURE: tuple[tuple[str, bool], ...] | None = None
 
 
 def safe_take_process_ownership() -> None:
@@ -85,6 +88,7 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
             "-q",
             "test_learning_center.py",
             "test_strict_learning_order.py",
+            "test_supervisor_availability.py",
             "test_local_information_engine.py",
         ],
         [sys.executable, "sync_learning_center.py"],
@@ -98,7 +102,8 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
             return False, f"{' '.join(command)}: {detail}"
     return True, (
         "Compilation, focused tests, curriculum, routed search, live application, "
-        "question-gap queue, and strict Learning Center order validation passed"
+        "question-gap queue, strict Learning Center order, and service-availability "
+        "validation passed"
     )
 
 
@@ -144,10 +149,82 @@ def public_run_discord_configuration() -> list[str]:
     return results
 
 
+def low_downtime_deploy_if_needed(*, force: bool = False) -> bool:
+    """Keep the command bot and tunnel online during validation and Discord sync.
+
+    The base supervisor used to stop every service before pulling, validating, and
+    synchronizing Discord. That made slash commands unavailable for the entire
+    deployment. Only the scheduled information engine needs to pause while files
+    are updated. The command bot and ngrok continue serving the currently loaded
+    code until the normal final restart swaps all services to the new version.
+    """
+    original_stop_all = supervisor.stop_all_services
+    staged_stop_used = False
+
+    def pause_scheduled_writer() -> None:
+        nonlocal staged_stop_used
+        if staged_stop_used:
+            original_stop_all()
+            return
+        staged_stop_used = True
+        supervisor.stop_process("information-engine")
+        supervisor.supervisor_log(
+            "Information engine paused for deployment; command-bot and ngrok remain online"
+        )
+        time.sleep(1)
+
+    supervisor.stop_all_services = pause_scheduled_writer
+    try:
+        return ORIGINAL_DEPLOY_IF_NEEDED(force=force)
+    finally:
+        supervisor.stop_all_services = original_stop_all
+
+
+def service_health_snapshot() -> dict[str, bool]:
+    """Return the latest verified health state for every managed service."""
+    return {
+        service.name: bool(supervisor.LAST_HEALTH.get(service.name, False))
+        for service in supervisor.SERVICES
+    }
+
+
+def ensure_services_with_readiness() -> None:
+    """Run health recovery and announce only verified readiness transitions."""
+    global _LAST_READY_SIGNATURE
+
+    ORIGINAL_ENSURE_SERVICES()
+    statuses = service_health_snapshot()
+    signature = tuple((name, statuses[name]) for name in sorted(statuses))
+    supervisor.write_state(service_health=statuses)
+
+    all_ready = bool(statuses) and all(statuses.values())
+    previously_all_ready = bool(_LAST_READY_SIGNATURE) and all(
+        value for _, value in _LAST_READY_SIGNATURE
+    )
+    if all_ready and (signature != _LAST_READY_SIGNATURE or not previously_all_ready):
+        version = supervisor.current_sha()
+        supervisor.discord_post(
+            "\n".join(
+                [
+                    "✅ **Tradysquids services ready**",
+                    f"Version `{version}`",
+                    "• command-bot: **ONLINE**",
+                    "• information-engine: **ONLINE**",
+                    "• ngrok: **ONLINE**",
+                    "Slash commands are ready for use.",
+                ]
+            ),
+            "system-health",
+        )
+    _LAST_READY_SIGNATURE = signature
+
+
 supervisor.take_process_ownership = safe_take_process_ownership
 supervisor.command_bot_command = public_command_bot_command
 supervisor.validate_checkout = comprehensive_validate_checkout
 supervisor.run_discord_configuration = public_run_discord_configuration
+supervisor.deploy_if_needed = low_downtime_deploy_if_needed
+supervisor.ensure_services = ensure_services_with_readiness
 
 # Service.command stores the original function object at import time, so replace
 # the immutable Service entry as well. Otherwise the override would sit nearby
