@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 import ford_scan
+import strict_learning_order
 import sync_discord_cards
 import sync_discord_structure as sync
 import sync_learning_center
@@ -202,14 +203,21 @@ def main() -> int:
 
     tracker = tracker or _tracker()
     removed = sync_discord_cards.cleanup_duplicate_learning_channels(tracker)
-    ordered = sync_discord_cards.order_learning_channels(tracker)
     channel_map = sync_discord_cards.write_learning_channel_map(tracker)
     totals = sync_learning_center.synchronize_curriculum(tracker)
+
+    # Ordering must be the final Discord structure operation. The strict pass
+    # includes every child in the category, moves unrelated channels after the
+    # numbered curriculum, refetches Discord state, and fails deployment if the
+    # visible order is not exactly index, 01..27, ask, reviews.
+    order_result = strict_learning_order.enforce_learning_channel_order(tracker)
     migration_pid = sync_discord_cards.launch_background_migration()
     print(
         "Learning Center release complete: "
         f"{renamed} legacy channels renamed; {removed} duplicates removed; "
-        f"{ordered} channels ordered; {len(channel_map)} references mapped; "
+        f"{order_result['canonical']} canonical channels strictly ordered in "
+        f"{order_result['attempts']} attempt(s); {order_result['extras']} extra "
+        f"channels moved after the curriculum; {len(channel_map)} references mapped; "
         f"{totals['cards']} lesson cards synchronized; historical card migration "
         f"started as PID {migration_pid}."
     )
