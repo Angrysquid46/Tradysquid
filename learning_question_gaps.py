@@ -17,6 +17,7 @@ from typing import Any
 import ford_scan
 import learning_application
 import learning_center_content as learning
+import learning_search_router as routed
 from discord_cards import style_message_payload
 
 ROOT = Path(__file__).resolve().parent
@@ -82,7 +83,7 @@ def interaction_user(interaction: dict[str, Any]) -> dict[str, str]:
 
 
 def closest_matches(question: str, limit: int = 3) -> list[dict[str, Any]]:
-    matches = learning.search_library(question, limit=limit)
+    matches = routed.search_library(question, limit=limit)
     return [
         {
             "score": round(float(score), 1),
@@ -256,9 +257,9 @@ def answer_with_gap_tracking(
     if learning_application.is_application_request(cleaned):
         return learning_application.answer(cleaned)
 
-    matches = learning.confident_matches(cleaned, limit=5)
+    matches = routed.confident_matches(cleaned, limit=5)
     if matches:
-        return learning.answer_from_matches(cleaned, matches)
+        return routed.answer_from_matches(cleaned, matches)
 
     record, review_reference = queue_unanswered_question(interaction, cleaned)
     location = review_reference or f"**#{DEFAULT_REVIEW_CHANNEL}**"
