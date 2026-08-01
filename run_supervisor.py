@@ -58,7 +58,9 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
         "discord_cards.py",
         "learning_center_catalog.py",
         "learning_center_content.py",
+        "learning_search_router.py",
         "learning_application.py",
+        "learning_question_gaps.py",
         "sync_learning_center.py",
         "sync_discord_cards.py",
         "sync_discord_structure.py",
@@ -74,9 +76,16 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
         return False, (compile_result.stderr or compile_result.stdout)[-2000:]
 
     validations = [
-        [sys.executable, "-m", "unittest", "-q", "test_local_information_engine.py"],
+        [
+            sys.executable,
+            "-m",
+            "unittest",
+            "-q",
+            "test_learning_center.py",
+            "test_local_information_engine.py",
+        ],
         [sys.executable, "sync_learning_center.py"],
-        [sys.executable, "learning_center_content.py"],
+        [sys.executable, "learning_search_router.py"],
         [sys.executable, "learning_application.py"],
     ]
     for command in validations:
@@ -84,7 +93,10 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
         if result.returncode:
             detail = (result.stderr or result.stdout or "validation failed")[-2000:]
             return False, f"{' '.join(command)}: {detail}"
-    return True, "Compilation, focused engine tests, curriculum, search, and application validations passed"
+    return True, (
+        "Compilation, focused tests, curriculum, routed search, live application, "
+        "and unanswered-question queue validation passed"
+    )
 
 
 def public_run_discord_configuration() -> list[str]:
@@ -124,7 +136,7 @@ def public_run_discord_configuration() -> list[str]:
             )
         else:
             results.append(
-                "Ordered Learning Center, lesson cards, references, guides, and permissions synchronized"
+                "Ordered Learning Center, question-gap review queue, lesson cards, references, guides, and permissions synchronized"
             )
     return results
 
