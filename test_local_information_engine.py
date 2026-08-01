@@ -54,6 +54,10 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn("unavailable", row["thesis"])
         self.assertIn("NU #009", ford_scan.trade_title(row))
 
+        later_version = dict(row)
+        later_version["realized_pl_dollars"] = "-14"
+        self.assertTrue(recover_discord_trade_history.same_trade(row, later_version))
+
     def test_new_trade_persists_full_thesis_checklist(self) -> None:
         candidate = {
             "play_type": "REGULAR", "call_or_put": "call", "strike": "15",

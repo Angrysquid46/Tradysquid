@@ -147,9 +147,7 @@ def same_trade(existing: dict[str, str], recovered: dict[str, str]) -> bool:
         return False
     if str(existing.get("closed_at") or "")[:10] != str(recovered.get("closed_at") or "")[:10]:
         return False
-    old_pl = ford_scan.realized_pl_dollars(existing)
-    new_pl = ford_scan.realized_pl_dollars(recovered)
-    return abs(old_pl - new_pl) < 0.51
+    return True
 
 
 def recover(*, dry_run: bool = False) -> dict[str, int]:
@@ -159,22 +157,34 @@ def recover(*, dry_run: bool = False) -> dict[str, int]:
     if not tracker.ready:
         raise RuntimeError("Discord is unavailable")
     rows = ford_scan.read_log()
-    parsed_by_signature: dict[tuple[str, ...], dict[str, str]] = {}
+    report_state = ford_scan.read_report_state()
+    generated_archive_message_ids = {
+        str(message_id)
+        for key, message_id in (report_state.get("messages") or {}).items()
+        if str(key).startswith(("result:wins:", "result:losses:")) and "-ARCHIVE-" in str(key)
+    }
+    parsed_by_identity: dict[tuple[str, ...], tuple[str, dict[str, str]]] = {}
     for message in archive_messages(tracker):
+        message_id = str(message.get("id") or "")
+        if message_id in generated_archive_message_ids:
+            continue
         recovered = parse_closed_card(message)
         if not recovered:
             continue
-        signature = (
+        identity = (
             recovered["ticker"],
             recovered["archive_sequence"],
             recovered["outcome"],
-            recovered["realized_pl_dollars"],
             recovered["closed_at"][:10],
         )
-        existing = parsed_by_signature.get(signature)
-        if not existing or (not existing.get("discord_thread_id") and recovered.get("discord_thread_id")):
-            parsed_by_signature[signature] = recovered
-    parsed = list(parsed_by_signature.values())
+        existing = parsed_by_identity.get(identity)
+        if not existing or message_id > existing[0]:
+            if existing and not recovered.get("discord_thread_id"):
+                recovered["discord_thread_id"] = existing[1].get("discord_thread_id", "")
+            parsed_by_identity[identity] = (message_id, recovered)
+        elif recovered.get("discord_thread_id") and not existing[1].get("discord_thread_id"):
+            existing[1]["discord_thread_id"] = recovered["discord_thread_id"]
+    parsed = [item[1] for item in parsed_by_identity.values()]
     added = 0
     for recovered in parsed:
         if any(same_trade(existing, recovered) for existing in rows):
