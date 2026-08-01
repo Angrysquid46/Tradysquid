@@ -100,13 +100,15 @@ def enforce_learning_channel_order(
     last_actual: list[str] = []
     desired_names: list[str] = []
     for attempt in range(1, attempts + 1):
-        category, children = category_and_children(tracker)
+        _, children = category_and_children(tracker)
         desired = desired_children(children)
         desired_ids = [str(item.get("id") or "") for item in desired]
         desired_names = [normalized(item.get("name") or "") for item in desired]
 
-        # Preserve the category's current guild-level block rather than assigning
-        # positions from zero, which can collide with channels in other categories.
+        # Preserve the category's current guild-level position block rather than
+        # assigning positions from zero. The batch endpoint must contain only
+        # IDs and positions. Including parent_id for several channels triggers
+        # Discord error 40009: only one parent can be modified per request.
         base_position = min(
             (int(item.get("position") or 0) for item in children),
             default=0,
@@ -115,8 +117,6 @@ def enforce_learning_channel_order(
             {
                 "id": channel_id,
                 "position": base_position + index,
-                "parent_id": str(category.get("id") or ""),
-                "lock_permissions": False,
             }
             for index, channel_id in enumerate(desired_ids)
         ]
