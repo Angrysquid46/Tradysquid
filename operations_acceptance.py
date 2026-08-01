@@ -45,6 +45,19 @@ REQUIRED_CHANNELS = {
     "bull-put-spreads": "Bull Put Spread Performance",
     "bear-call-spreads": "Bear Call Spread Performance",
 }
+CARD_STATE_KEYS = {
+    "performance-stats": "performance-stats",
+    "strategy-results": "strategy-breakdown",
+    "ticker-results": "ticker-results",
+    "wins": "wins-summary",
+    "losses": "losses-summary",
+    "regular-calls": "play-style-performance:regular-call",
+    "regular-puts": "play-style-performance:regular-put",
+    "swing-calls": "play-style-performance:swing-call",
+    "swing-puts": "play-style-performance:swing-put",
+    "bull-put-spreads": "play-style-performance:bull-put-spread",
+    "bear-call-spreads": "play-style-performance:bear-call-spread",
+}
 
 
 class OperationsAcceptanceFailure(RuntimeError):
@@ -90,6 +103,7 @@ def discord_channels_and_cards() -> dict[str, Any]:
     }
     result: dict[str, Any] = {}
     card_text: dict[str, str] = {}
+    report_messages = (ford_scan.read_report_state().get("messages") or {})
     for name, expected_title in REQUIRED_CHANNELS.items():
         channel = by_name.get(name.casefold())
         if not channel:
@@ -108,6 +122,14 @@ def discord_channels_and_cards() -> dict[str, Any]:
             ),
             None,
         )
+        recorded_id = str(report_messages.get(CARD_STATE_KEYS.get(name, "")) or "")
+        if not matching and recorded_id:
+            try:
+                recorded = tracker._request("GET", f"/channels/{channel['id']}/messages/{recorded_id}")
+                if expected_title.casefold() in ford_scan.message_search_text(recorded).casefold():
+                    matching = recorded
+            except ford_scan.DiscordError:
+                matching = None
         if not matching:
             raise OperationsAcceptanceFailure(
                 f"#{name} exists but does not contain the expected live `{expected_title}` card."
