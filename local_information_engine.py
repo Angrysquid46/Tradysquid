@@ -694,7 +694,8 @@ def managed_ticker_news_job(connection: sqlite3.Connection) -> str:
             store_observation(connection, f"ticker-news:{ticker}", {"items": items})
             completed.append(ticker)
         except Exception as exc:
-            failed.append(f"{ticker}:{type(exc).__name__}")
+            detail = " ".join(str(exc).split())[:240] or "no detail"
+            failed.append(f"{ticker}:{type(exc).__name__}:{detail}")
         time.sleep(1.0)
     if failed:
         raise RuntimeError("Ticker news failed for " + ", ".join(failed))
@@ -987,7 +988,8 @@ def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
             )
             completed.append(ticker)
         except Exception as exc:
-            failed.append(f"{ticker}:{type(exc).__name__}")
+            detail = " ".join(str(exc).split())[:240] or "no detail"
+            failed.append(f"{ticker}:{type(exc).__name__}:{detail}")
         time.sleep(1.0)
     store_observation(
         connection,

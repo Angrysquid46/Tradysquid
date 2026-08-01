@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import learning_application
+import learning_center_content
 import learning_question_gaps
 import learning_search_router
 import sync_learning_center
@@ -100,7 +101,7 @@ class LearningCenterTests(unittest.TestCase):
     def test_static_answer_cites_learning_center(self) -> None:
         answer = learning_search_router.answer("What is gamma risk near expiration?")
         self.assertIn("Learning Center reference", answer)
-        self.assertIn("15-option-pricing-greeks", answer)
+        self.assertIn(learning_center_content.channel_reference("15-option-pricing-greeks"), answer)
 
     def test_application_parser(self) -> None:
         result = learning_application.validate_parser(lambda symbol: True)
@@ -184,7 +185,10 @@ class LearningCenterTests(unittest.TestCase):
                     SAMPLE_INTERACTION,
                     "What does gamma do near expiration?",
                 )
-            self.assertIn("15-option-pricing-greeks", answer)
+            self.assertIn(
+                learning_center_content.channel_reference("15-option-pricing-greeks"),
+                answer,
+            )
             self.assertFalse(queue_path.exists())
             post_mock.assert_not_called()
 

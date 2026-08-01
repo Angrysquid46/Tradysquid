@@ -123,7 +123,9 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         self.assertIn("information-engine: **ONLINE**", message)
         self.assertIn("ngrok: **ONLINE**", message)
         self.assertIn("automatic updater: **ONLINE**", message)
-        self.assertEqual(write_state.call_count, 2)
+        # Each pass writes an early liveness heartbeat before startup checks and
+        # a second state snapshot after service health has been verified.
+        self.assertEqual(write_state.call_count, 4)
         heartbeat = write_state.call_args.kwargs
         self.assertIn("supervisor_heartbeat_at", heartbeat)
         self.assertTrue(heartbeat["auto_update_enabled"])
