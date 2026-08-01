@@ -1613,6 +1613,27 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
     return f"{refreshed} refreshed · {closed} closed · stream {stream_state}"
 
 
+def closed_position_cleanup_job(connection: sqlite3.Connection) -> str:
+    """Keep completed trades out of held-positions without running a market scan."""
+    with POSITION_FILE_LOCK:
+        rows = ford_scan.read_log()
+    closed = ford_scan.closed_rows(rows)
+    if not closed:
+        return "no closed trades to reconcile"
+    tracker = discord_tracker()
+    if not tracker:
+        raise RuntimeError("Discord tracker is unavailable")
+    report_state = ford_scan.read_report_state()
+    routed = ford_scan.sync_closed_result_channels(closed, tracker, report_state)
+    ford_scan.write_report_state(report_state)
+    store_observation(
+        connection,
+        "closed-position-cleanup",
+        {"closed_checked": len(closed), "results_routed": routed},
+    )
+    return f"{len(closed)} closed checked; {routed} results routed"
+
+
 def outcome_learning_job(connection: sqlite3.Connection) -> str:
     summary = outcome_learning.export_learning_archive()
     store_observation(
@@ -1714,6 +1735,12 @@ JOBS = [
         market_hours_only=True,
         background=True,
         provider_heavy=True,
+    ),
+    Job(
+        "closed-position-cleanup",
+        timedelta(minutes=5),
+        closed_position_cleanup_job,
+        retry_interval=timedelta(minutes=1),
     ),
     Job(
         "dynamic-universe-refresh",

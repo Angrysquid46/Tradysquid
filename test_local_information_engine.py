@@ -192,6 +192,7 @@ class InformationEngineTests(unittest.TestCase):
         self.assertTrue({
             "full-options-scan",
             "position-tracker",
+            "closed-position-cleanup",
             "dynamic-universe-refresh",
             "managed-ticker-information",
             "managed-ticker-news",
@@ -209,6 +210,28 @@ class InformationEngineTests(unittest.TestCase):
             "session-briefing",
             "discord-card-migration",
         }.issubset(background))
+
+    def test_closed_position_cleanup_reconciles_without_market_scan(self) -> None:
+        closed = [{"trade_id": "NU-009", "outcome": "LOSS"}]
+        state: dict = {}
+        tracker = object()
+        connection = object()
+        with (
+            patch.object(engine.ford_scan, "read_log", return_value=closed),
+            patch.object(engine.ford_scan, "closed_rows", return_value=closed),
+            patch.object(engine, "discord_tracker", return_value=tracker),
+            patch.object(engine.ford_scan, "read_report_state", return_value=state),
+            patch.object(
+                engine.ford_scan, "sync_closed_result_channels", return_value=0
+            ) as sync,
+            patch.object(engine.ford_scan, "write_report_state") as write_state,
+            patch.object(engine, "store_observation") as observe,
+        ):
+            result = engine.closed_position_cleanup_job(connection)
+        sync.assert_called_once_with(closed, tracker, state)
+        write_state.assert_called_once_with(state)
+        observe.assert_called_once()
+        self.assertIn("1 closed checked", result)
 
     def test_multi_ticker_scan_publishes_each_ticker_and_syncs_once(self) -> None:
         calls: list[tuple[str, bool]] = []
