@@ -167,10 +167,9 @@ def post_report(message: str) -> None:
             None,
         )
         if channel:
-            tracker._request(
-                "POST",
-                f"/channels/{channel['id']}/messages",
-                {"content": message[:1900], "allowed_mentions": {"parse": []}},
+            title = message.splitlines()[0].strip("# *✅❌ ")
+            tracker.upsert_singleton_message(
+                str(channel["id"]), message[:1900], title
             )
     except Exception:
         pass
