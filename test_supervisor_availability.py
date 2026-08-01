@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -14,6 +15,33 @@ ROOT = Path(__file__).resolve().parent
 class SupervisorAvailabilityTests(unittest.TestCase):
     def setUp(self) -> None:
         run_supervisor._LAST_READY_SIGNATURE = None
+
+    def test_supervisor_log_is_safe_on_legacy_windows_console(self) -> None:
+        class LegacyConsole:
+            encoding = "cp1252"
+
+            def __init__(self) -> None:
+                self.output: list[str] = []
+
+            def write(self, value: str) -> int:
+                value.encode(self.encoding)
+                self.output.append(value)
+                return len(value)
+
+            def flush(self) -> None:
+                return None
+
+        console = LegacyConsole()
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(supervisor, "LOG_DIR", Path(directory)),
+                patch.object(supervisor.sys, "stdout", console),
+            ):
+                supervisor.supervisor_log("Deploying old → new")
+
+            self.assertIn("\\u2192", "".join(console.output))
+            log_text = (Path(directory) / "supervisor.log").read_text(encoding="utf-8")
+            self.assertIn("→", log_text)
 
     def test_deployment_pauses_only_information_engine_until_final_restart(self) -> None:
         full_stop = Mock()
