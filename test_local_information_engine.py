@@ -507,8 +507,63 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(updated, 0)
         self.assertEqual(
             calls,
-            [("updates", state, "position", "VALE-20260731-001")],
+            [
+                ("updates", state, "position", "VALE-20260731-001"),
+                ("exit", state, "exit", "VALE-20260731-001"),
+            ],
         )
+
+    def test_delete_trade_message_finds_legacy_card_without_state(self) -> None:
+        tracker = ford_scan.DiscordTracker("token", "guild")
+        tracker.ready = True
+        tracker.channels["updates"] = "held-channel"
+        requests: list[tuple[str, str]] = []
+
+        def request(method: str, path: str, payload=None):
+            requests.append((method, path))
+            if method == "GET":
+                return [
+                    {
+                        "id": "legacy-message",
+                        "author": {"bot": True},
+                        "content": "",
+                        "embeds": [{"title": "VALE-20260731-001 | LOSS"}],
+                    }
+                ]
+            return {}
+
+        tracker._request = request
+        state: dict = {}
+        tracker.delete_trade_message(
+            "updates", state, "position", "VALE-20260731-001"
+        )
+        self.assertIn(
+            ("DELETE", "/channels/held-channel/messages/legacy-message"), requests
+        )
+        self.assertEqual(state["messages"], {})
+
+    def test_new_close_is_not_posted_back_to_held_positions(self) -> None:
+        calls: list[tuple] = []
+
+        class Tracker:
+            ready = True
+
+            def upsert_trade_result(self, *args):
+                calls.append(("result", *args))
+
+            def delete_trade_message(self, *args):
+                calls.append(("delete", *args))
+
+        row = {
+            "trade_id": "F-20260731-002",
+            "ticker": "F",
+            "outcome": "WIN",
+            "closed_at": "2026-07-31T14:00:00-05:00",
+            "pct_gain_loss": "10",
+        }
+        state: dict = {}
+        self.assertEqual(ford_scan.sync_closed_result_channels([row], Tracker(), state), 1)
+        self.assertEqual([call[0] for call in calls], ["result", "delete", "delete"])
 
     def test_entry_snapshot_is_sent_to_trade_thread_not_chart_channel(self) -> None:
         calls: list[tuple[str, str]] = []

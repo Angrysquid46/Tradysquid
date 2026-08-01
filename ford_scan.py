@@ -2351,6 +2351,7 @@ class DiscordTracker:
         self.forum_id = ""
         self.missing_channels: list[str] = []
         self.private_system_channels: set[str] = set()
+        self._channel_message_cache: dict[str, list[dict[str, Any]]] = {}
 
     @property
     def enabled(self) -> bool:
@@ -2662,6 +2663,38 @@ class DiscordTracker:
             except DiscordError as exc:
                 if "HTTP 404" not in str(exc):
                     raise
+        else:
+            # Runtime state can be deleted or predate message tracking. Search
+            # the channel itself so stale legacy cards do not become permanent.
+            recent = self._channel_message_cache.get(channel_id)
+            if recent is None:
+                recent = []
+                before = ""
+                for _ in range(10):
+                    suffix = f"&before={before}" if before else ""
+                    page = self._request(
+                        "GET", f"/channels/{channel_id}/messages?limit=100{suffix}"
+                    )
+                    if not isinstance(page, list) or not page:
+                        break
+                    recent.extend(page)
+                    before = str(page[-1].get("id") or "")
+                    if len(page) < 100 or not before:
+                        break
+                self._channel_message_cache[channel_id] = recent
+            for message in list(recent):
+                author = message.get("author") or {}
+                if author.get("bot") and trade_id in message_search_text(message):
+                    stale_id = str(message.get("id") or "")
+                    if stale_id:
+                        try:
+                            self._request(
+                                "DELETE", f"/channels/{channel_id}/messages/{stale_id}"
+                            )
+                        except DiscordError as exc:
+                            if "HTTP 404" not in str(exc):
+                                raise
+                    recent.remove(message)
         messages.pop(state_key, None)
         state.setdefault("message_hashes", {}).pop(state_key, None)
 
@@ -3090,12 +3123,13 @@ def sync_closed_result_channels(
             discord.delete_trade_message(
                 "updates", report_state, "position", trade_id
             )
+            discord.delete_trade_message("exit", report_state, "exit", trade_id)
             continue
         link = thread_link(row.get("discord_thread_id", ""))
         content = close_alert_text(row, stored_close_evaluation(row), link)
-        discord.upsert_trade_message("exit", report_state, "exit", trade_id, content)
         discord.upsert_trade_result(result_channel, report_state, trade_id, content)
         discord.delete_trade_message("updates", report_state, "position", trade_id)
+        discord.delete_trade_message("exit", report_state, "exit", trade_id)
         mark_closed_result_routed(row, report_state)
         updated += 1
     return updated
@@ -3132,7 +3166,6 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
                 discord.set_thread_status(thread_id, row["outcome"], archive=True)
             except DiscordError as exc:
                 print(f"Could not update optional forum status for {row.get('trade_id')}: {exc}", file=sys.stderr)
-    discord.upsert_trade_message("exit", report_state, "exit", row.get("trade_id", ""), content)
     result_channel = {
         "WIN": "wins",
         "LOSS": "losses",
@@ -3143,6 +3176,7 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
         discord.upsert_trade_result(result_channel, report_state, row.get("trade_id", ""), content)
         mark_closed_result_routed(row, report_state)
     discord.delete_trade_message("updates", report_state, "position", row.get("trade_id", ""))
+    discord.delete_trade_message("exit", report_state, "exit", row.get("trade_id", ""))
     row["discord_status"] = row["outcome"]
     row["last_discord_signal"] = evaluation.get("signal", "CLOSE")
     row["last_discord_pl_pct"] = round_or_blank(as_float(evaluation.get("pl_pct")), 0)
