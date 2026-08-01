@@ -143,6 +143,8 @@ def record_event(
     row: dict[str, Any], event_kind: str, event_key: str, *,
     observed_at: str | None = None, extra: dict[str, Any] | None = None,
 ) -> bool:
+    if not str(row.get("trade_id") or "").strip():
+        return False
     payload = canonical_payload(row, extra)
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     with database() as db:

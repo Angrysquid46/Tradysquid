@@ -1063,11 +1063,12 @@ class InformationEngineTests(unittest.TestCase):
 
     def test_new_closed_trades_are_binary_not_scratch(self) -> None:
         row = {"play_type": "LONG", "entry_price": "0.50"}
-        ford_scan.close_row(
-            row,
-            {"signal": "EXPIRY CLOSE", "mark": 0.50, "pl_dollars": 0},
-            ford_scan.now_ct(),
-        )
+        with patch.object(ford_scan.trade_intelligence, "record_event"):
+            ford_scan.close_row(
+                row,
+                {"signal": "EXPIRY CLOSE", "mark": 0.50, "pl_dollars": 0},
+                ford_scan.now_ct(),
+            )
         self.assertEqual(row["outcome"], "LOSS")
 
     def test_contract_price_guard_is_one_dollar(self) -> None:
@@ -1135,6 +1136,7 @@ class InformationEngineTests(unittest.TestCase):
                     return_value=(True, ford_scan.now_ct()),
                 ),
                 patch.object(engine, "_route_stream_close") as route_close,
+                patch.object(ford_scan.trade_intelligence, "record_event"),
             ):
                 engine._stream_quote_event(
                     {
