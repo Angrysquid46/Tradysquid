@@ -566,10 +566,14 @@ def row_key(row: dict[str, str]) -> tuple[str, str, str, str, str]:
     )
 
 
+def trade_sequence(row: dict[str, str]) -> str:
+    return str(row.get("archive_sequence") or (row.get("trade_id") or "UNKNOWN").rsplit("-", 1)[-1])
+
+
 def trade_title(row: dict[str, str]) -> str:
     ticker = (row.get("ticker") or TICKER).upper()
     trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
-    sequence = trade_id.rsplit("-", 1)[-1]
+    sequence = trade_sequence(row)
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
     expiration = format_expiration(row.get("expiration", ""))
@@ -700,7 +704,7 @@ def format_expiration(value: str) -> str:
 def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
     ticker = (row.get("ticker") or TICKER).upper()
     trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
-    sequence = trade_id.rsplit("-", 1)[-1]
+    sequence = trade_sequence(row)
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
     expiration = format_expiration(row.get("expiration", ""))
@@ -785,7 +789,7 @@ def position_update_text(
 ) -> str:
     ticker = (row.get("ticker") or TICKER).upper()
     trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
-    sequence = trade_id.rsplit("-", 1)[-1]
+    sequence = trade_sequence(row)
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
     expiration = format_expiration(row.get("expiration", ""))
@@ -851,7 +855,7 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
     icon = {"WIN": "🟩", "LOSS": "🟥", "SCRATCH": "⬜"}.get(outcome, "📕")
     ticker = (row.get("ticker") or TICKER).upper()
     trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
-    sequence = trade_id.rsplit("-", 1)[-1]
+    sequence = trade_sequence(row)
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
     expiration = format_expiration(row.get("expiration", ""))
@@ -906,7 +910,7 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
 def qualified_trade_text(row: dict[str, str], include_link: str = "") -> str:
     ticker = (row.get("ticker") or TICKER).upper()
     trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
-    sequence = trade_id.rsplit("-", 1)[-1]
+    sequence = trade_sequence(row)
     play_type = row.get("play_type", "PLAY").upper()
     kind = row.get("call_or_put", "").upper()
     expiration = format_expiration(row.get("expiration", ""))
@@ -3353,7 +3357,7 @@ def sync_all_trade_journals(
             ):
                 continue
             discord._request("PATCH", f"/channels/{thread_id}", {"archived": False})
-            sequence = trade_id.rsplit("-", 1)[-1]
+            sequence = trade_sequence(row)
             token = f"{str(row.get('ticker') or TICKER).upper()} #{sequence} · {outcome}"
             discord.upsert_singleton_message(
                 thread_id,
@@ -3558,7 +3562,7 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     content = close_alert_text(row, evaluation, link)
     if thread_id:
         try:
-            sequence = str(row.get("trade_id") or "").rsplit("-", 1)[-1]
+            sequence = trade_sequence(row)
             token = f"{str(row.get('ticker') or TICKER).upper()} #{sequence} · {row.get('outcome')}"
             discord.upsert_singleton_message(
                 thread_id, close_alert_text(row, evaluation), token

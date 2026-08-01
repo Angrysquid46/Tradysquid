@@ -52,6 +52,7 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(float(row["realized_pl_dollars"]), -12.0)
         self.assertEqual(row["outcome"], "LOSS")
         self.assertIn("unavailable", row["thesis"])
+        self.assertIn("NU #009", ford_scan.trade_title(row))
 
     def test_new_trade_persists_full_thesis_checklist(self) -> None:
         candidate = {
