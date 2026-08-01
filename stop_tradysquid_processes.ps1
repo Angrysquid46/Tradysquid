@@ -4,7 +4,7 @@ param(
 
 $patterns = @(
     'discord_command_bot(_public)?\.py',
-    'local_information_engine\.py',
+    'local_information_engine(_public)?\.py',
     'run_ngrok\.py',
     'tradysquid_supervisor\.py',
     'run_supervisor\.py',
