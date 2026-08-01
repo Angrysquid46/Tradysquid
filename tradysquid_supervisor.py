@@ -475,6 +475,8 @@ def validate_checkout() -> tuple[bool, str]:
         "register_discord_commands.py",
         "sync_discord_structure.py",
         "tradysquid_supervisor.py",
+        "trade_intelligence.py",
+        "upgrade_impact.py",
     ]
     compile_result = run(
         [sys.executable, "-m", "py_compile", *compile_files],
@@ -482,6 +484,9 @@ def validate_checkout() -> tuple[bool, str]:
     )
     if compile_result.returncode:
         return False, (compile_result.stderr or compile_result.stdout)[-1500:]
+    impact = run([sys.executable, "upgrade_impact.py", "--check"], timeout=60)
+    if impact.returncode:
+        return False, (impact.stderr or impact.stdout)[-1500:]
     tests = run(
         [
             sys.executable,

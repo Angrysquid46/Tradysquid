@@ -920,6 +920,8 @@ class InformationEngineTests(unittest.TestCase):
             with (
                 patch.object(ford_scan, "sync_open_trade_cards"),
                 patch.object(ford_scan, "build_trade_snapshot", return_value=image),
+                patch.object(ford_scan.trade_intelligence, "register_snapshot", return_value=True),
+                patch.object(ford_scan.trade_intelligence, "record_event"),
             ):
                 ford_scan.post_new_trade(row, Tracker(), {})
         self.assertEqual(calls[0][0], "thread-1")

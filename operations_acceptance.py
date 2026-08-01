@@ -29,6 +29,7 @@ REQUIRED_JOBS = {
     "automatic-self-repair",
     "off-hours-universe-screen",
     "rotating-event-sweep",
+    "trade-intelligence-health",
 }
 REQUIRED_CHANNELS = {
     "system-activity": "Always-On Tradysquids Activity",
@@ -213,6 +214,10 @@ def trade_journals() -> dict[str, Any]:
             raise OperationsAcceptanceFailure(
                 f"Trade {trade_id} journal is missing applied Learning Center analysis."
             )
+        if "Learning Center version" not in combined:
+            raise OperationsAcceptanceFailure(
+                f"Trade {trade_id} journal is missing its Learning Center version."
+            )
         if str(row.get("outcome") or "").upper() in {"WIN", "LOSS", "FLAT"}:
             closed_count += 1
             if "Post-Trade Learning" not in combined:
@@ -224,6 +229,7 @@ def trade_journals() -> dict[str, Any]:
         "closed_trade_count": closed_count,
         "all_have_unique_journals": True,
         "all_apply_learning_center": True,
+        "all_record_learning_version": True,
         "all_closed_have_reviews": True,
     }
 

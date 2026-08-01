@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "components": {
+    "trade-lifecycle": ["ford_scan.py", "tradier_stream.py"],
+    "canonical-ledger": ["ford_scan.py", "recover_discord_trade_history.py"],
+    "discord-routing": ["ford_scan.py", "sync_discord_structure.py", "discord_command_bot.py"],
+    "journals-and-charts": ["ford_scan.py", "trade_intelligence.py"],
+    "learning-center": ["learning_center/", "learning_", "outcome_learning.py"],
+    "performance-reporting": ["ford_scan.py", "outcome_learning.py", "local_information_engine.py"],
+    "scheduler-and-recovery": ["local_information_engine.py", "always_on_operations.py"],
+    "deployment-and-rollback": ["tradysquid_supervisor.py", "INSTALL-", "ENSURE-"]
+  },
+  "high_risk_components": [
+    "trade-lifecycle", "canonical-ledger", "discord-routing",
+    "performance-reporting", "scheduler-and-recovery", "deployment-and-rollback"
+  ],
+  "required_declarations": [
+    "canonical reads", "canonical writes", "affected consumers", "migration/backfill",
+    "idempotency", "retry", "monitoring", "acceptance", "rollback", "compatibility"
+  ]
+}

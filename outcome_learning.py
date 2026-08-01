@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import ford_scan
+import trade_intelligence
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_ARCHIVE = Path(os.environ.get("OneDrive", str(ROOT.parent))) / "Tradysquid-Learning"
@@ -31,6 +32,8 @@ EXPORT_FIELDS = [
     "open_interest_at_entry", "bid_ask_width_at_entry", "option_volume_at_entry",
     "setup_score", "market_regime", "outcome", "pct_gain_loss",
     "realized_pl_dollars", "max_favorable_pct", "max_adverse_pct", "last_signal",
+    "thesis", "entry_confirmation", "invalidation", "risk_plan", "learning_plan",
+    "evidence_limitations", "learning_version", "data_confidence",
     "review_primary_cause", "review_cause_tags", "review_alignment",
     "review_aligned_count", "review_opposing_count", "review_neutral_count",
     "review_missing_evidence_count", "review_version",
@@ -105,10 +108,13 @@ def bucket(value: float | None, cuts: tuple[float, ...]) -> str:
 
 
 def feature_groups(row: dict[str, Any]) -> dict[str, str]:
+    play_type = str(row.get("play_type") or "UNKNOWN").upper()
+    direction = str(row.get("call_or_put") or "UNKNOWN").upper()
     return {
         "ticker": str(row.get("ticker") or "F").upper(),
         "strategy": str(row.get("play_type") or "UNKNOWN").upper(),
         "direction": str(row.get("call_or_put") or "UNKNOWN").upper(),
+        "play_style": f"{play_type}-{direction}",
         "regime": str(row.get("market_regime") or "UNKNOWN").upper(),
         "review_primary_cause": str(row.get("review_primary_cause") or "UNREVIEWED"),
         "review_alignment": str(row.get("review_alignment") or "UNRECORDED"),
@@ -134,6 +140,12 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     for (feature, value), members in sorted(groups.items()):
         pnl = [ford_scan.as_float(row.get("realized_pl_dollars"), 0.0) or 0.0 for row in members]
         wins = sum(str(row.get("outcome") or "").upper() == "WIN" for row in members)
+        gross_profit = sum(value for value in pnl if value > 0)
+        gross_loss = abs(sum(value for value in pnl if value < 0))
+        mfe = [ford_scan.as_float(row.get("max_favorable_pct")) for row in members]
+        mae = [ford_scan.as_float(row.get("max_adverse_pct")) for row in members]
+        mfe = [value for value in mfe if value is not None]
+        mae = [value for value in mae if value is not None]
         summaries.append({
             "feature": feature,
             "value": value,
@@ -143,6 +155,10 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "total_pl_dollars": round(sum(pnl), 2),
             "average_pl_dollars": round(statistics.mean(pnl), 2),
             "median_pl_dollars": round(statistics.median(pnl), 2),
+            "expectancy_dollars": round(statistics.mean(pnl), 2),
+            "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss else None,
+            "average_mfe_pct": round(statistics.mean(mfe), 1) if mfe else None,
+            "average_mae_pct": round(statistics.mean(mae), 1) if mae else None,
             "evidence_ready": len(members) >= MIN_SAMPLE,
         })
 
@@ -151,6 +167,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     reviewed = sum(str(row.get("review_primary_cause")) != "UNREVIEWED" for row in rows)
     return {
         "generated_at": datetime.now().astimezone().isoformat(),
+        "learning_version": trade_intelligence.learning_version(),
         "minimum_sample": MIN_SAMPLE,
         "closed_trades": len(rows),
         "reviewed_trades": reviewed,
@@ -158,6 +175,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "cause_counts": dict(sorted(cause_counts.items())),
         "groups": summaries,
         "evidence_ready_groups": evidence,
+        "play_style_suggestions": build_suggestions(summaries),
         "guardrails": [
             "No scanner filters are changed automatically.",
             "No brokerage orders are placed.",
@@ -168,6 +186,29 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def build_suggestions(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    suggestions: list[dict[str, Any]] = []
+    for item in groups:
+        if item["feature"] != "play_style":
+            continue
+        samples = int(item["samples"])
+        ready = bool(item["evidence_ready"])
+        profitable = float(item["average_pl_dollars"]) > 0
+        suggestions.append({
+            "play_style": item["value"],
+            "samples": samples,
+            "confidence": "EVIDENCE-READY" if ready else "COLLECTING",
+            "observation": (
+                "Positive average P/L; preserve entry filters and compare exit timing against MFE."
+                if profitable else
+                "Negative average P/L; review confirmation quality, adverse excursion, and exit timing before proposing rule changes."
+            ),
+            "expected_tradeoff": "Tighter filters may improve quality while reducing trade frequency.",
+            "automatic_change": False,
+        })
+    return suggestions
+
+
 def render_report(summary: dict[str, Any]) -> str:
     lines = [
         "# Tradysquid Outcome Learning Report",
@@ -176,6 +217,7 @@ def render_report(summary: dict[str, Any]) -> str:
         f"Closed tracked trades: {summary['closed_trades']}",
         f"Trade-specific reviews: {summary['reviewed_trades']} ({summary['review_coverage_pct']:.1f}%)",
         f"Minimum evidence sample: {summary['minimum_sample']}",
+        f"Learning Center version: {summary['learning_version']}",
         "",
         "This is offline historical analysis, not professional financial advice.",
         "The learning system does not modify scanner rules or place trades.",
@@ -206,6 +248,12 @@ def render_report(summary: dict[str, Any]) -> str:
             )
     lines.extend(["", "## Guardrails", ""])
     lines.extend(f"- {guardrail}" for guardrail in summary["guardrails"])
+    lines.extend(["", "## Play-style improvement queue", ""])
+    for item in summary["play_style_suggestions"]:
+        lines.append(
+            f"- **{item['play_style']}** ({item['samples']} trades; {item['confidence']}): "
+            f"{item['observation']} Tradeoff: {item['expected_tradeoff']}"
+        )
     return "\n".join(lines) + "\n"
 
 

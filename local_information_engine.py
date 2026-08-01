@@ -30,6 +30,7 @@ import outcome_learning
 import requests
 import ticker_registry
 import tradier_stream
+import trade_intelligence
 from run_with_env import load_env
 
 ROOT = Path(__file__).resolve().parent
@@ -1649,6 +1650,11 @@ def closed_position_cleanup_job(connection: sqlite3.Connection) -> str:
             "journals": journal_counts,
         },
     )
+    for row in closed:
+        trade_intelligence.record_event(
+            row, "closed-reconciliation", str(row.get("closed_at") or row.get("trade_id")),
+            extra={"results_routed": routed, "journals": journal_counts},
+        )
     return f"{len(closed)} closed checked; {routed} results routed"
 
 
@@ -1671,6 +1677,7 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
             "## Learning Results",
             f"Closed trades analyzed **{summary['closed_trades']}** · "
             f"minimum sample **{summary['minimum_sample']}**",
+            f"Learning Center version `{summary['learning_version']}`",
             "### Evidence-ready groups",
         ]
         if evidence:
@@ -1721,9 +1728,39 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
     )
     ford_scan.write_report_state(report_state)
     outcome_learning_job(connection)
+    consumers = (
+        "performance-dashboard", "ticker-results", "strategy-results", "wins-losses",
+        "play-style-results", "daily-weekly", "learning-results",
+    )
+    for row in ford_scan.closed_rows(rows):
+        version = str(row.get("closed_at") or row.get("last_evaluated_at") or "")
+        for consumer in consumers:
+            trade_intelligence.acknowledge(str(row.get("trade_id") or ""), consumer, version)
     closed = len(ford_scan.closed_rows(rows))
     store_observation(connection, "discord-reporting", {"closed": closed})
     return f"performance, strategy, ticker, daily, and weekly refreshed from {closed} closed trades"
+
+
+def trade_intelligence_health_job(connection: sqlite3.Connection) -> str:
+    health = trade_intelligence.health()
+    with POSITION_FILE_LOCK:
+        rows = ford_scan.read_log()
+    closed = ford_scan.closed_rows(rows)
+    missing_learning = [row.get("trade_id") for row in rows if not row.get("learning_version")]
+    missing_thesis = [row.get("trade_id") for row in rows if not row.get("thesis")]
+    health.update({
+        "canonical_trades": len(rows),
+        "closed_trades": len(closed),
+        "missing_learning_version": missing_learning,
+        "missing_thesis": missing_thesis,
+    })
+    store_observation(connection, "trade-intelligence-health", health)
+    if health["failed_syncs"] or missing_learning or missing_thesis:
+        raise RuntimeError(f"trade intelligence incomplete: {health}")
+    return (
+        f"{len(rows)} trades checked; learning {health['learning_version']}; "
+        f"{health['failed_syncs']} failed syncs; {health['pending_research']} research items awaiting review"
+    )
 
 
 PLAYBOOK_SPECS = [
@@ -1943,6 +1980,12 @@ JOBS = [
         "discord-reporting",
         timedelta(minutes=5),
         discord_reporting_job,
+        retry_interval=timedelta(minutes=1),
+    ),
+    Job(
+        "trade-intelligence-health",
+        timedelta(minutes=5),
+        trade_intelligence_health_job,
         retry_interval=timedelta(minutes=1),
     ),
     Job(

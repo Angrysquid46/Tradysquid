@@ -50,6 +50,7 @@ from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 import requests
+import trade_intelligence
 
 # ---------------------------------------------------------------------------
 # Config
@@ -148,7 +149,7 @@ DISCORD_SYNC_EXISTING_OPEN = os.environ.get("DISCORD_SYNC_EXISTING_OPEN", "true"
 DISCORD_MIGRATE_LEGACY_MESSAGES = os.environ.get(
     "DISCORD_MIGRATE_LEGACY_MESSAGES", "false"
 ).lower() == "true"
-DISCORD_FORMAT_VERSION = "12"
+DISCORD_FORMAT_VERSION = "13"
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Tradysquids-TradeBot/1.0"})
@@ -190,6 +191,8 @@ LOG_HEADER = [
     "risk_plan",
     "learning_plan",
     "evidence_limitations",
+    "learning_version",
+    "data_confidence",
     "archive_sequence",
     "outcome",
     "pct_gain_loss",
@@ -657,6 +660,8 @@ def trade_learning_analysis(row: dict[str, str], *, closed: bool = False) -> str
         f"**Learning application:** {learning_plan}",
         f"**Recorded option evidence:** {evidence}",
         f"**Evidence limitation:** {limitations}",
+        f"**Learning Center version:** `{row.get('learning_version') or trade_intelligence.learning_version()}`",
+        f"**Data confidence:** {row.get('data_confidence') or 'Historical evidence quality not scored'}",
         "**Learning Center path:** "
         + " · ".join(
             learning_channel_reference(channel)
@@ -1639,7 +1644,7 @@ def render_trade_multitimeframe_snapshot(
         resistance = max(values[-min(20, len(values)):])
         last = values[-1]
         trend = "ABOVE TREND" if sma20[-1] is not None and last >= sma20[-1] else "BELOW TREND"
-        marker_color = "#22c55e" if event == "entry" else "#ef4444"
+        marker_color = "#22c55e" if event == "entry" else "#f59e0b" if event.startswith("hold") else "#ef4444"
         mx, my = xy(len(values) - 1, last)
         draw.ellipse((mx - 7, my - 7, mx + 7, my + 7), fill=marker_color)
         draw.text(
@@ -1659,14 +1664,16 @@ def render_trade_multitimeframe_snapshot(
         f"Evidence score {context.get('evidence_score', '—')} · Blue line is rolling trend · "
         "levels require price and option-liquidity confirmation"
     )
+    source_timestamp = str((intraday[-1] if intraday else {}).get("time") or (intraday[-1] if intraday else {}).get("timestamp") or now_ct().isoformat())
     draw.text((45, 930), footer, fill="#d7e2ef", font=normal)
     draw.text(
         (45, 976),
-        "Paper-trade research only. Historical backfills never substitute current bars for missing entry-time evidence.",
+        f"Source timestamp {source_timestamp} · timeframes 5m/1d/1w/1mo · generated {now_ct().isoformat(timespec='minutes')} · paper research only.",
         fill="#8193a8",
         font=small,
     )
-    destination = TRADE_SNAPSHOT_DIR / f"{row.get('trade_id', 'trade')}-{event}-multitimeframe.png"
+    safe_event = re.sub(r"[^a-zA-Z0-9_-]+", "-", event).strip("-")
+    destination = TRADE_SNAPSHOT_DIR / f"{row.get('trade_id', 'trade')}-{safe_event}-multitimeframe.png"
     destination.parent.mkdir(parents=True, exist_ok=True)
     image.save(destination, format="PNG", optimize=True)
     return destination
@@ -1919,6 +1926,10 @@ def migrate_row(raw: dict[str, Any]) -> dict[str, str]:
     row["entry_price"] = round_or_blank(parse_entry_price(row), 2)
     row["discord_status"] = row.get("discord_status") or row["outcome"]
     row["last_signal"] = row.get("last_signal") or ("HOLD" if row["outcome"] == "OPEN" else row["outcome"])
+    row["learning_version"] = row.get("learning_version") or "historical-unversioned"
+    row["data_confidence"] = row.get("data_confidence") or (
+        "CAPTURED" if row["outcome"] == "OPEN" else "HISTORICAL-PARTIAL"
+    )
     if row["outcome"] == "OPEN":
         row["last_mark"] = row.get("last_mark") or round_or_blank(parse_entry_price(row), 2)
         row["current_pl_dollars"] = row.get("current_pl_dollars") or "0"
@@ -2331,6 +2342,8 @@ def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], time
             "evidence_limitations": (
                 "Only evidence captured at entry is treated as fact; unavailable indicators remain unavailable."
             ),
+            "learning_version": trade_intelligence.learning_version(),
+            "data_confidence": "CAPTURED",
             "outcome": "OPEN",
             "last_mark": str(candidate["entry_price"]),
             "current_pl_dollars": "0",
@@ -2530,6 +2543,13 @@ def close_row(row: dict[str, str], evaluation: dict[str, Any], timestamp: dateti
     row["result_price_source"] = "TRACKED"
     row["closed_at"] = timestamp.isoformat()
     row["discord_status"] = outcome
+    trade_intelligence.record_event(
+        row,
+        "exit-decision",
+        timestamp.isoformat(),
+        observed_at=timestamp.isoformat(),
+        extra={"evaluation": evaluation},
+    )
     return outcome
 
 
@@ -3404,6 +3424,35 @@ def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discor
         row["discord_status"] = ""
         row["discord_format_version"] = ""
         return
+    event_key = f"hold-{timestamp.strftime('%Y%m%d-%H%M')}"
+    trade_intelligence.record_event(
+        row, "hold-evaluation", event_key, observed_at=timestamp.isoformat(),
+        extra={"evaluation": evaluation},
+    )
+    snapshot = build_trade_snapshot(row, event_key)
+    if snapshot and trade_intelligence.register_snapshot(
+        row, event_key, snapshot, source_timestamp=timestamp.isoformat()
+    ):
+        try:
+            discord.send_thread_file(
+                row["discord_thread_id"], snapshot,
+                content=(
+                    f"📍 **HOLD TIMELINE · {row.get('trade_id')} · {timestamp.strftime('%m/%d %I:%M %p CT')}**\n"
+                    f"Fresh 5m/1d/1w/1mo evidence · signal **{evaluation.get('signal', 'HOLD')}** · "
+                    f"open P/L {fmt_money(as_float(evaluation.get('pl_dollars')))}"
+                ),
+            )
+        except DiscordError as exc:
+            trade_intelligence.forget_snapshot(str(row.get("trade_id") or ""), event_key)
+            trade_intelligence.acknowledge(
+                str(row.get("trade_id") or ""), "journal-hold-chart", timestamp.isoformat(),
+                status="RETRY", detail=str(exc),
+            )
+            raise
+        else:
+            trade_intelligence.acknowledge(
+                str(row.get("trade_id") or ""), "journal-hold-chart", timestamp.isoformat()
+            )
     try:
         discord.set_thread_status(row["discord_thread_id"], status)
     except DiscordError as exc:
@@ -3568,7 +3617,10 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
                 thread_id, close_alert_text(row, evaluation), token
             )
             snapshot = build_trade_snapshot(row, "exit")
-            if snapshot:
+            if snapshot and trade_intelligence.register_snapshot(
+                row, "exit", snapshot,
+                source_timestamp=row.get("closed_at") or now_ct().isoformat(),
+            ):
                 discord.send_thread_file(
                     thread_id,
                     snapshot,
@@ -3618,7 +3670,10 @@ def post_new_trade(
     sync_open_trade_cards(row, discord, report_state, include_entry=True)
     thread_id = row.get("discord_thread_id", "")
     snapshot = build_trade_snapshot(row, "entry")
-    if thread_id and snapshot:
+    if thread_id and snapshot and trade_intelligence.register_snapshot(
+        row, "entry", snapshot,
+        source_timestamp=row.get("timestamp") or now_ct().isoformat(),
+    ):
         discord.send_thread_file(
             thread_id,
             snapshot,
@@ -3629,6 +3684,10 @@ def post_new_trade(
                 f"{fmt_money(as_float(row.get('entry_price')))}"
             ),
         )
+    trade_intelligence.record_event(
+        row, "entry", "entry", observed_at=row.get("timestamp") or now_ct().isoformat(),
+        extra={"journal_thread_id": thread_id},
+    )
 
 # ---------------------------------------------------------------------------
 # Discord server pages and performance reporting
