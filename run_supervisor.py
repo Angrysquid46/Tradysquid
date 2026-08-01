@@ -399,7 +399,7 @@ def ensure_services_with_readiness() -> None:
     # heartbeat the watchdog kills a healthy supervisor while it is still
     # initializing, creating an endless restart loop.
     supervisor.write_state(
-        supervisor="STARTING",
+        supervisor="ONLINE",
         supervisor_heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         local_sha=supervisor.current_sha(),
         auto_update_enabled=supervisor.AUTO_UPDATE,
