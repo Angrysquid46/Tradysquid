@@ -168,7 +168,7 @@ class LearningCenterTests(unittest.TestCase):
             self.assertEqual(record["times_asked"], 2)
             self.assertEqual(record["users"][0]["id"], "user-1")
             self.assertIn("sent it to <#review-1>", first)
-            self.assertIn("Times this question has been recorded: 2", second)
+            self.assertIn("**Times this question has been recorded:** 2", second)
             self.assertEqual(post_mock.call_count, 2)
 
     def test_confident_question_does_not_enter_gap_queue(self) -> None:
