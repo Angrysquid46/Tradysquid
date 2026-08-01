@@ -49,6 +49,8 @@ def _learning_specs() -> list[sync.ChannelSpec]:
 def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
     rebuilt: list[sync.ChannelSpec] = []
     inserted_learning = False
+    inserted_activity = False
+    inserted_diagnostics = False
     for item in sync.CHANNELS:
         if item.category == "LEARNING CENTER":
             if not inserted_learning:
@@ -70,15 +72,72 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
                 item.channel_type,
             )
         rebuilt.append(item)
+        if item.name == "universe-watch" and not inserted_activity:
+            rebuilt.append(
+                sync.ChannelSpec(
+                    "MARKET INTELLIGENCE",
+                    "system-activity",
+                    "Always-on interval receipts, rotating-universe batches, off-hours research, event sweeps, and data freshness.",
+                )
+            )
+            inserted_activity = True
+        if item.name == "scanner-controls" and not inserted_diagnostics:
+            rebuilt.append(
+                sync.ChannelSpec(
+                    "OWNER CONTROL",
+                    "automation-diagnostics",
+                    "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures.",
+                )
+            )
+            inserted_diagnostics = True
     if not inserted_learning:
         rebuilt.extend(_learning_specs())
+    if not inserted_activity:
+        rebuilt.append(
+            sync.ChannelSpec(
+                "MARKET INTELLIGENCE",
+                "system-activity",
+                "Always-on interval receipts, rotating-universe batches, off-hours research, event sweeps, and data freshness.",
+            )
+        )
+    if not inserted_diagnostics:
+        rebuilt.append(
+            sync.ChannelSpec(
+                "OWNER CONTROL",
+                "automation-diagnostics",
+                "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures.",
+            )
+        )
     return rebuilt
 
 
 sync.CHANNELS = _rebuild_channel_specs()
-sync.CHANNEL_STARTERS["upgrade-review"] = (
-    "Unanswered `/ask` questions are deduplicated here with closest lesson matches, "
-    "ask counts, and the information needed to expand TradeBot safely."
+sync.CHANNEL_STARTERS.update(
+    {
+        "scanner-feed": (
+            "Live options scans run during regular market hours. When markets are closed, "
+            "a research-only rotating-universe screen updates this channel without opening positions."
+        ),
+        "universe-watch": (
+            "Shows the active capped universe and the latest market-hours and off-hours rotation batches."
+        ),
+        "news-and-events": (
+            "News and event sweeps continue during market hours, evenings, overnight periods, and weekends."
+        ),
+        "system-activity": (
+            "Always-on run ledger showing what fired, when it ran, the expected interval, the current universe batch, and off-hours research activity."
+        ),
+        "system-health": (
+            "Updated by the supervisor and scheduler heartbeat. A responding process is not considered healthy unless scheduled work is also firing."
+        ),
+        "automation-diagnostics": (
+            "Lists jobs that failed, never fired, became stale, or ran overdue, plus every automatic repair attempt and unresolved retry limit."
+        ),
+        "upgrade-review": (
+            "Unanswered `/ask` questions are deduplicated here with closest lesson matches, "
+            "ask counts, and the information needed to expand TradeBot safely."
+        ),
+    }
 )
 
 # Long-form cards own every numbered lesson. Remove old single-message guides
@@ -123,18 +182,27 @@ Type `/`, choose a command, complete its fields, and send it.
 • `/ticker-list`, `/ticker-status` — current universe and capacity.
 • `/filters` — configuration status; guarded changes remain owner-only.
 
-The universe is capped at **25 active tickers** and scans no more than **12** per
-rotation. Removing a ticker preserves history and open-position tracking. All
-TradeBot output uses readable cards. Paper trading only; no orders are placed."""
+The universe is capped at **25 active tickers**. Market-hours scans rotate through
+up to **12** symbols per pass. Closed-market research rotates through smaller
+batches every 30 minutes, checks events every hour, and opens no position.
+#system-activity proves what ran. #automation-diagnostics shows missed intervals
+and repair attempts. All output uses readable cards. Paper trading only; no
+brokerage orders are placed."""
 
 sync.GUIDES["how-trades-are-found"] = """# How TradeBot Finds Paper Trades
 Every paper position must pass a recorded process.
 
 **Universe:** verified optionable symbols from baseline, member additions, and
-approved discovery. Maximum 25 active; 12 per rotating scan.
+approved discovery. Maximum 25 active; 12 per market-hours scan rotation.
 
-**Context:** trend, momentum, volatility, support/resistance, VWAP, volume, and
-intraday evidence. A score ranks candidates; it is not a win probability.
+**Open-market context:** trend, momentum, volatility, support/resistance, VWAP,
+volume, and intraday evidence. A score ranks candidates; it is not a win
+probability.
+
+**Closed-market research:** smaller rotating batches continue through evenings,
+overnight periods, and weekends using closing or last-known market evidence.
+They refresh charts, rank context, inspect a limited closing option-chain sample,
+and check events. They do not open or close paper positions.
 
 **Contract quality:** DTE, strike, bid, ask, volume, open interest, width, delta,
 IV, cost, and modeled risk.
@@ -147,11 +215,41 @@ adequate evidence and owner approval."""
 sync.GUIDES["scanner-controls"] = """# Ticker and Scanner Controls
 **Every member:** `/ticker-add`, `/ticker-remove`, `/ticker-list`, `/ticker-status`.
 
-**Capacity:** 25 active tickers; 12 per scan rotation. Additions require a live
-Tradier quote and usable option expirations. Removal stops new scans but never
-abandons an existing paper position or erases history.
+**Capacity:** 25 active tickers; 12 per live scan rotation. Additions require a
+live Tradier quote and usable option expirations. Removal stops new scans but
+never abandons an existing paper position or erases history.
+
+**Always-on behavior:** the market-hours options scanner pauses when trading is
+closed, but rotating stock research, event checks, outcome learning, Discord
+reporting, diagnostics, and repair monitoring continue automatically.
 
 **Owner-only:** filter changes, pauses, resumes, and full manual scans."""
+
+sync.GUIDES["automation-diagnostics"] = """# Automation Diagnostics and Self-Repair
+This owner-control channel is the scheduler's fault ledger.
+
+It records every expected job, its configured interval, last receipt, current
+state, and whether it is healthy, running, intentionally paused, overdue, stale,
+never started, interrupted, or failed. A process listening on a port is not
+enough; the scheduler must keep writing a fresh heartbeat and interval receipts.
+
+When a safe job fails or becomes overdue, the repair worker starts it again,
+records the trigger and result, and verifies that a later successful job receipt
+exists. Market-hours trading jobs are never forced to run while the market is
+closed. Repeated failures remain visible after the retry limit rather than being
+painted green and forgotten."""
+
+sync.GUIDES["system-activity"] = """# Always-On Activity Ledger
+This channel should never look abandoned merely because the exchange is closed.
+It refreshes every few minutes with scheduler receipts, market state, service
+activity, universe capacity, latest live-scan rotation, latest off-hours research
+batch, event-sweep freshness, and the next expected work.
+
+During regular market hours, the options scanner may create paper positions when
+all gates pass. Outside regular hours and on weekends, the system continues
+research-only stock screening, chart and level refreshes, news and event checks,
+learning reviews, reporting, diagnostics, and repairs. No brokerage order is ever
+placed by Tradysquids."""
 
 sync.GUIDES["upgrade-review"] = """# Learning and Upgrade Review Queue
 This owner-control channel receives unanswered TradeBot questions and member
@@ -180,8 +278,6 @@ def main() -> int:
     tracker: ford_scan.DiscordTracker | None = None
     renamed = 0
 
-    # Preserve useful history by renaming old lesson channels before the base
-    # synchronizer decides the new canonical channels are missing.
     if apply:
         tracker = _tracker()
         renamed = sync_discord_cards.migrate_legacy_learning_channels(tracker)
@@ -206,16 +302,13 @@ def main() -> int:
     channel_map = sync_discord_cards.write_learning_channel_map(tracker)
     totals = sync_learning_center.synchronize_curriculum(tracker)
 
-    # Ordering must be the final Discord structure operation. The strict pass
-    # includes every child in the category, moves unrelated channels after the
-    # numbered curriculum, refetches Discord state, and fails deployment if the
-    # visible order is not exactly index, 01..27, ask, reviews.
     order_result = strict_learning_order.enforce_learning_channel_order(tracker)
     migration_pid = sync_discord_cards.launch_background_migration()
     print(
-        "Learning Center release complete: "
-        f"{renamed} legacy channels renamed; {removed} duplicates removed; "
-        f"{order_result['canonical']} canonical channels strictly ordered in "
+        "Discord release complete: "
+        f"always-on activity and automation diagnostics channels synchronized; "
+        f"{renamed} legacy learning channels renamed; {removed} duplicates removed; "
+        f"{order_result['canonical']} canonical learning channels strictly ordered in "
         f"{order_result['attempts']} attempt(s); {order_result['extras']} extra "
         f"channels moved after the curriculum; {len(channel_map)} references mapped; "
         f"{totals['cards']} lesson cards synchronized; historical card migration "

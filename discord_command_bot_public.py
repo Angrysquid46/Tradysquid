@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 
+import always_on_operations
 import discord_command_bot as bot
 import learning_application as application
 import learning_center_content as learning
@@ -18,6 +19,7 @@ import learning_search_router as routed
 
 
 routed.install()
+always_on_operations.install()
 bot.OWNER_ONLY_COMMANDS.discard("ticker-remove")
 bot.ticker_registry.CONFIG_PATH = (
     bot.ticker_registry.ROOT / "state" / "member-ticker-registry.json"
@@ -25,6 +27,7 @@ bot.ticker_registry.CONFIG_PATH = (
 MEMBER_ADD_COOLDOWN_SECONDS = 15
 LAST_MEMBER_ADD: dict[str, float] = {}
 ORIGINAL_PROCESS_COMMAND = bot.process_command
+ORIGINAL_STATUS_REPLY = bot.status_reply
 
 
 def card_patch_original(
@@ -206,7 +209,8 @@ def public_ticker_list_reply() -> str:
             f"**Active ({len(active)}/{maximum}):** {', '.join(active) if active else 'None'}",
             f"**Open slots:** {remaining}",
             f"**Excluded:** {', '.join(excluded) if excluded else 'None'}",
-            "Maximum rotating scan batch: **12 tickers**.",
+            "Market-hours scan batch: **up to 12 tickers**.",
+            "Off-hours research rotates smaller batches automatically every 30 minutes.",
             "Any member may add or remove tickers; open positions remain tracked.",
         ]
     )
@@ -221,9 +225,23 @@ def public_ticker_status_reply(ticker: str) -> str:
             f"🧩 **{symbol}** · **{'ACTIVE' if symbol in active else 'NOT ACTIVE'}**",
             f"Universe usage: **{len(active)}/{maximum} tickers**",
             "Shared filters, lifecycle channels, and performance tracking apply.",
+            "Active symbols rotate through market-hours scans and closed-market research batches.",
             "Removing a ticker blocks new scans but never abandons an open paper position.",
         ]
     )
+
+
+def public_status_reply(ticker: str) -> str:
+    base = ORIGINAL_STATUS_REPLY(ticker)
+    try:
+        operations = always_on_operations.operations_status_summary()
+    except Exception as exc:
+        operations = (
+            "## Automation\nScheduler diagnostics could not be read: "
+            f"`{type(exc).__name__}: {str(exc)[:180]}`. The failure remains visible in "
+            "#automation-diagnostics."
+        )
+    return f"{base}\n\n{operations}"[:3900]
 
 
 def public_process_command(interaction: dict) -> None:
@@ -260,6 +278,7 @@ bot.universe_pause_reply = public_ticker_remove_reply
 bot.universe_resume_reply = owner_ticker_resume_reply
 bot.universe_list_reply = public_ticker_list_reply
 bot.universe_status_reply = public_ticker_status_reply
+bot.status_reply = public_status_reply
 bot.ask_reply = application.answer
 bot.explain_reply = routed.explain
 bot.process_command = public_process_command

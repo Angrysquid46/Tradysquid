@@ -10,6 +10,11 @@ on:
       - "learning_application.py"
       - "learning_application_public.py"
       - "learning_question_gaps.py"
+      - "always_on_operations.py"
+      - "operations_acceptance.py"
+      - "local_information_engine.py"
+      - "local_information_engine_public.py"
+      - "run_with_env.py"
       - "strict_learning_order.py"
       - "sync_learning_center.py"
       - "sync_discord_cards.py"
@@ -21,10 +26,12 @@ on:
       - "INSTALL-REMOTE-CONTROL.cmd"
       - "INSTALL-SUPERVISOR-WATCHDOG.ps1"
       - "START-SUPERVISOR.cmd"
+      - "stop_tradysquid_processes.ps1"
       - "test_learning_center.py"
       - "test_strict_learning_order.py"
       - "test_supervisor_availability.py"
       - "test_automation_acceptance.py"
+      - "test_always_on_operations.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -34,7 +41,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
 
     steps:
       - name: Check out repository
@@ -58,6 +65,9 @@ jobs:
           python -m py_compile \
             ford_scan.py \
             local_information_engine.py \
+            local_information_engine_public.py \
+            always_on_operations.py \
+            operations_acceptance.py \
             discord_command_bot.py \
             discord_command_bot_public.py \
             discord_cards.py \
@@ -76,11 +86,12 @@ jobs:
             run_supervisor.py \
             automation_acceptance.py
 
-      - name: Validate curriculum and answer engine
+      - name: Validate curriculum and operations engine
         run: |
           python sync_learning_center.py
           python learning_search_router.py
           python learning_application_public.py
+          python always_on_operations.py
 
       - name: Run focused tests
         run: |
@@ -88,4 +99,5 @@ jobs:
             test_learning_center.py \
             test_strict_learning_order.py \
             test_supervisor_availability.py \
-            test_automation_acceptance.py
+            test_automation_acceptance.py \
+            test_always_on_operations.py
