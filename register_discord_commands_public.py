@@ -1,4 +1,4 @@
-"""Register TradeBot commands with public capped ticker add/remove access."""
+"""Register TradeBot commands with public capped ticker access and free-form learning."""
 
 from __future__ import annotations
 
@@ -18,6 +18,15 @@ for command in registry.COMMANDS:
         command["description"] = (
             "Anyone: remove a ticker from new scans while preserving history"
         )
+    elif name == "explain":
+        command["description"] = "Explain any options, chart, risk, or trading topic"
+        options = command.get("options") or []
+        if options:
+            options[0].pop("choices", None)
+            options[0]["description"] = (
+                "Example: gamma, IV crush, credit spreads, pin risk, or expectancy"
+            )
+            options[0]["max_length"] = 100
 
 
 if __name__ == "__main__":
