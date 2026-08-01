@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
+# Importing the public application shim expands common wording such as
+# "use the valuation lesson on Ford" before the question-gap router evaluates
+# whether a request is a live educational application.
+import learning_application_public  # noqa: F401
 import learning_center_content as learning
 
 
