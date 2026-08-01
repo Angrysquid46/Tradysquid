@@ -50,11 +50,7 @@ class InformationEngineTests(unittest.TestCase):
             "entry_price": "0.35",
         }
         self.assertTrue(ford_scan.trade_title(row).startswith("RIVN #001"))
-        with patch(
-            "ford_scan.learning_channel_reference",
-            side_effect=lambda channel: f"#{channel}",
-        ):
-            card = ford_scan.entry_alert_text(row)
+        card = ford_scan.entry_alert_text(row)
         self.assertIn("RIVN #001", card)
         self.assertIn("BUY 1 RIVN 15 CALL", card)
         self.assertNotIn("BUY 1 F 15 CALL", card)
@@ -88,7 +84,11 @@ class InformationEngineTests(unittest.TestCase):
             "market_regime": "BULLISH / CONTROLLED",
             "setup_reason": "price held above VWAP with rising volume",
         }
-        card = ford_scan.entry_alert_text(row)
+        with patch(
+            "ford_scan.learning_channel_reference",
+            side_effect=lambda channel: f"#{channel}",
+        ):
+            card = ford_scan.entry_alert_text(row)
         self.assertIn("Applied Learning Center Analysis", card)
         self.assertIn("price held above VWAP", card)
         self.assertIn("#06-charts-price-action", card)
