@@ -1,9 +1,8 @@
-"""Run TradeBot with public, capped ticker add/remove commands.
+"""Run TradeBot with public ticker controls and library-grounded education.
 
-This wrapper keeps sensitive scanner controls owner-only while allowing any
-server member to add or remove verified optionable tickers from the shared
-universe. Member changes are stored under state/ so automatic GitHub updates do
-not overwrite them or treat them as dirty tracked configuration.
+Sensitive scanner controls remain owner-only. Any server member may add or
+remove verified optionable tickers within the shared cap. Educational commands
+search the comprehensive Learning Center and cite its channels.
 """
 
 from __future__ import annotations
@@ -20,6 +19,36 @@ bot.ticker_registry.CONFIG_PATH = (
 )
 MEMBER_ADD_COOLDOWN_SECONDS = 15
 LAST_MEMBER_ADD: dict[str, float] = {}
+
+
+def card_patch_original(
+    application_id: str,
+    token: str,
+    *,
+    content: str,
+    file_path=None,
+) -> None:
+    """Allow full Discord embed-length answers instead of 2,000-char truncation."""
+    url = (
+        f"https://discord.com/api/v10/webhooks/{application_id}/{token}"
+        "/messages/@original"
+    )
+    payload = {
+        "content": str(content or "")[:3900],
+        "allowed_mentions": {"parse": []},
+    }
+    if file_path and file_path.exists():
+        payload["attachments"] = [{"id": 0, "filename": file_path.name}]
+        with file_path.open("rb") as handle:
+            response = bot.requests.patch(
+                url,
+                data={"payload_json": bot.json.dumps(payload)},
+                files={"files[0]": (file_path.name, handle, "image/png")},
+                timeout=30,
+            )
+    else:
+        response = bot.requests.patch(url, json=payload, timeout=20)
+    response.raise_for_status()
 
 
 def public_ticker_add_reply(interaction: dict) -> str:
@@ -191,6 +220,7 @@ def public_ticker_status_reply(ticker: str) -> str:
     )
 
 
+bot.patch_original = card_patch_original
 bot.universe_add_reply = public_ticker_add_reply
 bot.universe_pause_reply = public_ticker_remove_reply
 bot.universe_resume_reply = owner_ticker_resume_reply
