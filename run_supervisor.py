@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from typing import Iterable
 
+import ford_scan
+import strict_learning_order
 import tradysquid_supervisor as supervisor
 
 
@@ -45,7 +47,6 @@ def safe_take_process_ownership() -> None:
 
 
 def public_command_bot_command() -> list[str]:
-    """Run the wrapper that contains public ticker and Learning Center features."""
     return [
         sys.executable,
         str(ROOT / "run_with_env.py"),
@@ -54,7 +55,6 @@ def public_command_bot_command() -> list[str]:
 
 
 def comprehensive_validate_checkout() -> tuple[bool, str]:
-    """Validate every deployment-critical public and learning module."""
     compile_files = [
         "ford_scan.py",
         "local_information_engine.py",
@@ -75,6 +75,7 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
         "register_discord_commands.py",
         "tradysquid_supervisor.py",
         "run_supervisor.py",
+        "automation_acceptance.py",
     ]
     compile_result = supervisor.run(
         [sys.executable, "-m", "py_compile", *compile_files], timeout=180
@@ -110,7 +111,6 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
 
 
 def public_run_discord_configuration() -> list[str]:
-    """Register commands and apply the public 27-topic Discord release."""
     results: list[str] = []
     if supervisor.AUTO_REGISTER_COMMANDS:
         command_result = supervisor.run(
@@ -153,7 +153,6 @@ def public_run_discord_configuration() -> list[str]:
 
 
 def discord_results_failed(results: Iterable[object] | None) -> bool:
-    """Return True when a configuration result contains a real failure."""
     failure_words = (" failed", "error", "blocked", "timed out", "timeout")
     for result in results or []:
         lowered = f" {str(result).casefold()}"
@@ -163,7 +162,6 @@ def discord_results_failed(results: Iterable[object] | None) -> bool:
 
 
 def record_discord_sync_results(results: list[str], *, source: str) -> bool:
-    """Persist a retryable Discord-sync result and post only state transitions."""
     payload = supervisor.state_payload()
     previous_status = str(payload.get("last_discord_sync_status") or "UNKNOWN")
     previous_signature = str(payload.get("last_discord_sync_signature") or "")
@@ -208,7 +206,6 @@ def record_discord_sync_results(results: list[str], *, source: str) -> bool:
 
 
 def retry_pending_discord_configuration() -> bool:
-    """Retry a failed Discord sync even when no newer Git commit exists."""
     payload = supervisor.state_payload()
     pending = (
         str(payload.get("last_discord_sync_status") or "") == "FAILED"
@@ -216,7 +213,6 @@ def retry_pending_discord_configuration() -> bool:
     )
     if not pending:
         return False
-
     supervisor.supervisor_log(
         "Retrying previously failed Discord configuration without waiting for another commit"
     )
@@ -225,8 +221,61 @@ def retry_pending_discord_configuration() -> bool:
     return True
 
 
+def verify_and_repair_discord_integrity() -> bool:
+    """Continuously verify actual Discord order and repair drift automatically."""
+    if not supervisor.AUTO_DISCORD_SYNC:
+        return False
+    payload = supervisor.state_payload()
+    previous_status = str(payload.get("discord_integrity_status") or "UNKNOWN")
+    previous_detail = str(payload.get("discord_integrity_detail") or "")
+    tracker = ford_scan.DiscordTracker(
+        ford_scan.DISCORD_BOT_TOKEN,
+        ford_scan.DISCORD_GUILD_ID,
+    )
+    if not tracker.enabled:
+        return False
+    try:
+        result = strict_learning_order.enforce_learning_channel_order(
+            tracker,
+            attempts=3,
+            retry_delay_seconds=1.0,
+        )
+    except Exception as exc:
+        detail = f"{type(exc).__name__}: {exc}"[-1800:]
+        supervisor.write_state(
+            discord_integrity_status="FAILED",
+            discord_integrity_detail=detail,
+            discord_integrity_checked_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        )
+        if detail != previous_detail:
+            supervisor.discord_post(
+                "⚠️ **Tradysquids Discord integrity repair failed**\n"
+                f"```{detail[:1400]}```\n"
+                "The supervisor will retry automatically.",
+                "workflow-log",
+            )
+        return False
+
+    changed = bool(result.get("changed"))
+    detail = (
+        f"Verified {result['canonical']} official channels in ascending order; "
+        f"extras={result['extras']}; changed={changed}; attempts={result['attempts']}"
+    )
+    supervisor.write_state(
+        discord_integrity_status="OK",
+        discord_integrity_detail=detail,
+        discord_integrity_checked_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    )
+    if changed or previous_status == "FAILED":
+        supervisor.discord_post(
+            "✅ **Tradysquids Discord integrity recovered**\n"
+            "Learning Center verified in ascending `01 → 27` order.",
+            "workflow-log",
+        )
+    return True
+
+
 def monitored_fetch_remote_sha() -> str:
-    """Expose Git fetch failures in Discord and state instead of failing silently."""
     payload = supervisor.state_payload()
     previous_status = str(payload.get("last_fetch_status") or "UNKNOWN")
     previous_signature = str(payload.get("last_fetch_error_signature") or "")
@@ -273,7 +322,6 @@ def monitored_fetch_remote_sha() -> str:
 
 
 def low_downtime_deploy_if_needed(*, force: bool = False) -> bool:
-    """Keep the command bot and tunnel online during validation and Discord sync."""
     original_stop_all = supervisor.stop_all_services
     staged_stop_used = False
 
@@ -302,12 +350,13 @@ def low_downtime_deploy_if_needed(*, force: bool = False) -> bool:
         return True
 
     if not deployed:
-        retry_pending_discord_configuration()
+        retried = retry_pending_discord_configuration()
+        if not retried:
+            verify_and_repair_discord_integrity()
     return deployed
 
 
 def service_health_snapshot() -> dict[str, bool]:
-    """Return the latest verified health state for every managed service."""
     return {
         service.name: bool(supervisor.LAST_HEALTH.get(service.name, False))
         for service in supervisor.SERVICES
@@ -315,7 +364,6 @@ def service_health_snapshot() -> dict[str, bool]:
 
 
 def ensure_services_with_readiness() -> None:
-    """Run health recovery, persist a heartbeat, and announce readiness transitions."""
     global _LAST_READY_SIGNATURE
 
     ORIGINAL_ENSURE_SERVICES()
@@ -359,9 +407,6 @@ supervisor.fetch_remote_sha = monitored_fetch_remote_sha
 supervisor.deploy_if_needed = low_downtime_deploy_if_needed
 supervisor.ensure_services = ensure_services_with_readiness
 
-# Service.command stores the original function object at import time, so replace
-# the immutable Service entry as well. Otherwise the override would sit nearby
-# looking useful while the supervisor continued launching the legacy bot.
 supervisor.SERVICES = [
     supervisor.Service(
         service.name,
