@@ -9,6 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
+SCRIPT_OVERRIDES = {
+    "discord_command_bot.py": "discord_command_bot_public.py",
+    "register_discord_commands.py": "register_discord_commands_public.py",
+    "sync_discord_structure.py": "sync_discord_structure_public.py",
+}
 
 
 def load_env() -> None:
@@ -27,8 +32,7 @@ def main() -> None:
         raise SystemExit("Usage: python run_with_env.py <script.py> [arguments...]")
     load_env()
     requested = str(sys.argv[1])
-    if Path(requested).name.casefold() == "discord_command_bot.py":
-        requested = "discord_command_bot_public.py"
+    requested = SCRIPT_OVERRIDES.get(Path(requested).name.casefold(), requested)
     target = (ROOT / requested).resolve()
     if target.parent != ROOT or not target.is_file() or target.suffix != ".py":
         raise SystemExit("Target must be a Python file in this repository.")
