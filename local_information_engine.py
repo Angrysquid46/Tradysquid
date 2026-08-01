@@ -1635,12 +1635,19 @@ def closed_position_cleanup_job(connection: sqlite3.Connection) -> str:
     if not tracker:
         raise RuntimeError("Discord tracker is unavailable")
     report_state = ford_scan.read_report_state()
+    journal_counts = ford_scan.sync_all_trade_journals(rows, tracker)
     routed = ford_scan.sync_closed_result_channels(closed, tracker, report_state)
+    with POSITION_FILE_LOCK:
+        ford_scan.write_log(rows)
     ford_scan.write_report_state(report_state)
     store_observation(
         connection,
         "closed-position-cleanup",
-        {"closed_checked": len(closed), "results_routed": routed},
+        {
+            "closed_checked": len(closed),
+            "results_routed": routed,
+            "journals": journal_counts,
+        },
     )
     return f"{len(closed)} closed checked; {routed} results routed"
 

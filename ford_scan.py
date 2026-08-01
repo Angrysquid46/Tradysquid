@@ -148,7 +148,7 @@ DISCORD_SYNC_EXISTING_OPEN = os.environ.get("DISCORD_SYNC_EXISTING_OPEN", "true"
 DISCORD_MIGRATE_LEGACY_MESSAGES = os.environ.get(
     "DISCORD_MIGRATE_LEGACY_MESSAGES", "false"
 ).lower() == "true"
-DISCORD_FORMAT_VERSION = "10"
+DISCORD_FORMAT_VERSION = "11"
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Tradysquids-TradeBot/1.0"})
@@ -230,6 +230,12 @@ CHANNEL_NAMES = {
     "weekly_report": "performance-dashboard",
     "performance_stats": "performance-dashboard",
     "strategy_breakdown": "strategy-results",
+    "strategy_regular_call": "regular-calls",
+    "strategy_regular_put": "regular-puts",
+    "strategy_swing_call": "swing-calls",
+    "strategy_swing_put": "swing-puts",
+    "strategy_bull_put_spread": "bull-put-spreads",
+    "strategy_bear_call_spread": "bear-call-spreads",
     "ticker_results": "ticker-results",
     "learning_results": "learning-results",
     "examples_reviews": "examples-and-reviews",
@@ -282,6 +288,12 @@ AUTOMATED_CHANNEL_KEYS = [
     "weekly_report",
     "performance_stats",
     "strategy_breakdown",
+    "strategy_regular_call",
+    "strategy_regular_put",
+    "strategy_swing_call",
+    "strategy_swing_put",
+    "strategy_bull_put_spread",
+    "strategy_bear_call_spread",
     "ticker_results",
     "learning_results",
     "examples_reviews",
@@ -566,6 +578,100 @@ def trade_title(row: dict[str, str]) -> str:
     return f"{ticker} #{sequence} | BUY {strike} {kind} | {expiration}"
 
 
+PLAY_STYLE_CHANNELS = {
+    "regular-call": "regular-calls",
+    "regular-put": "regular-puts",
+    "swing-call": "swing-calls",
+    "swing-put": "swing-puts",
+    "bull-put-spread": "bull-put-spreads",
+    "bear-call-spread": "bear-call-spreads",
+}
+
+
+def play_style_key(row: dict[str, str]) -> str:
+    play_type = str(row.get("play_type") or "REGULAR").upper()
+    kind = str(row.get("call_or_put") or "").lower()
+    if play_type == "SPREAD":
+        return "bull-put-spread" if kind == "put" else "bear-call-spread"
+    prefix = "swing" if play_type == "SWING" else "regular"
+    return f"{prefix}-{kind or 'unknown'}"
+
+
+def learning_channel_reference(channel: str) -> str:
+    path = STATE_DIR / "learning-channel-map.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        channel_id = str((payload.get("channels") or {}).get(channel) or "")
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        channel_id = ""
+    return f"<#{channel_id}>" if channel_id else f"**#{channel}**"
+
+
+def trade_learning_analysis(row: dict[str, str], *, closed: bool = False) -> str:
+    """Apply stored evidence to one trade without inventing unavailable history."""
+    style = play_style_key(row)
+    regime = str(row.get("market_regime") or "not recorded")
+    reason = str(row.get("setup_reason") or "historical setup evidence was not recorded")
+    delta = as_float(row.get("delta_at_entry"))
+    iv = as_float(row.get("iv_at_entry"))
+    width = as_float(row.get("bid_ask_width_at_entry"))
+    oi = row.get("open_interest_at_entry") or "not recorded"
+    signal = str(row.get("last_signal") or ("OPEN" if not closed else "CLOSED"))
+    strategy_lesson = "19-spreads-multi-leg" if "spread" in style else "17-directional-options"
+    bias = "bullish" if style in {"regular-call", "swing-call", "bull-put-spread"} else "bearish"
+    thesis = (
+        f"This **{style.replace('-', ' ')}** expresses a **{bias}** paper thesis on "
+        f"**{row.get('ticker') or TICKER}**. The stored regime was **{regime}** and the "
+        f"trade-specific qualification record says: **{reason}**"
+    )
+    evidence = (
+        f"**Delta:** {fmt_delta(delta)} · **IV:** {fmt_iv(iv)} · **OI:** {fmt_oi(oi)} · "
+        f"**Bid/ask width:** {fmt_option_price(width)}"
+    )
+    lines = [
+        "### Applied Learning Center Analysis",
+        thesis,
+        f"**Recorded option evidence:** {evidence}",
+        (
+            "**Evidence limitation:** Indicators or market observations absent from the original "
+            "trade record are marked unavailable and are not reconstructed as entry facts."
+        ),
+        "**Learning Center path:** "
+        + " · ".join(
+            learning_channel_reference(channel)
+            for channel in (
+                "06-charts-price-action",
+                "07-technical-analysis",
+                "14-option-chain-liquidity",
+                "15-option-pricing-greeks",
+                "16-volatility",
+                strategy_lesson,
+                "12-portfolio-risk",
+                "20-trade-planning-execution",
+            )
+        ),
+    ]
+    if closed:
+        outcome = str(row.get("outcome") or "CLOSED")
+        lines.extend(
+            [
+                "### Post-Trade Learning",
+                (
+                    f"This trade closed **{outcome}** because the recorded lifecycle signal was "
+                    f"**{signal}**. Its MFE was **{fmt_pct(as_float(row.get('max_favorable_pct')))}** "
+                    f"and MAE was **{fmt_pct(as_float(row.get('max_adverse_pct')))}**. These are "
+                    "observed results, not proof that the play style will repeat."
+                ),
+                "**Review path:** "
+                + " · ".join(
+                    learning_channel_reference(channel)
+                    for channel in ("23-psychology-journaling", "24-backtesting-statistics")
+                ),
+            ]
+        )
+    return "\n".join(lines)
+
+
 def format_expiration(value: str) -> str:
     try:
         return datetime.strptime(value, "%Y-%m-%d").strftime("%m/%d/%y")
@@ -651,6 +757,7 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
     ]
     if include_link:
         lines.extend(["### Journal", f"[Open trade journal]({include_link})"])
+    lines.append(trade_learning_analysis(row))
     return "\n".join(lines)
 
 
@@ -775,6 +882,7 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
     ]
     if include_link:
         lines.extend(["### Journal", f"[Open completed trade journal]({include_link})"])
+    lines.append(trade_learning_analysis(row, closed=True))
     return "\n".join(lines)
 
 
@@ -1384,14 +1492,163 @@ def render_trade_intraday_snapshot(
 
 def build_trade_snapshot(row: dict[str, str], event: str) -> Path | None:
     try:
-        return render_trade_intraday_snapshot(
+        intraday = trade_intraday_history(row.get("ticker") or TICKER)
+        daily = get_daily_history(row.get("ticker") or TICKER, days=420)
+        return render_trade_multitimeframe_snapshot(
             row,
             event,
-            trade_intraday_history(row.get("ticker") or TICKER),
+            intraday,
+            daily,
         )
     except (TradierError, requests.RequestException, ValueError, OSError) as exc:
         print(f"Could not render {event} snapshot for {row.get('trade_id')}: {exc}", file=sys.stderr)
         return None
+
+
+def _resample_history(
+    bars: list[dict[str, Any]], period: str
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for bar in bars:
+        raw = str(bar.get("date") or bar.get("time") or "")[:10]
+        try:
+            observed = datetime.fromisoformat(raw).date()
+        except ValueError:
+            continue
+        if period == "weekly":
+            year, week, _ = observed.isocalendar()
+            key = f"{year}-W{week:02d}"
+        else:
+            key = observed.strftime("%Y-%m")
+        grouped.setdefault(key, []).append(bar)
+    output: list[dict[str, Any]] = []
+    for key, group in grouped.items():
+        closes = [as_float(item.get("close")) for item in group]
+        closes = [value for value in closes if value is not None]
+        if closes:
+            output.append({"date": key, "close": closes[-1]})
+    return output
+
+
+def render_trade_multitimeframe_snapshot(
+    row: dict[str, str],
+    event: str,
+    intraday: list[dict[str, Any]],
+    daily: list[dict[str, Any]],
+) -> Path | None:
+    """Render intraday, daily, weekly, and monthly decision context in one image."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    daily_clean = [bar for bar in daily if as_float(bar.get("close")) is not None]
+    panels = [
+        ("INTRADAY · 5 MIN", intraday[-78:]),
+        ("DAILY · 6 MONTHS", daily_clean[-126:]),
+        ("WEEKLY · 18 MONTHS", _resample_history(daily_clean, "weekly")[-78:]),
+        ("MONTHLY · LONG TREND", _resample_history(daily_clean, "monthly")[-36:]),
+    ]
+    if not any(len(bars) >= 2 for _, bars in panels):
+        return None
+
+    width, height = 1600, 1040
+    image = Image.new("RGB", (width, height), "#09111d")
+    draw = ImageDraw.Draw(image)
+    small = ImageFont.load_default(size=16)
+    normal = ImageFont.load_default(size=19)
+    title_font = ImageFont.load_default(size=28)
+    symbol = str(row.get("ticker") or TICKER).upper()
+    style = play_style_key(row).replace("-", " ").title()
+    draw.text(
+        (45, 24),
+        f"{symbol} MULTI-TIMEFRAME TRADE MAP · {event.upper()} · {row.get('trade_id')}",
+        fill="#f8fafc",
+        font=title_font,
+    )
+    draw.text(
+        (45, 62),
+        f"{style} · contract {row.get('strike')} · expiration {format_expiration(row.get('expiration', ''))}",
+        fill="#a9bad0",
+        font=normal,
+    )
+
+    panel_width, panel_height = 735, 375
+    origins = [(45, 110), (820, 110), (45, 515), (820, 515)]
+
+    for (label, bars), (origin_x, origin_y) in zip(panels, origins):
+        draw.rounded_rectangle(
+            (origin_x, origin_y, origin_x + panel_width, origin_y + panel_height),
+            radius=14,
+            fill="#0f1b2b",
+            outline="#26384d",
+            width=2,
+        )
+        values = [as_float(bar.get("close") or bar.get("price")) for bar in bars]
+        values = [float(value) for value in values if value is not None]
+        draw.text((origin_x + 20, origin_y + 16), label, fill="#e2e8f0", font=normal)
+        if len(values) < 2:
+            draw.text(
+                (origin_x + 20, origin_y + 70),
+                "Historical data unavailable for this timeframe.",
+                fill="#fbbf24",
+                font=normal,
+            )
+            continue
+        left, right = origin_x + 55, origin_x + panel_width - 25
+        top, bottom = origin_y + 62, origin_y + panel_height - 70
+        low, high = min(values), max(values)
+        padding = max((high - low) * 0.10, 0.05)
+        low, high = low - padding, high + padding
+
+        def xy(index: int, value: float) -> tuple[int, int]:
+            return (
+                left + int(index / max(len(values) - 1, 1) * (right - left)),
+                top + int((high - value) / max(high - low, 0.01) * (bottom - top)),
+            )
+
+        for step in range(5):
+            value = low + (high - low) * step / 4
+            y = xy(0, value)[1]
+            draw.line((left, y, right, y), fill="#203147", width=1)
+            draw.text((origin_x + 5, y - 8), f"{value:.2f}", fill="#718399", font=small)
+        draw.line([xy(i, value) for i, value in enumerate(values)], fill="#dce7f5", width=3)
+        sma20 = rolling_average(values, min(20, max(2, len(values) // 3)))
+        sma_points = [xy(i, value) for i, value in enumerate(sma20) if value is not None]
+        if len(sma_points) >= 2:
+            draw.line(sma_points, fill="#38bdf8", width=2)
+        support = min(values[-min(20, len(values)):])
+        resistance = max(values[-min(20, len(values)):])
+        last = values[-1]
+        trend = "ABOVE TREND" if sma20[-1] is not None and last >= sma20[-1] else "BELOW TREND"
+        marker_color = "#22c55e" if event == "entry" else "#ef4444"
+        mx, my = xy(len(values) - 1, last)
+        draw.ellipse((mx - 7, my - 7, mx + 7, my + 7), fill=marker_color)
+        draw.text(
+            (origin_x + 20, origin_y + panel_height - 52),
+            f"Last ${last:.2f} · Support ${support:.2f} · Resistance ${resistance:.2f} · {trend}",
+            fill="#b9c7d8",
+            font=small,
+        )
+
+    context = directional_market_context(
+        daily_clean,
+        as_float((daily_clean[-1] if daily_clean else {}).get("close"), 0.0) or 0.0,
+        intraday,
+    ) if daily_clean else {}
+    footer = (
+        f"Regime {context.get('regime', 'unavailable')} · RSI14 {round_or_blank(context.get('rsi14'), 1) or '—'} · "
+        f"Evidence score {context.get('evidence_score', '—')} · Blue line is rolling trend · "
+        "levels require price and option-liquidity confirmation"
+    )
+    draw.text((45, 930), footer, fill="#d7e2ef", font=normal)
+    draw.text(
+        (45, 976),
+        "Paper-trade research only. Historical backfills never substitute current bars for missing entry-time evidence.",
+        fill="#8193a8",
+        font=small,
+    )
+    destination = TRADE_SNAPSHOT_DIR / f"{row.get('trade_id', 'trade')}-{event}-multitimeframe.png"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    image.save(destination, format="PNG", optimize=True)
+    return destination
 
 
 def market_map_text(history: list[dict[str, Any]], spot_price: float) -> str:
@@ -3003,6 +3260,61 @@ def sync_existing_open_threads(
             print(f"Could not sync Discord thread for {row.get('trade_id')}: {exc}", file=sys.stderr)
     return created
 
+
+def sync_all_trade_journals(
+    rows: list[dict[str, str]],
+    discord: DiscordTracker,
+) -> dict[str, int]:
+    """Backfill one canonical lifecycle thread per trade without inventing history."""
+    counts = {"created": 0, "refreshed": 0, "closed_reviews": 0}
+    if not discord.ready:
+        return counts
+    for row in sorted(rows, key=lambda item: item.get("timestamp") or ""):
+        trade_id = str(row.get("trade_id") or "")
+        if not trade_id:
+            continue
+        outcome = str(row.get("outcome") or "OPEN")
+        thread_id = str(row.get("discord_thread_id") or "")
+        created_now = False
+        refreshed_now = False
+        try:
+            if not thread_id:
+                thread_id = discord.create_trade_thread(
+                    row, outcome if outcome != "OPEN" else "OPEN"
+                )
+                created_now = bool(thread_id)
+                if thread_id:
+                    counts["created"] += 1
+            elif row.get("discord_format_version") != DISCORD_FORMAT_VERSION:
+                discord._request("PATCH", f"/channels/{thread_id}", {"archived": False})
+                discord.refresh_trade_thread(row)
+                refreshed_now = True
+                counts["refreshed"] += 1
+            if not thread_id or outcome == "OPEN":
+                continue
+            if (
+                not created_now
+                and not refreshed_now
+                and row.get("discord_format_version") == DISCORD_FORMAT_VERSION
+                and row.get("discord_status") == outcome
+            ):
+                continue
+            discord._request("PATCH", f"/channels/{thread_id}", {"archived": False})
+            sequence = trade_id.rsplit("-", 1)[-1]
+            token = f"{str(row.get('ticker') or TICKER).upper()} #{sequence} · {outcome}"
+            discord.upsert_singleton_message(
+                thread_id,
+                close_alert_text(row, stored_close_evaluation(row)),
+                token,
+            )
+            discord.set_thread_status(thread_id, outcome, archive=True)
+            row["discord_status"] = outcome
+            row["discord_format_version"] = DISCORD_FORMAT_VERSION
+            counts["closed_reviews"] += 1
+        except DiscordError as exc:
+            print(f"Could not synchronize journal for {trade_id}: {exc}", file=sys.stderr)
+    return counts
+
 def should_post_update(row: dict[str, str], evaluation: dict[str, Any], timestamp: datetime) -> bool:
     signal = evaluation.get("signal", "HOLD")
     previous_signal = row.get("last_discord_signal") or ""
@@ -3193,7 +3505,11 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     content = close_alert_text(row, evaluation, link)
     if thread_id:
         try:
-            discord.send_thread(thread_id, close_alert_text(row, evaluation))
+            sequence = str(row.get("trade_id") or "").rsplit("-", 1)[-1]
+            token = f"{str(row.get('ticker') or TICKER).upper()} #{sequence} · {row.get('outcome')}"
+            discord.upsert_singleton_message(
+                thread_id, close_alert_text(row, evaluation), token
+            )
             snapshot = build_trade_snapshot(row, "exit")
             if snapshot:
                 discord.send_thread_file(
@@ -3317,6 +3633,20 @@ def result_metrics(rows: list[dict[str, str]]) -> dict[str, float]:
 
     gross_won = sum(value for value in win_dollars if value > 0)
     gross_lost = abs(sum(value for value in loss_dollars if value < 0))
+    holding_hours: list[float] = []
+    for row in rows:
+        opened = parse_iso(row.get("timestamp"))
+        closed = parse_iso(row.get("closed_at"))
+        if opened and closed and closed >= opened:
+            holding_hours.append((closed - opened).total_seconds() / 3600)
+    mfe_values = [
+        value for value in (as_float(row.get("max_favorable_pct")) for row in rows)
+        if value is not None
+    ]
+    mae_values = [
+        value for value in (as_float(row.get("max_adverse_pct")) for row in rows)
+        if value is not None
+    ]
 
     return {
         "wins": float(len(wins)),
@@ -3327,6 +3657,10 @@ def result_metrics(rows: list[dict[str, str]]) -> dict[str, float]:
         "gross_won": gross_won,
         "gross_lost": gross_lost,
         "total_pnl": sum(all_dollars),
+        "profit_factor": (gross_won / gross_lost) if gross_lost else (math.inf if gross_won else 0.0),
+        "average_holding_hours": (sum(holding_hours) / len(holding_hours)) if holding_hours else 0.0,
+        "average_mfe_pct": (sum(mfe_values) / len(mfe_values)) if mfe_values else 0.0,
+        "average_mae_pct": (sum(mae_values) / len(mae_values)) if mae_values else 0.0,
         "reconstructed": float(sum(result_is_reconstructed(row) for row in rows)),
         "average_pct": (sum(pct_values) / len(pct_values)) if pct_values else 0.0,
         "average_win_pct": (sum(win_pcts) / len(win_pcts)) if win_pcts else 0.0,
@@ -3440,6 +3774,54 @@ def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
             ])
     lines.extend(["### Updated", portable_strftime(now_ct(), "%m/%d/%y %-I:%M %p CT")])
     return "\n".join(lines)
+
+
+def format_play_style_performance(
+    rows: list[dict[str, str]], style: str
+) -> str:
+    selected = [row for row in closed_rows(rows) if play_style_key(row) == style]
+    metrics = result_metrics(selected)
+    title = style.replace("-", " ").title()
+    profit_factor = metrics["profit_factor"]
+    factor_text = "∞" if math.isinf(profit_factor) else f"{profit_factor:.2f}"
+    lines = [
+        f"## {title} Performance",
+        "This dashboard reports the existing screener classification; it does not change scanner rules.",
+        "### Record and P/L",
+        (
+            f"**{int(metrics['wins'])}W / {int(metrics['losses'])}L / {int(metrics['scratches'])}S** · "
+            f"win rate **{metrics['win_rate']:.1f}%** · net **{fmt_metric_money(metrics, 'total_pnl')}**"
+        ),
+        "### Quality",
+        (
+            f"Profit factor **{factor_text}** · expectancy **{metrics['expectancy_pct']:+.1f}%** · "
+            f"avg win **{metrics['average_win_pct']:+.1f}%** · avg loss **{metrics['average_loss_pct']:+.1f}%**"
+        ),
+        "### Excursion and Holding Time",
+        (
+            f"Avg MFE **{metrics['average_mfe_pct']:+.1f}%** · avg MAE **{metrics['average_mae_pct']:+.1f}%** · "
+            f"avg hold **{metrics['average_holding_hours']:.1f}h**"
+        ),
+        "### Completed Trades",
+    ]
+    if not selected:
+        lines.append("No completed trades in this play style yet.")
+    else:
+        for row in selected[-12:]:
+            summary = compact_result_line(row)
+            link = thread_link(row.get("discord_thread_id", ""))
+            lines.append(f"{summary}{f' · [journal]({link})' if link else ''}")
+    lines.extend(
+        [
+            "### Evidence Limits",
+            (
+                f"Sample size **{len(selected)}**. Missing historical indicators remain unavailable; "
+                "results are descriptive and do not prove future performance."
+            ),
+            f"Updated **{portable_strftime(now_ct(), '%m/%d/%y %-I:%M %p CT')}**",
+        ]
+    )
+    return "\n".join(lines)[:5900]
 
 def format_ticker_results(rows: list[dict[str, str]]) -> str:
     groups: dict[str, list[dict[str, str]]] = {}
@@ -3833,6 +4215,15 @@ def update_performance_pages(
         "strategy-breakdown",
         format_strategy_breakdown(rows),
     )
+    for style, channel_name in PLAY_STYLE_CHANNELS.items():
+        logical_name = "strategy_" + style.replace("-", "_")
+        discord.upsert_channel_message(
+            logical_name,
+            state,
+            f"play-style-performance:{style}",
+            format_play_style_performance(rows, style),
+            search_token=f"{style.replace('-', ' ').title()} Performance",
+        )
     discord.upsert_channel_message(
         "ticker_results",
         state,
@@ -4239,21 +4630,29 @@ def main(*, publish_shared: bool = True) -> int:
     if closed_results_backfilled:
         print(f"Discord result backfill: posted {closed_results_backfilled} closed result(s).")
 
-    backfilled = (
-        sync_existing_open_threads(rows, discord, refresh_existing=False)
+    journal_counts = (
+        sync_all_trade_journals(rows, discord)
         if publish_shared
-        else 0
+        else {"created": 0, "refreshed": 0, "closed_reviews": 0}
     )
-    if backfilled:
+    if any(journal_counts.values()):
         write_log(rows)
         safe_discord_call(
             "backfill status",
-            lambda: discord.send_channel(
+            lambda: discord.upsert_channel_message(
                 "status",
-                content=f"✅ TradeBot imported {backfilled} existing OPEN play(s) into #trade-journal.",
+                report_state,
+                "trade-journal-backfill",
+                (
+                    "## Trade Journal Synchronization\n"
+                    f"Created **{journal_counts['created']}** · refreshed **{journal_counts['refreshed']}** · "
+                    f"closed reviews verified **{journal_counts['closed_reviews']}**.\n"
+                    "Each paper trade has one canonical lifecycle thread; missing historical evidence is not invented."
+                ),
+                search_token="Trade Journal Synchronization",
             ),
         )
-        print(f"Discord backfill: created {backfilled} open-trade forum thread(s).")
+        print(f"Discord journal sync: {journal_counts}.")
 
     is_open, timestamp = market_is_open_now()
     if not is_open:
