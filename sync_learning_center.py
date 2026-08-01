@@ -130,6 +130,12 @@ def _is_legacy_lesson(message: dict[str, Any], channel_name: str) -> bool:
     )
 
 
+def _message_marker(message: dict[str, Any], prefix: str) -> str:
+    search_text = ford_scan.message_search_text(message)
+    match = re.search(re.escape(prefix) + r"\d+/\d+", search_text)
+    return match.group(0) if match else ""
+
+
 def synchronize_channel(
     tracker: ford_scan.DiscordTracker,
     channel: dict[str, Any],
@@ -146,8 +152,9 @@ def synchronize_channel(
         and prefix in ford_scan.message_search_text(message)
     ]
     by_marker = {
-        ford_scan.message_search_text(message).splitlines()[0].strip("*"): message
+        marker: message
         for message in existing
+        if (marker := _message_marker(message, prefix))
     }
 
     created = updated = deleted = 0
