@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import run_supervisor
 import tradysquid_supervisor as supervisor
+
+
+ROOT = Path(__file__).resolve().parent
 
 
 class SupervisorAvailabilityTests(unittest.TestCase):
@@ -25,6 +29,7 @@ class SupervisorAvailabilityTests(unittest.TestCase):
             patch.object(supervisor, "stop_all_services", full_stop),
             patch.object(supervisor, "stop_process", side_effect=stopped.append),
             patch.object(supervisor, "supervisor_log"),
+            patch.object(supervisor, "state_payload", return_value={}),
             patch.object(run_supervisor.time, "sleep"),
         ):
             result = run_supervisor.low_downtime_deploy_if_needed(force=True)
@@ -56,7 +61,11 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         self.assertIn("command-bot: **ONLINE**", message)
         self.assertIn("information-engine: **ONLINE**", message)
         self.assertIn("ngrok: **ONLINE**", message)
+        self.assertIn("automatic updater: **ONLINE**", message)
         self.assertEqual(write_state.call_count, 2)
+        heartbeat = write_state.call_args.kwargs
+        self.assertIn("supervisor_heartbeat_at", heartbeat)
+        self.assertTrue(heartbeat["auto_update_enabled"])
 
     def test_readiness_posts_again_after_an_unhealthy_transition_recovers(self) -> None:
         ready = {service.name: True for service in supervisor.SERVICES}
@@ -78,6 +87,101 @@ class SupervisorAvailabilityTests(unittest.TestCase):
                 run_supervisor.ensure_services_with_readiness()
 
         self.assertEqual(post.call_count, 2)
+
+    def test_failed_discord_sync_is_persisted_for_retry(self) -> None:
+        write_state = Mock()
+        post = Mock()
+        results = [
+            "Discord slash commands synchronized",
+            "comprehensive Discord structure sync failed: HTTP 400",
+        ]
+        with (
+            patch.object(
+                supervisor,
+                "state_payload",
+                return_value={"last_update_status": "DEPLOYED"},
+            ),
+            patch.object(supervisor, "write_state", write_state),
+            patch.object(supervisor, "discord_post", post),
+        ):
+            succeeded = run_supervisor.record_discord_sync_results(
+                results, source="deployment"
+            )
+
+        self.assertFalse(succeeded)
+        self.assertEqual(
+            write_state.call_args.kwargs["last_discord_sync_status"], "FAILED"
+        )
+        self.assertEqual(
+            write_state.call_args.kwargs["last_update_status"],
+            "DEPLOYED_WITH_DISCORD_ERRORS",
+        )
+        post.assert_called_once()
+        self.assertEqual(post.call_args.args[1], "workflow-log")
+
+    def test_failed_discord_sync_retries_without_a_new_commit(self) -> None:
+        results = [
+            "Discord slash commands synchronized",
+            "Strictly ordered Learning Center synchronized",
+        ]
+        record = Mock(return_value=True)
+        with (
+            patch.object(
+                supervisor,
+                "state_payload",
+                return_value={"last_discord_sync_status": "FAILED"},
+            ),
+            patch.object(supervisor, "supervisor_log"),
+            patch.object(
+                run_supervisor,
+                "public_run_discord_configuration",
+                return_value=results,
+            ) as sync,
+            patch.object(run_supervisor, "record_discord_sync_results", record),
+        ):
+            retried = run_supervisor.retry_pending_discord_configuration()
+
+        self.assertTrue(retried)
+        sync.assert_called_once_with()
+        record.assert_called_once_with(results, source="automatic-retry")
+
+    def test_fetch_failure_is_visible_and_retried(self) -> None:
+        post = Mock()
+        write_state = Mock()
+        with (
+            patch.object(
+                run_supervisor,
+                "ORIGINAL_FETCH_REMOTE_SHA",
+                side_effect=RuntimeError("authentication failed"),
+            ),
+            patch.object(supervisor, "state_payload", return_value={}),
+            patch.object(supervisor, "write_state", write_state),
+            patch.object(supervisor, "discord_post", post),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "authentication failed"):
+                run_supervisor.monitored_fetch_remote_sha()
+
+        self.assertEqual(write_state.call_args.kwargs["last_fetch_status"], "FAILED")
+        post.assert_called_once()
+        self.assertIn("automatic update check failed", post.call_args.args[0])
+
+    def test_launcher_and_watchdog_prevent_a_single_process_failure(self) -> None:
+        launcher = (ROOT / "START-SUPERVISOR.cmd").read_text(encoding="utf-8")
+        watchdog = (ROOT / "ENSURE-SUPERVISOR.ps1").read_text(encoding="utf-8")
+        installer = (ROOT / "INSTALL-REMOTE-CONTROL.cmd").read_text(
+            encoding="utf-8"
+        )
+        task_installer = (ROOT / "INSTALL-SUPERVISOR-WATCHDOG.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("supervisor-stop.flag", launcher)
+        self.assertIn("ENSURE-SUPERVISOR.ps1", launcher)
+        self.assertIn("run_supervisor.py", watchdog)
+        self.assertIn("Start-Process", watchdog)
+        self.assertIn("INSTALL-SUPERVISOR-WATCHDOG.ps1", installer)
+        self.assertIn("/SC MINUTE", task_installer)
+        self.assertIn("/MO 5", task_installer)
 
 
 if __name__ == "__main__":
