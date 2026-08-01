@@ -2608,15 +2608,22 @@ class DiscordTracker:
         if search_token:
             recent = self._request("GET", f"/channels/{channel_id}/messages?limit=100")
             if isinstance(recent, list):
+                matches = []
                 for message in recent:
                     author = message.get("author") or {}
-                    if author.get("bot") and search_token in message_search_text(message):
-                        message_id = str(message.get("id") or "")
-                        if message_id:
-                            self._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
-                            messages[state_key] = message_id
-                            hashes[state_key] = content_hash
-                            return message_id
+                    if (author.get("bot") or message.get("webhook_id")) and search_token in message_search_text(message):
+                        matches.append(message)
+                if matches:
+                    message_id = str(matches[0].get("id") or "")
+                    if message_id:
+                        self._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
+                        for duplicate in matches[1:]:
+                            duplicate_id = str(duplicate.get("id") or "")
+                            if duplicate_id:
+                                self._request("DELETE", f"/channels/{channel_id}/messages/{duplicate_id}")
+                        messages[state_key] = message_id
+                        hashes[state_key] = content_hash
+                        return message_id
 
         created = self._request("POST", f"/channels/{channel_id}/messages", payload)
         if isinstance(created, dict) and created.get("id"):
@@ -2624,6 +2631,42 @@ class DiscordTracker:
             messages[state_key] = message_id
             hashes[state_key] = content_hash
         return message_id
+
+    def upsert_singleton_message(
+        self,
+        channel_id: str,
+        content: str,
+        search_token: str,
+    ) -> tuple[str, int]:
+        """Keep exactly one bot-authored card for a stable title in a channel."""
+        if not channel_id or not search_token:
+            return "", 0
+        payload = {
+            "content": "",
+            "embeds": [discord_card(content[:6000])],
+            "allowed_mentions": {"parse": []},
+        }
+        recent = self._request("GET", f"/channels/{channel_id}/messages?limit=100")
+        if not isinstance(recent, list):
+            recent = []
+        matches = [
+            message
+            for message in recent
+            if ((message.get("author") or {}).get("bot") or message.get("webhook_id"))
+            and search_token in message_search_text(message)
+        ]
+        if matches:
+            message_id = str(matches[0].get("id") or "")
+            self._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
+            removed = 0
+            for duplicate in matches[1:]:
+                duplicate_id = str(duplicate.get("id") or "")
+                if duplicate_id:
+                    self._request("DELETE", f"/channels/{channel_id}/messages/{duplicate_id}")
+                    removed += 1
+            return message_id, removed
+        created = self._request("POST", f"/channels/{channel_id}/messages", payload)
+        return str((created or {}).get("id") or ""), 0
 
     def upsert_trade_message(
         self,

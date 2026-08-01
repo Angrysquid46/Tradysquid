@@ -279,30 +279,18 @@ def verify_status_logic() -> dict[str, str]:
 
 
 def post_report(message: str) -> None:
-    token = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
-    guild = os.environ.get("DISCORD_GUILD_ID", "").strip()
-    if not token or not guild:
-        return
-    headers = {"Authorization": f"Bot {token}", "Content-Type": "application/json"}
     try:
-        response = requests.get(
-            f"https://discord.com/api/v10/guilds/{guild}/channels",
-            headers=headers,
-            timeout=15,
+        tracker = ford_scan.DiscordTracker(
+            ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
         )
-        response.raise_for_status()
-        channels = response.json()
-        if not isinstance(channels, list):
-            return
+        channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
         channel = next((item for item in channels if str(item.get("name") or "").casefold() == "system-health"), None)
         if channel and channel.get("id"):
-            requests.post(
-                f"https://discord.com/api/v10/channels/{channel['id']}/messages",
-                headers=headers,
-                json={"content": message[:1900], "allowed_mentions": {"parse": []}},
-                timeout=15,
-            ).raise_for_status()
-    except (requests.RequestException, ValueError, TypeError):
+            title = message.splitlines()[0].strip("# *✅❌ ")
+            tracker.upsert_singleton_message(
+                str(channel["id"]), message[:1900], title
+            )
+    except (ford_scan.DiscordError, ValueError, TypeError):
         pass
 
 

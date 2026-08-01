@@ -640,6 +640,41 @@ class InformationEngineTests(unittest.TestCase):
         )
         self.assertEqual(state["messages"], {})
 
+    def test_singleton_message_updates_newest_and_removes_older_duplicates(self) -> None:
+        tracker = ford_scan.DiscordTracker("token", "guild")
+        requests: list[tuple[str, str]] = []
+
+        def request(method: str, path: str, payload=None):
+            requests.append((method, path))
+            if method == "GET":
+                return [
+                    {
+                        "id": "newest",
+                        "author": {"bot": True},
+                        "embeds": [{"title": "Tradysquids"}],
+                    },
+                    {
+                        "id": "older",
+                        "author": {"bot": True},
+                        "embeds": [{"title": "Tradysquids"}],
+                    },
+                ]
+            return {}
+
+        tracker._request = request
+        message_id, removed = tracker.upsert_singleton_message(
+            "welcome-channel", "# Tradysquids\nCanonical guide", "Tradysquids"
+        )
+
+        self.assertEqual(message_id, "newest")
+        self.assertEqual(removed, 1)
+        self.assertIn(
+            ("PATCH", "/channels/welcome-channel/messages/newest"), requests
+        )
+        self.assertIn(
+            ("DELETE", "/channels/welcome-channel/messages/older"), requests
+        )
+
     def test_new_close_is_not_posted_back_to_held_positions(self) -> None:
         calls: list[tuple] = []
 

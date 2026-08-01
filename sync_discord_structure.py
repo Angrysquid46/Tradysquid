@@ -622,27 +622,12 @@ def main() -> int:
             if not channel:
                 continue
             try:
-                recent = tracker._request(
-                    "GET", f"/channels/{channel['id']}/messages?limit=50"
+                marker = content.splitlines()[0].lstrip("# ").strip()
+                _, removed = tracker.upsert_singleton_message(
+                    str(channel["id"]), content, marker
                 )
-                marker = content.splitlines()[0]
-                message = next(
-                    (
-                        item for item in recent
-                        if (item.get("author") or {}).get("bot")
-                        and marker in ford_scan.message_search_text(item)
-                    ),
-                    None,
-                )
-                payload = {"content": content[:2000], "allowed_mentions": {"parse": []}}
-                if message:
-                    tracker._request(
-                        "PATCH",
-                        f"/channels/{channel['id']}/messages/{message['id']}",
-                        payload,
-                    )
-                else:
-                    tracker._request("POST", f"/channels/{channel['id']}/messages", payload)
+                if removed:
+                    print(f"REMOVED {removed} duplicate guide card(s) from #{channel_name}")
             except ford_scan.DiscordError as exc:
                 warnings.append(f"guide #{channel_name}: {exc}")
 
