@@ -19,12 +19,14 @@ class FakeTracker:
             "type": 4,
             "position": 20,
         }
+        canonical = list(LEARNING_CHANNEL_ORDER)
         names = [
-            "learning-index",
-            "17-directional-options",
-            "01-stock-market-foundations",
+            canonical[0],
+            canonical[17],
+            canonical[1],
             "custom-notes",
-            *LEARNING_CHANNEL_ORDER[2:],
+            *canonical[2:17],
+            *canonical[18:],
         ]
         self.channels: list[dict[str, Any]] = []
         for index, name in enumerate(names):
