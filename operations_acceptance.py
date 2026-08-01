@@ -33,7 +33,7 @@ REQUIRED_JOBS = {
 REQUIRED_CHANNELS = {
     "system-activity": "Always-On Tradysquids Activity",
     "automation-diagnostics": "Automation Diagnostics and Self-Repair",
-    "performance-stats": "Performance Dashboard",
+    "performance-dashboard": "Performance Dashboard",
     "strategy-results": "Strategy Breakdown",
     "ticker-results": "Ticker Results",
     "wins": "Wins Summary",
@@ -46,7 +46,7 @@ REQUIRED_CHANNELS = {
     "bear-call-spreads": "Bear Call Spread Performance",
 }
 CARD_STATE_KEYS = {
-    "performance-stats": "performance-stats",
+    "performance-dashboard": "performance-stats",
     "strategy-results": "strategy-breakdown",
     "ticker-results": "ticker-results",
     "wins": "wins-summary",
@@ -145,10 +145,10 @@ def discord_channels_and_cards() -> dict[str, Any]:
     expected_closed = int(metrics["closed"])
     expected_wins = int(metrics["wins"])
     expected_losses = int(metrics["losses"])
-    performance = card_text["performance-stats"]
+    performance = card_text["performance-dashboard"]
     if not re.search(rf"Closed trades\D+{expected_closed}\b", performance):
         raise OperationsAcceptanceFailure(
-            f"#performance-stats does not reconcile to {expected_closed} canonical closed trades."
+            f"#performance-dashboard does not reconcile to {expected_closed} canonical closed trades."
         )
 
     def summed_records(text: str) -> int:
