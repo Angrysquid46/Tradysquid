@@ -1,7 +1,8 @@
 """Offline, review-first learning from completed tracked trades.
 
 This module never changes scanner rules or places trades. It exports sanitized
-outcomes and evidence summaries to a OneDrive-backed folder for human review.
+outcomes, evidence summaries, and trade-specific review cause tags to a
+OneDrive-backed folder for human review.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_ARCHIVE = Path(os.environ.get("OneDrive", str(ROOT.parent))) / "Tradysquid-Learning"
 ARCHIVE_DIR = Path(os.environ.get("LEARNING_ARCHIVE_DIR", str(DEFAULT_ARCHIVE)))
 MIN_SAMPLE = int(os.environ.get("LEARNING_MIN_SAMPLE", "20"))
+REVIEW_RECORD_PATH = ROOT / "state" / "trade-learning-records.json"
 
 EXPORT_FIELDS = [
     "trade_id", "ticker", "play_type", "call_or_put", "timestamp", "closed_at",
@@ -29,6 +31,9 @@ EXPORT_FIELDS = [
     "open_interest_at_entry", "bid_ask_width_at_entry", "option_volume_at_entry",
     "setup_score", "market_regime", "outcome", "pct_gain_loss",
     "realized_pl_dollars", "max_favorable_pct", "max_adverse_pct", "last_signal",
+    "review_primary_cause", "review_cause_tags", "review_alignment",
+    "review_aligned_count", "review_opposing_count", "review_neutral_count",
+    "review_missing_evidence_count", "review_version",
 ]
 
 
@@ -45,12 +50,45 @@ def days_to_expiration(row: dict[str, str]) -> int | None:
     return (expiry - opened).days
 
 
+def review_records() -> dict[str, dict[str, Any]]:
+    try:
+        payload = json.loads(REVIEW_RECORD_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {}
+    records = payload.get("records") if isinstance(payload, dict) else {}
+    return records if isinstance(records, dict) else {}
+
+
+def review_alignment(record: dict[str, Any]) -> str:
+    aligned = len(record.get("aligned_evidence") or [])
+    opposing = len(record.get("opposing_evidence") or [])
+    neutral = len(record.get("neutral_evidence") or [])
+    if opposing or neutral:
+        return "MIXED"
+    if aligned:
+        return "ALIGNED"
+    return "UNRECORDED"
+
+
 def sanitized_rows() -> list[dict[str, Any]]:
     rows = ford_scan.closed_rows(ford_scan.read_log())
+    reviews = review_records()
     exports: list[dict[str, Any]] = []
     for row in rows:
         item = {field: row.get(field, "") for field in EXPORT_FIELDS}
         item["dte_at_entry"] = days_to_expiration(row)
+        review = reviews.get(str(row.get("trade_id") or ""), {})
+        tags = [str(tag) for tag in review.get("cause_tags") or []]
+        item.update({
+            "review_primary_cause": tags[0] if tags else "UNREVIEWED",
+            "review_cause_tags": ",".join(tags),
+            "review_alignment": review_alignment(review),
+            "review_aligned_count": len(review.get("aligned_evidence") or []),
+            "review_opposing_count": len(review.get("opposing_evidence") or []),
+            "review_neutral_count": len(review.get("neutral_evidence") or []),
+            "review_missing_evidence_count": len(review.get("missing_evidence") or []),
+            "review_version": review.get("review_version") or "",
+        })
         exports.append(item)
     return exports
 
@@ -72,6 +110,8 @@ def feature_groups(row: dict[str, Any]) -> dict[str, str]:
         "strategy": str(row.get("play_type") or "UNKNOWN").upper(),
         "direction": str(row.get("call_or_put") or "UNKNOWN").upper(),
         "regime": str(row.get("market_regime") or "UNKNOWN").upper(),
+        "review_primary_cause": str(row.get("review_primary_cause") or "UNREVIEWED"),
+        "review_alignment": str(row.get("review_alignment") or "UNRECORDED"),
         "delta_band": bucket(ford_scan.as_float(row.get("delta_at_entry")), (0.15, 0.25, 0.40, 0.60, 0.75)),
         "iv_band": bucket(ford_scan.as_float(row.get("iv_at_entry")), (0.25, 0.40, 0.60, 0.90)),
         "dte_band": bucket(ford_scan.as_float(row.get("dte_at_entry")), (7, 14, 21, 30, 45, 61)),
@@ -82,9 +122,14 @@ def feature_groups(row: dict[str, Any]) -> dict[str, str]:
 
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    cause_counts: dict[str, int] = defaultdict(int)
     for row in rows:
         for feature, value in feature_groups(row).items():
             groups[(feature, value)].append(row)
+        for cause in str(row.get("review_cause_tags") or "").split(","):
+            if cause:
+                cause_counts[cause] += 1
+
     summaries = []
     for (feature, value), members in sorted(groups.items()):
         pnl = [ford_scan.as_float(row.get("realized_pl_dollars"), 0.0) or 0.0 for row in members]
@@ -100,19 +145,24 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "median_pl_dollars": round(statistics.median(pnl), 2),
             "evidence_ready": len(members) >= MIN_SAMPLE,
         })
+
     evidence = [item for item in summaries if item["evidence_ready"]]
     evidence.sort(key=lambda item: (item["feature"], -item["average_pl_dollars"]))
+    reviewed = sum(str(row.get("review_primary_cause")) != "UNREVIEWED" for row in rows)
     return {
         "generated_at": datetime.now().astimezone().isoformat(),
         "minimum_sample": MIN_SAMPLE,
         "closed_trades": len(rows),
+        "reviewed_trades": reviewed,
+        "review_coverage_pct": round(reviewed / len(rows) * 100, 1) if rows else 0.0,
+        "cause_counts": dict(sorted(cause_counts.items())),
         "groups": summaries,
         "evidence_ready_groups": evidence,
         "guardrails": [
             "No scanner filters are changed automatically.",
             "No brokerage orders are placed.",
+            "Root-cause tags remain hypotheses until supported by enough completed trades.",
             "Groups below the minimum sample are descriptive only.",
-            "Results are historical observations, not profit guarantees.",
             "Any strategy change requires owner review, testing, and approval.",
         ],
     }
@@ -124,14 +174,22 @@ def render_report(summary: dict[str, Any]) -> str:
         "",
         f"Generated: {summary['generated_at']}",
         f"Closed tracked trades: {summary['closed_trades']}",
+        f"Trade-specific reviews: {summary['reviewed_trades']} ({summary['review_coverage_pct']:.1f}%)",
         f"Minimum evidence sample: {summary['minimum_sample']}",
         "",
         "This is offline historical analysis, not professional financial advice.",
         "The learning system does not modify scanner rules or place trades.",
         "",
-        "## Evidence-ready groups",
+        "## Recorded review causes",
         "",
     ]
+    if not summary["cause_counts"]:
+        lines.append("No trade-specific cause tags have been recorded yet.")
+    else:
+        for cause, count in summary["cause_counts"].items():
+            lines.append(f"- {cause}: {count}")
+
+    lines.extend(["", "## Evidence-ready groups", ""])
     evidence = summary["evidence_ready_groups"]
     if not evidence:
         lines.append("No group has enough completed trades yet. Data collection continues.")
@@ -169,6 +227,7 @@ def export_learning_archive() -> dict[str, Any]:
     )
     (ARCHIVE_DIR / "README.txt").write_text(
         "Tradysquid offline learning archive.\n"
+        "Trade-specific cause tags are hypotheses for human-reviewed improvements.\n"
         "No API keys, Discord tokens, account numbers, or private messages are exported.\n"
         "Files are regenerated locally and synchronized by OneDrive.\n",
         encoding="utf-8",
