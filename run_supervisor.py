@@ -62,6 +62,7 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
         "learning_application.py",
         "learning_application_public.py",
         "learning_question_gaps.py",
+        "strict_learning_order.py",
         "sync_learning_center.py",
         "sync_discord_cards.py",
         "sync_discord_structure.py",
@@ -83,6 +84,7 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
             "unittest",
             "-q",
             "test_learning_center.py",
+            "test_strict_learning_order.py",
             "test_local_information_engine.py",
         ],
         [sys.executable, "sync_learning_center.py"],
@@ -96,7 +98,7 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
             return False, f"{' '.join(command)}: {detail}"
     return True, (
         "Compilation, focused tests, curriculum, routed search, live application, "
-        "and unanswered-question queue validation passed"
+        "question-gap queue, and strict Learning Center order validation passed"
     )
 
 
@@ -137,7 +139,7 @@ def public_run_discord_configuration() -> list[str]:
             )
         else:
             results.append(
-                "Ordered Learning Center, question-gap review queue, lesson cards, references, guides, and permissions synchronized"
+                "Strictly ordered Learning Center, question-gap review queue, lesson cards, references, guides, and permissions synchronized"
             )
     return results
 

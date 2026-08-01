@@ -10,12 +10,14 @@ on:
       - "learning_application.py"
       - "learning_application_public.py"
       - "learning_question_gaps.py"
+      - "strict_learning_order.py"
       - "sync_learning_center.py"
       - "sync_discord_cards.py"
       - "sync_discord_structure_public.py"
       - "discord_command_bot_public.py"
       - "run_supervisor.py"
       - "test_learning_center.py"
+      - "test_strict_learning_order.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -55,6 +57,7 @@ jobs:
             learning_application.py \
             learning_application_public.py \
             learning_question_gaps.py \
+            strict_learning_order.py \
             sync_learning_center.py \
             sync_discord_cards.py \
             sync_discord_structure.py \
@@ -69,4 +72,4 @@ jobs:
           python learning_application_public.py
 
       - name: Run focused tests
-        run: python -m unittest -q test_learning_center.py
+        run: python -m unittest -q test_learning_center.py test_strict_learning_order.py
