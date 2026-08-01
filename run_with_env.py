@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
 SCRIPT_OVERRIDES = {
     "discord_command_bot.py": "discord_command_bot_public.py",
+    "local_information_engine.py": "local_information_engine_public.py",
     "register_discord_commands.py": "register_discord_commands_public.py",
     "sync_discord_structure.py": "sync_discord_structure_public.py",
 }
