@@ -8,19 +8,33 @@ not overwrite them or treat them as dirty tracked configuration.
 
 from __future__ import annotations
 
+import time
+
 import discord_command_bot as bot
+import learning_center_content as learning
 
 
 bot.OWNER_ONLY_COMMANDS.discard("ticker-remove")
 bot.ticker_registry.CONFIG_PATH = (
     bot.ticker_registry.ROOT / "state" / "member-ticker-registry.json"
 )
+MEMBER_ADD_COOLDOWN_SECONDS = 15
+LAST_MEMBER_ADD: dict[str, float] = {}
 
 
 def public_ticker_add_reply(interaction: dict) -> str:
     ticker = bot.dynamic_universe.normalize_symbol(
         str(bot.option_value(interaction, "ticker", ""))
     )
+    user_id = bot.command_user_id(interaction)
+    now = time.monotonic()
+    previous = LAST_MEMBER_ADD.get(user_id, 0.0)
+    remaining = MEMBER_ADD_COOLDOWN_SECONDS - (now - previous)
+    if remaining > 0:
+        raise ValueError(
+            f"Please wait {remaining:.0f} seconds before verifying another ticker."
+        )
+
     active = bot.dynamic_universe.initialize()
     maximum = bot.dynamic_universe.max_active_symbols()
     if ticker in active:
@@ -34,6 +48,7 @@ def public_ticker_add_reply(interaction: dict) -> str:
             "Remove one with `/ticker-remove` before adding another."
         )
 
+    LAST_MEMBER_ADD[user_id] = now
     quote = bot.ford_scan.get_quote(ticker) or {}
     price = bot.ford_scan.as_float(quote.get("last"))
     expirations = bot.ford_scan.get_expirations(ticker)
@@ -42,7 +57,6 @@ def public_ticker_add_reply(interaction: dict) -> str:
             f"Tradier could not verify {ticker} as a currently optionable ticker."
         )
 
-    user_id = bot.command_user_id(interaction)
     bot.dynamic_universe.add_member_symbol(ticker, user_id=user_id)
     bot.dynamic_universe.upsert_candidates(
         [
@@ -103,6 +117,8 @@ def public_ticker_remove_reply(interaction: dict) -> str:
 
 bot.universe_add_reply = public_ticker_add_reply
 bot.universe_pause_reply = public_ticker_remove_reply
+bot.ask_reply = learning.answer
+bot.explain_reply = learning.explain
 
 
 if __name__ == "__main__":
