@@ -173,21 +173,42 @@ The hidden supervisor starts services, checks GitHub for approved releases,
 restarts failures, synchronizes Discord, and reports deployments. The system is
 paper-trading only and cannot place brokerage orders.""",
     "how-trades-are-found": """# How TradeBot Finds Paper Trades
-Nothing is selected randomly. Every position must pass a recorded process.
+Nothing is selected randomly. Every position must pass the same recorded process.
 
-**1. Universe:** baseline symbols, verified additions, provider liquidity, and
-TradingView events determine what is examined.
-**2. Market context:** trend, momentum, volatility, support/resistance, and
-intraday evidence classify the setup. A score ranks candidates; it is not a
-probability of profit.
-**3. Contract quality:** DTE, strike distance, bid, ask, volume, open interest,
-spread width, delta, cost, and modeled maximum risk are checked.
-**4. Structure:** directional evidence must match the call, put, or spread.
-**5. Lifecycle:** duplicates are blocked, open positions are monitored, and
-every close is classified as a win or loss for paper-trade learning.
+**1. Build the universe**
+The bot combines baseline symbols, verified member additions, hourly Tradier
+liquidity data, read-only provider discoveries, and prioritized TradingView
+events. It can hold 25 active symbols and rotates through 12 per scan. Provider
+events can move a symbol forward in the queue.
 
-Quotes, slippage, assignment, exercise, and total-loss risk still require
-independent review. Educational only—not financial advice.""",
+**2. Read the chart**
+Daily SMA20/SMA50 and RSI14 are combined with intraday change, VWAP, 5-versus-20
+bar momentum, intraday RSI, and recent slope. Evidence labels the ticker
+BULLISH / CONTROLLED, BEARISH / CONTROLLED, NEUTRAL / RANGE, or NO TRADE.
+Missing required history blocks the ticker. The recorded setup score ranks
+candidates; it is not a probability of winning.
+
+**3. Choose eligible contracts**
+Regular plays use 7–20 DTE; swing and credit-spread plays use 21–45 DTE. Strikes
+must be within 12% of spot. Each leg needs a real bid, ask at or above bid, at
+least 100 open interest, at least 1 daily contract of volume, and a bid/ask
+spread no wider than 25% of midpoint.
+
+**4. Match the play to the evidence**
+Bullish: long calls and swing bull-put credit spreads. Bearish: long puts and
+swing bear-call credit spreads. Neutral/range: swing call-credit and put-credit
+spreads. Long-option absolute delta must be 0.20–0.80 and cost $100 or less.
+Spread short-leg absolute delta must be 0.10–0.25, credit at least $5, and
+modeled maximum risk $100 or less.
+
+**5. Prevent duplicates and track exits**
+The same ticker, structure, direction, strike, and expiration cannot reopen while
+held or within the 24-hour cooldown. Long options use +20% target / -15% stop.
+Credit spreads use 50% credit capture, a 2x-credit stop, and close-by-5-DTE
+protection. Every result is paper tracked; no brokerage order is sent.
+
+Quotes, assignment, exercise, slippage, and total-loss risk still require
+individual review. Educational only—not financial advice.""",
     "learning-index": """# Complete Learning Center
 Use the numbered channels in order, or jump directly to the topic you need.
 
