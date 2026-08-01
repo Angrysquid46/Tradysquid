@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Iterable
 
+import always_on_operations
 import ford_scan
 import strict_learning_order
 import tradysquid_supervisor as supervisor
@@ -54,10 +55,25 @@ def public_command_bot_command() -> list[str]:
     ]
 
 
+def public_information_engine_command() -> list[str]:
+    return [
+        sys.executable,
+        str(ROOT / "run_with_env.py"),
+        str(ROOT / "local_information_engine_public.py"),
+    ]
+
+
+def information_engine_health() -> bool:
+    """A listening socket is insufficient; scheduled work must keep firing."""
+    return supervisor.port_healthy("127.0.0.1", 8765) and always_on_operations.heartbeat_healthy(12)
+
+
 def comprehensive_validate_checkout() -> tuple[bool, str]:
     compile_files = [
         "ford_scan.py",
         "local_information_engine.py",
+        "local_information_engine_public.py",
+        "always_on_operations.py",
         "discord_command_bot.py",
         "discord_command_bot_public.py",
         "discord_cards.py",
@@ -93,10 +109,12 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
             "test_strict_learning_order.py",
             "test_supervisor_availability.py",
             "test_local_information_engine.py",
+            "test_always_on_operations.py",
         ],
         [sys.executable, "sync_learning_center.py"],
         [sys.executable, "learning_search_router.py"],
         [sys.executable, "learning_application_public.py"],
+        [sys.executable, "always_on_operations.py"],
     ]
     for command in validations:
         result = supervisor.run(command, timeout=300)
@@ -105,7 +123,8 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
             return False, f"{' '.join(command)}: {detail}"
     return True, (
         "Compilation, focused tests, curriculum, routed search, live application, "
-        "question-gap queue, strict Learning Center order, service availability, "
+        "question-gap queue, strict Learning Center order, full scheduler heartbeat, "
+        "off-hours research, interval diagnostics, self-repair, service availability, "
         "and automatic update recovery validation passed"
     )
 
@@ -146,8 +165,9 @@ def public_run_discord_configuration() -> list[str]:
             )
         else:
             results.append(
-                "Strictly ordered Learning Center, question-gap review queue, "
-                "lesson cards, references, guides, and permissions synchronized"
+                "Strictly ordered Learning Center, always-on activity ledger, "
+                "automation diagnostics, question-gap review queue, lesson cards, "
+                "references, guides, and permissions synchronized"
             )
     return results
 
@@ -222,7 +242,6 @@ def retry_pending_discord_configuration() -> bool:
 
 
 def verify_and_repair_discord_integrity() -> bool:
-    """Continuously verify actual Discord order and repair drift automatically."""
     if not supervisor.AUTO_DISCORD_SYNC:
         return False
     payload = supervisor.state_payload()
@@ -372,6 +391,7 @@ def ensure_services_with_readiness() -> None:
     supervisor.write_state(
         service_health=statuses,
         supervisor_heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        scheduler_heartbeat_healthy=always_on_operations.heartbeat_healthy(12),
         local_sha=supervisor.current_sha(),
         auto_update_enabled=supervisor.AUTO_UPDATE,
     )
@@ -389,9 +409,10 @@ def ensure_services_with_readiness() -> None:
                     f"Version `{version}`",
                     "• command-bot: **ONLINE**",
                     "• information-engine: **ONLINE**",
+                    "• scheduler heartbeat: **FIRING INTERVALS**",
                     "• ngrok: **ONLINE**",
                     "• automatic updater: **ONLINE**",
-                    "Slash commands are ready for use.",
+                    "Live activity receipts and automatic diagnostics are ready.",
                 ]
             ),
             "system-health",
@@ -401,6 +422,7 @@ def ensure_services_with_readiness() -> None:
 
 supervisor.take_process_ownership = safe_take_process_ownership
 supervisor.command_bot_command = public_command_bot_command
+supervisor.information_engine_command = public_information_engine_command
 supervisor.validate_checkout = comprehensive_validate_checkout
 supervisor.run_discord_configuration = public_run_discord_configuration
 supervisor.fetch_remote_sha = monitored_fetch_remote_sha
@@ -410,8 +432,14 @@ supervisor.ensure_services = ensure_services_with_readiness
 supervisor.SERVICES = [
     supervisor.Service(
         service.name,
-        public_command_bot_command if service.name == "command-bot" else service.command,
-        service.healthy,
+        (
+            public_command_bot_command
+            if service.name == "command-bot"
+            else public_information_engine_command
+            if service.name == "information-engine"
+            else service.command
+        ),
+        information_engine_health if service.name == "information-engine" else service.healthy,
     )
     for service in supervisor.SERVICES
 ]
