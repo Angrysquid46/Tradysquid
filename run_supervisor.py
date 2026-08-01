@@ -1,4 +1,4 @@
-"""Launch the supervisor with safe ownership and public-service overrides."""
+"""Launch the supervisor with resilient update and public-service overrides."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Iterable
 
 import tradysquid_supervisor as supervisor
 
@@ -14,6 +15,7 @@ import tradysquid_supervisor as supervisor
 ROOT = Path(__file__).resolve().parent
 ORIGINAL_DEPLOY_IF_NEEDED = supervisor.deploy_if_needed
 ORIGINAL_ENSURE_SERVICES = supervisor.ensure_services
+ORIGINAL_FETCH_REMOTE_SHA = supervisor.fetch_remote_sha
 _LAST_READY_SIGNATURE: tuple[tuple[str, bool], ...] | None = None
 
 
@@ -102,8 +104,8 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
             return False, f"{' '.join(command)}: {detail}"
     return True, (
         "Compilation, focused tests, curriculum, routed search, live application, "
-        "question-gap queue, strict Learning Center order, and service-availability "
-        "validation passed"
+        "question-gap queue, strict Learning Center order, service availability, "
+        "and automatic update recovery validation passed"
     )
 
 
@@ -144,20 +146,134 @@ def public_run_discord_configuration() -> list[str]:
             )
         else:
             results.append(
-                "Strictly ordered Learning Center, question-gap review queue, lesson cards, references, guides, and permissions synchronized"
+                "Strictly ordered Learning Center, question-gap review queue, "
+                "lesson cards, references, guides, and permissions synchronized"
             )
     return results
 
 
-def low_downtime_deploy_if_needed(*, force: bool = False) -> bool:
-    """Keep the command bot and tunnel online during validation and Discord sync.
+def discord_results_failed(results: Iterable[object] | None) -> bool:
+    """Return True when a configuration result contains a real failure."""
+    failure_words = (" failed", "error", "blocked", "timed out", "timeout")
+    for result in results or []:
+        lowered = f" {str(result).casefold()}"
+        if any(word in lowered for word in failure_words):
+            return True
+    return False
 
-    The base supervisor used to stop every service before pulling, validating, and
-    synchronizing Discord. That made slash commands unavailable for the entire
-    deployment. Only the scheduled information engine needs to pause while files
-    are updated. The command bot and ngrok continue serving the currently loaded
-    code until the normal final restart swaps all services to the new version.
-    """
+
+def record_discord_sync_results(results: list[str], *, source: str) -> bool:
+    """Persist a retryable Discord-sync result and post only state transitions."""
+    payload = supervisor.state_payload()
+    previous_status = str(payload.get("last_discord_sync_status") or "UNKNOWN")
+    previous_signature = str(payload.get("last_discord_sync_signature") or "")
+    failed = discord_results_failed(results)
+    status = "FAILED" if failed else "OK"
+    signature = " | ".join(results)[-3500:]
+    update_status = str(payload.get("last_update_status") or "")
+    if failed and update_status == "DEPLOYED":
+        update_status = "DEPLOYED_WITH_DISCORD_ERRORS"
+
+    supervisor.write_state(
+        last_discord_sync_status=status,
+        last_discord_sync_signature=signature,
+        last_discord_sync_source=source,
+        last_discord_sync_attempt_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        last_update_status=update_status,
+        discord_results=results,
+    )
+
+    if failed and signature != previous_signature:
+        supervisor.discord_post(
+            "\n".join(
+                [
+                    "⚠️ **Tradysquids Discord synchronization failed**",
+                    "The supervisor will retry automatically every update cycle.",
+                    *[f"• {item}" for item in results],
+                ]
+            )[:1900],
+            "workflow-log",
+        )
+    elif not failed and previous_status == "FAILED":
+        supervisor.discord_post(
+            "\n".join(
+                [
+                    "✅ **Tradysquids Discord synchronization recovered**",
+                    *[f"• {item}" for item in results],
+                ]
+            )[:1900],
+            "workflow-log",
+        )
+    return not failed
+
+
+def retry_pending_discord_configuration() -> bool:
+    """Retry a failed Discord sync even when no newer Git commit exists."""
+    payload = supervisor.state_payload()
+    pending = (
+        str(payload.get("last_discord_sync_status") or "") == "FAILED"
+        or discord_results_failed(payload.get("discord_results") or [])
+    )
+    if not pending:
+        return False
+
+    supervisor.supervisor_log(
+        "Retrying previously failed Discord configuration without waiting for another commit"
+    )
+    results = public_run_discord_configuration()
+    record_discord_sync_results(results, source="automatic-retry")
+    return True
+
+
+def monitored_fetch_remote_sha() -> str:
+    """Expose Git fetch failures in Discord and state instead of failing silently."""
+    payload = supervisor.state_payload()
+    previous_status = str(payload.get("last_fetch_status") or "UNKNOWN")
+    previous_signature = str(payload.get("last_fetch_error_signature") or "")
+    try:
+        remote = ORIGINAL_FETCH_REMOTE_SHA()
+    except RuntimeError as exc:
+        detail = str(exc)[-1500:]
+        signature = detail.casefold()
+        supervisor.write_state(
+            last_fetch_status="FAILED",
+            last_fetch_error_signature=signature,
+            last_fetch_detail=detail,
+            last_fetch_attempt_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        )
+        if signature != previous_signature:
+            supervisor.discord_post(
+                "\n".join(
+                    [
+                        "⚠️ **Tradysquids automatic update check failed**",
+                        "The laptop could not fetch `origin/main`.",
+                        f"```{detail[:1200]}```",
+                        "The supervisor will keep retrying automatically.",
+                    ]
+                ),
+                "workflow-log",
+            )
+        raise
+
+    supervisor.write_state(
+        last_fetch_status="OK",
+        last_fetch_error_signature="",
+        last_fetch_detail="origin/main fetched successfully",
+        last_fetch_attempt_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        last_remote_sha=remote,
+        local_sha=supervisor.current_sha(),
+    )
+    if previous_status == "FAILED":
+        supervisor.discord_post(
+            "✅ **Tradysquids automatic update checks recovered**\n"
+            f"Remote version `{remote[:12]}` is reachable again.",
+            "workflow-log",
+        )
+    return remote
+
+
+def low_downtime_deploy_if_needed(*, force: bool = False) -> bool:
+    """Keep the command bot and tunnel online during validation and Discord sync."""
     original_stop_all = supervisor.stop_all_services
     staged_stop_used = False
 
@@ -175,9 +291,19 @@ def low_downtime_deploy_if_needed(*, force: bool = False) -> bool:
 
     supervisor.stop_all_services = pause_scheduled_writer
     try:
-        return ORIGINAL_DEPLOY_IF_NEEDED(force=force)
+        deployed = ORIGINAL_DEPLOY_IF_NEEDED(force=force)
     finally:
         supervisor.stop_all_services = original_stop_all
+
+    payload = supervisor.state_payload()
+    if deployed and str(payload.get("last_update_status") or "") == "DEPLOYED":
+        results = [str(item) for item in payload.get("discord_results") or []]
+        record_discord_sync_results(results, source="deployment")
+        return True
+
+    if not deployed:
+        retry_pending_discord_configuration()
+    return deployed
 
 
 def service_health_snapshot() -> dict[str, bool]:
@@ -189,13 +315,18 @@ def service_health_snapshot() -> dict[str, bool]:
 
 
 def ensure_services_with_readiness() -> None:
-    """Run health recovery and announce only verified readiness transitions."""
+    """Run health recovery, persist a heartbeat, and announce readiness transitions."""
     global _LAST_READY_SIGNATURE
 
     ORIGINAL_ENSURE_SERVICES()
     statuses = service_health_snapshot()
     signature = tuple((name, statuses[name]) for name in sorted(statuses))
-    supervisor.write_state(service_health=statuses)
+    supervisor.write_state(
+        service_health=statuses,
+        supervisor_heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        local_sha=supervisor.current_sha(),
+        auto_update_enabled=supervisor.AUTO_UPDATE,
+    )
 
     all_ready = bool(statuses) and all(statuses.values())
     previously_all_ready = bool(_LAST_READY_SIGNATURE) and all(
@@ -211,6 +342,7 @@ def ensure_services_with_readiness() -> None:
                     "• command-bot: **ONLINE**",
                     "• information-engine: **ONLINE**",
                     "• ngrok: **ONLINE**",
+                    "• automatic updater: **ONLINE**",
                     "Slash commands are ready for use.",
                 ]
             ),
@@ -223,6 +355,7 @@ supervisor.take_process_ownership = safe_take_process_ownership
 supervisor.command_bot_command = public_command_bot_command
 supervisor.validate_checkout = comprehensive_validate_checkout
 supervisor.run_discord_configuration = public_run_discord_configuration
+supervisor.fetch_remote_sha = monitored_fetch_remote_sha
 supervisor.deploy_if_needed = low_downtime_deploy_if_needed
 supervisor.ensure_services = ensure_services_with_readiness
 
