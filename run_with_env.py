@@ -26,7 +26,10 @@ def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("Usage: python run_with_env.py <script.py> [arguments...]")
     load_env()
-    target = (ROOT / sys.argv[1]).resolve()
+    requested = str(sys.argv[1])
+    if Path(requested).name.casefold() == "discord_command_bot.py":
+        requested = "discord_command_bot_public.py"
+    target = (ROOT / requested).resolve()
     if target.parent != ROOT or not target.is_file() or target.suffix != ".py":
         raise SystemExit("Target must be a Python file in this repository.")
     sys.argv = [str(target), *sys.argv[2:]]
