@@ -1,0 +1,66 @@
+name: Validate Learning Center
+
+on:
+  pull_request:
+    paths:
+      - "learning_center/**"
+      - "learning_center_catalog.py"
+      - "learning_center_content.py"
+      - "learning_application.py"
+      - "sync_learning_center.py"
+      - "sync_discord_cards.py"
+      - "sync_discord_structure_public.py"
+      - "discord_command_bot_public.py"
+      - "run_supervisor.py"
+      - "test_learning_center.py"
+      - ".github/workflows/validate-learning-center.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Compile deployment modules
+        run: |
+          python -m py_compile \
+            ford_scan.py \
+            local_information_engine.py \
+            discord_command_bot.py \
+            discord_command_bot_public.py \
+            discord_cards.py \
+            learning_center_catalog.py \
+            learning_center_content.py \
+            learning_application.py \
+            sync_learning_center.py \
+            sync_discord_cards.py \
+            sync_discord_structure.py \
+            sync_discord_structure_public.py \
+            tradysquid_supervisor.py \
+            run_supervisor.py
+
+      - name: Validate curriculum and answer index
+        run: |
+          python sync_learning_center.py
+          python learning_center_content.py
+          python learning_application.py
+
+      - name: Run focused tests
+        run: python -m unittest -q test_learning_center.py test_local_information_engine.py
