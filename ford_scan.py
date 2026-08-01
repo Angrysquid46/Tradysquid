@@ -949,7 +949,8 @@ def get_daily_history(symbol: str, days: int = 90) -> list[dict[str, Any]]:
             "end": end.isoformat(),
         },
     )
-    values = data.get("history", {}).get("day")
+    history = data.get("history") or {}
+    values = history.get("day") if isinstance(history, dict) else None
     if not values:
         return []
     return [values] if isinstance(values, dict) else list(values)
@@ -971,7 +972,8 @@ def get_intraday_history(
             "session_filter": "open",
         },
     )
-    values = data.get("series", {}).get("data")
+    series = data.get("series") or {}
+    values = series.get("data") if isinstance(series, dict) else None
     if not values:
         return []
     return [values] if isinstance(values, dict) else list(values)
