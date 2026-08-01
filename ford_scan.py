@@ -190,6 +190,7 @@ LOG_HEADER = [
     "risk_plan",
     "learning_plan",
     "evidence_limitations",
+    "archive_sequence",
     "outcome",
     "pct_gain_loss",
     "realized_pl_dollars",
