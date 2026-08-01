@@ -28,11 +28,11 @@ class SupervisorAvailabilityTests(unittest.TestCase):
             patch.object(run_supervisor.time, "sleep"),
         ):
             result = run_supervisor.low_downtime_deploy_if_needed(force=True)
+            self.assertIs(supervisor.stop_all_services, full_stop)
 
         self.assertTrue(result)
         self.assertEqual(stopped, ["information-engine"])
         full_stop.assert_not_called()
-        self.assertIs(supervisor.stop_all_services, full_stop)
 
     def test_readiness_posts_once_when_every_service_is_verified_online(self) -> None:
         ready = {service.name: True for service in supervisor.SERVICES}
