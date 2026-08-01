@@ -281,7 +281,15 @@ def post_report(message: str) -> None:
         return
     headers = {"Authorization": f"Bot {token}", "Content-Type": "application/json"}
     try:
-        channels = requests.get(f"https://discord.com/api/v10/guilds/{guild}/channels", headers=headers, timeout=15).json()
+        response = requests.get(
+            f"https://discord.com/api/v10/guilds/{guild}/channels",
+            headers=headers,
+            timeout=15,
+        )
+        response.raise_for_status()
+        channels = response.json()
+        if not isinstance(channels, list):
+            return
         channel = next((item for item in channels if str(item.get("name") or "").casefold() == "system-health"), None)
         if channel and channel.get("id"):
             requests.post(
