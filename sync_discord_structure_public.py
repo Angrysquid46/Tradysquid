@@ -137,11 +137,11 @@ def main() -> int:
 
     removed = sync_discord_cards.cleanup_duplicate_learning_channels(tracker)
     sync_learning_center.synchronize_curriculum(tracker)
-    migrated = sync_discord_cards.migrate_existing_bot_messages(tracker)
+    migration_pid = sync_discord_cards.launch_background_migration()
     print(
         "Discord presentation cleanup complete: "
         f"{removed} duplicate channels removed; "
-        f"{migrated['messages']} existing messages converted to cards."
+        f"historical card migration started as PID {migration_pid}."
     )
     return 0
 
