@@ -96,7 +96,9 @@ def verify_watchdog_task() -> dict[str, Any]:
         raise AcceptanceFailure("The watchdog task points at the wrong repository or script.")
     if "pt5m" not in lowered:
         raise AcceptanceFailure("The watchdog task is not configured for a five-minute interval.")
-    if "<enabled>true</enabled>" not in lowered:
+    # Task Scheduler omits the Enabled element when it uses the schema default
+    # of true. Only an explicit false value means the task is disabled.
+    if "<enabled>false</enabled>" in lowered:
         raise AcceptanceFailure("The watchdog task is disabled.")
     return {"task_name": TASK_NAME, "interval": "PT5M", "enabled": True}
 
