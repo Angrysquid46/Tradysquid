@@ -143,10 +143,14 @@ $ids | ForEach-Object {{ $_ }}
     stopped = [int(line.strip()) for line in result.stdout.splitlines() if line.strip().isdigit()]
     deadline = time.monotonic() + 25
     while time.monotonic() < deadline:
-        if not supervisor_pids():
+        # The persistent launcher may replace the killed supervisor immediately.
+        # Prove the original processes died without requiring an artificial
+        # zero-process gap that treats fast automatic recovery as failure.
+        running = set(supervisor_pids())
+        if not running.intersection(stopped):
             return stopped
         time.sleep(1)
-    raise AcceptanceFailure("Supervisor remained alive after the deliberate recovery test stop.")
+    raise AcceptanceFailure("The original supervisor processes remained alive after the deliberate stop.")
 
 
 def trigger_watchdog() -> None:
