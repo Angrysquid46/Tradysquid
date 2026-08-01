@@ -16,6 +16,7 @@ import local_information_engine as engine
 import multi_ticker_scan
 import outcome_learning
 import register_discord_commands
+import recover_discord_trade_history
 import run_with_env
 import ticker_registry
 import sync_discord_structure
@@ -25,6 +26,51 @@ import tradier_stream
 
 
 class InformationEngineTests(unittest.TestCase):
+    def test_discord_closed_archive_recovers_pl_and_marks_missing_thesis(self) -> None:
+        message = {
+            "id": "1532840284373647391",
+            "content": "\n".join(
+                [
+                    "## 🟥 NU #009 · LOSS · LONG PUT",
+                    "**Expiration:** 08/21/26",
+                    "🟢 BUY 1 NU 14 PUT",
+                    "**Entry debit:** $0.50 ($50)",
+                    "**Exit credit:** $0.38 ($38)",
+                    "**Realized P/L:** -$12",
+                    "**Return:** -24%",
+                    "**Close reason:** STOP OUT",
+                    "**MFE:** +2%",
+                    "**MAE:** -24%",
+                    "**Closed:** 07/31/26 2:59 PM CT",
+                ]
+            ),
+        }
+        row = recover_discord_trade_history.parse_closed_card(message)
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["ticker"], "NU")
+        self.assertEqual(float(row["realized_pl_dollars"]), -12.0)
+        self.assertEqual(row["outcome"], "LOSS")
+        self.assertIn("unavailable", row["thesis"])
+
+    def test_new_trade_persists_full_thesis_checklist(self) -> None:
+        candidate = {
+            "play_type": "REGULAR", "call_or_put": "call", "strike": "15",
+            "expiration": "2026-08-07", "option_symbol": "F260807C00015000",
+            "cost_or_credit": "0.25 debit", "entry_price": 0.25, "delta": 0.4,
+            "theta": -0.02, "iv": 0.5, "pop": 40, "max_profit": 0,
+            "max_risk": 25, "breakeven": 15.25, "open_interest": 500,
+            "bid_ask_width": 0.03, "option_volume": 100, "score": 80,
+            "setup_reason": "price above VWAP with volume confirmation",
+            "market_regime": "BULLISH / CONTROLLED",
+        }
+        row = ford_scan.candidate_to_row(candidate, [], ford_scan.now_ct())
+        for key in (
+            "thesis", "entry_confirmation", "invalidation", "risk_plan",
+            "learning_plan", "evidence_limitations",
+        ):
+            self.assertTrue(row[key], key)
+
     @staticmethod
     def market_history(closes: list[float]) -> list[dict[str, float]]:
         return [
