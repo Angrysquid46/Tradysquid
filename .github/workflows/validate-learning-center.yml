@@ -44,6 +44,9 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --disable-pip-version-check -r requirements.txt
 
+      - name: Create isolated test environment
+        run: cp .env.example .env
+
       - name: Compile deployment modules
         run: |
           python -m py_compile \
