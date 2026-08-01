@@ -13,6 +13,25 @@ CURRICULUM_PATH = ROOT / "learning_center" / "COMPLETE_CURRICULUM.md"
 MAX_DISCORD_CONTENT = 2000
 CHUNK_TARGET = 1760
 MARKER_PREFIX = "Tradysquids curriculum"
+LEGACY_HEADINGS = {
+    "01-market-basics": "# Market and Stock Basics",
+    "02-options-basics": "# Options Contract Basics",
+    "03-option-chain": "# Reading an Option Chain",
+    "04-pricing-and-greeks": "# Pricing and the Greeks",
+    "05-volatility": "# Volatility and IV",
+    "06-charts": "# Charts, Candles, and Timeframes",
+    "07-technical-analysis": "# Technical Analysis",
+    "08-strategies": "# Core Options Strategies",
+    "09-spreads": "# Spreads and Multi-Leg Positions",
+    "10-risk-management": "# Risk Management and Position Sizing",
+    "11-trade-management": "# Trade Planning and Management",
+    "12-expiration-assignment": "# Expiration, Exercise, and Assignment",
+    "13-events-and-catalysts": "# Events and Catalysts",
+    "14-psychology-journaling": "# Psychology and Journaling",
+    "15-backtesting-stats": "# Backtesting, Statistics, and Learning",
+    "16-taxes-and-rules": "# Accounts, Taxes, and Trading Rules",
+    "17-scams-and-myths": "# Scams, Myths, and Red Flags",
+}
 CHANNEL_PATTERN = re.compile(
     r"<!-- CHANNEL:(?P<channel>[a-z0-9-]+) -->\s*"
     r"(?P<body>.*?)\s*"
@@ -110,21 +129,13 @@ def expected_messages(channel: str, text: str) -> list[str]:
     return messages
 
 
-def bot_lesson_messages(
+def bot_channel_messages(
     tracker: ford_scan.DiscordTracker,
     channel_id: str,
-    channel_name: str,
 ) -> list[dict]:
-    recent = tracker._request(
+    return tracker._request(
         "GET", f"/channels/{channel_id}/messages?limit=100"
     )
-    prefix = f"{MARKER_PREFIX} · #{channel_name} · Part "
-    return [
-        item
-        for item in recent
-        if (item.get("author") or {}).get("bot")
-        and prefix in ford_scan.message_search_text(item)
-    ]
 
 
 def synchronize_channel(
@@ -134,7 +145,23 @@ def synchronize_channel(
     lesson: str,
 ) -> tuple[int, int, int]:
     expected = expected_messages(channel_name, lesson)
-    existing = bot_lesson_messages(tracker, str(channel["id"]), channel_name)
+    recent = bot_channel_messages(tracker, str(channel["id"]))
+    prefix = f"{MARKER_PREFIX} · #{channel_name} · Part "
+    existing = [
+        message
+        for message in recent
+        if (message.get("author") or {}).get("bot")
+        and prefix in ford_scan.message_search_text(message)
+    ]
+    legacy_heading = LEGACY_HEADINGS.get(channel_name, "")
+    legacy = [
+        message
+        for message in recent
+        if (message.get("author") or {}).get("bot")
+        and prefix not in ford_scan.message_search_text(message)
+        and legacy_heading
+        and ford_scan.message_search_text(message).lstrip().startswith(legacy_heading)
+    ]
     by_marker = {
         ford_scan.message_search_text(message).splitlines()[0].strip("*"): message
         for message in existing
@@ -180,6 +207,13 @@ def synchronize_channel(
     for marker, message in by_marker.items():
         if marker in expected_markers:
             continue
+        tracker._request(
+            "DELETE",
+            f"/channels/{channel['id']}/messages/{message['id']}",
+        )
+        deleted += 1
+
+    for message in legacy:
         tracker._request(
             "DELETE",
             f"/channels/{channel['id']}/messages/{message['id']}",
