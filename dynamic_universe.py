@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config" / "universe.json"
 SCANNER_CONFIG_PATH = ROOT / "config" / "scanner.json"
 DB_PATH = ROOT / "state" / "dynamic-universe.db"
+MEMBER_STATE_PATH = ROOT / "state" / "member-universe.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,9}$")
+HARD_MAX_ACTIVE_SYMBOLS = 25
 
 
 def now_iso() -> str:
@@ -42,8 +44,103 @@ def scanner_config() -> dict[str, Any]:
     return load_json(SCANNER_CONFIG_PATH)
 
 
+def member_universe_state() -> dict[str, Any]:
+    try:
+        payload = load_json(MEMBER_STATE_PATH)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        payload = {}
+    additions = []
+    removals = []
+    for value in payload.get("additions") or []:
+        try:
+            additions.append(normalize_symbol(value))
+        except ValueError:
+            continue
+    for value in payload.get("removals") or []:
+        try:
+            removals.append(normalize_symbol(value))
+        except ValueError:
+            continue
+    return {
+        "version": 1,
+        "additions": sorted(set(additions)),
+        "removals": sorted(set(removals)),
+        "updated_at": str(payload.get("updated_at") or ""),
+        "updated_by": str(payload.get("updated_by") or ""),
+    }
+
+
+def write_member_universe_state(payload: dict[str, Any]) -> None:
+    MEMBER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    normalized = {
+        "version": 1,
+        "additions": sorted({normalize_symbol(value) for value in payload.get("additions") or []}),
+        "removals": sorted({normalize_symbol(value) for value in payload.get("removals") or []}),
+        "updated_at": now_iso(),
+        "updated_by": str(payload.get("updated_by") or "")[:100],
+    }
+    temporary = MEMBER_STATE_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(normalized, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(MEMBER_STATE_PATH)
+
+
 def universe_config() -> dict[str, Any]:
-    return load_json(CONFIG_PATH)
+    config = load_json(CONFIG_PATH)
+    member_state = member_universe_state()
+    seeds = {
+        normalize_symbol(item) for item in config.get("seed_symbols") or []
+    }
+    excluded = {
+        normalize_symbol(item) for item in config.get("exclude_symbols") or []
+    }
+    additions = set(member_state["additions"])
+    removals = set(member_state["removals"])
+    seeds.update(additions)
+    excluded.update(removals)
+    excluded.difference_update(additions)
+    configured_maximum = int(config.get("max_active_symbols") or HARD_MAX_ACTIVE_SYMBOLS)
+    config["seed_symbols"] = sorted(seeds)
+    config["exclude_symbols"] = sorted(excluded)
+    config["max_active_symbols"] = max(
+        1, min(configured_maximum, HARD_MAX_ACTIVE_SYMBOLS)
+    )
+    return config
+
+
+def max_active_symbols() -> int:
+    return int(universe_config().get("max_active_symbols") or HARD_MAX_ACTIVE_SYMBOLS)
+
+
+def add_member_symbol(symbol: str, *, user_id: str = "") -> None:
+    symbol = normalize_symbol(symbol)
+    state = member_universe_state()
+    additions = set(state["additions"])
+    removals = set(state["removals"])
+    additions.add(symbol)
+    removals.discard(symbol)
+    write_member_universe_state(
+        {
+            "additions": additions,
+            "removals": removals,
+            "updated_by": user_id,
+        }
+    )
+
+
+def remove_member_symbol(symbol: str, *, user_id: str = "") -> None:
+    symbol = normalize_symbol(symbol)
+    state = member_universe_state()
+    additions = set(state["additions"])
+    removals = set(state["removals"])
+    additions.discard(symbol)
+    removals.add(symbol)
+    write_member_universe_state(
+        {
+            "additions": additions,
+            "removals": removals,
+            "updated_by": user_id,
+        }
+    )
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -184,7 +281,10 @@ def active_symbols(
         excluded = {
             normalize_symbol(item) for item in config.get("exclude_symbols") or []
         }
-        maximum = int(limit or config.get("max_active_symbols") or 75)
+        maximum = min(
+            int(limit or config.get("max_active_symbols") or HARD_MAX_ACTIVE_SYMBOLS),
+            HARD_MAX_ACTIVE_SYMBOLS,
+        )
         now = now_iso()
         rows = db.execute(
             """
@@ -208,7 +308,7 @@ def next_scan_batch(
     symbols = active_symbols(connection)
     if not symbols:
         return []
-    size = max(1, min(int(batch_size), len(symbols)))
+    size = max(1, min(int(batch_size), len(symbols), 12))
     state_path = ROOT / "state" / "universe-scan-cursor.json"
     try:
         cursor = int(json.loads(state_path.read_text(encoding="utf-8")).get("cursor", 0))
