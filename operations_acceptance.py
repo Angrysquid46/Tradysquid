@@ -58,7 +58,7 @@ def latest_job(connection, name: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def recent_receipt(row: dict[str, Any] | None, max_age_minutes: int = 15) -> bool:
+def recent_receipt(row: dict[str, Any] | None, max_age_minutes: int) -> bool:
     if not row or str(row.get("status") or "") not in {"OK", "RUNNING"}:
         return False
     value = str(row.get("finished_at") or row.get("started_at") or "")
@@ -115,6 +115,7 @@ def operations_ready() -> tuple[bool, dict[str, Any]]:
         receipts = {name: latest_job(connection, name) for name in REQUIRED_JOBS}
         diagnostics = latest_job(connection, "scheduler-diagnostics")
         activity = latest_job(connection, "system-activity")
+        repair = latest_job(connection, "automatic-self-repair")
         off_hours = latest_job(connection, "off-hours-universe-screen")
         events = latest_job(connection, "rotating-event-sweep")
         off_hours_observation = engine.latest_observation("off-hours-universe-screen")
@@ -123,14 +124,24 @@ def operations_ready() -> tuple[bool, dict[str, Any]]:
         connection.close()
 
     market_open = operations.market_open_now()
-    receipt_ok = recent_receipt(diagnostics) and recent_receipt(activity)
-    event_ok = recent_receipt(events) and bool(event_observation)
+    core_ok = (
+        recent_receipt(diagnostics, 15)
+        and recent_receipt(activity, 15)
+        and recent_receipt(repair, 15)
+    )
+    event_ok = recent_receipt(events, operations.EVENT_SWEEP_MINUTES + 15) and bool(
+        event_observation
+    )
     if market_open:
-        off_hours_ok = recent_receipt(off_hours)
+        off_hours_ok = recent_receipt(
+            off_hours, operations.OFF_HOURS_SCREEN_MINUTES + 15
+        )
     else:
-        off_hours_ok = recent_receipt(off_hours) and bool(off_hours_observation)
+        off_hours_ok = recent_receipt(
+            off_hours, operations.OFF_HOURS_SCREEN_MINUTES + 15
+        ) and bool(off_hours_observation)
     heartbeat_ok = operations.heartbeat_healthy(12)
-    ready = not missing_jobs and receipt_ok and event_ok and off_hours_ok and heartbeat_ok
+    ready = not missing_jobs and core_ok and event_ok and off_hours_ok and heartbeat_ok
     return ready, {
         "registered_jobs": sorted(registered.intersection(REQUIRED_JOBS)),
         "missing_jobs": missing_jobs,
@@ -190,7 +201,7 @@ def run_acceptance() -> dict[str, Any]:
                 post_report(
                     "✅ **Tradysquids always-on operations acceptance PASSED**\n"
                     "• scheduler heartbeat is fresh\n"
-                    "• interval diagnostics and self-repair are registered\n"
+                    "• interval diagnostics and self-repair are firing\n"
                     "• #system-activity contains a live receipt card\n"
                     "• #automation-diagnostics contains the fault ledger\n"
                     "• rotating event sweep produced a receipt\n"
