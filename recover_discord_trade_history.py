@@ -183,6 +183,11 @@ def recover(*, dry_run: bool = False) -> dict[str, int]:
         added += 1
     if not dry_run:
         ford_scan.write_log(rows)
+        report_state = ford_scan.read_report_state()
+        routed = set(report_state.get("routed_closed_trade_ids") or [])
+        routed.update(row["trade_id"] for row in rows if row.get("outcome") != "OPEN")
+        report_state["routed_closed_trade_ids"] = sorted(routed)
+        ford_scan.write_report_state(report_state)
     return {
         "unique_archive_cards": len(parsed),
         "added": added,
