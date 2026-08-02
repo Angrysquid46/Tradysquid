@@ -48,7 +48,10 @@ def install_runtime_overrides(
     openai_discord_patch.install()
 
     if include_upgrade_batch_engine:
+        import upgrade_batch_44_live_acceptance
+
         upgrade_batch_44.install_engine()
+        upgrade_batch_44_live_acceptance.install()
 
     if include_discord_upgrade_commands:
         import github_upgrade_patch
