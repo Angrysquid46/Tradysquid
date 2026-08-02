@@ -53,10 +53,12 @@ def install_runtime_overrides(
 
     if include_upgrade_batch_engine:
         import applied_upgrades
+        import simple_upgrade_runtime
         import upgrade_batch_44_live_acceptance
 
         upgrade_batch_44.install_engine()
         upgrade_batch_44_live_acceptance.install()
+        simple_upgrade_runtime.install()
         applied_upgrades.install_engine()
 
     if include_discord_upgrade_commands:
