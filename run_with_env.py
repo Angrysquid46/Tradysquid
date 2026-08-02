@@ -31,7 +31,8 @@ def load_env() -> None:
 
 
 def install_runtime_overrides() -> None:
-    """Install journal, scorecard, and OpenAI behavior for local processes."""
+    """Install journal, scorecard, OpenAI, and free GitHub batching behavior."""
+    import github_upgrade_patch
     import journal_contract
     import openai_discord_patch
     import performance_scorecards
@@ -39,6 +40,7 @@ def install_runtime_overrides() -> None:
     journal_contract.install()
     performance_scorecards.install()
     openai_discord_patch.install()
+    github_upgrade_patch.install()
 
 
 def main() -> None:
