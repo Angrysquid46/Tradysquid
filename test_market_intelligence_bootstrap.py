@@ -28,11 +28,9 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
             "performance_reconciliation_scorecard_only": True,
         }
 
-    def test_required_cards_and_scorecards_must_succeed_before_readiness(self) -> None:
-        directory, db_path, acceptance_path = self.temporary_paths()
-        self.addCleanup(directory.cleanup)
+    def required_jobs(self):
         engine = bootstrap.public.engine
-        jobs = [
+        return [
             engine.Job(
                 "provider-event-queue",
                 timedelta(seconds=15),
@@ -49,15 +47,33 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
                 lambda connection: "performance scorecards reconciled",
             ),
         ]
+
+    def open_trade(self) -> dict[str, str]:
+        row = bootstrap.public.ford_scan.blank_row()
+        row.update(
+            {
+                "trade_id": "TEST-OPEN-001",
+                "outcome": "OPEN",
+                "discord_thread_id": "thread-1",
+                "discord_format_version": bootstrap.journal_contract.JOURNAL_FORMAT_VERSION,
+            }
+        )
+        return row
+
+    def test_required_cards_and_scorecards_must_succeed_before_readiness(self) -> None:
+        directory, db_path, acceptance_path = self.temporary_paths()
+        self.addCleanup(directory.cleanup)
+        engine = bootstrap.public.engine
         with (
             patch.object(engine, "DB_PATH", db_path),
-            patch.object(engine, "JOBS", jobs),
+            patch.object(engine, "JOBS", self.required_jobs()),
             patch.object(bootstrap, "ACCEPTANCE_PATH", acceptance_path),
             patch.object(
                 bootstrap.public.ford_scan,
                 "read_report_state",
                 return_value=self.scorecard_state(),
             ),
+            patch.object(bootstrap.public.ford_scan, "read_log", return_value=[]),
         ):
             payload = bootstrap.run_required_startup_jobs()
 
@@ -70,10 +86,95 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
         self.assertEqual(performance["canonical_closed_trades"], 123)
         self.assertEqual(performance["strategy_scorecards"], 6)
         self.assertEqual(performance["history_pages"], 0)
+        self.assertEqual(payload["journal_contract"]["canonical_trades"], 0)
         stored = json.loads(acceptance_path.read_text(encoding="utf-8"))
         self.assertEqual(stored["status"], "PASSED")
         self.assertIn("one scorecard per play type", stored["contract"])
+        self.assertIn("complete entry checklist", stored["contract"])
         self.assertIn("before the engine health port opened", stored["contract"])
+
+    def test_complete_open_journal_is_required_when_trades_exist(self) -> None:
+        directory, db_path, acceptance_path = self.temporary_paths()
+        self.addCleanup(directory.cleanup)
+        engine = bootstrap.public.engine
+        trade = self.open_trade()
+        tracker = Mock()
+        tracker.ready = True
+        journal_result = {
+            "created": 0,
+            "refreshed": 1,
+            "closed_reviews": 0,
+            "verified": 1,
+            "entry_snapshots": 1,
+            "pending": 0,
+        }
+        with (
+            patch.object(engine, "DB_PATH", db_path),
+            patch.object(engine, "JOBS", self.required_jobs()),
+            patch.object(bootstrap, "ACCEPTANCE_PATH", acceptance_path),
+            patch.object(
+                bootstrap.public.ford_scan,
+                "read_report_state",
+                return_value=self.scorecard_state(),
+            ),
+            patch.object(bootstrap.public.ford_scan, "read_log", return_value=[trade]),
+            patch.object(bootstrap.public.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(
+                bootstrap.public.ford_scan,
+                "sync_all_trade_journals",
+                return_value=journal_result,
+            ) as sync_journals,
+            patch.object(bootstrap.public.ford_scan, "write_log") as write_log,
+            patch.object(bootstrap.trade_intelligence, "needs_sync", return_value=False),
+        ):
+            payload = bootstrap.run_required_startup_jobs()
+
+        sync_journals.assert_called_once_with([trade], tracker)
+        write_log.assert_called_once_with([trade])
+        self.assertEqual(payload["journal_contract"]["verified_this_startup"], 1)
+        self.assertEqual(payload["journal_contract"]["entry_snapshots_found"], 1)
+        self.assertTrue(payload["journal_contract"]["all_open_journals_verified"])
+
+    def test_incomplete_open_journal_blocks_readiness(self) -> None:
+        directory, db_path, acceptance_path = self.temporary_paths()
+        self.addCleanup(directory.cleanup)
+        engine = bootstrap.public.engine
+        trade = self.open_trade()
+        trade["discord_format_version"] = "13"
+        tracker = Mock()
+        tracker.ready = True
+        with (
+            patch.object(engine, "DB_PATH", db_path),
+            patch.object(engine, "JOBS", self.required_jobs()),
+            patch.object(bootstrap, "ACCEPTANCE_PATH", acceptance_path),
+            patch.object(
+                bootstrap.public.ford_scan,
+                "read_report_state",
+                return_value=self.scorecard_state(),
+            ),
+            patch.object(bootstrap.public.ford_scan, "read_log", return_value=[trade]),
+            patch.object(bootstrap.public.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(
+                bootstrap.public.ford_scan,
+                "sync_all_trade_journals",
+                return_value={
+                    "created": 0,
+                    "refreshed": 0,
+                    "closed_reviews": 0,
+                    "verified": 0,
+                    "entry_snapshots": 0,
+                    "pending": 1,
+                },
+            ),
+            patch.object(bootstrap.public.ford_scan, "write_log"),
+            patch.object(bootstrap.trade_intelligence, "needs_sync", return_value=True),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "complete entry contract"):
+                bootstrap.run_required_startup_jobs()
+
+        stored = json.loads(acceptance_path.read_text(encoding="utf-8"))
+        self.assertEqual(stored["status"], "FAILED")
+        self.assertIn("TEST-OPEN-001", stored["error"])
 
     def test_failed_discord_publication_blocks_startup(self) -> None:
         directory, db_path, acceptance_path = self.temporary_paths()
@@ -137,16 +238,11 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
         directory, db_path, acceptance_path = self.temporary_paths()
         self.addCleanup(directory.cleanup)
         engine = bootstrap.public.engine
-        jobs = [
-            engine.Job("provider-event-queue", timedelta(seconds=15), lambda connection: "ok"),
-            engine.Job("premarket-visibility", timedelta(minutes=15), lambda connection: "ok"),
-            engine.Job("discord-reporting", timedelta(minutes=5), lambda connection: "ok"),
-        ]
         state = self.scorecard_state()
         state["performance_reconciliation_history_pages"] = 12
         with (
             patch.object(engine, "DB_PATH", db_path),
-            patch.object(engine, "JOBS", jobs),
+            patch.object(engine, "JOBS", self.required_jobs()),
             patch.object(bootstrap, "ACCEPTANCE_PATH", acceptance_path),
             patch.object(
                 bootstrap.public.ford_scan,
