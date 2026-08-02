@@ -231,7 +231,12 @@ def add_request(request_text: str, *, discord_user_id: str) -> dict[str, Any]:
 
     issue = _open_batch()
     issue_number = int(issue["number"])
-    sequence = _request_count(issue_number) + 1
+    existing_count = _request_count(issue_number)
+    if existing_count >= 100:
+        raise GitHubUpgradeError(
+            "The open upgrade batch already has 100 requests. Mark it ready before adding more."
+        )
+    sequence = existing_count + 1
     body = "\n".join(
         [
             REQUEST_MARKER,
