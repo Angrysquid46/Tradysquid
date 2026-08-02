@@ -5,6 +5,7 @@ from pathlib import Path
 
 import github_upgrade_bridge
 import run_supervisor_simple as simple
+import simple_upgrade_runtime
 import tradysquid_supervisor as supervisor
 
 
@@ -56,6 +57,23 @@ class SimpleUpgradeFlowTests(unittest.TestCase):
         )
         self.assertIn("run_supervisor_simple.py", watchdog)
         self.assertIn("run_supervisor_simple", stopper)
+
+    def test_applied_upgrade_catalog_reports_the_running_simple_path(self) -> None:
+        simple_upgrade_runtime.install()
+        keys = [item.key for item in simple_upgrade_runtime.SIMPLE_INFRA_SPECS]
+        self.assertIn("discord-review-bridge", keys)
+        self.assertIn("simple-two-minute-updater", keys)
+        self.assertIn("safe-fast-forward-deployment", keys)
+        self.assertIn("runtime-state-preservation", keys)
+        self.assertIn("independent-feature-startup", keys)
+        self.assertIn("applied-upgrades-dashboard", keys)
+        self.assertNotIn("command-retry-separation", keys)
+
+    def test_applied_upgrades_channel_is_owned_by_its_feature(self) -> None:
+        text = (ROOT / "simple_upgrade_runtime.py").read_text(encoding="utf-8")
+        self.assertIn("ensure_dashboard_channel", text)
+        self.assertIn('/guilds/{tracker.guild_id}/channels', text)
+        self.assertIn("permission_overwrites", text)
 
 
 if __name__ == "__main__":
