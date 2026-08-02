@@ -12,72 +12,102 @@ import supervisor_diagnostic_runtime as supervisor_runtime
 
 
 class SupervisorDiagnosticRuntimeTests(unittest.TestCase):
-    def test_one_simple_supervisor_owning_health_port_passes(self) -> None:
-        result = SimpleNamespace(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "Processes": {
-                        "ProcessId": 123,
+    def process_check(self, payload):
+        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+        with (
+            patch.object(supervisor_runtime.os, "name", "nt"),
+            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
+        ):
+            return supervisor_runtime.supervisor_process_check()
+
+    def watchdog(self, payload):
+        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+        with (
+            patch.object(supervisor_runtime.os, "name", "nt"),
+            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
+        ):
+            return supervisor_runtime.watchdog_check()
+
+    def test_single_interpreter_owning_health_port_passes(self) -> None:
+        check = self.process_check(
+            {
+                "Processes": {
+                    "ProcessId": 123,
+                    "ParentProcessId": 10,
+                    "CommandLine": "python run_with_env.py run_supervisor_simple.py",
+                },
+                "PortOwner": 123,
+                "OwnerTreeIds": [123, 10],
+            }
+        )
+        self.assertTrue(check.passed)
+        self.assertIn("matched supervisor processes=1", check.detail)
+        self.assertIn("foreign supervisor PIDs=[]", check.detail)
+
+    def test_python_wrapper_and_interpreter_in_same_owner_tree_pass(self) -> None:
+        check = self.process_check(
+            {
+                "Processes": [
+                    {
+                        "ProcessId": 100,
+                        "ParentProcessId": 50,
                         "CommandLine": "python run_with_env.py run_supervisor_simple.py",
                     },
-                    "PortOwner": 123,
-                }
-            ),
-            stderr="",
+                    {
+                        "ProcessId": 123,
+                        "ParentProcessId": 100,
+                        "CommandLine": "python run_with_env.py run_supervisor_simple.py",
+                    },
+                ],
+                "PortOwner": 123,
+                "OwnerTreeIds": [123, 100, 50],
+            }
         )
-        with (
-            patch.object(supervisor_runtime.os, "name", "nt"),
-            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
-        ):
-            check = supervisor_runtime.supervisor_process_check()
         self.assertTrue(check.passed)
-        self.assertIn("simple supervisor processes=1", check.detail)
-        self.assertIn("port 8876 owner=123", check.detail)
+        self.assertIn("matched supervisor processes=2", check.detail)
+        self.assertIn("owner tree PIDs=[50, 100, 123]", check.detail)
+        self.assertIn("foreign supervisor PIDs=[]", check.detail)
 
-    def test_duplicate_supervisors_fail_without_immediate_github_escalation(self) -> None:
-        result = SimpleNamespace(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "Processes": [
-                        {"ProcessId": 1, "CommandLine": "python run_supervisor_simple.py"},
-                        {"ProcessId": 2, "CommandLine": "python run_supervisor_simple.py"},
-                    ],
-                    "PortOwner": 1,
-                }
-            ),
-            stderr="",
+    def test_second_independent_supervisor_tree_fails(self) -> None:
+        check = self.process_check(
+            {
+                "Processes": [
+                    {
+                        "ProcessId": 100,
+                        "ParentProcessId": 50,
+                        "CommandLine": "python run_with_env.py run_supervisor_simple.py",
+                    },
+                    {
+                        "ProcessId": 123,
+                        "ParentProcessId": 100,
+                        "CommandLine": "python run_with_env.py run_supervisor_simple.py",
+                    },
+                    {
+                        "ProcessId": 999,
+                        "ParentProcessId": 888,
+                        "CommandLine": "python run_with_env.py run_supervisor_simple.py",
+                    },
+                ],
+                "PortOwner": 123,
+                "OwnerTreeIds": [123, 100, 50],
+            }
         )
-        with (
-            patch.object(supervisor_runtime.os, "name", "nt"),
-            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
-        ):
-            check = supervisor_runtime.supervisor_process_check()
         self.assertFalse(check.passed)
         self.assertFalse(check.force_upgrade)
-        self.assertIn("simple supervisor processes=2", check.detail)
-        self.assertIn("port 8876 owner=1", check.detail)
+        self.assertIn("foreign supervisor PIDs=[999]", check.detail)
 
     def test_wrong_port_owner_fails(self) -> None:
-        result = SimpleNamespace(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "Processes": {
-                        "ProcessId": 123,
-                        "CommandLine": "python run_supervisor_simple.py",
-                    },
-                    "PortOwner": 999,
-                }
-            ),
-            stderr="",
+        check = self.process_check(
+            {
+                "Processes": {
+                    "ProcessId": 123,
+                    "ParentProcessId": 10,
+                    "CommandLine": "python run_supervisor_simple.py",
+                },
+                "PortOwner": 999,
+                "OwnerTreeIds": [999],
+            }
         )
-        with (
-            patch.object(supervisor_runtime.os, "name", "nt"),
-            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
-        ):
-            check = supervisor_runtime.supervisor_process_check()
         self.assertFalse(check.passed)
         self.assertIn("port 8876 owner=999", check.detail)
 
@@ -93,71 +123,55 @@ class SupervisorDiagnosticRuntimeTests(unittest.TestCase):
         self.assertIn("Unexpected stop flag", check.detail)
 
     def test_completed_watchdog_is_healthy(self) -> None:
-        payload = {
-            "TaskName": "Tradysquids Supervisor Watchdog",
-            "State": "Ready",
-            "LastTaskResult": 0,
-            "LastRunTime": "today",
-            "NextRunTime": "later",
-        }
-        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
-        with (
-            patch.object(supervisor_runtime.os, "name", "nt"),
-            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
-        ):
-            check = supervisor_runtime.watchdog_check()
+        check = self.watchdog(
+            {
+                "TaskName": "Tradysquids Supervisor Watchdog",
+                "State": "Ready",
+                "LastTaskResult": 0,
+                "LastRunTime": "today",
+                "NextRunTime": "later",
+            }
+        )
         self.assertTrue(check.passed)
         self.assertIn("last_result=0", check.detail)
 
     def test_currently_running_watchdog_is_healthy(self) -> None:
-        payload = {
-            "TaskName": "Tradysquids Supervisor Watchdog",
-            "State": "Running",
-            "LastTaskResult": supervisor_runtime.TASK_RESULT_RUNNING,
-            "LastRunTime": "today",
-            "NextRunTime": "later",
-        }
-        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
-        with (
-            patch.object(supervisor_runtime.os, "name", "nt"),
-            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
-        ):
-            check = supervisor_runtime.watchdog_check()
+        check = self.watchdog(
+            {
+                "TaskName": "Tradysquids Supervisor Watchdog",
+                "State": "Running",
+                "LastTaskResult": supervisor_runtime.TASK_RESULT_RUNNING,
+                "LastRunTime": "today",
+                "NextRunTime": "later",
+            }
+        )
         self.assertTrue(check.passed)
         self.assertIn("last_result=267009", check.detail)
 
     def test_running_result_without_running_state_is_not_healthy(self) -> None:
-        payload = {
-            "TaskName": "Tradysquids Supervisor Watchdog",
-            "State": "Ready",
-            "LastTaskResult": supervisor_runtime.TASK_RESULT_RUNNING,
-            "LastRunTime": "today",
-            "NextRunTime": "later",
-        }
-        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
-        with (
-            patch.object(supervisor_runtime.os, "name", "nt"),
-            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
-        ):
-            check = supervisor_runtime.watchdog_check()
+        check = self.watchdog(
+            {
+                "TaskName": "Tradysquids Supervisor Watchdog",
+                "State": "Ready",
+                "LastTaskResult": supervisor_runtime.TASK_RESULT_RUNNING,
+                "LastRunTime": "today",
+                "NextRunTime": "later",
+            }
+        )
         self.assertFalse(check.passed)
 
     def test_real_nonzero_watchdog_result_is_not_healthy(self) -> None:
-        payload = {
-            "TaskName": "Tradysquids Supervisor Watchdog",
-            "State": "Ready",
-            "LastTaskResult": 1,
-            "LastRunTime": "today",
-            "NextRunTime": "later",
-        }
-        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
-        with (
-            patch.object(supervisor_runtime.os, "name", "nt"),
-            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
-        ):
-            check = supervisor_runtime.watchdog_check()
+        check = self.watchdog(
+            {
+                "TaskName": "Tradysquids Supervisor Watchdog",
+                "State": "Ready",
+                "LastTaskResult": 3,
+                "LastRunTime": "today",
+                "NextRunTime": "later",
+            }
+        )
         self.assertFalse(check.passed)
-        self.assertIn("last_result=1", check.detail)
+        self.assertIn("last_result=3", check.detail)
 
     def test_collect_appends_process_and_stop_flag_checks(self) -> None:
         base = diagnostics.HealthCheck("base", True, "base", "base", "ok")
