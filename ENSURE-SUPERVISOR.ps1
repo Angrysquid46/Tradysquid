@@ -8,9 +8,9 @@ $Root = (Resolve-Path $PSScriptRoot).Path
 $StateDir = Join-Path $Root 'state'
 $StatePath = Join-Path $StateDir 'supervisor-state.json'
 $LogPath = Join-Path $StateDir 'supervisor-watchdog.log'
-$SimpleScript = Join-Path $Root 'run_supervisor_simple.py'
 $Launcher = Join-Path $Root 'start_supervisor_hidden.vbs'
 $LauncherCommand = Join-Path $Root 'START-SUPERVISOR.cmd'
+$SupervisorCommandPattern = '(?i)(^|[\\/"\s])run_supervisor_simple\.py(["\s]|$)'
 $HealthPort = 8876
 
 if (-not (Test-Path $StateDir)) {
@@ -24,13 +24,12 @@ function Write-WatchdogLog {
 }
 
 function Get-TradysquidsSupervisorProcesses {
-    $escaped = [regex]::Escape($SimpleScript)
     @(
         Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
             Where-Object {
                 $_.Name -match '^python(w)?\.exe$' -and
                 $_.CommandLine -and
-                $_.CommandLine -match $escaped
+                $_.CommandLine -match $SupervisorCommandPattern
             }
     )
 }
