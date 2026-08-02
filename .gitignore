@@ -17,6 +17,8 @@ state/trade-intelligence.db-shm
 state/trade-intelligence.db-wal
 state/supervisor-state.json
 state/supervisor-state.tmp
+state/discord-report-state.json
+state/ford-plays-log.csv
 state/supervisor-logs/
 state/supervisor-runtime-backup/
 docs/trade-snapshots/
