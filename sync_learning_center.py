@@ -135,14 +135,15 @@ def _is_bot_message(message: dict[str, Any]) -> bool:
 
 
 def _marker_from_message(message: dict[str, Any], channel: str) -> str:
+    """Find a curriculum marker in plain text or any styled embed line."""
     if not _is_bot_message(message):
         return ""
-    text = ford_scan.message_search_text(message).strip()
-    if not text:
-        return ""
-    marker = text.splitlines()[0].strip("*")
     prefix = f"{MARKER_PREFIX} · #{channel} · Part "
-    return marker if marker.startswith(prefix) else ""
+    for line in ford_scan.message_search_text(message).splitlines():
+        marker = line.strip().strip("*").strip()
+        if marker.startswith(prefix):
+            return marker
+    return ""
 
 
 def _message_id_value(message: dict[str, Any]) -> int:
