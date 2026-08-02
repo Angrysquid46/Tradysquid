@@ -35,7 +35,7 @@ def install_runtime_overrides(
     include_discord_upgrade_commands: bool = False,
     include_upgrade_batch_engine: bool = False,
 ) -> None:
-    """Install shared behavior, optional Discord commands, and upgrade jobs."""
+    """Install shared behavior, optional Discord commands, and runtime jobs."""
     import network_compat
 
     network_compat.install()
@@ -53,12 +53,14 @@ def install_runtime_overrides(
 
     if include_upgrade_batch_engine:
         import applied_upgrades
+        import diagnostic_upgrade_system
         import simple_upgrade_runtime
         import upgrade_batch_44_live_acceptance
 
         upgrade_batch_44.install_engine()
         upgrade_batch_44_live_acceptance.install()
         simple_upgrade_runtime.install()
+        diagnostic_upgrade_system.install()
         applied_upgrades.install_engine()
 
     if include_discord_upgrade_commands:
