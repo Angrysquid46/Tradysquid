@@ -54,6 +54,7 @@ def install_runtime_overrides(
     openai_discord_patch.install()
 
     if include_upgrade_batch_engine:
+        import applied_upgrade_status_runtime
         import applied_upgrades
         import diagnostic_nonblocking_runtime
         import diagnostic_runtime_integration
@@ -75,6 +76,7 @@ def install_runtime_overrides(
         diagnostic_nonblocking_runtime.install()
         discord_command_diagnostics.install()
         upgrade_lifecycle_dashboard.install()
+        applied_upgrade_status_runtime.install()
         applied_upgrades.install_engine()
 
     if include_discord_upgrade_commands:
