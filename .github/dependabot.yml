@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "06:00"
+      timezone: "America/Chicago"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    groups:
+      python-runtime:
+        patterns:
+          - "requests"
+          - "tzdata"
+          - "Pillow"
+          - "Flask"
+          - "PyNaCl"
+          - "websocket-client"
+      python-development:
+        dependency-type: "development"
+        patterns:
+          - "ruff"
+          - "pre-commit"
+          - "pip-audit"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "06:30"
+      timezone: "America/Chicago"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
