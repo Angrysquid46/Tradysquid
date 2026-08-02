@@ -3,7 +3,7 @@ $Root = (Resolve-Path $PSScriptRoot).Path
 $StatePath = Join-Path $Root 'state\supervisor-state.json'
 $DiagnosticDb = Join-Path $Root 'state\diagnostics.db'
 $TaskName = 'Tradysquids Supervisor Watchdog'
-$SimpleScript = Join-Path $Root 'run_supervisor_simple.py'
+$SupervisorCommandPattern = '(?i)(^|[\\/"\s])run_supervisor_simple\.py(["\s]|$)'
 
 function Write-Section([string]$Title) {
     Write-Host ""
@@ -27,13 +27,12 @@ Write-Host "tracked tree: $(if ([string]::IsNullOrWhiteSpace($tracked)) { 'clean
 Write-Host 'No fetch, merge, reset, restart, repair, or Discord write was performed.'
 
 Write-Section 'Single supervisor ownership'
-$escaped = [regex]::Escape($SimpleScript)
 $supervisors = @(
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.Name -match '^python(w)?\.exe$' -and
             $_.CommandLine -and
-            $_.CommandLine -match $escaped
+            $_.CommandLine -match $SupervisorCommandPattern
         } |
         Select-Object ProcessId, ParentProcessId, Name, CommandLine
 )
