@@ -1,4 +1,11 @@
-"""Complete scheduler diagnostics with required-job and next-run evidence."""
+"""Complete scheduler diagnostics with required-job and next-run evidence.
+
+Scheduler receipts are evaluated against the job's actual active schedule. A
+market-hours-only job is not overdue while the market is closed, and an old
+receipt is not treated as a new-process failure during the bounded startup grace
+window. These rules prevent preserved historical receipts from flooding the
+owner review queue immediately after deployment or restart.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +17,7 @@ import diagnostic_upgrade_system as diagnostics
 
 _INSTALLED = False
 _BASE_JOB_CHECKS: Callable[[Any], list[diagnostics.HealthCheck]] | None = None
+STARTUP_GRACE = timedelta(minutes=20)
 
 REQUIRED_JOBS = (
     "self-diagnostics",
@@ -44,11 +52,50 @@ def _latest_receipt(connection: Any, name: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def _market_open() -> bool:
+    try:
+        return bool(diagnostics.ford_scan.market_is_open_now()[0])
+    except Exception:
+        return False
+
+
 def _active_interval(job: Any) -> timedelta:
-    interval = job.interval
-    if job.after_hours_interval and not diagnostics.ford_scan.market_is_open_now()[0]:
-        interval = job.after_hours_interval
-    return interval
+    if not _market_open() and job.after_hours_interval:
+        return job.after_hours_interval
+    return job.interval
+
+
+def _expected_to_run_now(job: Any) -> bool:
+    if getattr(job, "market_hours_only", False) and not _market_open():
+        return bool(getattr(job, "after_hours_interval", None))
+    return True
+
+
+def _engine_started_at():
+    state = diagnostics._read_json(diagnostics.SUPERVISOR_STATE_PATH)
+    times = (
+        state.get("service_last_started_at")
+        if isinstance(state.get("service_last_started_at"), dict)
+        else {}
+    )
+    return diagnostics._parse_time(
+        times.get("information-engine")
+        or state.get("information_engine_started_at")
+        or state.get("supervisor_heartbeat_at")
+    )
+
+
+def _within_startup_grace() -> bool:
+    started = _engine_started_at()
+    return bool(started and diagnostics.now() - started <= STARTUP_GRACE)
+
+
+def _receipt_predates_engine(receipt: dict[str, Any] | None) -> bool:
+    if not receipt:
+        return True
+    started = _engine_started_at()
+    finished = diagnostics._parse_time(receipt.get("finished_at"))
+    return bool(started and (not finished or finished < started))
 
 
 def job_checks(connection: Any) -> list[diagnostics.HealthCheck]:
@@ -69,6 +116,28 @@ def job_checks(connection: Any) -> list[diagnostics.HealthCheck]:
         interval = _active_interval(job)
         next_expected = finished + interval if finished else None
         retry = job.retry_interval or interval
+
+        if not _expected_to_run_now(job):
+            check = replace(
+                check,
+                passed=True,
+                severity="INFO",
+                detail=(
+                    f"{check.detail}; schedule state=outside market session; "
+                    "the market-hours-only job is not expected to run now"
+                ),
+            )
+        elif _within_startup_grace() and _receipt_predates_engine(receipt):
+            check = replace(
+                check,
+                passed=True,
+                severity="INFO",
+                detail=(
+                    f"{check.detail}; schedule state=startup grace; preserved receipt "
+                    "predates the current information-engine process"
+                ),
+            )
+
         detail = (
             f"{check.detail}; registered=True; enabled=True; "
             f"next expected={next_expected.isoformat(timespec='seconds') if next_expected else 'after first successful receipt'}; "
