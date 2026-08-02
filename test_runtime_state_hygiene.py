@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -23,10 +24,24 @@ class RuntimeStateHygieneTests(unittest.TestCase):
             for line in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         }
+        tracked_result = subprocess.run(
+            ["git", "ls-files", "--", *RUNTIME_PATHS],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        tracked = {
+            line.strip().replace("\\", "/")
+            for line in tracked_result.stdout.splitlines()
+            if line.strip()
+        }
+
         for relative in RUNTIME_PATHS:
             self.assertIn(relative, ignored)
-            self.assertFalse(
-                (ROOT / relative).exists(),
+            self.assertNotIn(
+                relative,
+                tracked,
                 f"{relative} is generated runtime data and must not be committed",
             )
 
