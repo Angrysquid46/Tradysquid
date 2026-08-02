@@ -65,6 +65,46 @@ class SupervisorEntrypointDiagnosticsTests(unittest.TestCase):
         self.assertIn("upgrade-request-migration", validation["retired_jobs"])
         self.assertNotIn("intraday-chart-refresh", validation["retired_jobs"])
 
+    def test_network_and_retired_jobs_never_open_code_repairs(self) -> None:
+        network = {
+            "signature_key": "incident-outbound-https-connectivity",
+            "consecutive_failures": 99,
+        }
+        retired = {
+            "signature_key": "job-upgrade-batch-44-acceptance",
+            "consecutive_failures": 99,
+        }
+        self.assertFalse(simplified_runtime._escalation_required(network, True))
+        self.assertFalse(simplified_runtime._escalation_required(retired, True))
+
+    def test_core_runtime_escalates_only_after_persistence(self) -> None:
+        record = {
+            "signature_key": "service-information-engine",
+            "consecutive_failures": 2,
+        }
+        self.assertFalse(simplified_runtime._escalation_required(record, False))
+        record["consecutive_failures"] = 3
+        self.assertTrue(simplified_runtime._escalation_required(record, False))
+
+    def test_recovered_github_comment_is_not_rendered_pending(self) -> None:
+        report = {
+            "signature": "abc123",
+            "title": "Repair test",
+            "status": "RECOVERED",
+            "diagnostic_id": "DIA-ABC123",
+            "component": "test",
+            "operation": "test recovery",
+            "consecutive_failures": 0,
+            "total_failures": 3,
+            "evidence": "healthy now",
+            "recovery_time": "2026-08-02T12:00:00-05:00",
+            "verification_result": "Three checks passed.",
+        }
+        body = simplified_runtime._diagnostic_body(report, 1)
+        self.assertIn("**Status:** RECOVERED", body)
+        self.assertIn("No owner action", body)
+        self.assertNotIn("**Status:** PENDING BATCH REVIEW", body)
+
     def test_runtime_repair_is_installed_last(self) -> None:
         text = (ROOT / "run_with_env.py").read_text(encoding="utf-8")
         self.assertIn("simplified_runtime.install()", text)
