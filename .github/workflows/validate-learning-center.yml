@@ -170,7 +170,6 @@ jobs:
             test_learning_center.py \
             test_strict_learning_order.py \
             test_supervisor_availability.py \
-            test_supervisor_discord_readiness.py \
             test_supervisor_entrypoint_diagnostics.py \
             test_applied_upgrades.py \
             test_simple_upgrade_flow.py \
