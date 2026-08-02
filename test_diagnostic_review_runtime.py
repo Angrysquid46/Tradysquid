@@ -139,7 +139,9 @@ class DiagnosticReviewRuntimeTests(unittest.TestCase):
             try:
                 first = review.log_checks(store)
                 with (log_dir / "supervisor.log").open("a", encoding="utf-8") as handle:
-                    handle.write("new error: Connection to discord.com timed out\n")
+                    handle.write(
+                        "new error: ConnectTimeoutError: Connection to discord.com timed out\n"
+                    )
                 second = review.log_checks(store)
             finally:
                 store.close()
@@ -181,12 +183,14 @@ class DiagnosticReviewRuntimeTests(unittest.TestCase):
         )
         supervisor = text.index("supervisor_diagnostic_runtime.install()")
         scheduler = text.index("scheduler_diagnostic_runtime.install()")
+        migration = text.index("diagnostic_state_migration.install()")
         applied_status = text.index("applied_upgrade_status_runtime.install()")
         review_layer = text.index("diagnostic_review_runtime.install()")
         dashboard_job = text.index("applied_upgrades.install_engine()")
         self.assertLess(supervisor, scheduler)
         self.assertLess(scheduler, applied_status)
-        self.assertLess(applied_status, review_layer)
+        self.assertLess(applied_status, migration)
+        self.assertLess(migration, review_layer)
         self.assertLess(review_layer, dashboard_job)
 
 
