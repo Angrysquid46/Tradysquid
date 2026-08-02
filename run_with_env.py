@@ -30,9 +30,8 @@ def load_env() -> None:
         os.environ.setdefault(name.strip(), value.strip())
 
 
-def install_runtime_overrides() -> None:
-    """Install journal, scorecard, OpenAI, and free GitHub batching behavior."""
-    import github_upgrade_patch
+def install_runtime_overrides(*, include_discord_upgrade_commands: bool = False) -> None:
+    """Install shared behavior, plus Discord-only patches for the command bot."""
     import journal_contract
     import openai_discord_patch
     import performance_scorecards
@@ -40,19 +39,28 @@ def install_runtime_overrides() -> None:
     journal_contract.install()
     performance_scorecards.install()
     openai_discord_patch.install()
-    github_upgrade_patch.install()
+
+    if include_discord_upgrade_commands:
+        import github_upgrade_patch
+
+        github_upgrade_patch.install()
 
 
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("Usage: python run_with_env.py <script.py> [arguments...]")
     load_env()
-    install_runtime_overrides()
     requested = str(sys.argv[1])
     requested = SCRIPT_OVERRIDES.get(Path(requested).name.casefold(), requested)
     target = (ROOT / requested).resolve()
     if target.parent != ROOT or not target.is_file() or target.suffix != ".py":
         raise SystemExit("Target must be a Python file in this repository.")
+
+    install_runtime_overrides(
+        include_discord_upgrade_commands=(
+            target.name.casefold() == "discord_command_bot_public.py"
+        )
+    )
     sys.argv = [str(target), *sys.argv[2:]]
     runpy.run_path(str(target), run_name="__main__")
 
