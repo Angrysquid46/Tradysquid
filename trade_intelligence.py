@@ -336,12 +336,22 @@ def apply_retention(*, temporary_age_seconds: int = 86400) -> dict[str, int]:
 
 def health() -> dict[str, Any]:
     with database() as db:
+        research_ready = db.execute(
+            "SELECT COUNT(*) FROM research_sources WHERE status='READY'"
+        ).fetchone()[0]
+        research_needs_source = db.execute(
+            "SELECT COUNT(*) FROM research_sources WHERE status='NEEDS-ORIGINAL-SOURCE'"
+        ).fetchone()[0]
         return {
             "schema_version": SCHEMA_VERSION,
             "learning_version": learning_version(),
             "lifecycle_events": db.execute("SELECT COUNT(*) FROM lifecycle_events").fetchone()[0],
             "snapshots": db.execute("SELECT COUNT(*) FROM chart_snapshots").fetchone()[0],
             "research_sources": db.execute("SELECT COUNT(*) FROM research_sources").fetchone()[0],
-            "pending_research": db.execute("SELECT COUNT(*) FROM research_sources WHERE status='REVIEW'").fetchone()[0],
+            "pending_research": db.execute(
+                "SELECT COUNT(*) FROM research_sources WHERE status NOT IN ('USED','DISMISSED')"
+            ).fetchone()[0],
+            "research_ready": research_ready,
+            "research_needs_original_source": research_needs_source,
             "failed_syncs": db.execute("SELECT COUNT(*) FROM sync_acknowledgements WHERE status!='OK'").fetchone()[0],
         }
