@@ -38,6 +38,9 @@ state/free-provider-quotas.db-wal
 state/targeted-scans.db
 state/targeted-scans.db-shm
 state/targeted-scans.db-wal
+state/iv-history.db
+state/iv-history.db-shm
+state/iv-history.db-wal
 state/resource-mesh/
 state/resource-enrichment/
 state/tradier-resource-status.json
@@ -46,5 +49,8 @@ state/targeted-scan-status.json
 state/resource-mesh-status.json
 state/event-risk.json
 state/macro-context.json
+state/iv-history-status.json
+state/market-data-optimizations.json
+state/worker-outcome-analysis.json
 docs/trade-snapshots/
 docs/tickers/
