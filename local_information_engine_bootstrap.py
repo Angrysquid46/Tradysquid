@@ -5,8 +5,9 @@ has a transient outage. Required cards, scorecards, and open-journal contracts
 are still verified, but failures put startup acceptance into RETRYING state
 instead of crashing the entire information engine into a supervisor restart loop.
 
-Private strategy cards use their own read-only retry worker and receipt. Their
-failure cannot mask or replace an existing market-intelligence acceptance result.
+Private strategy cards and the private GitHub runtime registry use independent
+retry workers. Their failures cannot mask or replace an existing
+market-intelligence acceptance result.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import journal_contract
 import performance_scorecards
 import strategy_control_sync
 import strategy_runtime_consumption
+import strategy_runtime_registry
 import trade_intelligence
 
 journal_contract.install()
@@ -30,6 +32,7 @@ performance_scorecards.install()
 performance_scorecards.validate_reconciliation()
 strategy_runtime_consumption.install()
 strategy_control_sync.validate_contract()
+strategy_runtime_registry.validate_contract()
 
 import local_information_engine_public as public
 
@@ -189,6 +192,7 @@ def run_required_startup_jobs() -> dict[str, Any]:
                 "worker": "independent",
                 "receipt": str(strategy_control_sync.STATE_PATH),
                 "runtime_receipt": str(strategy_runtime_consumption.RUNTIME_STATE_PATH),
+                "github_registry_receipt": str(strategy_runtime_registry.STATE_PATH),
                 "read_only": True,
                 "blocks_market_intelligence_acceptance": False,
             },
@@ -274,6 +278,7 @@ def main() -> int:
         }
     )
     strategy_control_sync.start_worker()
+    strategy_runtime_registry.start_worker()
     start_acceptance_retry_worker()
     return public.engine.main()
 
