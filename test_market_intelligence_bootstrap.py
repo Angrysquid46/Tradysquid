@@ -60,7 +60,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
         )
         return row
 
-    def test_required_cards_and_scorecards_must_succeed_before_readiness(self) -> None:
+    def test_required_cards_and_scorecards_must_succeed_for_acceptance(self) -> None:
         directory, db_path, acceptance_path = self.temporary_paths()
         self.addCleanup(directory.cleanup)
         engine = bootstrap.public.engine
@@ -91,7 +91,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
         self.assertEqual(stored["status"], "PASSED")
         self.assertIn("one scorecard per play type", stored["contract"])
         self.assertIn("complete entry checklist", stored["contract"])
-        self.assertIn("before the engine health port opened", stored["contract"])
+        self.assertIn("health listener remains available", stored["contract"])
 
     def test_complete_open_journal_is_required_when_trades_exist(self) -> None:
         directory, db_path, acceptance_path = self.temporary_paths()
@@ -135,7 +135,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
         self.assertEqual(payload["journal_contract"]["entry_snapshots_found"], 1)
         self.assertTrue(payload["journal_contract"]["all_open_journals_verified"])
 
-    def test_incomplete_open_journal_blocks_readiness(self) -> None:
+    def test_incomplete_open_journal_fails_acceptance_without_changing_contract(self) -> None:
         directory, db_path, acceptance_path = self.temporary_paths()
         self.addCleanup(directory.cleanup)
         engine = bootstrap.public.engine
@@ -176,7 +176,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
         self.assertEqual(stored["status"], "FAILED")
         self.assertIn("TEST-OPEN-001", stored["error"])
 
-    def test_failed_discord_publication_blocks_startup(self) -> None:
+    def test_failed_discord_publication_records_failed_attempt(self) -> None:
         directory, db_path, acceptance_path = self.temporary_paths()
         self.addCleanup(directory.cleanup)
         engine = bootstrap.public.engine
@@ -209,7 +209,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
         self.assertEqual(stored["status"], "FAILED")
         self.assertIn("Discord did not acknowledge", stored["error"])
 
-    def test_missing_performance_receipt_blocks_startup(self) -> None:
+    def test_missing_performance_receipt_fails_acceptance(self) -> None:
         directory, db_path, acceptance_path = self.temporary_paths()
         self.addCleanup(directory.cleanup)
         engine = bootstrap.public.engine
@@ -234,7 +234,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
         stored = json.loads(acceptance_path.read_text(encoding="utf-8"))
         self.assertEqual(stored["status"], "FAILED")
 
-    def test_history_pages_block_startup(self) -> None:
+    def test_history_pages_fail_acceptance(self) -> None:
         directory, db_path, acceptance_path = self.temporary_paths()
         self.addCleanup(directory.cleanup)
         engine = bootstrap.public.engine
@@ -253,19 +253,45 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "history-page output"):
                 bootstrap.run_required_startup_jobs()
 
-    def test_engine_main_is_not_called_when_startup_acceptance_fails(self) -> None:
-        engine_main = Mock(return_value=0)
+    def test_worker_retries_failed_acceptance_without_exiting(self) -> None:
+        write = Mock()
         with (
+            patch.object(bootstrap, "STARTUP_INITIAL_DELAY_SECONDS", 0),
+            patch.object(bootstrap, "STARTUP_RETRY_SECONDS", 15),
             patch.object(
                 bootstrap,
                 "run_required_startup_jobs",
-                side_effect=RuntimeError("required card missing"),
-            ),
+                side_effect=[
+                    RuntimeError("Discord timeout"),
+                    {"status": "PASSED", "verified_at": "2026-08-02T01:00:00-05:00"},
+                ],
+            ) as acceptance,
+            patch.object(bootstrap, "_write_acceptance", write),
+            patch.object(bootstrap.time, "sleep") as sleep,
+        ):
+            bootstrap.startup_acceptance_worker()
+
+        self.assertEqual(acceptance.call_count, 2)
+        sleep.assert_called_once_with(15)
+        retry_payload = write.call_args_list[0].args[0]
+        self.assertEqual(retry_payload["status"], "RETRYING")
+        self.assertIn("Discord timeout", retry_payload["error"])
+
+    def test_engine_main_starts_before_acceptance_finishes(self) -> None:
+        engine_main = Mock(return_value=0)
+        worker = Mock()
+        write = Mock()
+        with (
+            patch.object(bootstrap, "_write_acceptance", write),
+            patch.object(bootstrap, "start_acceptance_retry_worker", worker),
             patch.object(bootstrap.public.engine, "main", engine_main),
         ):
-            with self.assertRaisesRegex(RuntimeError, "required card missing"):
-                bootstrap.main()
-        engine_main.assert_not_called()
+            result = bootstrap.main()
+
+        self.assertEqual(result, 0)
+        worker.assert_called_once_with()
+        engine_main.assert_called_once_with()
+        self.assertEqual(write.call_args.args[0]["status"], "STARTING")
 
 
 if __name__ == "__main__":
