@@ -21,11 +21,13 @@ import time
 from pathlib import Path
 
 import network_compat
+
+network_compat.install()
+
 import tradysquid_supervisor as supervisor
 
 
 ROOT = Path(__file__).resolve().parent
-network_compat.install()
 
 # Deployment itself never performs Discord maintenance. Feature startup jobs own
 # their channels and cards after the new code starts.
