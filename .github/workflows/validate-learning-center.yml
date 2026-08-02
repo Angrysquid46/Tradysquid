@@ -22,6 +22,7 @@ on:
       - "run_with_env.py"
       - "network_compat.py"
       - "applied_upgrades.py"
+      - "applied_upgrade_status_runtime.py"
       - "simple_upgrade_runtime.py"
       - "diagnostic_upgrade_system.py"
       - "diagnostic_runtime_integration.py"
@@ -60,6 +61,7 @@ on:
       - "test_supervisor_discord_readiness.py"
       - "test_supervisor_entrypoint_diagnostics.py"
       - "test_simple_upgrade_flow.py"
+      - "test_applied_upgrade_status_runtime.py"
       - "test_diagnostic_upgrade_system.py"
       - "test_diagnostic_startup_runtime.py"
       - "test_diagnostic_nonblocking_runtime.py"
@@ -123,6 +125,7 @@ jobs:
             register_discord_commands_public.py \
             network_compat.py \
             applied_upgrades.py \
+            applied_upgrade_status_runtime.py \
             simple_upgrade_runtime.py \
             diagnostic_upgrade_system.py \
             diagnostic_runtime_integration.py \
@@ -162,6 +165,7 @@ jobs:
             test_upgrade_batch_44.py \
             test_upgrade_batch_44_live_acceptance.py \
             test_applied_upgrades.py \
+            test_applied_upgrade_status_runtime.py \
             test_supervisor_discord_readiness.py \
             test_supervisor_entrypoint_diagnostics.py \
             test_simple_upgrade_flow.py \
@@ -194,6 +198,7 @@ jobs:
             test_supervisor_availability.py \
             test_supervisor_entrypoint_diagnostics.py \
             test_applied_upgrades.py \
+            test_applied_upgrade_status_runtime.py \
             test_simple_upgrade_flow.py \
             test_diagnostic_upgrade_system.py \
             test_diagnostic_startup_runtime.py \
