@@ -1,10 +1,10 @@
 """Start the public information engine only after required Discord cards exist.
 
 The supervisor previously treated a live socket as sufficient proof that the
-information engine was ready.  That allowed deployment to announce success
-before the newly required #premarket and #breaking-alerts cards had actually
-been written.  This bootstrap runs both visibility jobs synchronously and exits
-on any failure, so the supervisor keeps the service unhealthy and retries it.
+information engine was ready. That allowed deployment to announce success
+before required Discord cards and ledger-backed performance reports had been
+written. This bootstrap runs the required jobs synchronously and exits on any
+failure, so the supervisor keeps the service unhealthy and retries it.
 """
 
 from __future__ import annotations
@@ -12,6 +12,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+
+import performance_reconciliation
+
+# Install and validate the canonical reporting overrides before the information
+# engine imports its scheduler callbacks. A bad reporting deployment must fail
+# startup instead of leaving stale performance cards behind.
+performance_reconciliation.install()
+performance_reconciliation.validate_reconciliation()
 
 import local_information_engine_public as public
 
@@ -21,6 +29,7 @@ ACCEPTANCE_PATH = ROOT / "state" / "market-intelligence-startup.json"
 REQUIRED_STARTUP_JOBS = (
     "provider-event-queue",
     "premarket-visibility",
+    "discord-reporting",
 )
 
 
@@ -52,7 +61,7 @@ def _latest_run(connection, name: str):
 
 
 def run_required_startup_jobs() -> dict[str, Any]:
-    """Publish both requested Discord cards before the engine becomes healthy."""
+    """Publish required Discord cards before the engine becomes healthy."""
     connection = public.engine.connect_db()
     results: dict[str, Any] = {}
     try:
@@ -69,12 +78,38 @@ def run_required_startup_jobs() -> dict[str, Any]:
                 "detail": str(row["detail"] or ""),
             }
 
+        report_state = public.ford_scan.read_report_state()
+        performance_version = str(
+            report_state.get("performance_reconciliation_version") or ""
+        )
+        if performance_version != performance_reconciliation.REPORT_VERSION:
+            raise RuntimeError(
+                "discord-reporting did not persist the required performance "
+                f"reconciliation version: {performance_version or 'missing'}"
+            )
+
         payload = {
             "status": "PASSED",
             "verified_at": public.engine.iso_now(),
             "required_jobs": results,
+            "performance_reconciliation": {
+                "version": performance_version,
+                "canonical_closed_trades": report_state.get(
+                    "performance_reconciliation_closed_trades", 0
+                ),
+                "current_week_trades": report_state.get(
+                    "performance_reconciliation_week_trades", 0
+                ),
+                "daily_reports": report_state.get(
+                    "performance_reconciliation_daily_reports", 0
+                ),
+                "weekly_reports": report_state.get(
+                    "performance_reconciliation_weekly_reports", 0
+                ),
+            },
             "contract": (
-                "#breaking-alerts heartbeat and #premarket session card were "
+                "#breaking-alerts heartbeat, #premarket session card, and "
+                "canonical daily/weekly/strategy performance reconciliation were "
                 "acknowledged before the engine health port opened"
             ),
         }
