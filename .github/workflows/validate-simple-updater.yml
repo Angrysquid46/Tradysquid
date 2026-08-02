@@ -7,6 +7,8 @@ on:
       - "simple_upgrade_runtime.py"
       - "diagnostic_upgrade_system.py"
       - "diagnostic_runtime_integration.py"
+      - "diagnostic_startup_runtime.py"
+      - "shared_upgrade_lifecycle.py"
       - "run_with_env.py"
       - "START-SUPERVISOR.cmd"
       - "ENSURE-SUPERVISOR.ps1"
@@ -16,6 +18,7 @@ on:
       - ".gitignore"
       - "test_simple_upgrade_flow.py"
       - "test_diagnostic_upgrade_system.py"
+      - "test_diagnostic_startup_runtime.py"
       - "test_runtime_state_hygiene.py"
       - ".github/workflows/validate-simple-updater.yml"
   workflow_dispatch:
@@ -47,6 +50,8 @@ jobs:
             simple_upgrade_runtime.py \
             diagnostic_upgrade_system.py \
             diagnostic_runtime_integration.py \
+            diagnostic_startup_runtime.py \
+            shared_upgrade_lifecycle.py \
             tradysquid_supervisor.py \
             github_upgrade_bridge.py \
             github_upgrade_patch.py \
@@ -65,4 +70,5 @@ jobs:
           python -m unittest -q \
             test_applied_upgrades.py \
             test_simple_upgrade_flow.py \
-            test_diagnostic_upgrade_system.py
+            test_diagnostic_upgrade_system.py \
+            test_diagnostic_startup_runtime.py
