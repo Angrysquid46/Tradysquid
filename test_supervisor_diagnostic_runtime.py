@@ -13,13 +13,16 @@ import supervisor_diagnostic_runtime as supervisor_runtime
 
 
 class SupervisorDiagnosticRuntimeTests(unittest.TestCase):
-    def test_one_simple_supervisor_and_no_retired_process_passes(self) -> None:
+    def test_one_simple_supervisor_owning_health_port_passes(self) -> None:
         result = SimpleNamespace(
             returncode=0,
             stdout=json.dumps(
                 {
-                    "ProcessId": 123,
-                    "CommandLine": "python run_with_env.py run_supervisor_simple.py",
+                    "Processes": {
+                        "ProcessId": 123,
+                        "CommandLine": "python run_with_env.py run_supervisor_simple.py",
+                    },
+                    "PortOwner": 123,
                 }
             ),
             stderr="",
@@ -31,26 +34,25 @@ class SupervisorDiagnosticRuntimeTests(unittest.TestCase):
             check = supervisor_runtime.supervisor_process_check()
         self.assertTrue(check.passed)
         self.assertIn("simple supervisor processes=1", check.detail)
-        self.assertIn("retired supervisor processes=0", check.detail)
+        self.assertIn("port 8876 owner=123", check.detail)
 
-    def test_duplicate_or_retired_supervisors_fail(self) -> None:
+    def test_duplicate_supervisors_fail_without_immediate_github_escalation(self) -> None:
         result = SimpleNamespace(
             returncode=0,
             stdout=json.dumps(
-                [
-                    {
-                        "ProcessId": 1,
-                        "CommandLine": "python run_supervisor_simple.py",
-                    },
-                    {
-                        "ProcessId": 2,
-                        "CommandLine": "python run_supervisor_simple.py",
-                    },
-                    {
-                        "ProcessId": 3,
-                        "CommandLine": "python run_supervisor_resilient.py",
-                    },
-                ]
+                {
+                    "Processes": [
+                        {
+                            "ProcessId": 1,
+                            "CommandLine": "python run_supervisor_simple.py",
+                        },
+                        {
+                            "ProcessId": 2,
+                            "CommandLine": "python run_supervisor_simple.py",
+                        },
+                    ],
+                    "PortOwner": 1,
+                }
             ),
             stderr="",
         )
@@ -60,9 +62,31 @@ class SupervisorDiagnosticRuntimeTests(unittest.TestCase):
         ):
             check = supervisor_runtime.supervisor_process_check()
         self.assertFalse(check.passed)
-        self.assertTrue(check.force_upgrade)
+        self.assertFalse(check.force_upgrade)
         self.assertIn("simple supervisor processes=2", check.detail)
-        self.assertIn("retired supervisor processes=1", check.detail)
+        self.assertIn("port 8876 owner=1", check.detail)
+
+    def test_wrong_port_owner_fails(self) -> None:
+        result = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "Processes": {
+                        "ProcessId": 123,
+                        "CommandLine": "python run_supervisor_simple.py",
+                    },
+                    "PortOwner": 999,
+                }
+            ),
+            stderr="",
+        )
+        with (
+            patch.object(supervisor_runtime.os, "name", "nt"),
+            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
+        ):
+            check = supervisor_runtime.supervisor_process_check()
+        self.assertFalse(check.passed)
+        self.assertIn("port 8876 owner=999", check.detail)
 
     def test_stale_stop_flag_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
