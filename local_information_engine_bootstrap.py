@@ -14,6 +14,7 @@ from typing import Any
 
 import journal_contract
 import performance_scorecards
+import trade_intelligence
 
 journal_contract.install()
 journal_contract.validate_contract()
@@ -114,7 +115,7 @@ def run_required_startup_jobs() -> dict[str, Any]:
             and (
                 str(row.get("discord_format_version") or "")
                 != journal_contract.JOURNAL_FORMAT_VERSION
-                or public.trade_intelligence.needs_sync(row, "journal-contract")
+                or trade_intelligence.needs_sync(row, "journal-contract")
             )
         ]
         if open_unverified:
