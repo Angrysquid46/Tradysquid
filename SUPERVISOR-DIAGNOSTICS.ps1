@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = 'Continue'
 $Root = (Resolve-Path $PSScriptRoot).Path
 $StatePath = Join-Path $Root 'state\supervisor-state.json'
+$EngineAcceptancePath = Join-Path $Root 'state\market-intelligence-startup.json'
 $SupervisorLog = Join-Path $Root 'state\supervisor-logs\supervisor.log'
 $StartupLog = Join-Path $Root 'state\supervisor-startup.log'
 $WatchdogLog = Join-Path $Root 'state\supervisor-watchdog.log'
@@ -111,11 +112,31 @@ else {
                 last_update_status, last_update_detail,
                 last_discord_sync_status, last_command_registration_status,
                 last_discord_sync_attempt_at, deployment_sync_ready,
+                information_engine_acceptance_status,
+                information_engine_acceptance_detail,
+                information_engine_acceptance_checked_at,
                 scheduler_heartbeat_healthy, service_health, updated_at |
             Format-List | Out-String -Width 240 | Write-Host
     }
     catch {
         Write-Host "State file could not be parsed: $($_.Exception.Message)"
+    }
+}
+
+Write-Section 'Information engine startup acceptance'
+if (-not (Test-Path $EngineAcceptancePath)) {
+    Write-Host 'state\market-intelligence-startup.json is missing.'
+}
+else {
+    try {
+        Get-Content -Raw -Path $EngineAcceptancePath |
+            ConvertFrom-Json |
+            Select-Object status, verified_at, attempt, next_retry_seconds, error,
+                required_jobs, performance_reconciliation, journal_contract, contract |
+            Format-List | Out-String -Width 240 | Write-Host
+    }
+    catch {
+        Write-Host "Acceptance file could not be parsed: $($_.Exception.Message)"
     }
 }
 
