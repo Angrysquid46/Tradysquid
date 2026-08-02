@@ -16,6 +16,7 @@ from test_single_owner_runtime import SingleOwnerRuntimeTests  # noqa: F401
 from test_strategy_control_sync import StrategyControlSyncTests  # noqa: F401
 from test_strategy_profiles import StrategyProfileFoundationTests  # noqa: F401
 from test_strategy_runtime_consumption import StrategyRuntimeConsumptionTests  # noqa: F401
+from test_strategy_runtime_registry import StrategyRuntimeRegistryTests  # noqa: F401
 from test_supervisor_diagnostic_runtime import SupervisorDiagnosticRuntimeTests  # noqa: F401
 from test_supervisor_entrypoint_diagnostics import SupervisorEntrypointDiagnosticsTests  # noqa: F401
 
