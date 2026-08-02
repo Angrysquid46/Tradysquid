@@ -16,6 +16,7 @@ COMPILE_MODULES = (
     "github_upgrade_patch.py",
     "shared_upgrade_lifecycle.py",
     "simple_upgrade_runtime.py",
+    "simplified_runtime.py",
     "upgrade_batch_44.py",
     "upgrade_batch_44_live_acceptance.py",
     "upgrade_lifecycle_dashboard.py",
@@ -64,6 +65,7 @@ def validate_manifest() -> dict[str, object]:
         raise RuntimeError("Deployment test manifest contains duplicates")
     required_modules = {
         "run_supervisor_simple.py",
+        "simplified_runtime.py",
         "diagnostic_upgrade_system.py",
         "diagnostic_state_migration.py",
         "diagnostic_review_runtime.py",
@@ -85,6 +87,7 @@ def validate_manifest() -> dict[str, object]:
         "test_scheduler_diagnostic_runtime.py",
         "test_market_calendar_runtime.py",
         "test_applied_upgrade_status_runtime.py",
+        "test_supervisor_entrypoint_diagnostics.py",
     }
     missing_modules = sorted(required_modules - set(COMPILE_MODULES))
     missing_tests = sorted(required_tests - set(FOCUSED_TEST_MODULES))
