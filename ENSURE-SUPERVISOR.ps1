@@ -8,7 +8,10 @@ $Root = (Resolve-Path $PSScriptRoot).Path
 $StateDir = Join-Path $Root 'state'
 $StatePath = Join-Path $StateDir 'supervisor-state.json'
 $LogPath = Join-Path $StateDir 'supervisor-watchdog.log'
-$SupervisorScript = Join-Path $Root 'run_supervisor.py'
+$SupervisorScripts = @(
+    (Join-Path $Root 'run_supervisor_resilient.py'),
+    (Join-Path $Root 'run_supervisor.py')
+)
 $Launcher = Join-Path $Root 'start_supervisor_hidden.vbs'
 $LauncherCommand = Join-Path $Root 'START-SUPERVISOR.cmd'
 
@@ -23,12 +26,13 @@ function Write-WatchdogLog {
 }
 
 function Get-TradysquidsSupervisorProcesses {
-    $escapedScript = [regex]::Escape($SupervisorScript)
+    $escapedScripts = @($SupervisorScripts | ForEach-Object { [regex]::Escape($_) })
     @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
-            $_.CommandLine -and
-            $_.CommandLine -match $escapedScript -and
-            $_.Name -match '^python(w)?\.exe$'
+            $command = [string]$_.CommandLine
+            $command -and
+            $_.Name -match '^python(w)?\.exe$' -and
+            ($escapedScripts | Where-Object { $command -match $_ }).Count -gt 0
         })
 }
 
@@ -109,9 +113,6 @@ if (-not (Test-Path $Launcher)) {
     exit 2
 }
 
-# A failed supervisor can leave the restart-loop CMD process alive. Remove any
-# old launcher before starting one replacement so five-minute watchdog runs do
-# not accumulate launchers that race and terminate each other's Python process.
 $staleLaunchers = Get-TradysquidsLauncherProcesses
 foreach ($staleLauncher in $staleLaunchers) {
     Stop-Process -Id $staleLauncher.ProcessId -Force -ErrorAction SilentlyContinue

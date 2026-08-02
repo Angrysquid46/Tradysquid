@@ -36,6 +36,7 @@ on:
       - "run_supervisor_resilient.py"
       - "automation_acceptance.py"
       - "ENSURE-SUPERVISOR.ps1"
+      - "SUPERVISOR-DIAGNOSTICS.ps1"
       - "INSTALL-REMOTE-CONTROL.cmd"
       - "INSTALL-SUPERVISOR-WATCHDOG.ps1"
       - "START-SUPERVISOR.cmd"
@@ -44,6 +45,7 @@ on:
       - "test_strict_learning_order.py"
       - "test_supervisor_availability.py"
       - "test_supervisor_discord_readiness.py"
+      - "test_supervisor_entrypoint_diagnostics.py"
       - "test_automation_acceptance.py"
       - "test_always_on_operations.py"
       - "test_market_intelligence_visibility.py"
@@ -125,7 +127,8 @@ jobs:
             test_github_upgrade_bridge.py \
             test_upgrade_batch_44.py \
             test_upgrade_batch_44_live_acceptance.py \
-            test_supervisor_discord_readiness.py
+            test_supervisor_discord_readiness.py \
+            test_supervisor_entrypoint_diagnostics.py
 
       - name: Validate curriculum and operations engine
         run: |
@@ -145,6 +148,7 @@ jobs:
             test_strict_learning_order.py \
             test_supervisor_availability.py \
             test_supervisor_discord_readiness.py \
+            test_supervisor_entrypoint_diagnostics.py \
             test_automation_acceptance.py \
             test_always_on_operations.py \
             test_market_intelligence_visibility.py \
