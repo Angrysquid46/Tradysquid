@@ -33,6 +33,7 @@ on:
       - "discord_command_bot_public.py"
       - "register_discord_commands_public.py"
       - "run_supervisor.py"
+      - "run_supervisor_resilient.py"
       - "automation_acceptance.py"
       - "ENSURE-SUPERVISOR.ps1"
       - "INSTALL-REMOTE-CONTROL.cmd"
@@ -42,6 +43,7 @@ on:
       - "test_learning_center.py"
       - "test_strict_learning_order.py"
       - "test_supervisor_availability.py"
+      - "test_supervisor_discord_readiness.py"
       - "test_automation_acceptance.py"
       - "test_always_on_operations.py"
       - "test_market_intelligence_visibility.py"
@@ -114,6 +116,7 @@ jobs:
             sync_discord_structure_reports.py \
             tradysquid_supervisor.py \
             run_supervisor.py \
+            run_supervisor_resilient.py \
             automation_acceptance.py \
             test_market_intelligence_visibility.py \
             test_market_intelligence_bootstrap.py \
@@ -121,7 +124,8 @@ jobs:
             test_journal_contract.py \
             test_github_upgrade_bridge.py \
             test_upgrade_batch_44.py \
-            test_upgrade_batch_44_live_acceptance.py
+            test_upgrade_batch_44_live_acceptance.py \
+            test_supervisor_discord_readiness.py
 
       - name: Validate curriculum and operations engine
         run: |
@@ -140,6 +144,7 @@ jobs:
             test_learning_center.py \
             test_strict_learning_order.py \
             test_supervisor_availability.py \
+            test_supervisor_discord_readiness.py \
             test_automation_acceptance.py \
             test_always_on_operations.py \
             test_market_intelligence_visibility.py \
