@@ -21,12 +21,14 @@ from typing import Any
 import journal_contract
 import performance_scorecards
 import strategy_control_sync
+import strategy_runtime_consumption
 import trade_intelligence
 
 journal_contract.install()
 journal_contract.validate_contract()
 performance_scorecards.install()
 performance_scorecards.validate_reconciliation()
+strategy_runtime_consumption.install()
 strategy_control_sync.validate_contract()
 
 import local_information_engine_public as public
@@ -186,6 +188,7 @@ def run_required_startup_jobs() -> dict[str, Any]:
             "strategy_control": {
                 "worker": "independent",
                 "receipt": str(strategy_control_sync.STATE_PATH),
+                "runtime_receipt": str(strategy_runtime_consumption.RUNTIME_STATE_PATH),
                 "read_only": True,
                 "blocks_market_intelligence_acceptance": False,
             },
