@@ -9,6 +9,7 @@ $StateDir = Join-Path $Root 'state'
 $StatePath = Join-Path $StateDir 'supervisor-state.json'
 $LogPath = Join-Path $StateDir 'supervisor-watchdog.log'
 $SupervisorScripts = @(
+    (Join-Path $Root 'run_supervisor_simple.py'),
     (Join-Path $Root 'run_supervisor_resilient.py'),
     (Join-Path $Root 'run_supervisor.py')
 )
