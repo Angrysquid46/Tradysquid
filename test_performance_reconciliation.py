@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta
 
+import discord_reconciliation_safety as safety
 import ford_scan
 import performance_channel_structure
 import performance_scorecards as scorecards
@@ -75,6 +76,7 @@ class PerformanceScorecardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         scorecards.install()
+        safety.install()
 
     def make_rows(self, count: int = 100) -> list[dict[str, str]]:
         rows = []
@@ -157,7 +159,10 @@ class PerformanceScorecardTests(unittest.TestCase):
         self.assertEqual(state["performance_reconciliation_strategy_groups"], 6)
         self.assertEqual(state["performance_reconciliation_history_pages"], 0)
         self.assertTrue(state["performance_reconciliation_scorecard_only"])
-        self.assertEqual(len(discord.deleted), 4)
+        self.assertEqual(len(discord.deleted), 0)
+        self.assertEqual(
+            state["performance_reconciliation_removed_misplaced_cards"], 0
+        )
 
         self.assertEqual(len(discord.channel_cards["daily"]), 5)
         self.assertEqual(len(discord.channel_cards["weekly"]), 1)
