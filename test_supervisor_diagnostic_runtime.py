@@ -92,7 +92,7 @@ class SupervisorDiagnosticRuntimeTests(unittest.TestCase):
         self.assertFalse(check.passed)
         self.assertIn("Unexpected stop flag", check.detail)
 
-    def test_healthy_watchdog_requires_zero_last_result(self) -> None:
+    def test_completed_watchdog_is_healthy(self) -> None:
         payload = {
             "TaskName": "Tradysquids Supervisor Watchdog",
             "State": "Ready",
@@ -109,7 +109,40 @@ class SupervisorDiagnosticRuntimeTests(unittest.TestCase):
         self.assertTrue(check.passed)
         self.assertIn("last_result=0", check.detail)
 
-    def test_nonzero_watchdog_result_is_not_healthy(self) -> None:
+    def test_currently_running_watchdog_is_healthy(self) -> None:
+        payload = {
+            "TaskName": "Tradysquids Supervisor Watchdog",
+            "State": "Running",
+            "LastTaskResult": supervisor_runtime.TASK_RESULT_RUNNING,
+            "LastRunTime": "today",
+            "NextRunTime": "later",
+        }
+        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+        with (
+            patch.object(supervisor_runtime.os, "name", "nt"),
+            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
+        ):
+            check = supervisor_runtime.watchdog_check()
+        self.assertTrue(check.passed)
+        self.assertIn("last_result=267009", check.detail)
+
+    def test_running_result_without_running_state_is_not_healthy(self) -> None:
+        payload = {
+            "TaskName": "Tradysquids Supervisor Watchdog",
+            "State": "Ready",
+            "LastTaskResult": supervisor_runtime.TASK_RESULT_RUNNING,
+            "LastRunTime": "today",
+            "NextRunTime": "later",
+        }
+        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+        with (
+            patch.object(supervisor_runtime.os, "name", "nt"),
+            patch.object(supervisor_runtime.subprocess, "run", return_value=result),
+        ):
+            check = supervisor_runtime.watchdog_check()
+        self.assertFalse(check.passed)
+
+    def test_real_nonzero_watchdog_result_is_not_healthy(self) -> None:
         payload = {
             "TaskName": "Tradysquids Supervisor Watchdog",
             "State": "Ready",

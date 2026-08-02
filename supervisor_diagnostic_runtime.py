@@ -11,6 +11,7 @@ import diagnostic_upgrade_system as diagnostics
 
 _INSTALLED = False
 _BASE_COLLECT: Callable[[Any], tuple[list[diagnostics.HealthCheck], dict[str, dict[str, Any]]]] | None = None
+TASK_RESULT_RUNNING = 0x41301
 
 
 def supervisor_process_check() -> diagnostics.HealthCheck:
@@ -100,6 +101,16 @@ def stop_flag_check() -> diagnostics.HealthCheck:
     )
 
 
+def _watchdog_row_healthy(item: dict[str, Any]) -> bool:
+    state = str(item.get("State") or "").casefold()
+    result = int(item.get("LastTaskResult") or 0)
+    if state in {"disabled", "unknown"}:
+        return False
+    if result == 0:
+        return True
+    return state == "running" and result == TASK_RESULT_RUNNING
+
+
 def watchdog_check() -> diagnostics.HealthCheck:
     if os.name != "nt":
         return diagnostics.HealthCheck(
@@ -153,12 +164,7 @@ $rows | ConvertTo-Json -Compress
     if isinstance(payload, dict):
         payload = [payload]
     rows = [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
-    healthy = [
-        item
-        for item in rows
-        if str(item.get("State") or "").casefold() not in {"disabled", "unknown"}
-        and int(item.get("LastTaskResult") or 0) == 0
-    ]
+    healthy = [item for item in rows if _watchdog_row_healthy(item)]
     passed = result.returncode == 0 and bool(rows) and bool(healthy)
     return diagnostics.HealthCheck(
         "watchdog-task",
@@ -175,8 +181,8 @@ $rows | ConvertTo-Json -Compress
         severity="ERROR" if not rows else "WARNING",
         runtime_target="ENSURE-SUPERVISOR.ps1 scheduled task",
         automatic_retry="Windows Task Scheduler runs the watchdog on its configured cadence",
-        repair_objective="Restore one enabled watchdog task with a successful last result.",
-        acceptance_tests="The watchdog task exists, is enabled, and reports LastTaskResult 0.",
+        repair_objective="Restore one enabled watchdog task that is either running normally or completed successfully.",
+        acceptance_tests="The watchdog task exists, is enabled, and is either currently running with 0x41301 or has LastTaskResult 0.",
         force_upgrade=not rows,
     )
 
