@@ -1,6 +1,7 @@
 .env
 .env.worker
 .venv-worker/
+.venv-dev/
 __pycache__/
 *.pyc
 state/local-information.db
