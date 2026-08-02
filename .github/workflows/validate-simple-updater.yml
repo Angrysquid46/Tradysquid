@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "run_supervisor_simple.py"
+      - "simple_upgrade_runtime.py"
+      - "run_with_env.py"
       - "START-SUPERVISOR.cmd"
       - "ENSURE-SUPERVISOR.ps1"
       - "stop_tradysquid_processes.ps1"
@@ -36,6 +38,7 @@ jobs:
         run: |
           python -m py_compile \
             run_supervisor_simple.py \
+            simple_upgrade_runtime.py \
             tradysquid_supervisor.py \
             github_upgrade_bridge.py \
             github_upgrade_patch.py \
