@@ -11,6 +11,7 @@ COMPILE_MODULES = (
     "local_information_engine_public.py",
     "run_with_env.py",
     "runtime_contract.py",
+    "single_owner_runtime.py",
     "tradysquid_supervisor.py",
     "run_supervisor_simple.py",
     "network_compat.py",
@@ -43,6 +44,7 @@ FOCUSED_TEST_MODULES = (
     "test_supervisor_availability.py",
     "test_supervisor_entrypoint_diagnostics.py",
     "test_runtime_contract.py",
+    "test_single_owner_runtime.py",
     "test_runtime_state_hygiene.py",
     "test_applied_upgrades.py",
     "test_applied_upgrade_status_runtime.py",
@@ -70,6 +72,7 @@ def validate_manifest() -> dict[str, object]:
         "ford_scan.py",
         "run_with_env.py",
         "runtime_contract.py",
+        "single_owner_runtime.py",
         "run_supervisor_simple.py",
         "tradysquid_supervisor.py",
         "diagnostic_upgrade_system.py",
@@ -81,6 +84,7 @@ def validate_manifest() -> dict[str, object]:
     }
     required_tests = {
         "test_runtime_contract.py",
+        "test_single_owner_runtime.py",
         "test_simple_upgrade_flow.py",
         "test_diagnostic_upgrade_system.py",
         "test_diagnostic_review_runtime.py",
@@ -102,4 +106,5 @@ def validate_manifest() -> dict[str, object]:
         "required_modules_present": True,
         "required_tests_present": True,
         "runtime_contract_tested": True,
+        "single_owner_guard_tested": True,
     }
