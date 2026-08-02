@@ -11,6 +11,7 @@ on:
       - "learning_application_public.py"
       - "learning_question_gaps.py"
       - "performance_reconciliation.py"
+      - "performance_scorecards.py"
       - "performance_channel_structure.py"
       - "always_on_operations.py"
       - "operations_acceptance.py"
@@ -76,6 +77,7 @@ jobs:
             local_information_engine_public.py \
             local_information_engine_bootstrap.py \
             performance_reconciliation.py \
+            performance_scorecards.py \
             performance_channel_structure.py \
             always_on_operations.py \
             operations_acceptance.py \
@@ -107,7 +109,7 @@ jobs:
           python learning_search_router.py
           python learning_application_public.py
           python performance_channel_structure.py
-          python performance_reconciliation.py
+          python performance_scorecards.py
           python always_on_operations.py
 
       - name: Run focused tests

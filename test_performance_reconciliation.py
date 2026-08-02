@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import ford_scan
 import performance_channel_structure
-import performance_reconciliation as reconciliation
+import performance_scorecards as scorecards
 import sync_discord_structure as structure
 
 
 class FakeDiscord:
-    def __init__(self) -> None:
+    def __init__(self, *, include_old_cards: bool = False) -> None:
         self.ready = True
         self.channels = {
             "daily_recap": "daily",
@@ -23,6 +23,28 @@ class FakeDiscord:
             channel_id: [] for channel_id in self.channels.values()
         }
         self.deleted: list[str] = []
+        self.old_pages: dict[str, list[dict]] = {
+            "daily": [],
+            "weekly": [],
+            "monthly": [],
+            "strategy": [],
+        }
+        if include_old_cards:
+            self.old_pages = {
+                "daily": [self.old_message("old-daily", "Daily Trade History · 07/29/26")],
+                "weekly": [self.old_message("old-weekly", "Weekly Trade History · 07/27/26")],
+                "monthly": [self.old_message("old-monthly", "Monthly Trade History · July 2026")],
+                "strategy": [self.old_message("old-strategy", "Strategy Trade History · REGULAR CALL")],
+            }
+
+    @staticmethod
+    def old_message(message_id: str, marker: str) -> dict:
+        return {
+            "id": message_id,
+            "author": {"bot": True},
+            "embeds": [{"description": marker}],
+            "content": "",
+        }
 
     def upsert_channel_message(
         self,
@@ -39,17 +61,20 @@ class FakeDiscord:
 
     def _request(self, method, path, payload=None):
         if method == "GET":
-            return []
+            channel_id = path.split("/")[2]
+            page = self.old_pages[channel_id]
+            self.old_pages[channel_id] = []
+            return page
         if method == "DELETE":
             self.deleted.append(path)
             return None
         raise AssertionError((method, path, payload))
 
 
-class PerformanceReconciliationTests(unittest.TestCase):
+class PerformanceScorecardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        reconciliation.install()
+        scorecards.install()
 
     def make_rows(self, count: int = 100) -> list[dict[str, str]]:
         rows = []
@@ -60,6 +85,7 @@ class PerformanceReconciliationTests(unittest.TestCase):
             ("SWING", "call"),
             ("SWING", "put"),
             ("SPREAD", "call"),
+            ("SPREAD", "put"),
         )
         for index in range(count):
             closed_at = monday + timedelta(days=index % 5, minutes=index)
@@ -97,7 +123,7 @@ class PerformanceReconciliationTests(unittest.TestCase):
             ford_scan.CHANNEL_NAMES["strategy_breakdown"], "strategy-breakdown"
         )
 
-    def test_structure_contains_each_report_channel_once(self) -> None:
+    def test_structure_contains_each_scorecard_channel_once(self) -> None:
         original = list(structure.CHANNELS)
         try:
             performance_channel_structure.install(structure)
@@ -112,65 +138,77 @@ class PerformanceReconciliationTests(unittest.TestCase):
         finally:
             structure.CHANNELS = original
 
-    def test_one_hundred_trades_appear_in_every_reporting_view(self) -> None:
+    def test_scoreboards_use_summary_cards_only(self) -> None:
         rows = self.make_rows()
-        discord = FakeDiscord()
+        discord = FakeDiscord(include_old_cards=True)
         state: dict = {}
-        reconciliation.sync_reports(
+        scorecards.sync_reports(
             discord,
             state,
             rows,
-            datetime(2026, 8, 1, 21, 0, tzinfo=ford_scan.MARKET_TZ),
+            datetime(2026, 8, 1, 21, 30, tzinfo=ford_scan.MARKET_TZ),
             market_open=False,
         )
 
         self.assertEqual(state["performance_reconciliation_closed_trades"], 100)
         self.assertEqual(state["performance_reconciliation_daily_reports"], 5)
         self.assertEqual(state["performance_reconciliation_weekly_reports"], 1)
-        self.assertEqual(state["performance_reconciliation_strategy_groups"], 5)
-        self.assertEqual(state["performance_reconciliation_monthly_reports"], 1)
-        self.assertEqual(
-            state["performance_reconciliation_version"], reconciliation.REPORT_VERSION
-        )
+        self.assertEqual(state["performance_reconciliation_monthly_reports"], 2)
+        self.assertEqual(state["performance_reconciliation_strategy_groups"], 6)
+        self.assertEqual(state["performance_reconciliation_history_pages"], 0)
+        self.assertTrue(state["performance_reconciliation_scorecard_only"])
+        self.assertEqual(len(discord.deleted), 4)
 
-        for channel_id in ("daily", "weekly", "monthly", "strategy"):
-            rendered = "\n".join(discord.channel_cards[channel_id])
-            self.assertIn("100/100", rendered)
-            for sequence in (1, 25, 50, 75, 100):
-                self.assertIn(f"F-TEST-{sequence:03d}", rendered)
+        self.assertEqual(len(discord.channel_cards["daily"]), 5)
+        self.assertEqual(len(discord.channel_cards["weekly"]), 1)
+        self.assertEqual(len(discord.channel_cards["monthly"]), 2)
+        self.assertEqual(len(discord.channel_cards["strategy"]), 6)
 
-        monthly = "\n".join(discord.channel_cards["monthly"])
-        self.assertIn("Monthly Performance · July 2026", monthly)
-        self.assertNotIn("Weekly Report ·", monthly)
+        rendered = "\n".join(discord.cards.values())
+        self.assertNotIn("Trade History", rendered)
+        self.assertNotIn("Performance Index", rendered)
+        self.assertNotIn("Page 1/", rendered)
 
-    def test_daily_and_weekly_totals_reconcile_exactly(self) -> None:
+        for label in scorecards.PLAY_TYPE_ORDER:
+            matching = [
+                card
+                for card in discord.channel_cards["strategy"]
+                if f"Strategy Scorecard · {label}" in card
+            ]
+            self.assertEqual(len(matching), 1, label)
+
+    def test_new_trading_week_starts_a_new_weekly_scorecard(self) -> None:
         rows = self.make_rows()
-        monday = date(2026, 7, 27)
-        daily = sum(
-            len(reconciliation.rows_closed_on(rows, monday + timedelta(days=index)))
-            for index in range(5)
+        discord = FakeDiscord()
+        state = {"performance_reconciliation_version": scorecards.REPORT_VERSION}
+        scorecards.sync_reports(
+            discord,
+            state,
+            rows,
+            datetime(2026, 8, 3, 7, 0, tzinfo=ford_scan.MARKET_TZ),
+            market_open=False,
         )
-        weekly = len(
-            reconciliation.rows_closed_between(rows, monday, monday + timedelta(days=4))
-        )
-        self.assertEqual(daily, 100)
-        self.assertEqual(weekly, 100)
+        self.assertEqual(len(discord.channel_cards["weekly"]), 2)
+        latest = discord.channel_cards["weekly"][-1]
+        self.assertIn("08/03", latest)
+        self.assertIn("0W", latest)
+        self.assertIn("0L", latest)
+        self.assertNotIn("Trade History", latest)
+
+    def test_play_type_normalization_handles_credit_names(self) -> None:
+        row = {"play_type": "CALL CREDIT", "call_or_put": ""}
+        self.assertEqual(scorecards.normalize_play_type(row), "SPREAD CALL")
+        row = {"play_type": "PUT CREDIT", "call_or_put": ""}
+        self.assertEqual(scorecards.normalize_play_type(row), "SPREAD PUT")
 
     def test_missing_closed_at_uses_last_evaluated_timestamp(self) -> None:
         rows = self.make_rows()
         row = rows[49]
         self.assertFalse(row["closed_at"])
         self.assertEqual(
-            reconciliation.effective_closed_at(row),
+            scorecards.base.effective_closed_at(row),
             ford_scan.parse_iso(row["last_evaluated_at"]),
         )
-
-    def test_ledger_signature_changes_with_trade_result(self) -> None:
-        rows = self.make_rows(1)
-        first = reconciliation.ledger_signature(rows)
-        rows[0]["realized_pl_dollars"] = "25"
-        second = reconciliation.ledger_signature(rows)
-        self.assertNotEqual(first, second)
 
 
 if __name__ == "__main__":
