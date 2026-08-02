@@ -43,17 +43,20 @@ def install_runtime_overrides(
     import journal_contract
     import openai_discord_patch
     import performance_scorecards
+    import shared_upgrade_lifecycle
     import upgrade_batch_44
 
     journal_contract.install()
     performance_scorecards.install()
     upgrade_batch_44.install_universe_policy()
     upgrade_batch_44.install_learning_extensions()
+    shared_upgrade_lifecycle.install()
     openai_discord_patch.install()
 
     if include_upgrade_batch_engine:
         import applied_upgrades
         import diagnostic_runtime_integration
+        import diagnostic_startup_runtime
         import diagnostic_upgrade_system
         import simple_upgrade_runtime
         import upgrade_batch_44_live_acceptance
@@ -63,6 +66,7 @@ def install_runtime_overrides(
         simple_upgrade_runtime.install()
         diagnostic_upgrade_system.install()
         diagnostic_runtime_integration.install()
+        diagnostic_startup_runtime.install()
         applied_upgrades.install_engine()
 
     if include_discord_upgrade_commands:
