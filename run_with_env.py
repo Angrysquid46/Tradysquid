@@ -31,12 +31,14 @@ def load_env() -> None:
 
 
 def install_runtime_overrides() -> None:
-    """Install journal and scorecard behavior shared by every local process."""
+    """Install journal, scorecard, and OpenAI behavior for local processes."""
     import journal_contract
+    import openai_discord_patch
     import performance_scorecards
 
     journal_contract.install()
     performance_scorecards.install()
+    openai_discord_patch.install()
 
 
 def main() -> None:
