@@ -119,7 +119,7 @@ def ensure_private_channels(tracker: Any) -> dict[str, str]:
         (
             item
             for item in inventory
-            if int(item.get("type") or -1) == 4
+            if int(item.get("type", -1)) == 4
             and normalized(item.get("name")) == normalized(CATEGORY_NAME)
         ),
         None,
@@ -146,7 +146,7 @@ def ensure_private_channels(tracker: Any) -> dict[str, str]:
             (
                 item
                 for item in inventory
-                if int(item.get("type") or -1) == 0
+                if int(item.get("type", -1)) == 0
                 and normalized(item.get("name")) == normalized(name)
             ),
             None,
