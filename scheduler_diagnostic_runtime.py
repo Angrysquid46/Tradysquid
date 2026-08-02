@@ -91,6 +91,21 @@ def _receipt_predates_engine(receipt: dict[str, Any] | None) -> bool:
     return bool(started and (not finished or finished < started))
 
 
+def _running_receipt_is_healthy(
+    receipt: dict[str, Any] | None,
+    interval: timedelta,
+) -> bool:
+    """A current RUNNING receipt is healthy until it exceeds the stuck limit."""
+    if not receipt or str(receipt.get("status") or "").upper() != "RUNNING":
+        return False
+    started = diagnostics._parse_time(receipt.get("started_at"))
+    if not started:
+        return False
+    elapsed = diagnostics.now() - started
+    stuck_after = max(interval * 2, timedelta(minutes=20))
+    return timedelta(0) <= elapsed <= stuck_after
+
+
 def job_checks(connection: Any) -> list[diagnostics.HealthCheck]:
     if _BASE_JOB_CHECKS is None:
         raise RuntimeError("Scheduler diagnostic runtime was not installed")
@@ -110,7 +125,17 @@ def job_checks(connection: Any) -> list[diagnostics.HealthCheck]:
         next_expected = finished + interval if finished else None
         retry = job.retry_interval or interval
 
-        if not _expected_to_run_now(job):
+        if _running_receipt_is_healthy(receipt, interval):
+            check = replace(
+                check,
+                passed=True,
+                severity="INFO",
+                detail=(
+                    f"{check.detail}; schedule state=actively running; "
+                    "the current receipt is neither overdue nor stuck"
+                ),
+            )
+        elif not _expected_to_run_now(job):
             check = replace(
                 check,
                 passed=True,

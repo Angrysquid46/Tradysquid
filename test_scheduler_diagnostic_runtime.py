@@ -198,6 +198,77 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
         self.assertIn("startup grace", check.detail)
         self.assertIn("predates", check.detail)
 
+    def test_current_running_job_is_healthy_until_stuck_limit(self) -> None:
+        connection = self.connection()
+        connection.execute(
+            """
+            INSERT INTO job_runs(job_name,status,started_at,finished_at,detail)
+            VALUES ('premarket-visibility','RUNNING','2026-08-02T15:03:25-05:00','','')
+            """
+        )
+        connection.commit()
+        job = FakeJob(
+            "premarket-visibility",
+            timedelta(minutes=45),
+            retry_interval=timedelta(minutes=2),
+        )
+        base = diagnostics.HealthCheck(
+            "job-premarket-visibility",
+            False,
+            "scheduler",
+            "job premarket-visibility",
+            "status=RUNNING; finished=pending; overdue=False; stuck=False",
+            severity="WARNING",
+        )
+        engine = SimpleNamespace(JOBS=[job])
+        current = datetime(2026, 8, 2, 15, 4, 39, tzinfo=timezone(timedelta(hours=-5)))
+        with (
+            patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
+            patch.object(diagnostics, "_engine", return_value=engine),
+            patch.object(scheduler_runtime, "REQUIRED_JOBS", ()),
+            patch.object(diagnostics.ford_scan, "market_is_open_now", return_value=(True, "open")),
+            patch.object(diagnostics, "now", return_value=current),
+            patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
+        ):
+            check = scheduler_runtime.job_checks(connection)[0]
+        self.assertTrue(check.passed)
+        self.assertEqual(check.severity, "INFO")
+        self.assertIn("actively running", check.detail)
+        self.assertIn("neither overdue nor stuck", check.detail)
+
+    def test_running_job_still_fails_after_stuck_limit(self) -> None:
+        connection = self.connection()
+        connection.execute(
+            """
+            INSERT INTO job_runs(job_name,status,started_at,finished_at,detail)
+            VALUES ('self-diagnostics','RUNNING','2026-08-02T14:30:00-05:00','','')
+            """
+        )
+        connection.commit()
+        job = FakeJob("self-diagnostics", timedelta(minutes=5))
+        base = diagnostics.HealthCheck(
+            "job-self-diagnostics",
+            False,
+            "scheduler",
+            "job self-diagnostics",
+            "status=RUNNING; finished=pending; overdue=False; stuck=True",
+            severity="ERROR",
+        )
+        engine = SimpleNamespace(JOBS=[job])
+        current = datetime(2026, 8, 2, 15, 4, 43, tzinfo=timezone(timedelta(hours=-5)))
+        with (
+            patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
+            patch.object(diagnostics, "_engine", return_value=engine),
+            patch.object(scheduler_runtime, "REQUIRED_JOBS", ()),
+            patch.object(diagnostics.ford_scan, "market_is_open_now", return_value=(True, "open")),
+            patch.object(diagnostics, "now", return_value=current),
+            patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
+        ):
+            check = scheduler_runtime.job_checks(connection)[0]
+        self.assertFalse(check.passed)
+        self.assertEqual(check.severity, "ERROR")
+        self.assertNotIn("actively running", check.detail)
+
     def test_install_wraps_current_job_check_chain(self) -> None:
         active = lambda connection: []
         original = diagnostics._job_checks
