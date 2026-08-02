@@ -10,6 +10,7 @@ COMPILE_MODULES = (
     "local_information_engine_bootstrap.py",
     "local_information_engine_public.py",
     "run_with_env.py",
+    "runtime_contract.py",
     "tradysquid_supervisor.py",
     "run_supervisor_simple.py",
     "network_compat.py",
@@ -68,6 +69,7 @@ def validate_manifest() -> dict[str, object]:
     required_modules = {
         "ford_scan.py",
         "run_with_env.py",
+        "runtime_contract.py",
         "run_supervisor_simple.py",
         "tradysquid_supervisor.py",
         "diagnostic_upgrade_system.py",
