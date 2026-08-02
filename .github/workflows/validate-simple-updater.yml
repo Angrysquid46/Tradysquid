@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "run_supervisor_simple.py"
+      - "runtime_contract.py"
       - "simple_upgrade_runtime.py"
       - "applied_upgrade_status_runtime.py"
       - "diagnostic_upgrade_system.py"
@@ -28,6 +29,7 @@ on:
       - "github_upgrade_patch.py"
       - ".gitignore"
       - "test_simple_upgrade_flow.py"
+      - "test_runtime_contract.py"
       - "test_applied_upgrade_status_runtime.py"
       - "test_diagnostic_upgrade_system.py"
       - "test_diagnostic_startup_runtime.py"
@@ -36,6 +38,7 @@ on:
       - "test_diagnostic_review_runtime.py"
       - "test_discord_command_diagnostics.py"
       - "test_supervisor_diagnostic_runtime.py"
+      - "test_supervisor_entrypoint_diagnostics.py"
       - "test_scheduler_diagnostic_runtime.py"
       - "test_github_upgrade_bridge_runtime.py"
       - "test_upgrade_lifecycle_dashboard.py"
@@ -98,11 +101,16 @@ jobs:
               ).returncode
           )
           PY
-      - name: Verify one intended supervisor and complete runtime attachment
+      - name: Verify one intended supervisor and minimal runtime attachment
         run: |
           grep -q "run_supervisor_simple.py" START-SUPERVISOR.cmd
           ! grep -E "python -u.*run_supervisor_resilient.py" START-SUPERVISOR.cmd
-          grep -q "supervisor_diagnostic_runtime.install()" run_with_env.py
-          grep -q "scheduler_diagnostic_runtime.install()" run_with_env.py
-          grep -q "diagnostic_state_migration.install()" run_with_env.py
-          grep -q "diagnostic_review_runtime.install()" run_with_env.py
+          grep -q "runtime_contract.install_information_engine()" run_with_env.py
+          grep -q "supervisor_diagnostic_runtime.install()" runtime_contract.py
+          grep -q "scheduler_diagnostic_runtime.install()" runtime_contract.py
+          grep -q "review.install()" runtime_contract.py
+          grep -q "outbound_connectivity_runtime.install()" runtime_contract.py
+          grep -q "dedupe_and_retire_jobs" runtime_contract.py
+          ! grep -q "diagnostic_state_migration.install()" run_with_env.py runtime_contract.py
+          ! grep -q "upgrade_batch_44_live_acceptance.install()" run_with_env.py runtime_contract.py
+          ! grep -q "applied_upgrades.install_engine()" run_with_env.py runtime_contract.py
