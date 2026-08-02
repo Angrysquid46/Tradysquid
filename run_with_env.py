@@ -40,6 +40,7 @@ def install_runtime_overrides(
     import github_upgrade_bridge
     import github_upgrade_bridge_runtime
     import journal_contract
+    import market_data_runtime
     import network_compat
     import openai_discord_patch
     import performance_scorecards
@@ -48,6 +49,7 @@ def install_runtime_overrides(
     import upgrade_batch_44
 
     network_compat.install()
+    market_data_runtime.install(ford_scan)
     runtime_contract.install_safe_intraday_history(ford_scan)
     runtime_contract.install_recovery_bridge(github_upgrade_bridge)
     github_upgrade_bridge_runtime.install()
@@ -68,6 +70,29 @@ def install_runtime_overrides(
     if include_information_engine:
         runtime_contract.install_information_engine()
 
+        import dynamic_universe
+        import local_information_engine as information_engine
+        import multi_ticker_scan
+        import provider_lanes
+        import resource_mesh_runtime
+        import targeted_scan_runtime
+        import trade_intelligence
+
+        provider_lanes.install(information_engine)
+        targeted_scan_runtime.install(
+            information_engine,
+            dynamic_universe,
+            multi_ticker_scan,
+            ford_scan,
+        )
+        resource_mesh_runtime.install(
+            information_engine,
+            dynamic_universe,
+            ford_scan,
+            trade_intelligence,
+        )
+        resource_mesh_runtime.start_local_fallback()
+
     if include_discord_upgrade_commands:
         import github_upgrade_patch
 
@@ -78,15 +103,23 @@ def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("Usage: python run_with_env.py <script.py> [arguments...]")
     load_env()
-    requested = SCRIPT_OVERRIDES.get(Path(sys.argv[1]).name.casefold(), sys.argv[1])
+    requested = SCRIPT_OVERRIDES.get(
+        Path(sys.argv[1]).name.casefold(), sys.argv[1]
+    )
     target = (ROOT / requested).resolve()
     if target.parent != ROOT or not target.is_file() or target.suffix != ".py":
         raise SystemExit("Target must be a Python file in this repository.")
 
     install_runtime_overrides(
-        include_discord_upgrade_commands=(target.name.casefold() == "discord_command_bot_public.py"),
-        include_information_engine=(target.name.casefold() == "local_information_engine_bootstrap.py"),
-        include_supervisor_guard=(target.name.casefold() == "run_supervisor_simple.py"),
+        include_discord_upgrade_commands=(
+            target.name.casefold() == "discord_command_bot_public.py"
+        ),
+        include_information_engine=(
+            target.name.casefold() == "local_information_engine_bootstrap.py"
+        ),
+        include_supervisor_guard=(
+            target.name.casefold() == "run_supervisor_simple.py"
+        ),
     )
     sys.argv = [str(target), *sys.argv[2:]]
     runpy.run_path(str(target), run_name="__main__")
