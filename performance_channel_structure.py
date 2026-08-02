@@ -1,4 +1,4 @@
-"""Install the four distinct Performance-category reporting destinations."""
+"""Install the four distinct Performance-category scorecard destinations."""
 
 from __future__ import annotations
 
@@ -8,25 +8,25 @@ from typing import Any
 PERFORMANCE_CHANNELS = (
     (
         "performance-dashboard",
-        "Monthly paper-trade performance using weekly-style summaries plus complete trade history.",
+        "One updating monthly scorecard per calendar month; trade detail remains in the journal.",
     ),
     (
         "daily-recap",
-        "One summary per recorded trading day plus paginated history containing every closed trade.",
+        "One updating scorecard per trading day with wins, losses, P/L, expectancy, and best/worst.",
     ),
     (
         "weekly-report",
-        "One weekly summary plus paginated history containing every closed trade from that week.",
+        "One updating scorecard per trading week; a new card begins with each new trading week.",
     ),
     (
         "strategy-breakdown",
-        "Ranked strategy results plus paginated history containing every closed trade by strategy.",
+        "One updating scorecard for each play type: regular, swing, and spread calls and puts.",
     ),
 )
 
 
 def install(sync: Any) -> None:
-    """Replace the ambiguous consolidated routes with explicit channels."""
+    """Replace ambiguous consolidated routes with explicit scorecard channels."""
     required_names = {name for name, _ in PERFORMANCE_CHANNELS}
     rebuilt = []
     inserted = False
@@ -49,16 +49,16 @@ def install(sync: Any) -> None:
     sync.CHANNEL_STARTERS.update(
         {
             "performance-dashboard": (
-                "Monthly performance summaries use the weekly layout. Every monthly trade is listed in paginated history cards."
+                "Monthly scoreboard only: one updating summary card per calendar month. Trade details remain in #trade-journal."
             ),
             "daily-recap": (
-                "Every recorded trading day receives a summary and complete paginated closed-trade history."
+                "Daily scoreboard only: one updating summary card per recorded trading day."
             ),
             "weekly-report": (
-                "Every recorded week receives a summary and complete paginated closed-trade history."
+                "Weekly scoreboard only: one updating card for the active trading week, followed by a new card next week."
             ),
             "strategy-breakdown": (
-                "Every closed trade is grouped by strategy and retained in paginated history cards."
+                "One updating scorecard per play type. No duplicated trade-history pages are posted here."
             ),
         }
     )
@@ -76,4 +76,4 @@ if __name__ == "__main__":
     import sync_discord_structure as sync
 
     validate(sync)
-    print("Separate Performance report channels validated")
+    print("Separate Performance scorecard channels validated")
