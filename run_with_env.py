@@ -55,6 +55,7 @@ def install_runtime_overrides(
 
     if include_upgrade_batch_engine:
         import applied_upgrades
+        import diagnostic_nonblocking_runtime
         import diagnostic_runtime_integration
         import diagnostic_startup_runtime
         import diagnostic_upgrade_system
@@ -70,6 +71,7 @@ def install_runtime_overrides(
         market_calendar_runtime.install()
         diagnostic_runtime_integration.install()
         diagnostic_startup_runtime.install()
+        diagnostic_nonblocking_runtime.install()
         upgrade_lifecycle_dashboard.install()
         applied_upgrades.install_engine()
 
