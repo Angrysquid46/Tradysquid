@@ -185,8 +185,9 @@ def run_required_startup_jobs() -> dict[str, Any]:
             "contract": (
                 "#breaking-alerts heartbeat, #premarket session card, daily/weekly/"
                 "monthly scorecards, one scorecard per play type, and the complete "
-                "entry checklist for every open journal were acknowledged; existing "
-                "Discord report cards were preserved while replacements used upserts"
+                "entry checklist for every open journal were acknowledged; the engine "
+                "health listener remains available while existing Discord report cards "
+                "are preserved and replacements use non-destructive upserts"
             ),
         }
         _write_acceptance(payload)
