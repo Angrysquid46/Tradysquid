@@ -41,11 +41,12 @@ jobs:
             github_upgrade_patch.py \
             run_with_env.py \
             network_compat.py
-      - name: Run upgrade-flow and safety tests
+      - name: Run existing safety tests
         run: |
           python -m unittest -q \
-            test_simple_upgrade_flow.py \
             test_github_upgrade_bridge.py \
             test_supervisor_availability.py \
             test_runtime_state_hygiene.py \
             test_applied_upgrades.py
+      - name: Run simple-flow contract separately
+        run: python -m unittest -q test_simple_upgrade_flow.py
