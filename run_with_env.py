@@ -40,12 +40,14 @@ def install_runtime_overrides(
 
     network_compat.install()
 
+    import github_upgrade_bridge_runtime
     import journal_contract
     import openai_discord_patch
     import performance_scorecards
     import shared_upgrade_lifecycle
     import upgrade_batch_44
 
+    github_upgrade_bridge_runtime.install()
     journal_contract.install()
     performance_scorecards.install()
     upgrade_batch_44.install_universe_policy()
