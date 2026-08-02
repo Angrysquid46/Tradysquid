@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import ford_scan
 import performance_channel_structure
@@ -173,7 +173,7 @@ class PerformanceScorecardTests(unittest.TestCase):
             matching = [
                 card
                 for card in discord.channel_cards["strategy"]
-                if f"## 🧭 {label}" in card
+                if f"Strategy Scorecard · {label}" in card
             ]
             self.assertEqual(len(matching), 1, label)
 
@@ -193,6 +193,7 @@ class PerformanceScorecardTests(unittest.TestCase):
         self.assertIn("08/03", latest)
         self.assertIn("0W", latest)
         self.assertIn("0L", latest)
+        self.assertNotIn("Trade History", latest)
 
     def test_play_type_normalization_handles_credit_names(self) -> None:
         row = {"play_type": "CALL CREDIT", "call_or_put": ""}
