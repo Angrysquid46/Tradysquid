@@ -20,13 +20,15 @@ class SupervisorEntrypointDiagnosticsTests(unittest.TestCase):
         self.assertIn("run_supervisor", text)
         self.assertIn("local_information_engine(_public|_bootstrap)?", text)
 
-    def test_read_only_diagnostics_cover_updater_and_watchdog(self) -> None:
+    def test_read_only_diagnostics_cover_updater_watchdog_and_engine_acceptance(self) -> None:
         text = (ROOT / "SUPERVISOR-DIAGNOSTICS.ps1").read_text(encoding="utf-8")
         for marker in (
             "last_fetch_status",
             "last_update_status",
             "last_discord_sync_status",
             "last_command_registration_status",
+            "information_engine_acceptance_status",
+            "market-intelligence-startup.json",
             "Get-ScheduledTask",
             "Get-NetTCPConnection",
             "supervisor.log",
