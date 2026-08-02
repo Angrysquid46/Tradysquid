@@ -693,6 +693,19 @@ def managed_ticker_news_job(connection: sqlite3.Connection) -> str:
                 connection, "news_events", f"news:{ticker}", "\n".join(lines)
             )
             store_observation(connection, f"ticker-news:{ticker}", {"items": items})
+            for item in items:
+                trade_intelligence.store_research_source({
+                    "source_name": "Google News RSS discovery",
+                    "source_url": item["url"],
+                    "published_at": item.get("date", ""),
+                    "ticker": ticker,
+                    "claim": item["title"],
+                    "confidence": "UNVERIFIED-HEADLINE",
+                    "quality": "REQUIRES-ORIGINAL-SOURCE",
+                    "learning_concepts": ["news-events", "research-verification"],
+                    "usage_terms": "Headline discovery only; verify the original publisher and its terms.",
+                    "status": "REVIEW",
+                })
             completed.append(ticker)
         except Exception as exc:
             detail = " ".join(str(exc).split())[:240] or "no detail"
@@ -1036,6 +1049,19 @@ def news_job(connection: sqlite3.Connection) -> str:
     if not previous_raw:
         fresh = []
     store_observation(connection, "news", {"items": items, "new": fresh})
+    for item in items:
+        trade_intelligence.store_research_source({
+            "source_name": "Ford Investor Relations",
+            "source_url": item["url"],
+            "published_at": item.get("date", ""),
+            "ticker": "F",
+            "claim": item["title"],
+            "confidence": "PRIMARY-SOURCE",
+            "quality": "OFFICIAL-COMPANY",
+            "learning_concepts": ["company-research", "news-events"],
+            "usage_terms": "Store citation and extracted metadata; link to the original source.",
+            "status": "REVIEW",
+        })
     for item in reversed(fresh[:5]):
         publish_change_only(
             connection,
@@ -1065,6 +1091,19 @@ def filings_job(connection: sqlite3.Connection) -> str:
     previous = set(json.loads(get_state(connection, "seen_filings", "[]")))
     fresh = [item for item in filings if item["id"] not in previous]
     store_observation(connection, "filings", {"filings": filings, "new": fresh})
+    for filing in filings:
+        trade_intelligence.store_research_source({
+            "source_name": "SEC EDGAR",
+            "source_url": filing["url"],
+            "published_at": filing.get("date", ""),
+            "ticker": "F",
+            "claim": f"{filing.get('form', 'filing')} filed {filing.get('date', '')}",
+            "confidence": "PRIMARY-SOURCE",
+            "quality": "REGULATORY-FILING",
+            "learning_concepts": ["sec-filings", "fundamental-research"],
+            "usage_terms": "Public regulatory filing; retain citation and filing date.",
+            "status": "REVIEW",
+        })
     if fresh:
         lines = ["## New Ford SEC filing"]
         for filing in fresh[:5]:
