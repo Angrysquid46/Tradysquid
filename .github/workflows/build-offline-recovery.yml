@@ -1,0 +1,40 @@
+name: Build Offline Recovery Package
+
+on:
+  pull_request:
+    paths:
+      - "OFFLINE-RECOVERY-INSTALL.ps1"
+      - ".github/workflows/build-offline-recovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify current release tests
+        run: |
+          python -m py_compile network_compat.py applied_upgrades.py run_with_env.py run_supervisor_resilient.py local_information_engine_bootstrap.py sync_discord_structure_reports.py
+          python -m unittest -q test_runtime_state_hygiene.py test_applied_upgrades.py test_supervisor_discord_readiness.py test_market_intelligence_bootstrap.py
+      - name: Build exact main bundle
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          mkdir -p offline-recovery
+          git bundle create offline-recovery/tradysquid-offline-recovery.bundle refs/remotes/origin/main
+          git bundle verify offline-recovery/tradysquid-offline-recovery.bundle
+          cp OFFLINE-RECOVERY-INSTALL.ps1 offline-recovery/
+          sha256sum offline-recovery/tradysquid-offline-recovery.bundle offline-recovery/OFFLINE-RECOVERY-INSTALL.ps1 > offline-recovery/SHA256SUMS.txt
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: tradysquid-offline-recovery-v2
+          path: offline-recovery/
+          if-no-files-found: error
+          retention-days: 7
