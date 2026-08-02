@@ -178,7 +178,7 @@ def retry_pending_discord_configuration() -> bool:
         )
         results = [run_command_registration_only(), *structure_results(previous_results)]
 
-    record_discord_sync_results(results, source="automatic-retry")
+    base.record_discord_sync_results(results, source="automatic-retry")
     return True
 
 
