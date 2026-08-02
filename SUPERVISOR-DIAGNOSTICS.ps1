@@ -2,17 +2,8 @@ $ErrorActionPreference = 'Continue'
 $Root = (Resolve-Path $PSScriptRoot).Path
 $StatePath = Join-Path $Root 'state\supervisor-state.json'
 $DiagnosticDb = Join-Path $Root 'state\diagnostics.db'
-$SupervisorLog = Join-Path $Root 'state\supervisor-logs\supervisor.log'
-$CommandLog = Join-Path $Root 'state\supervisor-logs\command-bot.log'
-$EngineLog = Join-Path $Root 'state\supervisor-logs\information-engine.log'
-$StartupLog = Join-Path $Root 'state\supervisor-startup.log'
-$WatchdogLog = Join-Path $Root 'state\supervisor-watchdog.log'
 $TaskName = 'Tradysquids Supervisor Watchdog'
-$SupervisorScripts = @(
-    (Join-Path $Root 'run_supervisor_simple.py'),
-    (Join-Path $Root 'run_supervisor_resilient.py'),
-    (Join-Path $Root 'run_supervisor.py')
-)
+$SimpleScript = Join-Path $Root 'run_supervisor_simple.py'
 
 function Write-Section([string]$Title) {
     Write-Host ""
@@ -25,45 +16,50 @@ function Get-GitValue([string[]]$Arguments) {
     return ($output -join "`n").Trim()
 }
 
-Write-Section 'Git and updater (read-only)'
-$branch = Get-GitValue @('rev-parse', '--abbrev-ref', 'HEAD')
-$local = Get-GitValue @('rev-parse', '--short=12', 'HEAD')
-$remote = Get-GitValue @('rev-parse', '--short=12', 'origin/main')
-$status = Get-GitValue @('status', '--porcelain', '--untracked-files=no')
-$treeState = if ([string]::IsNullOrWhiteSpace($status)) { 'clean' } else { $status }
-Write-Host "active entrypoint expected: run_supervisor_simple.py"
-Write-Host "update interval expected: 120 seconds"
-Write-Host "branch: $branch"
-Write-Host "local:  $local"
-Write-Host "cached origin/main: $remote"
-Write-Host "tracked tree: $treeState"
+Write-Section 'Git and updater'
+Write-Host 'active entrypoint expected: run_supervisor_simple.py'
+Write-Host 'update interval expected: 120 seconds'
+Write-Host "branch: $(Get-GitValue @('rev-parse', '--abbrev-ref', 'HEAD'))"
+Write-Host "local:  $(Get-GitValue @('rev-parse', '--short=12', 'HEAD'))"
+Write-Host "cached origin/main: $(Get-GitValue @('rev-parse', '--short=12', 'origin/main'))"
+$tracked = Get-GitValue @('status', '--porcelain', '--untracked-files=no')
+Write-Host "tracked tree: $(if ([string]::IsNullOrWhiteSpace($tracked)) { 'clean' } else { $tracked })"
 Write-Host 'No fetch, merge, reset, restart, repair, or Discord write was performed.'
 
-Write-Section 'Supervisor processes'
-$escapedScripts = @($SupervisorScripts | ForEach-Object { [regex]::Escape($_) })
-$processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object {
-        $command = [string]$_.CommandLine
-        $command -and $_.Name -match '^python(w)?\.exe$' -and
-        ($escapedScripts | Where-Object { $command -match $_ }).Count -gt 0
-    } |
-    Select-Object ProcessId, ParentProcessId, Name, CommandLine)
-if ($processes.Count -eq 0) { Write-Host 'No supervisor Python process found.' }
-else { $processes | Format-List | Out-String -Width 260 | Write-Host }
+Write-Section 'Single supervisor ownership'
+$escaped = [regex]::Escape($SimpleScript)
+$supervisors = @(
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -match '^python(w)?\.exe$' -and
+            $_.CommandLine -and
+            $_.CommandLine -match $escaped
+        } |
+        Select-Object ProcessId, ParentProcessId, Name, CommandLine
+)
+$listener = Get-NetTCPConnection -State Listen -LocalPort 8876 -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+Write-Host "simple supervisor count: $($supervisors.Count)"
+Write-Host "port 8876 owner: $(if ($listener) { $listener.OwningProcess } else { 'none' })"
+if ($supervisors.Count -gt 0) {
+    $supervisors | Format-List | Out-String -Width 260 | Write-Host
+}
 
-Write-Section 'Managed services'
+Write-Section 'Managed services and ports'
 $servicePattern = 'discord_command_bot(_public)?\.py|local_information_engine(_public|_bootstrap)?\.py|run_ngrok\.py|ngrok(\.exe)?\s+http\s+8080'
-$services = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and $_.CommandLine -match $servicePattern } |
-    Select-Object ProcessId, Name, CommandLine)
+$services = @(
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine -match $servicePattern } |
+        Select-Object ProcessId, Name, CommandLine
+)
 if ($services.Count -eq 0) { Write-Host 'No managed service process found.' }
 else { $services | Format-Table -AutoSize | Out-String -Width 260 | Write-Host }
-
-Write-Section 'Listening ports'
-$ports = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-    Where-Object { $_.LocalPort -in 8080, 8765, 8876, 4040 } |
-    Sort-Object LocalPort |
-    Select-Object LocalAddress, LocalPort, OwningProcess)
+$ports = @(
+    Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+        Where-Object { $_.LocalPort -in 8080, 8765, 8876, 4040 } |
+        Sort-Object LocalPort |
+        Select-Object LocalAddress, LocalPort, OwningProcess
+)
 if ($ports.Count -eq 0) { Write-Host 'None of the expected ports are listening.' }
 else { $ports | Format-Table -AutoSize | Out-String | Write-Host }
 
@@ -98,31 +94,30 @@ else {
     catch { Write-Host "State file could not be parsed: $($_.Exception.Message)" }
 }
 
-Write-Section 'Diagnostic and upgrade queue state'
+Write-Section 'Actionable diagnostics'
 if (-not (Test-Path $DiagnosticDb)) {
-    Write-Host 'state\diagnostics.db is missing; the diagnostic engine has not written its first receipt.'
+    Write-Host 'state\diagnostics.db is missing; no diagnostic receipt exists yet.'
 }
 else {
     $python = @'
 import json
-import diagnostic_upgrade_system as d
-summary=d.diagnostics_summary()
+import diagnostic_review_runtime as review
+summary = review.diagnostics_summary()
 print(json.dumps({
   "last_cycle": summary.get("last_cycle"),
-  "counts": summary.get("counts"),
-  "open": [
+  "actionable_count": len(summary.get("actionable") or []),
+  "transient_count": len(summary.get("transient") or []),
+  "actionable": [
     {
       "diagnostic_id": row.get("diagnostic_id"),
       "status": row.get("status"),
-      "severity": row.get("severity"),
       "component": row.get("component"),
       "operation": row.get("operation"),
       "failures": row.get("consecutive_failures"),
       "github_batch": row.get("github_issue_number"),
       "github_request": row.get("github_request_number"),
-      "latest": row.get("last_seen"),
     }
-    for row in summary.get("open", [])[:20]
+    for row in (summary.get("actionable") or [])[:20]
   ]
 }, indent=2))
 '@
@@ -132,11 +127,11 @@ print(json.dumps({
 }
 
 foreach ($item in @(
-    @{ Name = 'Supervisor log'; Path = $SupervisorLog; Lines = 60 },
-    @{ Name = 'Command-bot log'; Path = $CommandLog; Lines = 40 },
-    @{ Name = 'Information-engine log'; Path = $EngineLog; Lines = 60 },
-    @{ Name = 'Startup log'; Path = $StartupLog; Lines = 40 },
-    @{ Name = 'Watchdog log'; Path = $WatchdogLog; Lines = 40 }
+    @{ Name = 'Supervisor log'; Path = (Join-Path $Root 'state\supervisor-logs\supervisor.log'); Lines = 40 },
+    @{ Name = 'Command-bot log'; Path = (Join-Path $Root 'state\supervisor-logs\command-bot.log'); Lines = 30 },
+    @{ Name = 'Information-engine log'; Path = (Join-Path $Root 'state\supervisor-logs\information-engine.log'); Lines = 40 },
+    @{ Name = 'Startup log'; Path = (Join-Path $Root 'state\supervisor-startup.log'); Lines = 30 },
+    @{ Name = 'Watchdog log'; Path = (Join-Path $Root 'state\supervisor-watchdog.log'); Lines = 30 }
 )) {
     Write-Section $item.Name
     if (Test-Path $item.Path) { Get-Content -Path $item.Path -Tail $item.Lines }
