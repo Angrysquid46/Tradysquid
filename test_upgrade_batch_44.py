@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+import journal_contract
 import upgrade_batch_44 as batch
 
 
@@ -79,6 +80,28 @@ class UpgradeBatch44Tests(unittest.TestCase):
         self.assertIn("8 more closed trade", rendered)
         self.assertIn("Individual completed trades remain only in Trade Journal", rendered)
         self.assertNotIn("trade_id", rendered)
+
+    def test_runtime_learning_install_reaches_rendered_journal(self) -> None:
+        journal_contract.install()
+        batch.install_learning_extensions()
+        result = journal_contract.validate_contract()
+        self.assertEqual(result["format_version"], "16")
+        self.assertEqual(result["missing"], 0)
+        self.assertIn(
+            "Applied Decision Checklist",
+            journal_contract.REQUIRED_ENTRY_MARKERS,
+        )
+
+    def test_engine_install_registers_batch_jobs_once(self) -> None:
+        batch.install_engine()
+        names = [job.name for job in batch._engine().JOBS]
+        for expected in (
+            "active-market-regime",
+            "intraday-chart-refresh",
+            "dynamic-universe-rotation",
+            "upgrade-request-migration",
+        ):
+            self.assertEqual(names.count(expected), 1)
 
 
 if __name__ == "__main__":
