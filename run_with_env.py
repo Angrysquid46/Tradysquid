@@ -6,6 +6,7 @@ import os
 import runpy
 import sys
 from pathlib import Path
+from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
@@ -17,6 +18,17 @@ SCRIPT_OVERRIDES = {
     "sync_discord_structure.py": "sync_discord_structure_reports.py",
     "sync_discord_structure_public.py": "sync_discord_structure_reports.py",
 }
+
+# These were temporary migration, acceptance, or reporting jobs. They are not
+# part of the bot, scanner, information engine, updater, or rollback path.
+RETIRED_RUNTIME_JOBS = {
+    "upgrade-request-migration",
+    "upgrade-batch-44-acceptance",
+    "upgrade-lifecycle-dashboard",
+    "applied-upgrades-dashboard",
+    "market-hours-upgrade-review",
+}
+RECOVERED_DIAGNOSTIC_STATES = {"RECOVERED", "RESOLVED", "VERIFIED"}
 
 
 def load_env() -> None:
@@ -30,16 +42,109 @@ def load_env() -> None:
         os.environ.setdefault(name.strip(), value.strip())
 
 
+def _dedupe_and_retire_jobs(engine: Any) -> None:
+    """Keep exactly one copy of each current job and remove completed verifiers."""
+    rebuilt = []
+    seen: set[str] = set()
+    for job in engine.JOBS:
+        if job.name in RETIRED_RUNTIME_JOBS or job.name in seen:
+            continue
+        rebuilt.append(job)
+        seen.add(job.name)
+    engine.JOBS = rebuilt
+
+
+def _install_recovery_aware_github_bridge(bridge: Any) -> None:
+    """Make recovered automatic incidents factual and close empty repair batches."""
+    original_body: Callable[[dict[str, Any], int], str] = bridge._diagnostic_body
+    original_add: Callable[[dict[str, Any]], dict[str, Any]] = bridge.add_or_update_diagnostic
+
+    if getattr(bridge, "_tradysquid_recovery_patch", False):
+        return
+
+    def diagnostic_body(report: dict[str, Any], sequence: int) -> str:
+        body = original_body(report, sequence)
+        status = str(report.get("status") or "").upper()
+        if status not in RECOVERED_DIAGNOSTIC_STATES:
+            return body
+        body = body.replace(
+            "**Status:** PENDING BATCH REVIEW",
+            f"**Status:** {status}",
+        )
+        body = body.replace(
+            "**Next action:** Owner marks the shared batch upgrade-ready; maintainer reviews and implements the repair.",
+            "**Next action:** No owner action. The incident recovered and remains in history.",
+        )
+        return body
+
+    def close_if_recovered() -> None:
+        try:
+            issue = bridge._find_open_batch()
+            if not issue:
+                return
+            issue_number = int(issue["number"])
+            comments = bridge._request_comments(issue_number)
+            if not comments:
+                return
+            automatic = 0
+            for comment in comments:
+                body = str(comment.get("body") or "")
+                source = bridge._field(body, "Source", "OWNER REQUEST").upper()
+                if source != "AUTOMATIC DIAGNOSTIC":
+                    return
+                automatic += 1
+                status = bridge._field(
+                    body, "Status", "PENDING BATCH REVIEW"
+                ).strip("*").upper()
+                if status not in RECOVERED_DIAGNOSTIC_STATES:
+                    return
+            if not automatic:
+                return
+            bridge._request(
+                "POST",
+                f"/issues/{issue_number}/comments",
+                payload={
+                    "body": (
+                        "## Automatic diagnostic batch recovered\n\n"
+                        "Every automatic request is recovered, resolved, or verified. "
+                        "No owner request was present, so this batch closed automatically."
+                    )
+                },
+            )
+            bridge._request(
+                "PATCH",
+                f"/issues/{issue_number}",
+                payload={
+                    "state": "closed",
+                    "title": f"[Tradysquids Upgrade Batch] RECOVERED · #{issue_number}",
+                },
+            )
+        except Exception:
+            # GitHub is external. A failed cleanup must never block the engine.
+            return
+
+    def add_or_update_diagnostic(report: dict[str, Any]) -> dict[str, Any]:
+        result = original_add(report)
+        close_if_recovered()
+        return result
+
+    bridge._diagnostic_body = diagnostic_body
+    bridge.add_or_update_diagnostic = add_or_update_diagnostic
+    bridge.REQUEST_TIMEOUT_SECONDS = 12
+    bridge._tradysquid_recovery_patch = True
+
+
 def install_runtime_overrides(
     *,
     include_discord_upgrade_commands: bool = False,
     include_upgrade_batch_engine: bool = False,
 ) -> None:
-    """Install shared behavior, optional Discord commands, and runtime jobs."""
+    """Install shared behavior, optional Discord commands, and current jobs."""
     import network_compat
 
     network_compat.install()
 
+    import github_upgrade_bridge
     import github_upgrade_bridge_runtime
     import journal_contract
     import openai_discord_patch
@@ -47,6 +152,7 @@ def install_runtime_overrides(
     import shared_upgrade_lifecycle
     import upgrade_batch_44
 
+    _install_recovery_aware_github_bridge(github_upgrade_bridge)
     github_upgrade_bridge_runtime.install()
     journal_contract.install()
     performance_scorecards.install()
@@ -56,43 +162,23 @@ def install_runtime_overrides(
     openai_discord_patch.install()
 
     if include_upgrade_batch_engine:
-        import applied_upgrade_status_runtime
-        import applied_upgrades
-        import diagnostic_nonblocking_runtime
         import diagnostic_review_runtime
-        import diagnostic_runtime_integration
-        import diagnostic_startup_runtime
-        import diagnostic_state_migration
         import diagnostic_upgrade_system
-        import discord_command_diagnostics
         import market_calendar_runtime
         import outbound_connectivity_runtime
         import scheduler_diagnostic_runtime
-        import simple_upgrade_runtime
         import supervisor_diagnostic_runtime
-        import upgrade_batch_44_live_acceptance
-        import upgrade_lifecycle_dashboard
 
-        # Install the complete runtime chain in dependency order. The review
-        # layer controls publication; outbound aggregation runs immediately
-        # after it so all current HTTPS symptoms enter one root-cause record.
+        # Install the actual market-information feature jobs from the completed
+        # upgrade, then only the diagnostics needed to protect the core runtime.
         upgrade_batch_44.install_engine()
-        upgrade_batch_44_live_acceptance.install()
-        simple_upgrade_runtime.install()
         diagnostic_upgrade_system.install()
         market_calendar_runtime.install()
-        diagnostic_runtime_integration.install()
-        diagnostic_startup_runtime.install()
-        diagnostic_nonblocking_runtime.install()
-        discord_command_diagnostics.install()
         supervisor_diagnostic_runtime.install()
         scheduler_diagnostic_runtime.install()
-        upgrade_lifecycle_dashboard.install()
-        applied_upgrade_status_runtime.install()
-        diagnostic_state_migration.install()
         diagnostic_review_runtime.install()
         outbound_connectivity_runtime.install()
-        applied_upgrades.install_engine()
+        _dedupe_and_retire_jobs(upgrade_batch_44._engine())
 
     if include_discord_upgrade_commands:
         import github_upgrade_patch
