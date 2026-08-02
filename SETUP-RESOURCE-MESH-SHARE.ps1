@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -17,6 +18,32 @@ function Assert-Administrator {
 
 function Write-Step([string]$Message) {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
+}
+
+function Set-EnvValue(
+    [string]$Path,
+    [string]$Name,
+    [string]$Value
+) {
+    $lines = @()
+    if (Test-Path $Path) {
+        $lines = Get-Content -LiteralPath $Path
+    }
+    $escaped = [Regex]::Escape($Name)
+    $found = $false
+    $updated = foreach ($line in $lines) {
+        if ($line -match "^$escaped=") {
+            $found = $true
+            "$Name=$Value"
+        }
+        else {
+            $line
+        }
+    }
+    if (-not $found) {
+        $updated += "$Name=$Value"
+    }
+    Set-Content -LiteralPath $Path -Value $updated -Encoding UTF8
 }
 
 Assert-Administrator
@@ -74,12 +101,22 @@ else {
         -Description "Tradysquid optional second-PC resource mesh" | Out-Null
 }
 
+Write-Step "Pointing the production Tradysquid process at the local mesh path"
+$envPath = Join-Path $RepoRoot ".env"
+if (-not (Test-Path $envPath)) {
+    Copy-Item (Join-Path $RepoRoot ".env.example") $envPath
+    Write-Warning "A new .env was created from .env.example. Existing production secrets still need to be filled in before Tradysquid can run."
+}
+Set-EnvValue -Path $envPath -Name "RESOURCE_MESH_ROOT" -Value $MeshPath
+Set-EnvValue -Path $envPath -Name "RESOURCE_MESH_LOCAL_FALLBACK" -Value "true"
+
 Write-Step "Verifying the share"
 $unc = "\\$env:COMPUTERNAME\$ShareName"
 Get-SmbShare -Name $ShareName | Format-Table Name, Path, Description -AutoSize
 
 Write-Host "`nResource mesh share is ready." -ForegroundColor Green
-Write-Host "UNC path: $unc"
+Write-Host "Production path: $MeshPath"
+Write-Host "Worker UNC path: $unc"
 Write-Host "Worker account: $account"
 Write-Host "Use the password entered above when SETUP-RESOURCE-WORKER.ps1 asks for the share credential."
 Write-Host "The share is not granted to Everyone and contains no Tradier or Discord credentials."
