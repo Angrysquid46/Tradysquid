@@ -5,6 +5,7 @@ on:
     paths:
       - "run_supervisor_simple.py"
       - "runtime_contract.py"
+      - "single_owner_runtime.py"
       - "simple_upgrade_runtime.py"
       - "applied_upgrade_status_runtime.py"
       - "diagnostic_upgrade_system.py"
@@ -30,6 +31,7 @@ on:
       - ".gitignore"
       - "test_simple_upgrade_flow.py"
       - "test_runtime_contract.py"
+      - "test_single_owner_runtime.py"
       - "test_applied_upgrade_status_runtime.py"
       - "test_diagnostic_upgrade_system.py"
       - "test_diagnostic_startup_runtime.py"
@@ -105,6 +107,11 @@ jobs:
         run: |
           grep -q "run_supervisor_simple.py" START-SUPERVISOR.cmd
           ! grep -E "python -u.*run_supervisor_resilient.py" START-SUPERVISOR.cmd
+          grep -q "include_supervisor_guard" run_with_env.py
+          grep -q "single_owner_runtime.install()" run_with_env.py
+          grep -q "run_supervisor_simple.py" single_owner_runtime.py
+          grep -q "START-SUPERVISOR" single_owner_runtime.py
+          grep -q "Stop-ExtraOwnership" ENSURE-SUPERVISOR.ps1
           grep -q "runtime_contract.install_information_engine()" run_with_env.py
           grep -q "supervisor_diagnostic_runtime.install()" runtime_contract.py
           grep -q "scheduler_diagnostic_runtime.install()" runtime_contract.py
