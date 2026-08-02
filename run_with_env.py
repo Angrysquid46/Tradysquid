@@ -30,15 +30,25 @@ def load_env() -> None:
         os.environ.setdefault(name.strip(), value.strip())
 
 
-def install_runtime_overrides(*, include_discord_upgrade_commands: bool = False) -> None:
-    """Install shared behavior, plus Discord-only patches for the command bot."""
+def install_runtime_overrides(
+    *,
+    include_discord_upgrade_commands: bool = False,
+    include_upgrade_batch_engine: bool = False,
+) -> None:
+    """Install shared behavior, optional Discord commands, and batch #44 jobs."""
     import journal_contract
     import openai_discord_patch
     import performance_scorecards
+    import upgrade_batch_44
 
     journal_contract.install()
     performance_scorecards.install()
+    upgrade_batch_44.install_universe_policy()
+    upgrade_batch_44.install_learning_extensions()
     openai_discord_patch.install()
+
+    if include_upgrade_batch_engine:
+        upgrade_batch_44.install_engine()
 
     if include_discord_upgrade_commands:
         import github_upgrade_patch
@@ -59,7 +69,10 @@ def main() -> None:
     install_runtime_overrides(
         include_discord_upgrade_commands=(
             target.name.casefold() == "discord_command_bot_public.py"
-        )
+        ),
+        include_upgrade_batch_engine=(
+            target.name.casefold() == "local_information_engine_bootstrap.py"
+        ),
     )
     sys.argv = [str(target), *sys.argv[2:]]
     runpy.run_path(str(target), run_name="__main__")
