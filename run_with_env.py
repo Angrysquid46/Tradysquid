@@ -62,6 +62,7 @@ def install_runtime_overrides(
         import diagnostic_review_runtime
         import diagnostic_runtime_integration
         import diagnostic_startup_runtime
+        import diagnostic_state_migration
         import diagnostic_upgrade_system
         import discord_command_diagnostics
         import market_calendar_runtime
@@ -87,6 +88,7 @@ def install_runtime_overrides(
         scheduler_diagnostic_runtime.install()
         upgrade_lifecycle_dashboard.install()
         applied_upgrade_status_runtime.install()
+        diagnostic_state_migration.install()
         diagnostic_review_runtime.install()
         applied_upgrades.install_engine()
 
