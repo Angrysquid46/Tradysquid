@@ -13,6 +13,7 @@ on:
       - "performance_reconciliation.py"
       - "performance_scorecards.py"
       - "performance_channel_structure.py"
+      - "journal_contract.py"
       - "always_on_operations.py"
       - "operations_acceptance.py"
       - "local_information_engine.py"
@@ -41,6 +42,7 @@ on:
       - "test_market_intelligence_visibility.py"
       - "test_market_intelligence_bootstrap.py"
       - "test_performance_reconciliation.py"
+      - "test_journal_contract.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -79,6 +81,7 @@ jobs:
             performance_reconciliation.py \
             performance_scorecards.py \
             performance_channel_structure.py \
+            journal_contract.py \
             always_on_operations.py \
             operations_acceptance.py \
             discord_command_bot.py \
@@ -101,7 +104,8 @@ jobs:
             automation_acceptance.py \
             test_market_intelligence_visibility.py \
             test_market_intelligence_bootstrap.py \
-            test_performance_reconciliation.py
+            test_performance_reconciliation.py \
+            test_journal_contract.py
 
       - name: Validate curriculum and operations engine
         run: |
@@ -110,6 +114,7 @@ jobs:
           python learning_application_public.py
           python performance_channel_structure.py
           python performance_scorecards.py
+          python journal_contract.py
           python always_on_operations.py
 
       - name: Run focused tests
@@ -122,4 +127,5 @@ jobs:
             test_always_on_operations.py \
             test_market_intelligence_visibility.py \
             test_market_intelligence_bootstrap.py \
-            test_performance_reconciliation.py
+            test_performance_reconciliation.py \
+            test_journal_contract.py
