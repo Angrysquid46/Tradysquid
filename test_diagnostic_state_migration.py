@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import diagnostic_state_migration as migration
 import diagnostic_upgrade_system as diagnostics
@@ -76,6 +76,26 @@ class DiagnosticStateMigrationTests(unittest.TestCase):
         self.assertEqual(first["resolved"], 1)
         self.assertTrue(second["already_completed"])
         self.assertEqual(second["resolved"], 0)
+
+    def test_install_is_nonblocking_and_cycle_retries_after_lock_failure(self) -> None:
+        base = Mock(return_value="base cycle")
+        original_cycle = diagnostics.diagnostic_cycle_job
+        original_installed = migration._INSTALLED
+        original_base = migration._BASE_CYCLE
+        try:
+            diagnostics.diagnostic_cycle_job = base
+            migration._INSTALLED = False
+            migration._BASE_CYCLE = None
+            with patch.object(migration, "migrate", side_effect=RuntimeError("locked")):
+                migration.install()
+                detail = diagnostics.diagnostic_cycle_job(object())
+            self.assertIn("migration retry pending", detail)
+            self.assertIn("base cycle", detail)
+            base.assert_called_once()
+        finally:
+            diagnostics.diagnostic_cycle_job = original_cycle
+            migration._INSTALLED = original_installed
+            migration._BASE_CYCLE = original_base
 
 
 if __name__ == "__main__":
