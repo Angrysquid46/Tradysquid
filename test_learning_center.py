@@ -11,6 +11,7 @@ import learning_center_content
 import learning_question_gaps
 import learning_search_router
 import sync_learning_center
+from discord_cards import style_message_payload
 from learning_center_catalog import LESSONS, ORDERED_CHANNELS
 
 
@@ -93,32 +94,51 @@ class LearningCenterTests(unittest.TestCase):
         self.assertEqual(tuple(counts), ORDERED_CHANNELS)
         self.assertGreater(sum(counts.values()), 27)
 
-    def test_duplicate_curriculum_markers_are_deleted_and_verified(self) -> None:
+    def test_duplicate_curriculum_markers_inside_embeds_are_deleted(self) -> None:
         channel_name = ORDERED_CHANNELS[0]
         content = sync_learning_center.lesson_marker(channel_name, 1, 1) + "\n# Test"
+        styled = style_message_payload(
+            {"content": content, "allowed_mentions": {"parse": []}}
+        )
         messages = [
-            {"id": "100", "content": content, "author": {"bot": True}},
-            {"id": "101", "content": content, "author": {"bot": True}},
+            {
+                "id": "100",
+                "content": styled.get("content", ""),
+                "embeds": styled.get("embeds", []),
+                "author": {"bot": True},
+            },
+            {
+                "id": "101",
+                "content": styled.get("content", ""),
+                "embeds": styled.get("embeds", []),
+                "author": {"bot": True},
+            },
         ]
 
         class Tracker:
             def __init__(self):
+                self.messages = list(messages)
                 self.deleted: list[str] = []
 
             def _request(self, method, path, payload=None):
                 if method == "GET":
-                    return list(messages)
+                    return list(self.messages)
                 if method == "DELETE":
-                    self.deleted.append(path.rsplit("/", 1)[-1])
+                    message_id = path.rsplit("/", 1)[-1]
+                    self.deleted.append(message_id)
+                    self.messages = [
+                        item for item in self.messages if item["id"] != message_id
+                    ]
                     return {}
                 if method == "PUT":
+                    return {}
+                if method == "PATCH":
                     return {}
                 raise AssertionError(f"Unexpected request: {method} {path}")
 
         tracker = Tracker()
-        with (
-            patch.object(sync_learning_center, "expected_messages", return_value=[content]),
-            patch.object(sync_learning_center, "message_has_source", return_value=True),
+        with patch.object(
+            sync_learning_center, "expected_messages", return_value=[content]
         ):
             with self.assertRaisesRegex(RuntimeError, "Duplicates"):
                 sync_learning_center.verify_channel_uniqueness(
@@ -127,9 +147,14 @@ class LearningCenterTests(unittest.TestCase):
             created, updated, deleted = sync_learning_center.synchronize_channel(
                 tracker, {"id": "channel-1"}, channel_name, "lesson"
             )
+            verified = sync_learning_center.verify_channel_uniqueness(
+                tracker, {"id": "channel-1"}, channel_name, "lesson"
+            )
 
         self.assertEqual((created, updated, deleted), (0, 0, 1))
+        self.assertEqual(verified, 1)
         self.assertEqual(len(tracker.deleted), 1)
+        self.assertEqual(len(tracker.messages), 1)
         self.assertIn(tracker.deleted[0], {"100", "101"})
 
     def test_search_routes_representative_questions(self) -> None:

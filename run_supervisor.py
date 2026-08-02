@@ -158,6 +158,12 @@ def public_run_discord_configuration() -> list[str]:
             results.append("Discord slash commands synchronized")
 
     if supervisor.AUTO_DISCORD_SYNC:
+        supervisor.discord_post(
+            "🔄 **Tradysquids deployment progress**\n"
+            "Discord structure and Learning Center synchronization is running.\n"
+            "Duplicate lesson cards are being removed and verified.",
+            "system-health",
+        )
         structure_result = supervisor.run(
             [
                 sys.executable,
@@ -200,37 +206,44 @@ def record_discord_sync_results(results: list[str], *, source: str) -> bool:
     update_status = str(payload.get("last_update_status") or "")
     if failed and update_status == "DEPLOYED":
         update_status = "DEPLOYED_WITH_DISCORD_ERRORS"
+    elif not failed and update_status == "DEPLOYED_WITH_DISCORD_ERRORS":
+        update_status = "DEPLOYED"
 
+    version = supervisor.current_sha()
     supervisor.write_state(
         last_discord_sync_status=status,
         last_discord_sync_signature=signature,
         last_discord_sync_source=source,
         last_discord_sync_attempt_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         last_update_status=update_status,
+        deployed_sha=version,
         discord_results=results,
     )
 
-    if failed and signature != previous_signature:
-        supervisor.discord_post(
-            "\n".join(
-                [
-                    "⚠️ **Tradysquids Discord synchronization failed**",
-                    "The supervisor will retry automatically every update cycle.",
-                    *[f"• {item}" for item in results],
-                ]
-            )[:1900],
-            "workflow-log",
-        )
-    elif not failed and previous_status == "FAILED":
-        supervisor.discord_post(
-            "\n".join(
-                [
-                    "✅ **Tradysquids Discord synchronization recovered**",
-                    *[f"• {item}" for item in results],
-                ]
-            )[:1900],
-            "workflow-log",
-        )
+    if failed:
+        failure_message = "\n".join(
+            [
+                "❌ **Tradysquids deployment incomplete**",
+                f"Version `{version}` is running, but Discord synchronization failed.",
+                *[f"• {item}" for item in results],
+                "The supervisor will retry automatically; services-ready is blocked until this succeeds.",
+            ]
+        )[:1900]
+        if signature != previous_signature:
+            supervisor.discord_post(failure_message, "workflow-log")
+        supervisor.discord_post(failure_message, "system-health")
+    else:
+        completion_message = "\n".join(
+            [
+                "✅ **Tradysquids deployment completed**",
+                f"Version `{version}`",
+                *[f"• {item}" for item in results],
+                "Discord synchronization completed and the deployment is eligible for services-ready status.",
+            ]
+        )[:1900]
+        if source == "deployment" or previous_status == "FAILED":
+            supervisor.discord_post(completion_message, "workflow-log")
+            supervisor.discord_post(completion_message, "system-health")
     return not failed
 
 
@@ -391,13 +404,23 @@ def service_health_snapshot() -> dict[str, bool]:
     }
 
 
+def deployment_sync_ready(version: str) -> bool:
+    payload = supervisor.state_payload()
+    update_status = str(payload.get("last_update_status") or "")
+    sync_status = str(payload.get("last_discord_sync_status") or "")
+    deployed_sha = str(payload.get("deployed_sha") or "")
+    if not update_status and not sync_status:
+        return True
+    return (
+        update_status == "DEPLOYED"
+        and sync_status == "OK"
+        and deployed_sha[:12] == version[:12]
+    )
+
+
 def ensure_services_with_readiness() -> None:
     global _LAST_READY_SIGNATURE
 
-    # Publish liveness before service startup. Starting the full stack can take
-    # longer than the watchdog's 45-second recovery window; without this early
-    # heartbeat the watchdog kills a healthy supervisor while it is still
-    # initializing, creating an endless restart loop.
     supervisor.write_state(
         supervisor="ONLINE",
         supervisor_heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -407,21 +430,23 @@ def ensure_services_with_readiness() -> None:
     ORIGINAL_ENSURE_SERVICES()
     statuses = service_health_snapshot()
     signature = tuple((name, statuses[name]) for name in sorted(statuses))
+    version = supervisor.current_sha()
+    discord_ready = deployment_sync_ready(version)
     supervisor.write_state(
         supervisor="ONLINE",
         service_health=statuses,
         supervisor_heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         scheduler_heartbeat_healthy=always_on_operations.heartbeat_healthy(12),
-        local_sha=supervisor.current_sha(),
+        local_sha=version,
+        deployment_sync_ready=discord_ready,
         auto_update_enabled=supervisor.AUTO_UPDATE,
     )
 
-    all_ready = bool(statuses) and all(statuses.values())
+    all_ready = bool(statuses) and all(statuses.values()) and discord_ready
     previously_all_ready = bool(_LAST_READY_SIGNATURE) and all(
         value for _, value in _LAST_READY_SIGNATURE
     )
     if all_ready and (signature != _LAST_READY_SIGNATURE or not previously_all_ready):
-        version = supervisor.current_sha()
         supervisor.discord_post(
             "\n".join(
                 [
@@ -430,6 +455,7 @@ def ensure_services_with_readiness() -> None:
                     "• command-bot: **ONLINE**",
                     "• information-engine: **ONLINE**",
                     "• scheduler heartbeat: **FIRING INTERVALS**",
+                    "• Discord synchronization: **VERIFIED**",
                     "• ngrok: **ONLINE**",
                     "• automatic updater: **ONLINE**",
                     "Live activity receipts and automatic diagnostics are ready.",
@@ -437,7 +463,7 @@ def ensure_services_with_readiness() -> None:
             ),
             "system-health",
         )
-    _LAST_READY_SIGNATURE = signature
+    _LAST_READY_SIGNATURE = signature if discord_ready else None
 
 
 supervisor.take_process_ownership = safe_take_process_ownership
