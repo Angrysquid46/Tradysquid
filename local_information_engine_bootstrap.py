@@ -1,14 +1,17 @@
-"""Start the public information engine only after required Discord cards exist.
+"""Start the public information engine with retrying Discord acceptance.
 
-The supervisor previously treated a live socket as sufficient proof that the
-information engine was ready. Required Discord status cards, performance
-scorecards, and complete current trade-journal entries must be acknowledged
-before the health port opens.
+The engine health listener must remain available even when Discord or a provider
+has a transient outage. Required cards, scorecards, and open-journal contracts
+are still verified, but failures put startup acceptance into RETRYING state
+instead of crashing the entire information engine into a supervisor restart loop.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +33,14 @@ REQUIRED_STARTUP_JOBS = (
     "provider-event-queue",
     "premarket-visibility",
     "discord-reporting",
+)
+STARTUP_INITIAL_DELAY_SECONDS = max(
+    0,
+    min(30, int(os.environ.get("ENGINE_STARTUP_ACCEPTANCE_DELAY_SECONDS", "2"))),
+)
+STARTUP_RETRY_SECONDS = max(
+    15,
+    min(900, int(os.environ.get("ENGINE_STARTUP_ACCEPTANCE_RETRY_SECONDS", "60"))),
 )
 
 
@@ -61,7 +72,7 @@ def _latest_run(connection, name: str):
 
 
 def run_required_startup_jobs() -> dict[str, Any]:
-    """Publish and verify required Discord output before engine health opens."""
+    """Publish and verify required Discord output without owning process health."""
     connection = public.engine.connect_db()
     results: dict[str, Any] = {}
     try:
@@ -170,9 +181,9 @@ def run_required_startup_jobs() -> dict[str, Any]:
             "contract": (
                 "#breaking-alerts heartbeat, #premarket session card, daily/weekly/"
                 "monthly scorecards, one scorecard per play type, and the complete "
-                "entry checklist for every open journal were acknowledged before the "
-                "engine health port opened; older historical journals continue through "
-                "the bounded automatic repair queue"
+                "entry checklist for every open journal were acknowledged; the engine "
+                "health listener remains available while transient acceptance failures "
+                "retry in the background"
             ),
         }
         _write_acceptance(payload)
@@ -190,8 +201,65 @@ def run_required_startup_jobs() -> dict[str, Any]:
         connection.close()
 
 
+def startup_acceptance_worker() -> None:
+    """Retry required publications until verified without killing the engine."""
+    if STARTUP_INITIAL_DELAY_SECONDS:
+        time.sleep(STARTUP_INITIAL_DELAY_SECONDS)
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            payload = run_required_startup_jobs()
+            print(
+                "Startup acceptance PASSED after "
+                f"{attempt} attempt(s) at {payload.get('verified_at')}."
+            )
+            return
+        except Exception as exc:
+            _write_acceptance(
+                {
+                    "status": "RETRYING",
+                    "verified_at": public.engine.iso_now(),
+                    "attempt": attempt,
+                    "next_retry_seconds": STARTUP_RETRY_SECONDS,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "contract": (
+                        "The information engine remains online while required Discord "
+                        "cards and durable receipts retry automatically."
+                    ),
+                }
+            )
+            print(
+                "Startup acceptance RETRYING: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            time.sleep(STARTUP_RETRY_SECONDS)
+
+
+def start_acceptance_retry_worker() -> threading.Thread:
+    thread = threading.Thread(
+        target=startup_acceptance_worker,
+        name="startup-acceptance-retry",
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
 def main() -> int:
-    run_required_startup_jobs()
+    _write_acceptance(
+        {
+            "status": "STARTING",
+            "verified_at": public.engine.iso_now(),
+            "next_retry_seconds": STARTUP_INITIAL_DELAY_SECONDS,
+            "contract": (
+                "The health listener opens immediately; required Discord publications "
+                "are verified by the background acceptance worker."
+            ),
+        }
+    )
+    start_acceptance_retry_worker()
     return public.engine.main()
 
 
