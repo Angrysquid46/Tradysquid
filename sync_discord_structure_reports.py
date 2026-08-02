@@ -1,0 +1,15 @@
+"""Apply the public Discord structure with distinct Performance report channels."""
+
+from __future__ import annotations
+
+import performance_channel_structure
+import sync_discord_structure as sync
+
+performance_channel_structure.install(sync)
+performance_channel_structure.validate(sync)
+
+import sync_discord_structure_public as public  # noqa: E402
+
+
+if __name__ == "__main__":
+    raise SystemExit(public.main())
