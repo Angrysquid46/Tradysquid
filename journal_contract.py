@@ -1,10 +1,11 @@
 """Enforce complete, visible trade-journal entry records.
 
-The journal already had detailed formatters, but synchronization could call a
-thread complete after checking only a few broad markers. This module gives every
-journal starter a stable evidence-status section, refreshes outdated journals in
-bounded batches, and verifies the full entry checklist before acknowledging the
-journal consumer.
+The journal formatters contain a detailed entry and review contract, but Discord
+embed fields are limited to 1,024 characters. The previous converter silently
+truncated a long Learning Center/evidence section, so fields near the bottom could
+exist in Python while remaining invisible in Discord. This module separates and
+chunks journal sections before embed conversion, refreshes every older journal,
+and verifies the rendered Discord payload rather than only the raw markdown.
 """
 
 from __future__ import annotations
@@ -16,8 +17,12 @@ import ford_scan
 import trade_intelligence
 
 
-JOURNAL_FORMAT_VERSION = "14"
+JOURNAL_FORMAT_VERSION = "15"
 JOURNAL_BATCH_SIZE = 30
+DISCORD_FIELD_VALUE_LIMIT = 1024
+JOURNAL_FIELD_CHUNK_LIMIT = 900
+DISCORD_FIELD_COUNT_LIMIT = 25
+DISCORD_EMBED_TEXT_LIMIT = 6000
 _INSTALLED = False
 
 REQUIRED_ENTRY_MARKERS = (
@@ -45,12 +50,60 @@ REQUIRED_CLOSED_MARKERS = (
 CLOSED_OUTCOMES = {"WIN", "LOSS", "SCRATCH", "EXPIRED"}
 
 _ORIGINAL_ENTRY_ALERT_TEXT = ford_scan.entry_alert_text
+_ORIGINAL_DISCORD_CARD = ford_scan.discord_card
 _ORIGINAL_SYNC_ALL_TRADE_JOURNALS = ford_scan.sync_all_trade_journals
 
 
+def _recorded_value(row: dict[str, str], key: str) -> str:
+    value = str(row.get(key) or "").strip()
+    return value or "Unavailable (not recorded at entry)."
+
+
+def _replace_labeled_line(content: str, label: str, value: str) -> str:
+    lines = content.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith(label):
+            lines[index] = f"{label} {value}"
+            break
+    return "\n".join(lines)
+
+
+def _separate_entry_sections(content: str) -> str:
+    """Keep each evidence group below Discord's per-field truncation boundary."""
+    replacements = (
+        ("**Risk plan:**", "### Risk and Learning Plan"),
+        ("**Recorded option evidence:**", "### Recorded Option Evidence"),
+        ("**Evidence limitation:**", "### Evidence Provenance"),
+    )
+    updated = content
+    for marker, heading in replacements:
+        needle = f"\n{marker}"
+        if needle in updated and f"\n{heading}\n{marker}" not in updated:
+            updated = updated.replace(needle, f"\n{heading}\n{marker}", 1)
+    return updated
+
+
 def complete_entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
-    """Render the canonical entry card and make chart availability explicit."""
+    """Render only recorded entry evidence and make chart availability explicit."""
     content = _ORIGINAL_ENTRY_ALERT_TEXT(row, include_link)
+
+    # The base formatter previously synthesized a thesis, confirmation, learning
+    # application, and current curriculum version when old rows lacked them. A
+    # backfill must never present reconstructed prose as entry-time evidence.
+    recorded_lines = (
+        ("**Trade thesis:**", _recorded_value(row, "thesis")),
+        ("**Entry confirmation:**", _recorded_value(row, "entry_confirmation")),
+        ("**Invalidation:**", _recorded_value(row, "invalidation")),
+        ("**Risk plan:**", _recorded_value(row, "risk_plan")),
+        ("**Learning application:**", _recorded_value(row, "learning_plan")),
+        ("**Evidence limitation:**", _recorded_value(row, "evidence_limitations")),
+        ("**Learning Center version:**", _recorded_value(row, "learning_version")),
+        ("**Data confidence:**", _recorded_value(row, "data_confidence")),
+    )
+    for label, value in recorded_lines:
+        content = _replace_labeled_line(content, label, value)
+
+    content = _separate_entry_sections(content)
     if "### Journal Evidence Status" in content:
         return content
     return (
@@ -61,6 +114,124 @@ def complete_entry_alert_text(row: dict[str, str], include_link: str = "") -> st
         + "**No-invention rule:** If that attachment is absent, the source data was unavailable; "
         + "later market bars are not substituted as entry-time evidence."
     )
+
+
+def _split_value(value: str, limit: int = JOURNAL_FIELD_CHUNK_LIMIT) -> list[str]:
+    """Split text on line/word boundaries without discarding any characters."""
+    chunks: list[str] = []
+    current = ""
+
+    def push_line(line: str) -> None:
+        nonlocal current
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) <= limit:
+            current = candidate
+            return
+        if current:
+            chunks.append(current)
+            current = ""
+        remaining = line
+        while len(remaining) > limit:
+            split_at = remaining.rfind(" ", 0, limit + 1)
+            if split_at < max(1, limit // 2):
+                split_at = limit
+            chunks.append(remaining[:split_at].rstrip())
+            remaining = remaining[split_at:].lstrip()
+        current = remaining
+
+    for line in value.splitlines() or [value]:
+        push_line(line.rstrip())
+    if current or not chunks:
+        chunks.append(current or "—")
+    return chunks
+
+
+def _expand_long_sections(content: str) -> str:
+    """Turn oversized markdown sections into Discord-safe continuation fields."""
+    output: list[str] = []
+    heading: str | None = None
+    value_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal heading, value_lines
+        if heading is None:
+            output.extend(value_lines)
+        else:
+            value = "\n".join(value_lines).strip() or "—"
+            for index, chunk in enumerate(_split_value(value), start=1):
+                suffix = "" if index == 1 else f" (continued {index})"
+                output.append(f"### {heading}{suffix}")
+                output.extend(chunk.splitlines())
+        heading = None
+        value_lines = []
+
+    for line in content.splitlines():
+        if line.startswith("### "):
+            flush()
+            heading = line[4:].strip() or "Journal details"
+        else:
+            value_lines.append(line)
+    flush()
+    return "\n".join(output)
+
+
+def _embed_text_size(card: dict[str, Any]) -> int:
+    total = len(str(card.get("title") or ""))
+    total += len(str(card.get("description") or ""))
+    footer = card.get("footer") or {}
+    total += len(str(footer.get("text") or ""))
+    for field in card.get("fields") or []:
+        total += len(str(field.get("name") or ""))
+        total += len(str(field.get("value") or ""))
+    return total
+
+
+def complete_discord_card(content: str) -> dict[str, Any]:
+    """Convert journal markdown without silently losing long evidence sections."""
+    is_journal = (
+        "### Journal Evidence Status" in content
+        or "### Post-Trade Learning" in content
+    )
+    if not is_journal:
+        return _ORIGINAL_DISCORD_CARD(content)
+
+    prepared = _expand_long_sections(content)
+    card = _ORIGINAL_DISCORD_CARD(prepared)
+    fields = list(card.get("fields") or [])
+    if len(fields) > DISCORD_FIELD_COUNT_LIMIT:
+        raise RuntimeError(
+            f"Journal card requires {len(fields)} fields; Discord allows "
+            f"{DISCORD_FIELD_COUNT_LIMIT}."
+        )
+    oversized = [
+        str(field.get("name") or "Journal field")
+        for field in fields
+        if len(str(field.get("value") or "")) > DISCORD_FIELD_VALUE_LIMIT
+    ]
+    if oversized:
+        raise RuntimeError(
+            "Journal card still contains oversized fields: " + ", ".join(oversized)
+        )
+    embed_size = _embed_text_size(card)
+    if embed_size > DISCORD_EMBED_TEXT_LIMIT:
+        raise RuntimeError(
+            f"Journal card contains {embed_size} embed characters; Discord allows "
+            f"{DISCORD_EMBED_TEXT_LIMIT}."
+        )
+
+    rendered = ford_scan.message_search_text({"embeds": [card]})
+    expected = [
+        marker
+        for marker in (*REQUIRED_ENTRY_MARKERS, *REQUIRED_CLOSED_MARKERS)
+        if marker in content
+    ]
+    missing = [marker for marker in expected if marker not in rendered]
+    if missing:
+        raise RuntimeError(
+            "Rendered Discord journal card lost required fields: "
+            + ", ".join(missing)
+        )
+    return card
 
 
 def _message_text(messages: list[dict[str, Any]]) -> str:
@@ -252,13 +423,18 @@ def validate_contract() -> dict[str, Any]:
         }
     )
     content = complete_entry_alert_text(row)
-    missing = [marker for marker in REQUIRED_ENTRY_MARKERS if marker not in content]
+    card = complete_discord_card(content)
+    rendered = ford_scan.message_search_text({"embeds": [card]})
+    missing = [marker for marker in REQUIRED_ENTRY_MARKERS if marker not in rendered]
     if missing:
-        raise RuntimeError("Journal contract formatter is missing: " + ", ".join(missing))
+        raise RuntimeError(
+            "Rendered journal contract is missing: " + ", ".join(missing)
+        )
     return {
         "format_version": JOURNAL_FORMAT_VERSION,
         "required_entry_markers": len(REQUIRED_ENTRY_MARKERS),
         "required_closed_markers": len(REQUIRED_CLOSED_MARKERS),
+        "rendered_fields": len(card.get("fields") or []),
         "missing": 0,
     }
 
@@ -269,6 +445,7 @@ def install() -> None:
         return
     ford_scan.DISCORD_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
     ford_scan.entry_alert_text = complete_entry_alert_text
+    ford_scan.discord_card = complete_discord_card
     ford_scan.sync_all_trade_journals = sync_all_trade_journals
     _INSTALLED = True
 
