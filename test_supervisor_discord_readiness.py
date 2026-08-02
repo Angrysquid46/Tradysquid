@@ -103,6 +103,7 @@ class SupervisorDiscordReadinessTests(unittest.TestCase):
 
     def test_online_engine_posts_retrying_state_instead_of_unhealthy(self) -> None:
         post = Mock()
+        original_readiness = resilient.base.deployment_sync_ready
         with (
             patch.object(resilient.base, "ensure_services_with_readiness"),
             patch.object(
@@ -123,6 +124,7 @@ class SupervisorDiscordReadinessTests(unittest.TestCase):
         post.assert_called_once()
         self.assertIn("services running", post.call_args.args[0])
         self.assertIn("RETRYING", post.call_args.args[0])
+        self.assertIs(resilient.base.deployment_sync_ready, original_readiness)
 
     def test_patch_is_installed_into_supervisor_module(self) -> None:
         self.assertIs(
@@ -132,10 +134,6 @@ class SupervisorDiscordReadinessTests(unittest.TestCase):
         self.assertIs(
             resilient.base.retry_pending_discord_configuration,
             resilient.retry_pending_discord_configuration,
-        )
-        self.assertIs(
-            resilient.base.deployment_sync_ready,
-            resilient.deployment_sync_ready,
         )
         self.assertIs(
             resilient.base.supervisor.ensure_services,
