@@ -85,6 +85,7 @@ CHART_PATH = DOCS_DIR / "ford-market-chart.svg"
 CHART_SCREENSHOT_PATH = DOCS_DIR / "ford-market-chart.png"
 TRADE_SNAPSHOT_DIR = DOCS_DIR / "trade-snapshots"
 INTRADAY_SNAPSHOT_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+DAILY_SNAPSHOT_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 CHART_PUBLIC_URL = os.environ.get(
     "CHART_PUBLIC_URL",
     "https://angrysquid46.github.io/Tradysquid/ford-market-chart.svg",
@@ -1451,6 +1452,18 @@ def trade_intraday_history(symbol: str) -> list[dict[str, Any]]:
     return bars
 
 
+def trade_daily_history(symbol: str) -> list[dict[str, Any]]:
+    """Reuse daily history for 15 minutes while intraday lifecycle data stays fresh."""
+    symbol = symbol.strip().upper()
+    cached = DAILY_SNAPSHOT_CACHE.get(symbol)
+    now = time.monotonic()
+    if cached and now - cached[0] < 900:
+        return cached[1]
+    bars = get_daily_history(symbol, days=420)
+    DAILY_SNAPSHOT_CACHE[symbol] = (now, bars)
+    return bars
+
+
 def render_trade_intraday_snapshot(
     row: dict[str, str],
     event: str,
@@ -1519,7 +1532,7 @@ def render_trade_intraday_snapshot(
 def build_trade_snapshot(row: dict[str, str], event: str) -> Path | None:
     try:
         intraday = trade_intraday_history(row.get("ticker") or TICKER)
-        daily = get_daily_history(row.get("ticker") or TICKER, days=420)
+        daily = trade_daily_history(row.get("ticker") or TICKER)
         return render_trade_multitimeframe_snapshot(
             row,
             event,
@@ -3355,6 +3368,13 @@ def sync_all_trade_journals(
         created_now = False
         refreshed_now = False
         try:
+            if (
+                thread_id
+                and row.get("discord_format_version") == DISCORD_FORMAT_VERSION
+                and row.get("discord_status") == outcome
+                and not trade_intelligence.needs_sync(row, "journal")
+            ):
+                continue
             if not thread_id:
                 thread_id = discord.create_trade_thread(
                     row, outcome if outcome != "OPEN" else "OPEN"
@@ -3367,15 +3387,18 @@ def sync_all_trade_journals(
                 discord.refresh_trade_thread(row)
                 refreshed_now = True
                 counts["refreshed"] += 1
-            if not thread_id or outcome == "OPEN":
+            if thread_id and outcome == "OPEN":
+                trade_intelligence.acknowledge(
+                    trade_id, "journal", trade_intelligence.trade_version(row)
+                )
                 continue
-            if (
-                not created_now
-                and not refreshed_now
-                and row.get("discord_format_version") == DISCORD_FORMAT_VERSION
-                and row.get("discord_status") == outcome
-            ):
+            if not thread_id:
                 continue
+            if not created_now and not refreshed_now and thread_id:
+                discord._request("PATCH", f"/channels/{thread_id}", {"archived": False})
+                discord.refresh_trade_thread(row)
+                refreshed_now = True
+                counts["refreshed"] += 1
             discord._request("PATCH", f"/channels/{thread_id}", {"archived": False})
             sequence = trade_sequence(row)
             token = f"{str(row.get('ticker') or TICKER).upper()} #{sequence} · {outcome}"
@@ -3388,6 +3411,9 @@ def sync_all_trade_journals(
             row["discord_status"] = outcome
             row["discord_format_version"] = DISCORD_FORMAT_VERSION
             counts["closed_reviews"] += 1
+            trade_intelligence.acknowledge(
+                trade_id, "journal", trade_intelligence.trade_version(row)
+            )
         except DiscordError as exc:
             print(f"Could not synchronize journal for {trade_id}: {exc}", file=sys.stderr)
     return counts
@@ -3593,6 +3619,9 @@ def sync_closed_result_channels(
                 "updates", report_state, "position", trade_id
             )
             discord.delete_trade_message("exit", report_state, "exit", trade_id)
+            trade_intelligence.acknowledge(
+                trade_id, "result-channel", trade_intelligence.trade_version(row)
+            )
             continue
         link = thread_link(row.get("discord_thread_id", ""))
         content = close_alert_text(row, stored_close_evaluation(row), link)
@@ -3600,6 +3629,9 @@ def sync_closed_result_channels(
         discord.delete_trade_message("updates", report_state, "position", trade_id)
         discord.delete_trade_message("exit", report_state, "exit", trade_id)
         mark_closed_result_routed(row, report_state)
+        trade_intelligence.acknowledge(
+            trade_id, "result-channel", trade_intelligence.trade_version(row)
+        )
         updated += 1
     return updated
 

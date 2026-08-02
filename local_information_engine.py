@@ -1675,8 +1675,11 @@ def closed_position_cleanup_job(connection: sqlite3.Connection) -> str:
     if not tracker:
         raise RuntimeError("Discord tracker is unavailable")
     report_state = ford_scan.read_report_state()
-    journal_counts = ford_scan.sync_all_trade_journals(rows, tracker)
-    routed = ford_scan.sync_closed_result_channels(closed, tracker, report_state)
+    pending = trade_intelligence.pending_rows(
+        closed, ("journal", "result-channel")
+    )
+    journal_counts = ford_scan.sync_all_trade_journals(pending, tracker)
+    routed = ford_scan.sync_closed_result_channels(pending, tracker, report_state)
     with POSITION_FILE_LOCK:
         ford_scan.write_log(rows)
     ford_scan.write_report_state(report_state)
@@ -1685,16 +1688,17 @@ def closed_position_cleanup_job(connection: sqlite3.Connection) -> str:
         "closed-position-cleanup",
         {
             "closed_checked": len(closed),
+            "changed_trades": len(pending),
             "results_routed": routed,
             "journals": journal_counts,
         },
     )
-    for row in closed:
+    for row in pending:
         trade_intelligence.record_event(
             row, "closed-reconciliation", str(row.get("closed_at") or row.get("trade_id")),
             extra={"results_routed": routed, "journals": journal_counts},
         )
-    return f"{len(closed)} closed checked; {routed} results routed"
+    return f"{len(closed)} closed indexed; {len(pending)} changed; {routed} results routed"
 
 
 def outcome_learning_job(connection: sqlite3.Connection) -> str:
@@ -1742,6 +1746,37 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
             "learning-results",
             "\n".join(lines)[:2000],
         )
+        channel_map = {
+            "regular-call": "strategy_regular_call",
+            "regular-put": "strategy_regular_put",
+            "swing-call": "strategy_swing_call",
+            "swing-put": "strategy_swing_put",
+            "spread-put": "strategy_bull_put_spread",
+            "spread-call": "strategy_bear_call_spread",
+        }
+        suggestions = {
+            str(item["play_style"]).lower(): item
+            for item in summary["play_style_suggestions"]
+        }
+        for style, logical in channel_map.items():
+            suggestion = suggestions.get(style) or {
+                "samples": 0,
+                "confidence": "COLLECTING",
+                "observation": "No completed trades of this exact play style are available yet.",
+                "expected_tradeoff": "Wait for evidence before proposing any change.",
+            }
+            tracker.upsert_channel_message(
+                logical, report_state, f"recommendation:{style}",
+                "\n".join([
+                    f"## {style.replace('-', ' ').title()} Improvement Summary",
+                    f"**Sample:** {suggestion['samples']} · **Confidence:** {suggestion['confidence']}",
+                    f"**Current evidence:** {suggestion['observation']}",
+                    f"**Tradeoff:** {suggestion['expected_tradeoff']}",
+                    "**Status:** Review-only suggestion; scanner and risk rules are unchanged.",
+                    "Detailed evidence remains in Learning Results and individual journals.",
+                ])[:2000],
+                search_token=f"{style.replace('-', ' ').title()} Improvement Summary",
+            )
         ford_scan.write_report_state(report_state)
     return (
         f"{summary['closed_trades']} closed trades; "
@@ -1757,7 +1792,14 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
     if not tracker:
         raise RuntimeError("Discord tracker is unavailable")
     report_state = ford_scan.read_report_state()
-    ford_scan.update_performance_pages(tracker, report_state, rows)
+    closed_rows = ford_scan.closed_rows(rows)
+    consumers = (
+        "performance-dashboard", "ticker-results", "strategy-results", "wins-losses",
+        "play-style-results", "learning-results",
+    )
+    changed = trade_intelligence.pending_rows(closed_rows, consumers)
+    if changed:
+        ford_scan.update_performance_pages(tracker, report_state, rows)
     ford_scan.sync_reports(
         tracker,
         report_state,
@@ -1766,18 +1808,17 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
         market_open=ford_scan.market_is_open_now()[0],
     )
     ford_scan.write_report_state(report_state)
-    outcome_learning_job(connection)
-    consumers = (
-        "performance-dashboard", "ticker-results", "strategy-results", "wins-losses",
-        "play-style-results", "daily-weekly", "learning-results",
+    if changed:
+        outcome_learning_job(connection)
+    acknowledged = (
+        trade_intelligence.acknowledge_many(closed_rows, consumers) if changed else 0
     )
-    for row in ford_scan.closed_rows(rows):
-        version = str(row.get("closed_at") or row.get("last_evaluated_at") or "")
-        for consumer in consumers:
-            trade_intelligence.acknowledge(str(row.get("trade_id") or ""), consumer, version)
-    closed = len(ford_scan.closed_rows(rows))
-    store_observation(connection, "discord-reporting", {"closed": closed})
-    return f"performance, strategy, ticker, daily, and weekly refreshed from {closed} closed trades"
+    closed = len(closed_rows)
+    store_observation(
+        connection, "discord-reporting",
+        {"closed": closed, "changed_trades": len(changed), "synchronization_acknowledgements": acknowledged},
+    )
+    return f"daily/weekly refreshed; {closed} closed indexed; {len(changed)} changed; {acknowledged} aggregate acknowledgements committed"
 
 
 def trade_intelligence_health_job(connection: sqlite3.Connection) -> str:
@@ -1800,6 +1841,18 @@ def trade_intelligence_health_job(connection: sqlite3.Connection) -> str:
         f"{len(rows)} trades checked; learning {health['learning_version']}; "
         f"{health['failed_syncs']} failed syncs; {health['pending_research']} research items awaiting review"
     )
+
+
+def research_scoring_job(connection: sqlite3.Connection) -> str:
+    counts = trade_intelligence.score_research_queue()
+    store_observation(connection, "research-scoring", counts)
+    return f"{counts['ready']} primary sources ready; {counts['needs_source']} headlines need original-source review"
+
+
+def intelligence_retention_job(connection: sqlite3.Connection) -> str:
+    result = trade_intelligence.apply_retention()
+    store_observation(connection, "intelligence-retention", result)
+    return f"{result['temporary_files_removed']} temporary files and {result['missing_pointers_removed']} stale pointers removed; canonical evidence preserved"
 
 
 PLAYBOOK_SPECS = [
@@ -2026,6 +2079,18 @@ JOBS = [
         timedelta(minutes=5),
         trade_intelligence_health_job,
         retry_interval=timedelta(minutes=1),
+    ),
+    Job(
+        "research-scoring",
+        timedelta(minutes=15),
+        research_scoring_job,
+        retry_interval=timedelta(minutes=2),
+    ),
+    Job(
+        "intelligence-retention",
+        timedelta(hours=24),
+        intelligence_retention_job,
+        retry_interval=timedelta(minutes=15),
     ),
     Job(
         "examples-and-reviews",

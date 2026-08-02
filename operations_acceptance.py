@@ -8,6 +8,7 @@ required Discord channels, visible dashboard cards, and closed-market research.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -18,6 +19,7 @@ from typing import Any
 import always_on_operations as operations
 import ford_scan
 import local_information_engine as engine
+import trade_intelligence
 
 
 ROOT = Path(__file__).resolve().parent
@@ -30,6 +32,8 @@ REQUIRED_JOBS = {
     "off-hours-universe-screen",
     "rotating-event-sweep",
     "trade-intelligence-health",
+    "research-scoring",
+    "intelligence-retention",
 }
 REQUIRED_CHANNELS = {
     "system-activity": "Always-On Tradysquids Activity",
@@ -182,11 +186,25 @@ def discord_channels_and_cards() -> dict[str, Any]:
         "net_pl_dollars": metrics["total_pnl"],
         "all_closed_trade_views_reconcile": True,
     }
+    synchronized_consumers = (
+        "journal", "result-channel", "performance-dashboard", "ticker-results",
+        "strategy-results", "wins-losses", "play-style-results", "learning-results",
+    )
+    pending = trade_intelligence.pending_rows(
+        ford_scan.closed_rows(rows), synchronized_consumers
+    )
+    if pending:
+        raise OperationsAcceptanceFailure(
+            f"{len(pending)} closed trades have not acknowledged the current canonical version: "
+            + ", ".join(str(row.get("trade_id") or "unknown") for row in pending[:8])
+        )
+    result["reconciliation"]["versioned_consumers"] = list(synchronized_consumers)
+    result["reconciliation"]["all_consumers_acknowledge_current_version"] = True
     return result
 
 
-def trade_journals() -> dict[str, Any]:
-    """Verify every recorded trade has one usable, learning-backed Discord journal."""
+def trade_journals(*, full: bool = False) -> dict[str, Any]:
+    """Verify changed journals; retain an explicit full-audit option."""
     tracker = ford_scan.DiscordTracker(ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID)
     if not tracker.enabled:
         raise OperationsAcceptanceFailure("Discord bot token and guild ID are required.")
@@ -203,8 +221,14 @@ def trade_journals() -> dict[str, Any]:
             "Multiple trades share the same Discord journal thread."
         )
 
-    closed_count = 0
-    for row in rows:
+    closed_count = sum(
+        str(row.get("outcome") or "").upper() in {"WIN", "LOSS", "FLAT"}
+        for row in rows
+    )
+    selected = rows if full else trade_intelligence.pending_rows(
+        rows, ("acceptance-journal",)
+    )
+    for row in selected:
         trade_id = row.get("trade_id") or "unknown"
         messages = tracker._request(
             "GET", f"/channels/{row['discord_thread_id']}/messages?limit=100"
@@ -219,14 +243,18 @@ def trade_journals() -> dict[str, Any]:
                 f"Trade {trade_id} journal is missing its Learning Center version."
             )
         if str(row.get("outcome") or "").upper() in {"WIN", "LOSS", "FLAT"}:
-            closed_count += 1
             if "Post-Trade Learning" not in combined:
                 raise OperationsAcceptanceFailure(
                     f"Closed trade {trade_id} journal is missing its post-trade learning review."
                 )
+        trade_intelligence.acknowledge(
+            str(trade_id), "acceptance-journal", trade_intelligence.trade_version(row)
+        )
     return {
         "trade_count": len(rows),
         "closed_trade_count": closed_count,
+        "journals_checked_this_run": len(selected),
+        "verification_mode": "full" if full else "version-incremental",
         "all_have_unique_journals": True,
         "all_apply_learning_center": True,
         "all_record_learning_version": True,
@@ -320,7 +348,9 @@ def run_acceptance() -> dict[str, Any]:
             latest_detail = detail
             if ready:
                 cards = discord_channels_and_cards()
-                journals = trade_journals()
+                journals = trade_journals(
+                    full=os.environ.get("FULL_JOURNAL_ACCEPTANCE", "false").lower() == "true"
+                )
                 report["checks"]["operations"] = detail
                 report["checks"]["discord_cards"] = cards
                 report["checks"]["trade_journals"] = journals

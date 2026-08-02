@@ -200,6 +200,14 @@ class InformationEngineTests(unittest.TestCase):
             self.assertTrue(output.exists())
             self.assertIn("multitimeframe", output.name)
 
+    def test_trade_daily_history_is_cached_without_staling_intraday(self) -> None:
+        ford_scan.DAILY_SNAPSHOT_CACHE.clear()
+        bars = [{"date": "2026-08-01", "close": 10.0}]
+        with patch.object(ford_scan, "get_daily_history", return_value=bars) as fetch:
+            self.assertEqual(ford_scan.trade_daily_history("AAL"), bars)
+            self.assertEqual(ford_scan.trade_daily_history("aal"), bars)
+        fetch.assert_called_once_with("AAL", days=420)
+
     def test_intraday_selloff_can_override_slow_bullish_daily_trend(self) -> None:
         daily = self.market_history([10 + index * 0.1 for index in range(60)])
         intraday = self.intraday_history([15.9 - index * 0.08 for index in range(24)])
@@ -405,13 +413,34 @@ class InformationEngineTests(unittest.TestCase):
             patch.object(engine.ford_scan, "write_report_state") as write_state,
             patch.object(engine, "outcome_learning_job") as learning,
             patch.object(engine, "store_observation"),
+            patch.object(engine.trade_intelligence, "pending_rows", return_value=rows),
+            patch.object(engine.trade_intelligence, "acknowledge_many", return_value=6),
         ):
             result = engine.discord_reporting_job(connection)
         pages.assert_called_once_with(tracker, state, rows)
         reports.assert_called_once()
         write_state.assert_called_once_with(state)
         learning.assert_called_once_with(connection)
-        self.assertIn("1 closed trades", result)
+        self.assertIn("1 closed indexed; 1 changed", result)
+
+    def test_reporting_job_skips_unchanged_aggregate_cards(self) -> None:
+        rows = [{"trade_id": "F-1", "ticker": "F", "outcome": "WIN"}]
+        with (
+            patch.object(engine.ford_scan, "read_log", return_value=rows),
+            patch.object(engine, "discord_tracker", return_value=object()),
+            patch.object(engine.ford_scan, "read_report_state", return_value={}),
+            patch.object(engine.ford_scan, "update_performance_pages") as pages,
+            patch.object(engine.ford_scan, "sync_reports") as reports,
+            patch.object(engine.ford_scan, "write_report_state"),
+            patch.object(engine, "outcome_learning_job") as learning,
+            patch.object(engine, "store_observation"),
+            patch.object(engine.trade_intelligence, "pending_rows", return_value=[]),
+        ):
+            result = engine.discord_reporting_job(object())
+        pages.assert_not_called()
+        learning.assert_not_called()
+        reports.assert_called_once()
+        self.assertIn("0 changed", result)
 
     def test_ticker_results_use_all_closed_trades(self) -> None:
         rows = [
@@ -453,12 +482,13 @@ class InformationEngineTests(unittest.TestCase):
             patch.object(engine.ford_scan, "write_report_state") as write_state,
             patch.object(engine, "store_observation") as observe,
             patch.object(engine.trade_intelligence, "record_event"),
+            patch.object(engine.trade_intelligence, "pending_rows", return_value=closed),
         ):
             result = engine.closed_position_cleanup_job(connection)
         sync.assert_called_once_with(closed, tracker, state)
         write_state.assert_called_once_with(state)
         observe.assert_called_once()
-        self.assertIn("1 closed checked", result)
+        self.assertIn("1 closed indexed; 1 changed", result)
 
     def test_multi_ticker_scan_publishes_each_ticker_and_syncs_once(self) -> None:
         calls: list[tuple[str, bool]] = []

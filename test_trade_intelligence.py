@@ -93,6 +93,38 @@ class TradeIntelligenceTests(unittest.TestCase):
             "PASS",
         )
 
+    def test_batch_acknowledgements_drive_incremental_sync(self):
+        rows = [
+            {"trade_id": "A-1", "ticker": "A", "outcome": "WIN", "realized_pl_dollars": "5"},
+            {"trade_id": "B-1", "ticker": "B", "outcome": "LOSS", "realized_pl_dollars": "-3"},
+        ]
+        self.assertEqual(len(trade_intelligence.pending_rows(rows, ("dashboard",))), 2)
+        self.assertEqual(trade_intelligence.acknowledge_many(rows, ("dashboard", "ticker")), 4)
+        self.assertEqual(trade_intelligence.pending_rows(rows, ("dashboard", "ticker")), [])
+        rows[0]["realized_pl_dollars"] = "6"
+        self.assertEqual(
+            [row["trade_id"] for row in trade_intelligence.pending_rows(rows, ("dashboard",))],
+            ["A-1"],
+        )
+
+    def test_research_scoring_is_separate_and_retention_preserves_evidence(self):
+        trade_intelligence.store_research_source({
+            "source_url": "https://sec.gov/example", "ticker": "F", "claim": "filing",
+            "confidence": "PRIMARY-SOURCE", "quality": "REGULATORY-FILING",
+        })
+        trade_intelligence.store_research_source({
+            "source_url": "https://news.example/item", "ticker": "F", "claim": "headline",
+            "confidence": "UNVERIFIED-HEADLINE", "quality": "REQUIRES-ORIGINAL-SOURCE",
+        })
+        self.assertEqual(
+            trade_intelligence.score_research_queue(),
+            {"ready": 1, "needs_source": 1},
+        )
+        before = trade_intelligence.health()["research_sources"]
+        result = trade_intelligence.apply_retention(temporary_age_seconds=0)
+        self.assertEqual(trade_intelligence.health()["research_sources"], before)
+        self.assertEqual(result["missing_pointers_removed"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

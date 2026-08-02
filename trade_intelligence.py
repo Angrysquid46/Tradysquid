@@ -139,6 +139,12 @@ def canonical_payload(row: dict[str, Any], extra: dict[str, Any] | None = None) 
     return payload
 
 
+def trade_version(row: dict[str, Any]) -> str:
+    """Stable version shared by every consumer of one canonical trade."""
+    encoded = json.dumps(canonical_payload(row), sort_keys=True, separators=(",", ":"), default=str)
+    return digest_bytes(encoded.encode("utf-8"))[:16]
+
+
 def record_event(
     row: dict[str, Any], event_kind: str, event_key: str, *,
     observed_at: str | None = None, extra: dict[str, Any] | None = None,
@@ -219,6 +225,113 @@ def acknowledge(trade_id: str, consumer: str, trade_version: str, status: str = 
             "trade_version=excluded.trade_version,acknowledged_at=excluded.acknowledged_at,status=excluded.status,detail=excluded.detail",
             (trade_id, consumer, trade_version, now_iso(), status, detail),
         )
+
+
+def acknowledge_many(rows: list[dict[str, Any]], consumers: tuple[str, ...]) -> int:
+    """Commit a completed reporting fan-out in one durable transaction."""
+    values = []
+    timestamp = now_iso()
+    for row in rows:
+        trade_id = str(row.get("trade_id") or "")
+        if not trade_id:
+            continue
+        version = trade_version(row)
+        values.extend((trade_id, consumer, version, timestamp, "OK", "") for consumer in consumers)
+    with database() as db:
+        db.executemany(
+            "INSERT INTO sync_acknowledgements VALUES(?,?,?,?,?,?) ON CONFLICT(trade_id,consumer) DO UPDATE SET "
+            "trade_version=excluded.trade_version,acknowledged_at=excluded.acknowledged_at,status=excluded.status,detail=excluded.detail",
+            values,
+        )
+    return len(values)
+
+
+def needs_sync(row: dict[str, Any], consumer: str) -> bool:
+    trade_id = str(row.get("trade_id") or "")
+    if not trade_id:
+        return False
+    with database() as db:
+        existing = db.execute(
+            "SELECT trade_version,status FROM sync_acknowledgements WHERE trade_id=? AND consumer=?",
+            (trade_id, consumer),
+        ).fetchone()
+    return not existing or existing["status"] != "OK" or existing["trade_version"] != trade_version(row)
+
+
+def pending_rows(rows: list[dict[str, Any]], consumers: tuple[str, ...]) -> list[dict[str, Any]]:
+    if not rows or not consumers:
+        return []
+    trade_ids = [str(row.get("trade_id") or "") for row in rows if row.get("trade_id")]
+    if not trade_ids:
+        return []
+    placeholders = ",".join("?" for _ in trade_ids)
+    consumer_placeholders = ",".join("?" for _ in consumers)
+    with database() as db:
+        existing = db.execute(
+            f"SELECT trade_id,consumer,trade_version,status FROM sync_acknowledgements "
+            f"WHERE trade_id IN ({placeholders}) AND consumer IN ({consumer_placeholders})",
+            (*trade_ids, *consumers),
+        ).fetchall()
+    lookup = {(row["trade_id"], row["consumer"]): row for row in existing}
+    pending = []
+    for row in rows:
+        trade_id = str(row.get("trade_id") or "")
+        version = trade_version(row)
+        if any(
+            (record := lookup.get((trade_id, consumer))) is None
+            or record["status"] != "OK"
+            or record["trade_version"] != version
+            for consumer in consumers
+        ):
+            pending.append(row)
+    return pending
+
+
+def score_research_queue(limit: int = 250) -> dict[str, int]:
+    """Score stored provenance separately from network collection."""
+    counts = {"ready": 0, "needs_source": 0}
+    with database() as db:
+        rows = db.execute(
+            "SELECT source_id,confidence,quality,source_url FROM research_sources WHERE status='REVIEW' LIMIT ?",
+            (limit,),
+        ).fetchall()
+        for row in rows:
+            primary = row["confidence"] == "PRIMARY-SOURCE"
+            has_url = str(row["source_url"] or "").startswith(("http://", "https://"))
+            status = "READY" if primary and has_url else "NEEDS-ORIGINAL-SOURCE"
+            db.execute("UPDATE research_sources SET status=? WHERE source_id=?", (status, row["source_id"]))
+            counts["ready" if status == "READY" else "needs_source"] += 1
+    return counts
+
+
+def apply_retention(*, temporary_age_seconds: int = 86400) -> dict[str, int]:
+    """Remove only failed temporary artifacts and stale DB pointers; preserve evidence."""
+    removed_temporary = 0
+    now = datetime.now().timestamp()
+    snapshot_root = ROOT / "docs" / "trade-snapshots"
+    for path in snapshot_root.glob("*.tmp") if snapshot_root.exists() else []:
+        try:
+            if now - path.stat().st_mtime >= temporary_age_seconds:
+                path.unlink()
+                removed_temporary += 1
+        except OSError:
+            continue
+    removed_missing = 0
+    with database() as db:
+        rows = db.execute("SELECT trade_id,event_key,path FROM chart_snapshots").fetchall()
+        for row in rows:
+            if not Path(str(row["path"])).exists():
+                db.execute(
+                    "DELETE FROM chart_snapshots WHERE trade_id=? AND event_key=?",
+                    (row["trade_id"], row["event_key"]),
+                )
+                removed_missing += 1
+        db.execute(
+            "INSERT INTO metadata(key,value,updated_at) VALUES('retention_policy',?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
+            ("preserve canonical entry/material-HOLD/exit evidence; remove failed temp files and stale pointers only", now_iso()),
+        )
+    return {"temporary_files_removed": removed_temporary, "missing_pointers_removed": removed_missing}
 
 
 def health() -> dict[str, Any]:
