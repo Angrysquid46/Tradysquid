@@ -34,6 +34,7 @@ def install_runtime_overrides(
     *,
     include_discord_upgrade_commands: bool = False,
     include_information_engine: bool = False,
+    include_supervisor_guard: bool = False,
 ) -> None:
     import ford_scan
     import github_upgrade_bridge
@@ -57,6 +58,11 @@ def install_runtime_overrides(
     shared_upgrade_lifecycle.install()
     openai_discord_patch.install()
 
+    if include_supervisor_guard:
+        import single_owner_runtime
+
+        single_owner_runtime.install()
+
     if include_information_engine:
         runtime_contract.install_information_engine()
 
@@ -78,6 +84,7 @@ def main() -> None:
     install_runtime_overrides(
         include_discord_upgrade_commands=(target.name.casefold() == "discord_command_bot_public.py"),
         include_information_engine=(target.name.casefold() == "local_information_engine_bootstrap.py"),
+        include_supervisor_guard=(target.name.casefold() == "run_supervisor_simple.py"),
     )
     sys.argv = [str(target), *sys.argv[2:]]
     runpy.run_path(str(target), run_name="__main__")
