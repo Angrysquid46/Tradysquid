@@ -452,6 +452,7 @@ class InformationEngineTests(unittest.TestCase):
             patch.object(engine.ford_scan, "write_log"),
             patch.object(engine.ford_scan, "write_report_state") as write_state,
             patch.object(engine, "store_observation") as observe,
+            patch.object(engine.trade_intelligence, "record_event"),
         ):
             result = engine.closed_position_cleanup_job(connection)
         sync.assert_called_once_with(closed, tracker, state)
