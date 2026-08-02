@@ -14,5 +14,5 @@ if not exist ".env.worker" (
   exit /b 1
 )
 
-".venv-worker\Scripts\python.exe" resource_mesh_worker.py
+".venv-worker\Scripts\python.exe" resource_mesh_worker_bootstrap.py
 exit /b %errorlevel%
