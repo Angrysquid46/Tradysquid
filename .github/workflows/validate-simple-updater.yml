@@ -8,6 +8,7 @@ on:
       - "diagnostic_upgrade_system.py"
       - "diagnostic_runtime_integration.py"
       - "diagnostic_startup_runtime.py"
+      - "diagnostic_nonblocking_runtime.py"
       - "shared_upgrade_lifecycle.py"
       - "upgrade_lifecycle_dashboard.py"
       - "market_calendar_runtime.py"
@@ -21,6 +22,7 @@ on:
       - "test_simple_upgrade_flow.py"
       - "test_diagnostic_upgrade_system.py"
       - "test_diagnostic_startup_runtime.py"
+      - "test_diagnostic_nonblocking_runtime.py"
       - "test_upgrade_lifecycle_dashboard.py"
       - "test_market_calendar_runtime.py"
       - "test_runtime_state_hygiene.py"
@@ -55,6 +57,7 @@ jobs:
             diagnostic_upgrade_system.py \
             diagnostic_runtime_integration.py \
             diagnostic_startup_runtime.py \
+            diagnostic_nonblocking_runtime.py \
             shared_upgrade_lifecycle.py \
             upgrade_lifecycle_dashboard.py \
             market_calendar_runtime.py \
@@ -78,5 +81,6 @@ jobs:
             test_simple_upgrade_flow.py \
             test_diagnostic_upgrade_system.py \
             test_diagnostic_startup_runtime.py \
+            test_diagnostic_nonblocking_runtime.py \
             test_upgrade_lifecycle_dashboard.py \
             test_market_calendar_runtime.py
