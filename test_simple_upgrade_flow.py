@@ -15,9 +15,14 @@ ROOT = Path(__file__).resolve().parent
 class SimpleUpgradeFlowTests(unittest.TestCase):
     def test_discord_bridge_logs_requests_without_editing_code(self) -> None:
         text = (ROOT / "github_upgrade_bridge.py").read_text(encoding="utf-8")
-        self.assertIn("never edits repository contents", text)
+        normalized = " ".join(text.split())
+        self.assertIn("It never calls OpenAI", normalized)
+        self.assertNotIn('"/contents/', text)
+        self.assertNotIn('"POST", "/pulls"', text)
+        self.assertNotIn('"PUT", "/merges"', text)
         self.assertIn("PENDING BATCH REVIEW", text)
         self.assertTrue(callable(github_upgrade_bridge.add_request))
+        self.assertTrue(callable(github_upgrade_bridge.add_or_update_diagnostic))
         self.assertTrue(callable(github_upgrade_bridge.ready_batch))
 
     def test_default_update_interval_is_two_minutes(self) -> None:
@@ -44,11 +49,34 @@ class SimpleUpgradeFlowTests(unittest.TestCase):
             "validate_checkout",
             "Compilation and focused deployment tests passed",
             "SIMPLE_TWO_MINUTE_UPDATER",
+            '"merge-base", "--is-ancestor"',
+            '"merge", "--ff-only", "origin/main"',
+            "_prepare_runtime_backup",
+            "last_known_working_sha",
+            "rollback_ref",
+            "ROLLED_BACK",
         ):
             self.assertIn(marker, text)
         self.assertNotIn("sync_discord_structure", text)
         self.assertNotIn("register_discord_commands", text)
         self.assertNotIn("engine_acceptance", text)
+
+    def test_preflight_happens_before_service_stop(self) -> None:
+        text = (ROOT / "run_supervisor_simple.py").read_text(encoding="utf-8")
+        backup_index = text.index("saved_runtime = _prepare_runtime_backup")
+        rollback_ref_index = text.index('backup_result = supervisor.git("update-ref"')
+        stop_index = text.index("supervisor.stop_all_services()")
+        self.assertLess(backup_index, stop_index)
+        self.assertLess(rollback_ref_index, stop_index)
+
+    def test_fetch_failure_path_never_stops_services(self) -> None:
+        text = (ROOT / "run_supervisor_simple.py").read_text(encoding="utf-8")
+        fetch_failure = text.index('last_update_status="FETCH_FAILED"')
+        stop_index = text.index("supervisor.stop_all_services()")
+        self.assertLess(fetch_failure, stop_index)
+        segment = text[fetch_failure:stop_index]
+        self.assertNotIn("stop_all_services", segment)
+        self.assertNotIn('merge", "--ff-only', segment)
 
     def test_watchdog_and_stop_script_recognize_simple_entrypoint(self) -> None:
         watchdog = (ROOT / "ENSURE-SUPERVISOR.ps1").read_text(encoding="utf-8")
