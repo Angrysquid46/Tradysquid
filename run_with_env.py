@@ -40,12 +40,17 @@ def install_runtime_overrides(
 
     network_compat.install()
 
+    import github_upgrade_bridge
     import github_upgrade_bridge_runtime
     import journal_contract
     import openai_discord_patch
     import performance_scorecards
     import shared_upgrade_lifecycle
     import upgrade_batch_44
+
+    # Fail external queue calls promptly enough for the local runtime to keep
+    # moving. Normal retries happen on the next scheduled cycle.
+    github_upgrade_bridge.REQUEST_TIMEOUT_SECONDS = 12
 
     github_upgrade_bridge_runtime.install()
     journal_contract.install()
