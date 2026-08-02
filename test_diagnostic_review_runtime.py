@@ -177,21 +177,42 @@ class DiagnosticReviewRuntimeTests(unittest.TestCase):
         self.assertIn("Dashboard published successfully", detail)
         self.assertIn("2 failed item", detail)
 
-    def test_runtime_install_file_contains_all_validated_layers_in_order(self) -> None:
-        text = (Path(__file__).resolve().parent / "run_with_env.py").read_text(
-            encoding="utf-8"
-        )
-        supervisor = text.index("supervisor_diagnostic_runtime.install()")
-        scheduler = text.index("scheduler_diagnostic_runtime.install()")
-        migration = text.index("diagnostic_state_migration.install()")
-        applied_status = text.index("applied_upgrade_status_runtime.install()")
-        review_layer = text.index("diagnostic_review_runtime.install()")
-        dashboard_job = text.index("applied_upgrades.install_engine()")
+    def test_runtime_contract_contains_only_current_layers_in_order(self) -> None:
+        root = Path(__file__).resolve().parent
+        loader = (root / "run_with_env.py").read_text(encoding="utf-8")
+        contract = (root / "runtime_contract.py").read_text(encoding="utf-8")
+        self.assertIn("runtime_contract.install_information_engine()", loader)
+
+        policy = contract.index("install_diagnostic_policy(diagnostics, review)")
+        feature_jobs = contract.index("upgrade_batch_44.install_engine()")
+        diagnostics_layer = contract.index("diagnostics.install()")
+        calendar = contract.index("market_calendar_runtime.install()")
+        supervisor = contract.index("supervisor_diagnostic_runtime.install()")
+        scheduler = contract.index("scheduler_diagnostic_runtime.install()")
+        review_layer = contract.index("review.install()")
+        outbound = contract.index("outbound_connectivity_runtime.install()")
+        retirement = contract.index("dedupe_and_retire_jobs(upgrade_batch_44._engine())")
+        live_checks = contract.index("install_live_checks(diagnostics)")
+
+        self.assertLess(policy, feature_jobs)
+        self.assertLess(feature_jobs, diagnostics_layer)
+        self.assertLess(diagnostics_layer, calendar)
+        self.assertLess(calendar, supervisor)
         self.assertLess(supervisor, scheduler)
-        self.assertLess(scheduler, applied_status)
-        self.assertLess(applied_status, migration)
-        self.assertLess(migration, review_layer)
-        self.assertLess(review_layer, dashboard_job)
+        self.assertLess(scheduler, review_layer)
+        self.assertLess(review_layer, outbound)
+        self.assertLess(outbound, retirement)
+        self.assertLess(retirement, live_checks)
+
+        for retired_install in (
+            "upgrade_batch_44_live_acceptance.install()",
+            "diagnostic_startup_runtime.install()",
+            "diagnostic_nonblocking_runtime.install()",
+            "diagnostic_state_migration.install()",
+            "upgrade_lifecycle_dashboard.install()",
+            "applied_upgrades.install_engine()",
+        ):
+            self.assertNotIn(retired_install, loader + contract)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Windows supervisor ownership checks for the self-diagnostic cycle."""
+"""Windows ownership checks for the one active simple supervisor."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import os
 import subprocess
 from typing import Any, Callable
 
-import diagnostic_startup_runtime as startup
 import diagnostic_upgrade_system as diagnostics
 
 _INSTALLED = False
@@ -29,10 +28,15 @@ def supervisor_process_check() -> diagnostics.HealthCheck:
 $items = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
   Where-Object {
     $_.Name -match '^python(w)?\.exe$' -and $_.CommandLine -and
-    $_.CommandLine -match 'run_supervisor_(simple|resilient)\.py|run_supervisor\.py'
+    $_.CommandLine -match 'run_supervisor_simple\.py'
   } |
   Select-Object ProcessId, CommandLine)
-$items | ConvertTo-Json -Compress
+$listener = Get-NetTCPConnection -State Listen -LocalPort 8876 -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+[pscustomobject]@{
+  Processes = $items
+  PortOwner = if ($listener) { [int]$listener.OwningProcess } else { 0 }
+} | ConvertTo-Json -Compress -Depth 5
 """
     try:
         result = subprocess.run(
@@ -50,46 +54,32 @@ $items | ConvertTo-Json -Compress
             "single active supervisor process",
             f"Process inspection failed: {type(exc).__name__}: {exc}",
             severity="WARNING",
-            runtime_target="run_supervisor_simple.py",
+            runtime_target="run_supervisor_simple.py and port 8876",
         )
     raw = (result.stdout or "").strip()
     try:
-        payload = json.loads(raw) if raw else []
+        payload = json.loads(raw) if raw else {}
     except (ValueError, TypeError, json.JSONDecodeError):
-        payload = []
-    if isinstance(payload, dict):
-        payload = [payload]
-    items = [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
-    simple = [
-        item
-        for item in items
-        if "run_supervisor_simple.py" in str(item.get("CommandLine") or "")
-    ]
-    retired = [
-        item
-        for item in items
-        if "run_supervisor_resilient.py" in str(item.get("CommandLine") or "")
-        or (
-            "run_supervisor.py" in str(item.get("CommandLine") or "")
-            and "run_supervisor_simple.py" not in str(item.get("CommandLine") or "")
-        )
-    ]
-    passed = result.returncode == 0 and len(simple) == 1 and not retired
+        payload = {}
+    processes = payload.get("Processes") if isinstance(payload, dict) else []
+    if isinstance(processes, dict):
+        processes = [processes]
+    items = [item for item in processes if isinstance(item, dict)] if isinstance(processes, list) else []
+    pids = [int(item.get("ProcessId") or 0) for item in items]
+    port_owner = int(payload.get("PortOwner") or 0) if isinstance(payload, dict) else 0
+    passed = result.returncode == 0 and len(pids) == 1 and port_owner == pids[0]
     return diagnostics.HealthCheck(
         "supervisor-process-ownership",
         passed,
         "supervisor",
         "single active supervisor process",
-        (
-            f"simple supervisor processes={len(simple)}; retired supervisor processes={len(retired)}; "
-            f"PIDs={[item.get('ProcessId') for item in items]}"
-        ),
-        runtime_target="run_supervisor_simple.py and supervisor health lock 8876",
-        automatic_retry="watchdog performs controlled recovery when the heartbeat is stale",
-        healthy_services="unchanged",
-        repair_objective="Leave exactly one run_supervisor_simple.py process and no retired supervisor owner.",
+        f"simple supervisor processes={len(pids)}; PIDs={pids}; port 8876 owner={port_owner or 'none'}",
+        runtime_target="run_supervisor_simple.py and port 8876",
+        automatic_retry="watchdog removes duplicate or stale ownership and relaunches one hidden supervisor",
+        healthy_services="managed services remain independent during supervisor ownership repair",
+        repair_objective="Leave exactly one run_supervisor_simple.py process owning port 8876.",
         acceptance_tests="Exactly one simple supervisor process owns port 8876 for at least two health intervals.",
-        force_upgrade=bool(retired or len(simple) > 1),
+        force_upgrade=False,
     )
 
 
@@ -101,13 +91,9 @@ def stop_flag_check() -> diagnostics.HealthCheck:
         not exists,
         "supervisor",
         "stale stop flag",
-        (
-            f"Unexpected stop flag exists at {path}."
-            if exists
-            else "No supervisor stop flag is present."
-        ),
+        f"Unexpected stop flag exists at {path}." if exists else "No supervisor stop flag is present.",
         runtime_target="state/supervisor-stop.flag",
-        automatic_retry="owner restart or recovery installer removes an unintended stale flag",
+        automatic_retry="owner restart removes an unintended stale flag",
         repair_objective="Remove unintended stale stop state without creating duplicate supervisors.",
         acceptance_tests="The stop flag is absent while the supervisor is expected to run.",
         force_upgrade=False,
@@ -207,8 +193,7 @@ def install() -> None:
     global _INSTALLED, _BASE_COLLECT
     if _INSTALLED:
         return
-    _BASE_COLLECT = startup.collect_health_checks
+    _BASE_COLLECT = diagnostics.collect_health_checks
     diagnostics._watchdog_check = watchdog_check
-    startup.collect_health_checks = collect_health_checks
     diagnostics.collect_health_checks = collect_health_checks
     _INSTALLED = True

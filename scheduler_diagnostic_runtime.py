@@ -1,10 +1,8 @@
-"""Complete scheduler diagnostics with required-job and next-run evidence.
+"""Scheduler diagnostics for current information-engine work only.
 
-Scheduler receipts are evaluated against the job's actual active schedule. A
-market-hours-only job is not overdue while the market is closed, and an old
-receipt is not treated as a new-process failure during the bounded startup grace
-window. These rules prevent preserved historical receipts from flooding the
-owner review queue immediately after deployment or restart.
+Completed upgrade migrations and acceptance dashboards are not runtime services.
+This module checks the current scanner, information, learning, chart, universe,
+and self-diagnostic jobs against their actual active schedules.
 """
 
 from __future__ import annotations
@@ -21,11 +19,6 @@ STARTUP_GRACE = timedelta(minutes=20)
 
 REQUIRED_JOBS = (
     "self-diagnostics",
-    "market-hours-upgrade-review",
-    "upgrade-lifecycle-dashboard",
-    "applied-upgrades-dashboard",
-    "upgrade-batch-44-acceptance",
-    "upgrade-request-migration",
     "premarket-visibility",
     "managed-ticker-news",
     "managed-ticker-information",
@@ -157,7 +150,7 @@ def job_checks(connection: Any) -> list[diagnostics.HealthCheck]:
                 f"Required scheduler job `{name}` is not registered.",
                 severity="ERROR",
                 runtime_target=name,
-                automatic_retry="none; missing registration requires an upgrade repair",
+                automatic_retry="none; missing registration requires a repair",
                 healthy_services="other registered jobs remain independent",
                 repair_objective=f"Register exactly one enabled `{name}` job with a durable receipt and retry interval.",
                 acceptance_tests=f"`{name}` is registered once, records an OK receipt, and reports a next expected run.",

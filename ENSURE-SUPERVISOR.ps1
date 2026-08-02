@@ -8,13 +8,11 @@ $Root = (Resolve-Path $PSScriptRoot).Path
 $StateDir = Join-Path $Root 'state'
 $StatePath = Join-Path $StateDir 'supervisor-state.json'
 $LogPath = Join-Path $StateDir 'supervisor-watchdog.log'
-$SupervisorScripts = @(
-    (Join-Path $Root 'run_supervisor_simple.py'),
-    (Join-Path $Root 'run_supervisor_resilient.py'),
-    (Join-Path $Root 'run_supervisor.py')
-)
 $Launcher = Join-Path $Root 'start_supervisor_hidden.vbs'
 $LauncherCommand = Join-Path $Root 'START-SUPERVISOR.cmd'
+$SupervisorEntrypoint = 'run_supervisor_simple.py'
+$SupervisorCommandPattern = '(?i)(^|[\\/"\s])' + [regex]::Escape($SupervisorEntrypoint) + '(["\s]|$)'
+$HealthPort = 8876
 
 if (-not (Test-Path $StateDir)) {
     New-Item -ItemType Directory -Path $StateDir -Force | Out-Null
@@ -27,24 +25,33 @@ function Write-WatchdogLog {
 }
 
 function Get-TradysquidsSupervisorProcesses {
-    $escapedScripts = @($SupervisorScripts | ForEach-Object { [regex]::Escape($_) })
-    @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $command = [string]$_.CommandLine
-            $command -and
-            $_.Name -match '^python(w)?\.exe$' -and
-            ($escapedScripts | Where-Object { $command -match $_ }).Count -gt 0
-        })
+    @(
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -match '^python(w)?\.exe$' -and
+                $_.CommandLine -and
+                $_.CommandLine -match $SupervisorCommandPattern
+            }
+    )
 }
 
 function Get-TradysquidsLauncherProcesses {
-    $escapedLauncher = [regex]::Escape($LauncherCommand)
-    @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            $_.CommandLine -match $escapedLauncher -and
-            $_.Name -eq 'cmd.exe'
-        })
+    $escaped = [regex]::Escape($LauncherCommand)
+    @(
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -eq 'cmd.exe' -and
+                $_.CommandLine -and
+                $_.CommandLine -match $escaped
+            }
+    )
+}
+
+function Get-HealthPortOwner {
+    $listener = Get-NetTCPConnection -State Listen -LocalPort $HealthPort -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($listener) { return [int]$listener.OwningProcess }
+    return 0
 }
 
 function Get-HeartbeatStatus {
@@ -70,12 +77,30 @@ function Get-HeartbeatStatus {
     }
 }
 
-function Stop-StaleSupervisor {
-    param([array]$Processes)
-    foreach ($process in $Processes) {
-        Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+function Get-OwnershipStatus {
+    $processes = @(Get-TradysquidsSupervisorProcesses)
+    $ids = @($processes | ForEach-Object { [int]$_.ProcessId })
+    $portOwner = Get-HealthPortOwner
+    return [pscustomobject]@{
+        Processes = $processes
+        ProcessIds = $ids
+        PortOwner = $portOwner
+        Healthy = ($ids.Count -eq 1 -and $portOwner -eq $ids[0])
     }
-    Start-Sleep -Seconds 2
+}
+
+function Stop-StaleSupervisor {
+    param($Ownership)
+    $ids = [System.Collections.Generic.HashSet[int]]::new()
+    foreach ($id in $Ownership.ProcessIds) { [void]$ids.Add([int]$id) }
+    if ($Ownership.PortOwner -gt 0) { [void]$ids.Add([int]$Ownership.PortOwner) }
+    foreach ($id in $ids) {
+        Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($launcherProcess in @(Get-TradysquidsLauncherProcesses)) {
+        Stop-Process -Id $launcherProcess.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    if ($ids.Count -gt 0) { Start-Sleep -Seconds 2 }
 }
 
 $stopFlag = Join-Path $StateDir 'supervisor-stop.flag'
@@ -86,61 +111,43 @@ if (Test-Path $stopFlag) {
     exit 0
 }
 
-$running = Get-TradysquidsSupervisorProcesses
+$ownership = Get-OwnershipStatus
 $heartbeat = Get-HeartbeatStatus
-if ($running.Count -gt 0 -and $heartbeat.Fresh) {
+if ($ownership.Healthy -and $heartbeat.Fresh) {
     if (-not $CheckOnly) {
-        $ids = ($running | ForEach-Object { $_.ProcessId }) -join ','
-        Write-WatchdogLog "Supervisor verified; PID(s) $ids; $($heartbeat.Detail)."
+        Write-WatchdogLog "Supervisor verified; PID $($ownership.ProcessIds[0]); port $HealthPort owner matches; $($heartbeat.Detail)."
     }
     exit 0
 }
 
-if ($CheckOnly) {
-    exit 1
-}
+if ($CheckOnly) { exit 1 }
 
-if ($running.Count -gt 0) {
-    $ids = ($running | ForEach-Object { $_.ProcessId }) -join ','
-    Write-WatchdogLog "Supervisor process existed but was stale ($($heartbeat.Detail)); restarting PID(s) $ids."
-    Stop-StaleSupervisor -Processes $running
-}
-else {
-    Write-WatchdogLog "Supervisor process absent ($($heartbeat.Detail)); relaunching."
-}
+Write-WatchdogLog (
+    "Supervisor ownership unhealthy; processes=$($ownership.ProcessIds -join ','); " +
+    "portOwner=$($ownership.PortOwner); $($heartbeat.Detail). Rebuilding one hidden owner."
+)
+Stop-StaleSupervisor -Ownership $ownership
 
 if (-not (Test-Path $Launcher)) {
     Write-WatchdogLog "Launcher missing: $Launcher"
     exit 2
 }
 
-$staleLaunchers = Get-TradysquidsLauncherProcesses
-foreach ($staleLauncher in $staleLaunchers) {
-    Stop-Process -Id $staleLauncher.ProcessId -Force -ErrorAction SilentlyContinue
-}
-if ($staleLaunchers.Count -gt 0) {
-    Write-WatchdogLog "Removed $($staleLaunchers.Count) stale supervisor launcher(s) before recovery."
-    Start-Sleep -Seconds 1
-}
-
 Start-Process -FilePath 'wscript.exe' -ArgumentList ('"' + $Launcher + '"') -WindowStyle Hidden
 $deadline = (Get-Date).AddSeconds(45)
 while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 3
-    $running = Get-TradysquidsSupervisorProcesses
+    $ownership = Get-OwnershipStatus
     $heartbeat = Get-HeartbeatStatus
-    if ($running.Count -gt 0 -and $heartbeat.Fresh) {
-        $ids = ($running | ForEach-Object { $_.ProcessId }) -join ','
-        Write-WatchdogLog "Supervisor recovery verified; PID(s) $ids; $($heartbeat.Detail)."
+    if ($ownership.Healthy -and $heartbeat.Fresh) {
+        Write-WatchdogLog "Supervisor recovery verified; PID $($ownership.ProcessIds[0]); port $HealthPort owner matches; $($heartbeat.Detail)."
         exit 0
     }
 }
 
-$running = Get-TradysquidsSupervisorProcesses
-if ($running.Count -gt 0) {
-    Write-WatchdogLog "Supervisor relaunched but heartbeat never became fresh within 45 seconds."
-    exit 4
-}
-
-Write-WatchdogLog 'Supervisor relaunch was attempted but no matching process appeared.'
+$ownership = Get-OwnershipStatus
+Write-WatchdogLog (
+    "Supervisor recovery failed; processes=$($ownership.ProcessIds -join ','); " +
+    "portOwner=$($ownership.PortOwner)."
+)
 exit 3

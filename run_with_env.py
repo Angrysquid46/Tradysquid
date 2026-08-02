@@ -1,4 +1,4 @@
-"""Load the ignored local .env file, install runtime overrides, then run a script."""
+"""Load the ignored local .env file, install runtime hooks, then run one script."""
 
 from __future__ import annotations
 
@@ -33,20 +33,22 @@ def load_env() -> None:
 def install_runtime_overrides(
     *,
     include_discord_upgrade_commands: bool = False,
-    include_upgrade_batch_engine: bool = False,
+    include_information_engine: bool = False,
 ) -> None:
-    """Install shared behavior, optional Discord commands, and runtime jobs."""
-    import network_compat
-
-    network_compat.install()
-
+    import ford_scan
+    import github_upgrade_bridge
     import github_upgrade_bridge_runtime
     import journal_contract
+    import network_compat
     import openai_discord_patch
     import performance_scorecards
+    import runtime_contract
     import shared_upgrade_lifecycle
     import upgrade_batch_44
 
+    network_compat.install()
+    runtime_contract.install_safe_intraday_history(ford_scan)
+    runtime_contract.install_recovery_bridge(github_upgrade_bridge)
     github_upgrade_bridge_runtime.install()
     journal_contract.install()
     performance_scorecards.install()
@@ -55,44 +57,8 @@ def install_runtime_overrides(
     shared_upgrade_lifecycle.install()
     openai_discord_patch.install()
 
-    if include_upgrade_batch_engine:
-        import applied_upgrade_status_runtime
-        import applied_upgrades
-        import diagnostic_nonblocking_runtime
-        import diagnostic_review_runtime
-        import diagnostic_runtime_integration
-        import diagnostic_startup_runtime
-        import diagnostic_state_migration
-        import diagnostic_upgrade_system
-        import discord_command_diagnostics
-        import market_calendar_runtime
-        import outbound_connectivity_runtime
-        import scheduler_diagnostic_runtime
-        import simple_upgrade_runtime
-        import supervisor_diagnostic_runtime
-        import upgrade_batch_44_live_acceptance
-        import upgrade_lifecycle_dashboard
-
-        # Install the complete runtime chain in dependency order. The review
-        # layer controls publication; outbound aggregation runs immediately
-        # after it so all current HTTPS symptoms enter one root-cause record.
-        upgrade_batch_44.install_engine()
-        upgrade_batch_44_live_acceptance.install()
-        simple_upgrade_runtime.install()
-        diagnostic_upgrade_system.install()
-        market_calendar_runtime.install()
-        diagnostic_runtime_integration.install()
-        diagnostic_startup_runtime.install()
-        diagnostic_nonblocking_runtime.install()
-        discord_command_diagnostics.install()
-        supervisor_diagnostic_runtime.install()
-        scheduler_diagnostic_runtime.install()
-        upgrade_lifecycle_dashboard.install()
-        applied_upgrade_status_runtime.install()
-        diagnostic_state_migration.install()
-        diagnostic_review_runtime.install()
-        outbound_connectivity_runtime.install()
-        applied_upgrades.install_engine()
+    if include_information_engine:
+        runtime_contract.install_information_engine()
 
     if include_discord_upgrade_commands:
         import github_upgrade_patch
@@ -104,19 +70,14 @@ def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("Usage: python run_with_env.py <script.py> [arguments...]")
     load_env()
-    requested = str(sys.argv[1])
-    requested = SCRIPT_OVERRIDES.get(Path(requested).name.casefold(), requested)
+    requested = SCRIPT_OVERRIDES.get(Path(sys.argv[1]).name.casefold(), sys.argv[1])
     target = (ROOT / requested).resolve()
     if target.parent != ROOT or not target.is_file() or target.suffix != ".py":
         raise SystemExit("Target must be a Python file in this repository.")
 
     install_runtime_overrides(
-        include_discord_upgrade_commands=(
-            target.name.casefold() == "discord_command_bot_public.py"
-        ),
-        include_upgrade_batch_engine=(
-            target.name.casefold() == "local_information_engine_bootstrap.py"
-        ),
+        include_discord_upgrade_commands=(target.name.casefold() == "discord_command_bot_public.py"),
+        include_information_engine=(target.name.casefold() == "local_information_engine_bootstrap.py"),
     )
     sys.argv = [str(target), *sys.argv[2:]]
     runpy.run_path(str(target), run_name="__main__")
