@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import runpy
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -28,7 +29,14 @@ RETIRED_RUNTIME_JOBS = {
     "applied-upgrades-dashboard",
     "market-hours-upgrade-review",
 }
+RETIRED_DIAGNOSTIC_KEYS = {
+    *(f"job-{name}" for name in RETIRED_RUNTIME_JOBS),
+    "diagnostic-owner-channel-bootstrap",
+    "diagnostic-live-message-proof",
+    "diagnostic-live-acceptance-post",
+}
 RECOVERED_DIAGNOSTIC_STATES = {"RECOVERED", "RESOLVED", "VERIFIED"}
+ACTIVE_DIAGNOSTIC_STATES = {"DEGRADED", "FAILED", "RETRYING", "FAILED AGAIN"}
 
 
 def load_env() -> None:
@@ -134,6 +142,80 @@ def _install_recovery_aware_github_bridge(bridge: Any) -> None:
     bridge._tradysquid_recovery_patch = True
 
 
+def _install_recovery_aware_diagnostic_reports(diagnostics: Any) -> None:
+    """Include lifecycle state when an existing GitHub diagnostic is updated."""
+    if getattr(diagnostics, "_tradysquid_recovery_report_patch", False):
+        return
+    original_report: Callable[[dict[str, Any]], dict[str, Any]] = diagnostics._github_report
+
+    def github_report(record: dict[str, Any]) -> dict[str, Any]:
+        report = dict(original_report(record))
+        report.update(
+            {
+                "status": str(record.get("status") or "PENDING").upper(),
+                "recovery_time": str(record.get("recovery_time") or ""),
+                "resolution_commit": str(record.get("resolution_commit") or ""),
+                "verification_result": str(record.get("verification_result") or ""),
+            }
+        )
+        return report
+
+    diagnostics._github_report = github_report
+    diagnostics._tradysquid_recovery_report_patch = True
+
+
+def _recover_retired_diagnostics(diagnostics: Any, bridge: Any) -> None:
+    """Resolve stale completed-upgrade and generic log records once, off-thread."""
+    try:
+        connection = diagnostics.connect_store()
+    except Exception:
+        return
+    reports: list[dict[str, Any]] = []
+    try:
+        rows = [dict(row) for row in connection.execute("SELECT * FROM diagnostics").fetchall()]
+        timestamp = diagnostics.iso_now()
+        for row in rows:
+            key = str(row.get("signature_key") or "")
+            component = str(row.get("component") or "").casefold()
+            status = str(row.get("status") or "").upper()
+            retired = key in RETIRED_DIAGNOSTIC_KEYS or component == "logs"
+            if retired and status in ACTIVE_DIAGNOSTIC_STATES:
+                connection.execute(
+                    """
+                    UPDATE diagnostics SET
+                        status='RECOVERED', consecutive_failures=0,
+                        last_seen=?, recovery_time=?, resolution_commit=?,
+                        verification_result=?, automatic_retry='not needed'
+                    WHERE signature=?
+                    """,
+                    (
+                        timestamp,
+                        timestamp,
+                        diagnostics._current_sha(),
+                        "Retired completed-upgrade verifier or generic log symptom was removed from the active runtime.",
+                        row["signature"],
+                    ),
+                )
+        connection.commit()
+        refreshed = [dict(row) for row in connection.execute("SELECT * FROM diagnostics").fetchall()]
+        reports = [
+            diagnostics._github_report(row)
+            for row in refreshed
+            if row.get("github_request_number")
+            and str(row.get("status") or "").upper() in RECOVERED_DIAGNOSTIC_STATES
+        ]
+    except Exception:
+        return
+    finally:
+        connection.close()
+
+    for report in reports:
+        try:
+            bridge.add_or_update_diagnostic(report)
+        except Exception:
+            continue
+
+
 def install_runtime_overrides(
     *,
     include_discord_upgrade_commands: bool = False,
@@ -169,6 +251,8 @@ def install_runtime_overrides(
         import scheduler_diagnostic_runtime
         import supervisor_diagnostic_runtime
 
+        _install_recovery_aware_diagnostic_reports(diagnostic_upgrade_system)
+
         # Install the actual market-information feature jobs from the completed
         # upgrade, then only the diagnostics needed to protect the core runtime.
         upgrade_batch_44.install_engine()
@@ -179,6 +263,13 @@ def install_runtime_overrides(
         diagnostic_review_runtime.install()
         outbound_connectivity_runtime.install()
         _dedupe_and_retire_jobs(upgrade_batch_44._engine())
+
+        threading.Thread(
+            target=_recover_retired_diagnostics,
+            args=(diagnostic_upgrade_system, github_upgrade_bridge),
+            name="retired-diagnostic-cleanup",
+            daemon=True,
+        ).start()
 
     if include_discord_upgrade_commands:
         import github_upgrade_patch
