@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import free_provider_policy
-import resource_compute_runtime
-import resource_mesh
 import resource_mesh_worker
-import resource_mesh_worker_extensions
 
-# Load .env.worker before installing quota policy so optional registered-key
-# allowances, worker identity, mesh path, and HTTP settings are active.
+# Load .env.worker before importing policies whose defaults are derived from the
+# environment, including registered BLS quota and bootstrap sample count.
 resource_mesh_worker.load_worker_env()
+
+import free_provider_policy  # noqa: E402
+import resource_compute_runtime  # noqa: E402
+import resource_mesh  # noqa: E402
+import resource_mesh_worker_extensions  # noqa: E402
+
 free_provider_policy.install(resource_mesh_worker)
 resource_mesh_worker_extensions.install(resource_mesh_worker)
 resource_mesh.ALLOWED_KINDS.add("outcome-analysis")
