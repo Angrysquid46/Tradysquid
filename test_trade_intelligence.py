@@ -41,6 +41,31 @@ class TradeIntelligenceTests(unittest.TestCase):
         trade_intelligence.acknowledge("TEST-3", "ticker-results", "v1")
         self.assertEqual(trade_intelligence.health()["failed_syncs"], 0)
 
+    def test_complete_lifecycle_timeline_is_unique_and_replay_safe(self):
+        row = {
+            "trade_id": "SIM-20260801-001", "ticker": "SIM", "play_type": "REGULAR",
+            "call_or_put": "call", "outcome": "OPEN", "thesis": "simulated evidence",
+            "entry_confirmation": "confirmed", "invalidation": "defined", "risk_plan": "one contract",
+        }
+        entry = Path(self.temp.name) / "entry.png"
+        hold = Path(self.temp.name) / "hold.png"
+        exit_image = Path(self.temp.name) / "exit.png"
+        entry.write_bytes(b"entry-chart")
+        hold.write_bytes(b"changed-hold-chart")
+        exit_image.write_bytes(b"changed-exit-chart")
+        self.assertTrue(trade_intelligence.record_event(row, "entry", "entry"))
+        self.assertTrue(trade_intelligence.register_snapshot(row, "entry", entry, source_timestamp="t1"))
+        row.update({"last_signal": "HOLD", "current_pl_dollars": "5"})
+        self.assertTrue(trade_intelligence.record_event(row, "hold-evaluation", "hold-1"))
+        self.assertTrue(trade_intelligence.register_snapshot(row, "hold-1", hold, source_timestamp="t2"))
+        row.update({"last_signal": "TAKE PROFIT", "outcome": "WIN", "realized_pl_dollars": "12"})
+        self.assertTrue(trade_intelligence.record_event(row, "exit-decision", "exit"))
+        self.assertTrue(trade_intelligence.register_snapshot(row, "exit", exit_image, source_timestamp="t3"))
+        self.assertFalse(trade_intelligence.record_event(row, "exit-decision", "exit"))
+        health = trade_intelligence.health()
+        self.assertEqual(health["lifecycle_events"], 3)
+        self.assertEqual(health["snapshots"], 3)
+
     def test_research_sources_are_deduplicated_and_queued(self):
         item = {"source_url": "https://example.test/source", "ticker": "F", "claim": "test"}
         first = trade_intelligence.store_research_source(item)
