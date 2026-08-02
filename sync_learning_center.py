@@ -130,8 +130,30 @@ def _recent_messages(
     return result if isinstance(result, list) else []
 
 
+def _is_bot_message(message: dict[str, Any]) -> bool:
+    return bool((message.get("author") or {}).get("bot") or message.get("webhook_id"))
+
+
+def _marker_from_message(message: dict[str, Any], channel: str) -> str:
+    if not _is_bot_message(message):
+        return ""
+    text = ford_scan.message_search_text(message).strip()
+    if not text:
+        return ""
+    marker = text.splitlines()[0].strip("*")
+    prefix = f"{MARKER_PREFIX} · #{channel} · Part "
+    return marker if marker.startswith(prefix) else ""
+
+
+def _message_id_value(message: dict[str, Any]) -> int:
+    try:
+        return int(message.get("id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _is_old_learning_message(message: dict[str, Any], channel: str) -> bool:
-    if not ((message.get("author") or {}).get("bot") or message.get("webhook_id")):
+    if not _is_bot_message(message):
         return False
     text = ford_scan.message_search_text(message).strip()
     current_prefix = f"{MARKER_PREFIX} · #{channel} · Part "
@@ -146,6 +168,14 @@ def _is_old_learning_message(message: dict[str, Any], channel: str) -> bool:
     )
 
 
+def _delete_message(
+    tracker: ford_scan.DiscordTracker,
+    channel_id: str,
+    message: dict[str, Any],
+) -> None:
+    tracker._request("DELETE", f"/channels/{channel_id}/messages/{message['id']}")
+
+
 def synchronize_channel(
     tracker: ford_scan.DiscordTracker,
     channel: dict[str, Any],
@@ -153,70 +183,114 @@ def synchronize_channel(
     lesson: str,
 ) -> tuple[int, int, int]:
     expected = expected_messages(channel_name, lesson)
-    recent = _recent_messages(tracker, str(channel["id"]))
-    prefix = f"{MARKER_PREFIX} · #{channel_name} · Part "
+    channel_id = str(channel["id"])
+    recent = _recent_messages(tracker, channel_id)
     existing = [
         message
         for message in recent
-        if ((message.get("author") or {}).get("bot") or message.get("webhook_id"))
-        and prefix in ford_scan.message_search_text(message)
+        if _marker_from_message(message, channel_name)
     ]
-    by_marker = {
-        ford_scan.message_search_text(message).splitlines()[0].strip("*"): message
-        for message in existing
-    }
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for message in existing:
+        grouped.setdefault(_marker_from_message(message, channel_name), []).append(message)
 
     created = updated = deleted = 0
     expected_markers: set[str] = set()
+    kept_ids: set[str] = set()
+
     for index, content in enumerate(expected, start=1):
         marker = lesson_marker(channel_name, index, len(expected)).strip("*")
         expected_markers.add(marker)
         payload = style_message_payload(
             {"content": content, "allowed_mentions": {"parse": []}}
         )
-        message = by_marker.get(marker)
+        candidates = grouped.get(marker, [])
+        message = next(
+            (item for item in candidates if message_has_source(item, content)),
+            None,
+        )
+        if message is None and candidates:
+            message = max(candidates, key=_message_id_value)
+
         if message:
+            kept_ids.add(str(message.get("id") or ""))
+            for duplicate in candidates:
+                if str(duplicate.get("id") or "") == str(message.get("id") or ""):
+                    continue
+                _delete_message(tracker, channel_id, duplicate)
+                deleted += 1
             if not message_has_source(message, content):
                 tracker._request(
                     "PATCH",
-                    f"/channels/{channel['id']}/messages/{message['id']}",
+                    f"/channels/{channel_id}/messages/{message['id']}",
                     payload,
                 )
                 updated += 1
         else:
             message = tracker._request(
                 "POST",
-                f"/channels/{channel['id']}/messages",
+                f"/channels/{channel_id}/messages",
                 payload,
             )
             created += 1
+            if isinstance(message, dict):
+                kept_ids.add(str(message.get("id") or ""))
 
         if index == 1 and isinstance(message, dict) and message.get("id"):
             try:
                 tracker._request(
-                    "PUT", f"/channels/{channel['id']}/pins/{message['id']}"
+                    "PUT", f"/channels/{channel_id}/pins/{message['id']}"
                 )
             except ford_scan.DiscordError as exc:
                 if "HTTP 403" not in str(exc):
                     raise
 
-    for marker, message in by_marker.items():
-        if marker not in expected_markers:
-            tracker._request(
-                "DELETE", f"/channels/{channel['id']}/messages/{message['id']}"
-            )
+    for marker, messages in grouped.items():
+        if marker in expected_markers:
+            continue
+        for message in messages:
+            _delete_message(tracker, channel_id, message)
             deleted += 1
 
+    existing_ids = {str(message.get("id") or "") for message in existing}
     for message in recent:
-        if message in existing:
+        message_id = str(message.get("id") or "")
+        if message_id in existing_ids or message_id in kept_ids:
             continue
         if _is_old_learning_message(message, channel_name):
-            tracker._request(
-                "DELETE", f"/channels/{channel['id']}/messages/{message['id']}"
-            )
+            _delete_message(tracker, channel_id, message)
             deleted += 1
 
     return created, updated, deleted
+
+
+def verify_channel_uniqueness(
+    tracker: ford_scan.DiscordTracker,
+    channel: dict[str, Any],
+    channel_name: str,
+    lesson: str,
+) -> int:
+    expected = expected_messages(channel_name, lesson)
+    expected_markers = {
+        lesson_marker(channel_name, index, len(expected)).strip("*")
+        for index in range(1, len(expected) + 1)
+    }
+    counts: dict[str, int] = {}
+    for message in _recent_messages(tracker, str(channel["id"])):
+        marker = _marker_from_message(message, channel_name)
+        if marker:
+            counts[marker] = counts.get(marker, 0) + 1
+
+    duplicate = {marker: count for marker, count in counts.items() if count != 1}
+    missing = sorted(expected_markers - set(counts))
+    unexpected = sorted(set(counts) - expected_markers)
+    if duplicate or missing or unexpected:
+        raise RuntimeError(
+            f"Learning Center card verification failed for #{channel_name}. "
+            f"Duplicates: {duplicate or 'none'}; missing: {missing or 'none'}; "
+            f"unexpected: {unexpected or 'none'}."
+        )
+    return len(expected_markers)
 
 
 def synchronize_curriculum(
@@ -235,7 +309,14 @@ def synchronize_curriculum(
         for item in channels
         if item.get("type") == 0
     }
-    totals = {"created": 0, "updated": 0, "deleted": 0, "channels": 0, "cards": 0}
+    totals = {
+        "created": 0,
+        "updated": 0,
+        "deleted": 0,
+        "channels": 0,
+        "cards": 0,
+        "verified": 0,
+    }
     missing: list[str] = []
 
     for channel_name, lesson in lessons.items():
@@ -246,23 +327,32 @@ def synchronize_curriculum(
         created, updated, deleted = synchronize_channel(
             tracker, channel, channel_name, lesson
         )
+        verified = verify_channel_uniqueness(
+            tracker, channel, channel_name, lesson
+        )
         totals["created"] += created
         totals["updated"] += updated
         totals["deleted"] += deleted
         totals["channels"] += 1
         totals["cards"] += len(expected_messages(channel_name, lesson))
+        totals["verified"] += verified
         print(
             f"#{channel_name}: {created} created, {updated} updated, "
-            f"{deleted} removed."
+            f"{deleted} removed, {verified} uniquely verified."
         )
 
     if missing:
         raise RuntimeError("Missing Discord learning channels: " + ", ".join(missing))
+    if totals["verified"] != totals["cards"]:
+        raise RuntimeError(
+            "Learning Center verification count does not match expected cards: "
+            f"{totals['verified']} verified versus {totals['cards']} expected."
+        )
     print(
         "Comprehensive Learning Center synchronized: "
         f"{totals['channels']} channels, {totals['cards']} cards, "
         f"{totals['created']} created, {totals['updated']} updated, "
-        f"{totals['deleted']} removed."
+        f"{totals['deleted']} removed, {totals['verified']} uniquely verified."
     )
     return totals
 
