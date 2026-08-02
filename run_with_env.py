@@ -80,6 +80,7 @@ def install_runtime_overrides(
 
         import dynamic_universe
         import free_provider_policy
+        import iv_history_runtime
         import local_information_engine as information_engine
         import market_data_optimizations
         import multi_ticker_scan
@@ -93,6 +94,7 @@ def install_runtime_overrides(
         free_provider_policy.install(resource_mesh_worker)
         resource_mesh_worker_extensions.install(resource_mesh_worker)
         market_data_optimizations.install(ford_scan, multi_ticker_scan)
+        iv_history_runtime.install(ford_scan)
         provider_lanes.install(information_engine)
         targeted_scan_runtime.install(
             information_engine,
