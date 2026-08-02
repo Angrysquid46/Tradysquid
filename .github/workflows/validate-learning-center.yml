@@ -14,6 +14,7 @@ on:
       - "operations_acceptance.py"
       - "local_information_engine.py"
       - "local_information_engine_public.py"
+      - "local_information_engine_bootstrap.py"
       - "run_with_env.py"
       - "strict_learning_order.py"
       - "sync_learning_center.py"
@@ -33,6 +34,7 @@ on:
       - "test_automation_acceptance.py"
       - "test_always_on_operations.py"
       - "test_market_intelligence_visibility.py"
+      - "test_market_intelligence_bootstrap.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -67,6 +69,7 @@ jobs:
             ford_scan.py \
             local_information_engine.py \
             local_information_engine_public.py \
+            local_information_engine_bootstrap.py \
             always_on_operations.py \
             operations_acceptance.py \
             discord_command_bot.py \
@@ -86,7 +89,8 @@ jobs:
             tradysquid_supervisor.py \
             run_supervisor.py \
             automation_acceptance.py \
-            test_market_intelligence_visibility.py
+            test_market_intelligence_visibility.py \
+            test_market_intelligence_bootstrap.py
 
       - name: Validate curriculum and operations engine
         run: |
@@ -103,4 +107,5 @@ jobs:
             test_supervisor_availability.py \
             test_automation_acceptance.py \
             test_always_on_operations.py \
-            test_market_intelligence_visibility.py
+            test_market_intelligence_visibility.py \
+            test_market_intelligence_bootstrap.py
