@@ -8,6 +8,11 @@ ROOT = Path(__file__).resolve().parent
 RUNTIME_PATHS = (
     "state/discord-report-state.json",
     "state/ford-plays-log.csv",
+    "state/diagnostics.db",
+    "state/diagnostics.db-shm",
+    "state/diagnostics.db-wal",
+    "state/supervisor-watchdog.log",
+    "state/supervisor-startup.log",
 )
 
 

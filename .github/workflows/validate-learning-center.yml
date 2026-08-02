@@ -22,6 +22,17 @@ on:
       - "run_with_env.py"
       - "network_compat.py"
       - "applied_upgrades.py"
+      - "applied_upgrade_status_runtime.py"
+      - "simple_upgrade_runtime.py"
+      - "diagnostic_upgrade_system.py"
+      - "diagnostic_runtime_integration.py"
+      - "diagnostic_startup_runtime.py"
+      - "diagnostic_nonblocking_runtime.py"
+      - "discord_command_diagnostics.py"
+      - "github_upgrade_bridge_runtime.py"
+      - "shared_upgrade_lifecycle.py"
+      - "upgrade_lifecycle_dashboard.py"
+      - "market_calendar_runtime.py"
       - "github_upgrade_bridge.py"
       - "github_upgrade_patch.py"
       - "upgrade_batch_44.py"
@@ -36,6 +47,7 @@ on:
       - "register_discord_commands_public.py"
       - "run_supervisor.py"
       - "run_supervisor_resilient.py"
+      - "run_supervisor_simple.py"
       - "automation_acceptance.py"
       - "ENSURE-SUPERVISOR.ps1"
       - "SUPERVISOR-DIAGNOSTICS.ps1"
@@ -43,11 +55,22 @@ on:
       - "INSTALL-SUPERVISOR-WATCHDOG.ps1"
       - "START-SUPERVISOR.cmd"
       - "stop_tradysquid_processes.ps1"
+      - ".gitignore"
       - "test_learning_center.py"
       - "test_strict_learning_order.py"
       - "test_supervisor_availability.py"
       - "test_supervisor_discord_readiness.py"
       - "test_supervisor_entrypoint_diagnostics.py"
+      - "test_simple_upgrade_flow.py"
+      - "test_applied_upgrade_status_runtime.py"
+      - "test_diagnostic_upgrade_system.py"
+      - "test_diagnostic_startup_runtime.py"
+      - "test_diagnostic_nonblocking_runtime.py"
+      - "test_discord_command_diagnostics.py"
+      - "test_github_upgrade_bridge_runtime.py"
+      - "test_upgrade_lifecycle_dashboard.py"
+      - "test_market_calendar_runtime.py"
+      - "test_runtime_state_hygiene.py"
       - "test_automation_acceptance.py"
       - "test_always_on_operations.py"
       - "test_market_intelligence_visibility.py"
@@ -67,7 +90,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -104,6 +127,17 @@ jobs:
             register_discord_commands_public.py \
             network_compat.py \
             applied_upgrades.py \
+            applied_upgrade_status_runtime.py \
+            simple_upgrade_runtime.py \
+            diagnostic_upgrade_system.py \
+            diagnostic_runtime_integration.py \
+            diagnostic_startup_runtime.py \
+            diagnostic_nonblocking_runtime.py \
+            discord_command_diagnostics.py \
+            github_upgrade_bridge_runtime.py \
+            shared_upgrade_lifecycle.py \
+            upgrade_lifecycle_dashboard.py \
+            market_calendar_runtime.py \
             github_upgrade_bridge.py \
             github_upgrade_patch.py \
             upgrade_batch_44.py \
@@ -124,17 +158,28 @@ jobs:
             tradysquid_supervisor.py \
             run_supervisor.py \
             run_supervisor_resilient.py \
+            run_supervisor_simple.py \
             automation_acceptance.py \
             test_market_intelligence_visibility.py \
             test_market_intelligence_bootstrap.py \
             test_performance_reconciliation.py \
             test_journal_contract.py \
             test_github_upgrade_bridge.py \
+            test_github_upgrade_bridge_runtime.py \
             test_upgrade_batch_44.py \
             test_upgrade_batch_44_live_acceptance.py \
             test_applied_upgrades.py \
+            test_applied_upgrade_status_runtime.py \
             test_supervisor_discord_readiness.py \
-            test_supervisor_entrypoint_diagnostics.py
+            test_supervisor_entrypoint_diagnostics.py \
+            test_simple_upgrade_flow.py \
+            test_diagnostic_upgrade_system.py \
+            test_diagnostic_startup_runtime.py \
+            test_diagnostic_nonblocking_runtime.py \
+            test_discord_command_diagnostics.py \
+            test_upgrade_lifecycle_dashboard.py \
+            test_market_calendar_runtime.py \
+            test_runtime_state_hygiene.py
 
       - name: Validate curriculum and operations engine
         run: |
@@ -147,6 +192,7 @@ jobs:
           python always_on_operations.py
           python upgrade_batch_44.py
           python applied_upgrades.py
+          python diagnostic_upgrade_system.py
 
       - name: Run focused tests
         run: |
@@ -154,8 +200,18 @@ jobs:
             test_learning_center.py \
             test_strict_learning_order.py \
             test_supervisor_availability.py \
-            test_supervisor_discord_readiness.py \
             test_supervisor_entrypoint_diagnostics.py \
+            test_applied_upgrades.py \
+            test_applied_upgrade_status_runtime.py \
+            test_simple_upgrade_flow.py \
+            test_diagnostic_upgrade_system.py \
+            test_diagnostic_startup_runtime.py \
+            test_diagnostic_nonblocking_runtime.py \
+            test_discord_command_diagnostics.py \
+            test_github_upgrade_bridge_runtime.py \
+            test_upgrade_lifecycle_dashboard.py \
+            test_market_calendar_runtime.py \
+            test_runtime_state_hygiene.py \
             test_automation_acceptance.py \
             test_always_on_operations.py \
             test_market_intelligence_visibility.py \
@@ -164,5 +220,4 @@ jobs:
             test_journal_contract.py \
             test_github_upgrade_bridge.py \
             test_upgrade_batch_44.py \
-            test_upgrade_batch_44_live_acceptance.py \
-            test_applied_upgrades.py
+            test_upgrade_batch_44_live_acceptance.py

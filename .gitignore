@@ -15,11 +15,16 @@ state/local-engine.db
 state/trade-intelligence.db
 state/trade-intelligence.db-shm
 state/trade-intelligence.db-wal
+state/diagnostics.db
+state/diagnostics.db-shm
+state/diagnostics.db-wal
 state/supervisor-state.json
 state/supervisor-state.tmp
 state/discord-report-state.json
 state/ford-plays-log.csv
 state/supervisor-logs/
 state/supervisor-runtime-backup/
+state/supervisor-watchdog.log
+state/supervisor-startup.log
 docs/trade-snapshots/
 docs/tickers/

@@ -35,28 +35,50 @@ def install_runtime_overrides(
     include_discord_upgrade_commands: bool = False,
     include_upgrade_batch_engine: bool = False,
 ) -> None:
-    """Install shared behavior, optional Discord commands, and upgrade jobs."""
+    """Install shared behavior, optional Discord commands, and runtime jobs."""
     import network_compat
 
     network_compat.install()
 
+    import github_upgrade_bridge_runtime
     import journal_contract
     import openai_discord_patch
     import performance_scorecards
+    import shared_upgrade_lifecycle
     import upgrade_batch_44
 
+    github_upgrade_bridge_runtime.install()
     journal_contract.install()
     performance_scorecards.install()
     upgrade_batch_44.install_universe_policy()
     upgrade_batch_44.install_learning_extensions()
+    shared_upgrade_lifecycle.install()
     openai_discord_patch.install()
 
     if include_upgrade_batch_engine:
+        import applied_upgrade_status_runtime
         import applied_upgrades
+        import diagnostic_nonblocking_runtime
+        import diagnostic_runtime_integration
+        import diagnostic_startup_runtime
+        import diagnostic_upgrade_system
+        import discord_command_diagnostics
+        import market_calendar_runtime
+        import simple_upgrade_runtime
         import upgrade_batch_44_live_acceptance
+        import upgrade_lifecycle_dashboard
 
         upgrade_batch_44.install_engine()
         upgrade_batch_44_live_acceptance.install()
+        simple_upgrade_runtime.install()
+        diagnostic_upgrade_system.install()
+        market_calendar_runtime.install()
+        diagnostic_runtime_integration.install()
+        diagnostic_startup_runtime.install()
+        diagnostic_nonblocking_runtime.install()
+        discord_command_diagnostics.install()
+        upgrade_lifecycle_dashboard.install()
+        applied_upgrade_status_runtime.install()
         applied_upgrades.install_engine()
 
     if include_discord_upgrade_commands:
