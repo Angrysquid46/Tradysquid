@@ -1,0 +1,99 @@
+name: Publish Final Offline Tradysquid Release
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/publish-final-offline-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: tradysquid-final-offline-v1
+      RELEASE_ZIP: tradysquid-final-offline-release.zip
+    steps:
+      - name: Check out packaging branch with full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Create isolated environment
+        run: cp .env.example .env
+
+      - name: Fetch and verify merged main
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          MAIN_SHA=$(git rev-parse refs/remotes/origin/main)
+          echo "MAIN_SHA=$MAIN_SHA" >> "$GITHUB_ENV"
+          git show "$MAIN_SHA:deployment_validation_manifest.py" >/dev/null
+          git show "$MAIN_SHA:run_supervisor_simple.py" | grep -q "SIMPLE_TWO_MINUTE_UPDATER"
+
+      - name: Validate exact main worktree
+        run: |
+          git worktree add ../validated-main "$MAIN_SHA"
+          cp .env ../validated-main/.env
+          cp OFFLINE-RECOVERY-INSTALL.ps1 ../validated-main/
+          cp RUN-OFFLINE-RECOVERY.cmd ../validated-main/
+          cd ../validated-main
+          python - <<'PY'
+          import subprocess
+          import sys
+          import deployment_validation_manifest as manifest
+
+          print(manifest.validate_manifest())
+          compile_result = subprocess.run(
+              [sys.executable, "-m", "py_compile", *manifest.COMPILE_MODULES]
+          )
+          if compile_result.returncode:
+              raise SystemExit(compile_result.returncode)
+          test_result = subprocess.run(
+              [
+                  sys.executable,
+                  "-m",
+                  "unittest",
+                  "-q",
+                  *manifest.FOCUSED_TEST_MODULES,
+              ]
+          )
+          raise SystemExit(test_result.returncode)
+          PY
+
+      - name: Build exact main bundle and ZIP
+        run: |
+          rm -rf final-offline-release "$RELEASE_ZIP"
+          mkdir -p final-offline-release
+          git bundle create final-offline-release/tradysquid-final-release.bundle refs/remotes/origin/main
+          git bundle verify final-offline-release/tradysquid-final-release.bundle
+          cp OFFLINE-RECOVERY-INSTALL.ps1 final-offline-release/
+          cp RUN-OFFLINE-RECOVERY.cmd final-offline-release/
+          printf '%s\n' "$MAIN_SHA" > final-offline-release/RELEASE-COMMIT.txt
+          sha256sum \
+            final-offline-release/tradysquid-final-release.bundle \
+            final-offline-release/OFFLINE-RECOVERY-INSTALL.ps1 \
+            final-offline-release/RUN-OFFLINE-RECOVERY.cmd \
+            > final-offline-release/SHA256SUMS.txt
+          zip -r "$RELEASE_ZIP" final-offline-release
+
+      - name: Publish fixed private release asset
+        run: |
+          gh release delete "$RELEASE_TAG" --yes --cleanup-tag >/dev/null 2>&1 || true
+          gh release create "$RELEASE_TAG" "$RELEASE_ZIP" \
+            --target "$MAIN_SHA" \
+            --title "Tradysquid Final Offline Deployment" \
+            --notes "Validated exact main commit $MAIN_SHA. Extract the ZIP and double-click RUN-OFFLINE-RECOVERY.cmd. The installer performs preflight, runtime preservation, fast-forward deployment, focused validation, rollback on failure, one restart, and read-only diagnostics."
