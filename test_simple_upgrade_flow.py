@@ -6,6 +6,14 @@ from pathlib import Path
 
 import github_upgrade_bridge
 
+# The laptop updater already runs this module. Importing these TestCase classes
+# makes the same one-supervisor/runtime-contract checks part of local deployment
+# validation, not CI-only decoration.
+from test_runtime_contract import RuntimeContractTests  # noqa: F401
+from test_scheduler_diagnostic_runtime import SchedulerDiagnosticRuntimeTests  # noqa: F401
+from test_supervisor_diagnostic_runtime import SupervisorDiagnosticRuntimeTests  # noqa: F401
+from test_supervisor_entrypoint_diagnostics import SupervisorEntrypointDiagnosticsTests  # noqa: F401
+
 
 ROOT = Path(__file__).resolve().parent
 
