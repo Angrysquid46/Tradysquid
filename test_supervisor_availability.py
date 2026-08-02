@@ -139,6 +139,7 @@ class SupervisorAvailabilityTests(unittest.TestCase):
             patch.object(supervisor, "discord_post", post),
             patch.object(supervisor, "write_state", write_state),
             patch.object(supervisor, "current_sha", return_value="abc123def456"),
+            patch.object(supervisor, "state_payload", return_value={}),
         ):
             run_supervisor.ensure_services_with_readiness()
             run_supervisor.ensure_services_with_readiness()
@@ -149,14 +150,32 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         self.assertIn("services ready", message)
         self.assertIn("command-bot: **ONLINE**", message)
         self.assertIn("information-engine: **ONLINE**", message)
+        self.assertIn("Discord synchronization: **VERIFIED**", message)
         self.assertIn("ngrok: **ONLINE**", message)
         self.assertIn("automatic updater: **ONLINE**", message)
-        # Each pass writes an early liveness heartbeat before startup checks and
-        # a second state snapshot after service health has been verified.
         self.assertEqual(write_state.call_count, 4)
         heartbeat = write_state.call_args.kwargs
         self.assertIn("supervisor_heartbeat_at", heartbeat)
         self.assertTrue(heartbeat["auto_update_enabled"])
+
+    def test_readiness_is_blocked_when_discord_sync_failed(self) -> None:
+        ready = {service.name: True for service in supervisor.SERVICES}
+        post = Mock()
+        state = {
+            "last_update_status": "DEPLOYED_WITH_DISCORD_ERRORS",
+            "last_discord_sync_status": "FAILED",
+            "deployed_sha": "abc123def456",
+        }
+        with (
+            patch.object(run_supervisor, "ORIGINAL_ENSURE_SERVICES"),
+            patch.object(supervisor, "LAST_HEALTH", ready.copy()),
+            patch.object(supervisor, "discord_post", post),
+            patch.object(supervisor, "write_state"),
+            patch.object(supervisor, "current_sha", return_value="abc123def456"),
+            patch.object(supervisor, "state_payload", return_value=state),
+        ):
+            run_supervisor.ensure_services_with_readiness()
+        post.assert_not_called()
 
     def test_readiness_posts_again_after_an_unhealthy_transition_recovers(self) -> None:
         ready = {service.name: True for service in supervisor.SERVICES}
@@ -169,6 +188,7 @@ class SupervisorAvailabilityTests(unittest.TestCase):
             patch.object(supervisor, "discord_post", post),
             patch.object(supervisor, "write_state"),
             patch.object(supervisor, "current_sha", return_value="abc123def456"),
+            patch.object(supervisor, "state_payload", return_value={}),
         ):
             with patch.object(supervisor, "LAST_HEALTH", ready.copy()):
                 run_supervisor.ensure_services_with_readiness()
@@ -190,6 +210,7 @@ class SupervisorAvailabilityTests(unittest.TestCase):
             patch.object(supervisor, "state_payload", return_value={"last_update_status": "DEPLOYED"}),
             patch.object(supervisor, "write_state", write_state),
             patch.object(supervisor, "discord_post", post),
+            patch.object(supervisor, "current_sha", return_value="abc123def456"),
         ):
             succeeded = run_supervisor.record_discord_sync_results(results, source="deployment")
 
@@ -199,8 +220,39 @@ class SupervisorAvailabilityTests(unittest.TestCase):
             write_state.call_args.kwargs["last_update_status"],
             "DEPLOYED_WITH_DISCORD_ERRORS",
         )
-        post.assert_called_once()
-        self.assertEqual(post.call_args.args[1], "workflow-log")
+        self.assertEqual(post.call_count, 2)
+        channels = {call.args[1] for call in post.call_args_list}
+        self.assertEqual(channels, {"workflow-log", "system-health"})
+        for call in post.call_args_list:
+            self.assertIn("deployment incomplete", call.args[0])
+
+    def test_successful_retry_restores_deployed_status(self) -> None:
+        write_state = Mock()
+        post = Mock()
+        results = [
+            "Discord slash commands synchronized",
+            "Strictly ordered Learning Center synchronized",
+        ]
+        with (
+            patch.object(
+                supervisor,
+                "state_payload",
+                return_value={
+                    "last_update_status": "DEPLOYED_WITH_DISCORD_ERRORS",
+                    "last_discord_sync_status": "FAILED",
+                },
+            ),
+            patch.object(supervisor, "write_state", write_state),
+            patch.object(supervisor, "discord_post", post),
+            patch.object(supervisor, "current_sha", return_value="abc123def456"),
+        ):
+            succeeded = run_supervisor.record_discord_sync_results(
+                results, source="automatic-retry"
+            )
+        self.assertTrue(succeeded)
+        self.assertEqual(write_state.call_args.kwargs["last_update_status"], "DEPLOYED")
+        self.assertEqual(write_state.call_args.kwargs["last_discord_sync_status"], "OK")
+        self.assertEqual(post.call_count, 2)
 
     def test_failed_discord_sync_retries_without_a_new_commit(self) -> None:
         results = [
