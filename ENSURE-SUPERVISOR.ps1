@@ -10,7 +10,8 @@ $StatePath = Join-Path $StateDir 'supervisor-state.json'
 $LogPath = Join-Path $StateDir 'supervisor-watchdog.log'
 $Launcher = Join-Path $Root 'start_supervisor_hidden.vbs'
 $LauncherCommand = Join-Path $Root 'START-SUPERVISOR.cmd'
-$SupervisorCommandPattern = '(?i)(^|[\\/"\s])run_supervisor_simple\.py(["\s]|$)'
+$SupervisorEntrypoint = 'run_supervisor_simple.py'
+$SupervisorCommandPattern = '(?i)(^|[\\/"\s])' + [regex]::Escape($SupervisorEntrypoint) + '(["\s]|$)'
 $HealthPort = 8876
 
 if (-not (Test-Path $StateDir)) {
