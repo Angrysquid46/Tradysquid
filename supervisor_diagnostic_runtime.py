@@ -1,4 +1,4 @@
-"""Windows ownership checks for the one active simple supervisor."""
+"""Windows ownership checks for the one active simple supervisor tree."""
 
 from __future__ import annotations
 
@@ -20,24 +20,34 @@ def supervisor_process_check() -> diagnostics.HealthCheck:
             "supervisor-process-ownership",
             True,
             "supervisor",
-            "single active supervisor process",
+            "single supervisor ownership tree",
             "Windows process ownership check is not applicable on this platform.",
             severity="INFO",
             runtime_target="run_supervisor_simple.py",
         )
     script = r"""
-$items = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+$all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+$items = @($all |
   Where-Object {
     $_.Name -match '^python(w)?\.exe$' -and $_.CommandLine -and
     $_.CommandLine -match 'run_supervisor_simple\.py'
   } |
-  Select-Object ProcessId, CommandLine)
+  Select-Object ProcessId, ParentProcessId, CommandLine)
 $listener = Get-NetTCPConnection -State Listen -LocalPort 8876 -ErrorAction SilentlyContinue |
   Select-Object -First 1
+$owner = if ($listener) { [int]$listener.OwningProcess } else { 0 }
+$ownerTree = [System.Collections.Generic.HashSet[int]]::new()
+$current = $owner
+while ($current -gt 0 -and $ownerTree.Add([int]$current)) {
+  $item = $all | Where-Object { $_.ProcessId -eq $current } | Select-Object -First 1
+  if (-not $item) { break }
+  $current = [int]$item.ParentProcessId
+}
 [pscustomobject]@{
   Processes = $items
-  PortOwner = if ($listener) { [int]$listener.OwningProcess } else { 0 }
-} | ConvertTo-Json -Compress -Depth 5
+  PortOwner = $owner
+  OwnerTreeIds = @($ownerTree)
+} | ConvertTo-Json -Compress -Depth 6
 """
     try:
         result = subprocess.run(
@@ -52,7 +62,7 @@ $listener = Get-NetTCPConnection -State Listen -LocalPort 8876 -ErrorAction Sile
             "supervisor-process-ownership",
             False,
             "supervisor",
-            "single active supervisor process",
+            "single supervisor ownership tree",
             f"Process inspection failed: {type(exc).__name__}: {exc}",
             severity="WARNING",
             runtime_target="run_supervisor_simple.py and port 8876",
@@ -68,18 +78,38 @@ $listener = Get-NetTCPConnection -State Listen -LocalPort 8876 -ErrorAction Sile
     items = [item for item in processes if isinstance(item, dict)] if isinstance(processes, list) else []
     pids = [int(item.get("ProcessId") or 0) for item in items]
     port_owner = int(payload.get("PortOwner") or 0) if isinstance(payload, dict) else 0
-    passed = result.returncode == 0 and len(pids) == 1 and port_owner == pids[0]
+    raw_tree = payload.get("OwnerTreeIds") if isinstance(payload, dict) else []
+    if isinstance(raw_tree, (int, str)):
+        raw_tree = [raw_tree]
+    owner_tree = sorted(
+        {
+            int(value or 0)
+            for value in (raw_tree if isinstance(raw_tree, list) else [])
+            if int(value or 0) > 0
+        }
+    )
+    foreign = sorted(pid for pid in pids if pid not in owner_tree)
+    passed = (
+        result.returncode == 0
+        and port_owner > 0
+        and port_owner in pids
+        and not foreign
+    )
     return diagnostics.HealthCheck(
         "supervisor-process-ownership",
         passed,
         "supervisor",
-        "single active supervisor process",
-        f"simple supervisor processes={len(pids)}; PIDs={pids}; port 8876 owner={port_owner or 'none'}",
-        runtime_target="run_supervisor_simple.py and port 8876",
-        automatic_retry="watchdog removes duplicate or stale ownership and relaunches one hidden supervisor",
+        "single supervisor ownership tree",
+        (
+            f"matched supervisor processes={len(pids)}; matched PIDs={pids}; "
+            f"owner tree PIDs={owner_tree}; foreign supervisor PIDs={foreign}; "
+            f"port 8876 owner={port_owner or 'none'}"
+        ),
+        runtime_target="run_supervisor_simple.py ownership tree and port 8876",
+        automatic_retry="watchdog preserves the healthy owner tree and removes only foreign supervisor trees",
         healthy_services="managed services remain independent during supervisor ownership repair",
-        repair_objective="Leave exactly one run_supervisor_simple.py process owning port 8876.",
-        acceptance_tests="Exactly one simple supervisor process owns port 8876 for at least two health intervals.",
+        repair_objective="Leave exactly one supervisor ownership tree with its active interpreter owning port 8876.",
+        acceptance_tests="One ownership tree contains the port-8876 owner and every matched supervisor process for at least two health intervals.",
         force_upgrade=False,
     )
 
