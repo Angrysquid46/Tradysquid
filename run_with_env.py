@@ -69,13 +69,13 @@ def install_runtime_overrides(
         import outbound_connectivity_runtime
         import scheduler_diagnostic_runtime
         import simple_upgrade_runtime
+        import simplified_runtime
         import supervisor_diagnostic_runtime
         import upgrade_batch_44_live_acceptance
         import upgrade_lifecycle_dashboard
 
-        # Install the complete runtime chain in dependency order. The review
-        # layer controls publication; outbound aggregation runs immediately
-        # after it so all current HTTPS symptoms enter one root-cause record.
+        # Existing layers are installed for compatibility, then the final repair
+        # removes retired jobs and consolidates runtime self-healing in one place.
         upgrade_batch_44.install_engine()
         upgrade_batch_44_live_acceptance.install()
         simple_upgrade_runtime.install()
@@ -93,6 +93,7 @@ def install_runtime_overrides(
         diagnostic_review_runtime.install()
         outbound_connectivity_runtime.install()
         applied_upgrades.install_engine()
+        simplified_runtime.install()
 
     if include_discord_upgrade_commands:
         import github_upgrade_patch
