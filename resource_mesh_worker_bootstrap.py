@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import free_provider_policy
+import resource_compute_runtime
+import resource_mesh
 import resource_mesh_worker
 import resource_mesh_worker_extensions
 
@@ -11,6 +13,10 @@ import resource_mesh_worker_extensions
 resource_mesh_worker.load_worker_env()
 free_provider_policy.install(resource_mesh_worker)
 resource_mesh_worker_extensions.install(resource_mesh_worker)
+resource_mesh.ALLOWED_KINDS.add("outcome-analysis")
+resource_mesh_worker.HANDLERS["outcome-analysis"] = (
+    resource_compute_runtime.analyze
+)
 
 
 if __name__ == "__main__":
