@@ -1,36 +1,73 @@
-"""Reconcile Discord performance reports against the complete canonical trade ledger.
+"""Build complete Discord performance reports from the canonical trade ledger.
 
-The legacy report path calculated historical close dates and then discarded them,
-so only today's daily recap and the week derived from that one date were refreshed.
-It also relied only on per-trade acknowledgement changes to rebuild strategy cards,
-which meant a reporting-code deployment could leave stale Discord totals in place.
+Daily, weekly, strategy, and monthly reporting are separate products. Every
+closed trade must appear once in each applicable history view. Summary cards
+never substitute for the underlying trade history.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Iterable
 
 import ford_scan
 
 
-REPORT_VERSION = "performance-ledger-v2"
-RECENT_BUSINESS_DAYS = 15
-MAX_HISTORICAL_DAILY_DATES = 45
-MAX_WEEKLY_REPORTS = 12
+REPORT_VERSION = "performance-ledger-v3"
+PAGE_SIZE = 10
+MAX_MONTHS = 24
 _INSTALLED = False
 
 _ORIGINAL_CLOSED_ROWS = ford_scan.closed_rows
-_ORIGINAL_FORMAT_DAILY_RECAP = ford_scan.format_daily_recap
-_ORIGINAL_FORMAT_WEEKLY_REPORT = ford_scan.format_weekly_report
-_ORIGINAL_FORMAT_STRATEGY_BREAKDOWN = ford_scan.format_strategy_breakdown
-_ORIGINAL_FORMAT_PERFORMANCE_STATS = ford_scan.format_performance_stats
+
+REPORT_ROUTES = {
+    "daily_recap": "daily-recap",
+    "weekly_report": "weekly-report",
+    "performance_stats": "performance-dashboard",
+    "strategy_breakdown": "strategy-breakdown",
+}
+
+REPORT_MARKERS = {
+    "daily_recap": (
+        "Daily Performance Index",
+        "Daily Report ·",
+        "Daily Trade History ·",
+        "Daily Recap ·",
+    ),
+    "weekly_report": (
+        "Weekly Performance Index",
+        "Weekly Report ·",
+        "Weekly Trade History ·",
+    ),
+    "performance_stats": (
+        "Monthly Performance Index",
+        "Monthly Performance ·",
+        "Monthly Trade History ·",
+        "Performance Dashboard",
+        "Daily Recap ·",
+        "Weekly Report ·",
+        "Strategy Breakdown",
+    ),
+    "strategy_breakdown": (
+        "Strategy Breakdown",
+        "Strategy Trade History ·",
+    ),
+}
+
+STATE_PREFIXES = (
+    "report-v3:",
+    "daily-recap:",
+    "weekly-report:",
+    "performance-stats",
+    "strategy-breakdown",
+)
 
 
 def effective_closed_at(row: dict[str, Any]) -> datetime | None:
-    """Return the best recorded close timestamp without inventing market facts."""
+    """Use the best recorded lifecycle timestamp without inventing a date."""
     for key in ("closed_at", "last_evaluated_at", "timestamp"):
         parsed = ford_scan.parse_iso(str(row.get(key) or ""))
         if parsed is not None:
@@ -38,14 +75,32 @@ def effective_closed_at(row: dict[str, Any]) -> datetime | None:
     return None
 
 
-def rows_closed_on(
-    rows: list[dict[str, str]], target_date: date
-) -> list[dict[str, str]]:
+def canonical_closed_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    completed = list(_ORIGINAL_CLOSED_ROWS(rows))
+    missing = [
+        str(row.get("trade_id") or "UNKNOWN")
+        for row in completed
+        if effective_closed_at(row) is None
+    ]
+    if missing:
+        raise RuntimeError(
+            "Closed trades are missing every usable lifecycle timestamp: "
+            + ", ".join(missing[:25])
+        )
+    return sorted(
+        completed,
+        key=lambda row: (
+            effective_closed_at(row) or datetime.min.replace(tzinfo=ford_scan.MARKET_TZ),
+            str(row.get("trade_id") or ""),
+        ),
+    )
+
+
+def rows_closed_on(rows: list[dict[str, str]], target_date: date) -> list[dict[str, str]]:
     return [
         row
-        for row in _ORIGINAL_CLOSED_ROWS(rows)
-        if (closed_at := effective_closed_at(row)) is not None
-        and closed_at.date() == target_date
+        for row in canonical_closed_rows(rows)
+        if effective_closed_at(row).date() == target_date
     ]
 
 
@@ -54,130 +109,32 @@ def rows_closed_between(
 ) -> list[dict[str, str]]:
     return [
         row
-        for row in _ORIGINAL_CLOSED_ROWS(rows)
-        if (closed_at := effective_closed_at(row)) is not None
-        and start_date <= closed_at.date() <= end_date
+        for row in canonical_closed_rows(rows)
+        if start_date <= effective_closed_at(row).date() <= end_date
     ]
 
 
-def _insert_after_heading(content: str, additions: list[str]) -> str:
-    lines = content.splitlines()
-    if not lines:
-        return "\n".join(additions)[:2000]
-    insert_at = 1
-    if len(lines) > 1 and not lines[1].startswith("### "):
-        insert_at = 2
-    updated = lines[:insert_at] + additions + lines[insert_at:]
-    return "\n".join(updated)[:2000]
+def month_start(value: date) -> date:
+    return value.replace(day=1)
 
 
-def _week_window(today: date) -> tuple[date, date]:
-    monday = today - timedelta(days=today.weekday())
-    friday = monday + timedelta(days=4)
-    return monday, min(today, friday)
+def month_end(value: date) -> date:
+    next_month = (value.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return next_month - timedelta(days=1)
 
 
-def format_daily_recap(
-    rows: list[dict[str, str]],
-    report_date: date,
-    *,
-    market_open: bool,
-) -> str:
-    completed = rows_closed_on(rows, report_date)
-    content = _ORIGINAL_FORMAT_DAILY_RECAP(
-        rows, report_date, market_open=market_open
-    )
-    additions = [
-        f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades for this date."
-    ]
-    if len(completed) > 8:
-        additions.append(
-            f"The card lists the latest 8 trades; totals include all **{len(completed)}**."
-        )
-    return _insert_after_heading(content, additions)
+def week_start(value: date) -> date:
+    return value - timedelta(days=value.weekday())
 
 
-def format_weekly_report(
-    rows: list[dict[str, str]], report_date: date, *, final: bool = False
-) -> str:
-    monday = report_date - timedelta(days=report_date.weekday())
-    completed = rows_closed_between(rows, monday, report_date)
-    content = _ORIGINAL_FORMAT_WEEKLY_REPORT(rows, report_date, final=final)
-    day_counts = []
-    cursor = monday
-    while cursor <= report_date:
-        day_counts.append(f"{cursor.strftime('%a')} {len(rows_closed_on(rows, cursor))}")
-        cursor += timedelta(days=1)
-    return _insert_after_heading(
-        content,
-        [
-            f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades for this week.",
-            "**Daily reconciliation:** " + " · ".join(day_counts),
-        ],
-    )
-
-
-def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
-    completed = _ORIGINAL_CLOSED_ROWS(rows)
-    today = ford_scan.now_ct().date()
-    week_start, week_end = _week_window(today)
-    this_week = rows_closed_between(rows, week_start, week_end)
-    metrics = ford_scan.result_metrics(this_week)
-
-    grouped_count = 0
-    groups: dict[str, int] = {}
-    for row in completed:
-        label = (
-            f"{str(row.get('play_type') or 'PLAY').upper()} "
-            f"{str(row.get('call_or_put') or '').upper()}"
-        ).strip()
-        groups[label] = groups.get(label, 0) + 1
-        grouped_count += 1
-    if grouped_count != len(completed):
-        raise RuntimeError(
-            "Strategy reconciliation lost canonical trades: "
-            f"grouped={grouped_count}, canonical={len(completed)}"
-        )
-
-    content = _ORIGINAL_FORMAT_STRATEGY_BREAKDOWN(rows)
-    return _insert_after_heading(
-        content,
-        [
-            f"**Canonical ledger coverage:** **{grouped_count}/{len(completed)}** closed trades across **{len(groups)}** strategy groups.",
-            (
-                f"**Current week {week_start.strftime('%m/%d')}–{week_end.strftime('%m/%d')}:** "
-                f"**{len(this_week)} trades** · {int(metrics['wins'])}W / "
-                f"{int(metrics['losses'])}L / {int(metrics['scratches'])}S · "
-                f"net **{ford_scan.fmt_metric_money(metrics, 'total_pnl')}**"
-            ),
-        ],
-    )
-
-
-def format_performance_stats(rows: list[dict[str, str]]) -> str:
-    completed = _ORIGINAL_CLOSED_ROWS(rows)
-    today = ford_scan.now_ct().date()
-    week_start, week_end = _week_window(today)
-    this_week = rows_closed_between(rows, week_start, week_end)
-    content = _ORIGINAL_FORMAT_PERFORMANCE_STATS(rows)
-    return _insert_after_heading(
-        content,
-        [
-            f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades.",
-            f"**Current week:** **{len(this_week)}** closed trades accounted for.",
-        ],
-    )
+def chunks(values: list[Any], size: int = PAGE_SIZE) -> Iterable[list[Any]]:
+    for index in range(0, len(values), size):
+        yield values[index : index + size]
 
 
 def ledger_signature(rows: list[dict[str, str]]) -> str:
     payload = []
-    for row in sorted(
-        _ORIGINAL_CLOSED_ROWS(rows),
-        key=lambda item: (
-            str(item.get("trade_id") or ""),
-            str(item.get("closed_at") or ""),
-        ),
-    ):
+    for row in canonical_closed_rows(rows):
         closed_at = effective_closed_at(row)
         payload.append(
             {
@@ -195,68 +152,182 @@ def ledger_signature(rows: list[dict[str, str]]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:20]
 
 
-def daily_report_dates(rows: list[dict[str, str]], today: date) -> list[date]:
-    historical = {
-        closed_at.date()
-        for row in _ORIGINAL_CLOSED_ROWS(rows)
-        if (closed_at := effective_closed_at(row)) is not None
-        and closed_at.date() >= today - timedelta(days=60)
-    }
-    dates = set(historical)
-    dates.add(today)
-
-    cursor = today
-    business_days = 0
-    while business_days < RECENT_BUSINESS_DAYS:
-        if cursor.weekday() < 5:
-            dates.add(cursor)
-            business_days += 1
-        cursor -= timedelta(days=1)
-
-    return sorted(dates)[-MAX_HISTORICAL_DAILY_DATES:]
+def strategy_label(row: dict[str, str]) -> str:
+    play_type = str(row.get("play_type") or "PLAY").upper()
+    side = str(row.get("call_or_put") or "").upper()
+    return f"{play_type} {side}".strip()
 
 
-def weekly_report_starts(today: date) -> list[date]:
-    monday = today - timedelta(days=today.weekday())
-    return sorted(
-        monday - timedelta(days=7 * offset)
-        for offset in range(MAX_WEEKLY_REPORTS)
+def compact_trade_line(row: dict[str, str]) -> str:
+    trade_id = str(row.get("trade_id") or "UNKNOWN")[:24]
+    ticker = str(row.get("ticker") or "F").upper()[:6]
+    label = strategy_label(row)[:18]
+    outcome = str(row.get("outcome") or "CLOSED").upper()[:7]
+    dollars = ford_scan.fmt_money(ford_scan.realized_pl_dollars(row))
+    pct = ford_scan.fmt_pct(ford_scan.as_float(row.get("pct_gain_loss"), 0.0))
+    closed_at = effective_closed_at(row)
+    stamp = closed_at.strftime("%m/%d") if closed_at else "date?"
+    return f"• **{trade_id}** · {ticker} {label} · **{outcome} {dollars} ({pct})** · {stamp}"
+
+
+def result_summary(title: str, completed: list[dict[str, str]], period_text: str) -> str:
+    metrics = ford_scan.result_metrics(completed)
+    lines = [
+        f"## {title}",
+        f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades.",
+        "### Period",
+        period_text,
+        "### Record",
+        (
+            f"🏆 **{int(metrics['wins'])}W** · 🔴 **{int(metrics['losses'])}L** · "
+            f"➖ **{int(metrics['scratches'])}S** · Win rate **{metrics['win_rate']:.0f}%**"
+        ),
+        "### Money",
+        (
+            f"Won **{ford_scan.fmt_metric_money(metrics, 'gross_won')}** · "
+            f"Lost **{ford_scan.fmt_metric_money(metrics, 'gross_lost')}** · "
+            f"Net **{ford_scan.fmt_metric_money(metrics, 'total_pnl')}**"
+        ),
+        "### Trade Quality",
+        (
+            f"Expectancy **{metrics['expectancy_pct']:+.0f}%** · "
+            f"Avg win **{metrics['average_win_pct']:+.0f}%** · "
+            f"Avg loss **{metrics['average_loss_pct']:+.0f}%**"
+        ),
+    ]
+    if completed:
+        best = max(
+            completed,
+            key=lambda row: ford_scan.as_float(row.get("realized_pl_dollars"), -math.inf)
+            or -math.inf,
+        )
+        worst = min(
+            completed,
+            key=lambda row: ford_scan.as_float(row.get("realized_pl_dollars"), math.inf)
+            or math.inf,
+        )
+        lines.extend(
+            [
+                "### Best / Worst",
+                f"Best: {compact_trade_line(best)[2:]}\nWorst: {compact_trade_line(worst)[2:]}",
+            ]
+        )
+    else:
+        lines.extend(["### Trade History", "No trades closed during this period."])
+    return "\n".join(lines)[:5900]
+
+
+def history_page(title: str, completed: list[dict[str, str]], page: int, total_pages: int) -> str:
+    start = (page - 1) * PAGE_SIZE + 1
+    end = start + len(completed) - 1
+    return "\n".join(
+        [
+            f"## {title} · Page {page}/{total_pages}",
+            f"**Trade history coverage:** **{start}-{end} of {(total_pages - 1) * PAGE_SIZE + len(completed)}**",
+            "### Trades",
+            "\n".join(compact_trade_line(row) for row in completed),
+        ]
+    )[:5900]
+
+
+def format_daily_recap(
+    rows: list[dict[str, str]], report_date: date, *, market_open: bool
+) -> str:
+    completed = rows_closed_on(rows, report_date)
+    status = "LIVE" if market_open else "FINAL"
+    return result_summary(
+        f"📅 Daily Report · {report_date.strftime('%m/%d/%y')}",
+        completed,
+        f"**Status:** {status} · {report_date.strftime('%A, %B %d, %Y')}",
     )
 
 
-def coverage_snapshot(rows: list[dict[str, str]], today: date) -> dict[str, Any]:
-    completed = _ORIGINAL_CLOSED_ROWS(rows)
-    missing_dates = [
-        str(row.get("trade_id") or "UNKNOWN")
-        for row in completed
-        if effective_closed_at(row) is None
-    ]
-    if missing_dates:
-        raise RuntimeError(
-            "Closed trades are missing every usable close timestamp: "
-            + ", ".join(missing_dates[:20])
-        )
-
-    week_start, week_end = _week_window(today)
-    weekly = rows_closed_between(rows, week_start, week_end)
-    daily_total = 0
-    cursor = week_start
-    while cursor <= week_end:
-        daily_total += len(rows_closed_on(rows, cursor))
+def format_weekly_report(
+    rows: list[dict[str, str]], report_date: date, *, final: bool = False
+) -> str:
+    monday = week_start(report_date)
+    completed = rows_closed_between(rows, monday, report_date)
+    counts = []
+    cursor = monday
+    while cursor <= report_date:
+        counts.append(f"{cursor.strftime('%a')} {len(rows_closed_on(rows, cursor))}")
         cursor += timedelta(days=1)
-    if daily_total != len(weekly):
-        raise RuntimeError(
-            "Daily and weekly ledger coverage disagree: "
-            f"daily={daily_total}, weekly={len(weekly)}"
-        )
+    return result_summary(
+        f"📆 Weekly Report · {monday.strftime('%m/%d')}–{report_date.strftime('%m/%d/%y')}",
+        completed,
+        (
+            f"**Status:** {'FINAL' if final else 'LIVE'}\n"
+            f"**Daily reconciliation:** {' · '.join(counts)}"
+        ),
+    )
 
-    return {
-        "canonical_closed": len(completed),
-        "current_week_closed": len(weekly),
-        "current_week_daily_total": daily_total,
-        "week_start": week_start.isoformat(),
-        "week_end": week_end.isoformat(),
-    }
+
+def format_monthly_report(rows: list[dict[str, str]], month: date) -> str:
+    end = month_end(month)
+    completed = rows_closed_between(rows, month, end)
+    return result_summary(
+        f"📊 Monthly Performance · {month.strftime('%B %Y')}",
+        completed,
+        f"{month.strftime('%B %d, %Y')} through {end.strftime('%B %d, %Y')}",
+    )
+
+
+def strategy_groups(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
+    groups: dict[str, list[dict[str, str]]] = {}
+    for row in canonical_closed_rows(rows):
+        groups.setdefault(strategy_label(row), []).append(row)
+    if sum(len(group) for group in groups.values()) != len(canonical_closed_rows(rows)):
+        raise RuntimeError("Strategy grouping lost one or more canonical trades")
+    return groups
+
+
+def strategy_summary_pages(rows: list[dict[str, str]]) -> list[str]:
+    groups = strategy_groups(rows)
+    ranked = sorted(
+        groups.items(),
+        key=lambda item: (
+            ford_scan.result_metrics(item[1])["total_pnl"],
+            ford_scan.result_metrics(item[1])["expectancy_pct"],
+        ),
+        reverse=True,
+    )
+    if not ranked:
+        return [
+            "## Strategy Breakdown\n**Canonical ledger coverage:** **0/0** closed trades.\n### Results\nNo completed trades yet."
+        ]
+    pages = []
+    grouped_pages = list(chunks(ranked, 7))
+    for page_number, page_groups in enumerate(grouped_pages, 1):
+        lines = [
+            f"## Strategy Breakdown · Page {page_number}/{len(grouped_pages)}",
+            (
+                f"**Canonical ledger coverage:** **{sum(len(group) for _, group in ranked)}/"
+                f"{len(canonical_closed_rows(rows))}** closed trades across **{len(ranked)}** strategies."
+            ),
+            "### Ranked Strategies",
+        ]
+        for label, group in page_groups:
+            metrics = ford_scan.result_metrics(group)
+            lines.append(
+                f"**{label}** · {len(group)} trades · {int(metrics['wins'])}W/"
+                f"{int(metrics['losses'])}L · {metrics['win_rate']:.0f}% · "
+                f"Net {ford_scan.fmt_metric_money(metrics, 'total_pnl')} · "
+                f"Exp {metrics['expectancy_pct']:+.0f}%"
+            )
+        pages.append("\n".join(lines)[:5900])
+    return pages
+
+
+def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
+    return strategy_summary_pages(rows)[0]
+
+
+def format_performance_stats(rows: list[dict[str, str]]) -> str:
+    completed = canonical_closed_rows(rows)
+    if not completed:
+        return "## Monthly Performance Index\n**Canonical ledger coverage:** **0/0** closed trades."
+    latest = month_start(effective_closed_at(completed[-1]).date())
+    return format_monthly_report(rows, latest)
 
 
 def _require_upsert(
@@ -265,7 +336,6 @@ def _require_upsert(
     state: dict[str, Any],
     state_key: str,
     content: str,
-    *,
     search_token: str,
 ) -> str:
     message_id = discord.upsert_channel_message(
@@ -277,9 +347,251 @@ def _require_upsert(
     )
     if not message_id:
         raise RuntimeError(
-            f"Discord did not acknowledge performance card {logical_name}:{state_key}"
+            f"Discord did not acknowledge report card {logical_name}:{state_key}"
         )
     return str(message_id)
+
+
+def _clear_report_state(state: dict[str, Any]) -> None:
+    for container_name in ("messages", "message_hashes"):
+        container = state.setdefault(container_name, {})
+        for key in list(container):
+            if str(key).startswith(STATE_PREFIXES):
+                container.pop(key, None)
+
+
+def _purge_report_channel(discord: Any, logical_name: str) -> int:
+    channel_id = discord.channels.get(logical_name)
+    if not channel_id:
+        raise RuntimeError(
+            f"Required report channel is missing: #{REPORT_ROUTES[logical_name]}"
+        )
+    markers = REPORT_MARKERS[logical_name]
+    removed = 0
+    before = ""
+    while True:
+        suffix = f"&before={before}" if before else ""
+        page = discord._request("GET", f"/channels/{channel_id}/messages?limit=100{suffix}")
+        if not isinstance(page, list) or not page:
+            break
+        for message in page:
+            author = message.get("author") or {}
+            if not (author.get("bot") or message.get("webhook_id")):
+                continue
+            text = ford_scan.message_search_text(message)
+            if any(marker in text for marker in markers):
+                message_id = str(message.get("id") or "")
+                if message_id:
+                    discord._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
+                    removed += 1
+        before = str(page[-1].get("id") or "")
+        if len(page) < 100 or not before:
+            break
+    return removed
+
+
+def _sync_history(
+    discord: Any,
+    state: dict[str, Any],
+    logical_name: str,
+    key_prefix: str,
+    title: str,
+    completed: list[dict[str, str]],
+) -> int:
+    if not completed:
+        return 0
+    pages = list(chunks(completed, PAGE_SIZE))
+    for page_number, page_rows in enumerate(pages, 1):
+        page_title = f"{title} · Page {page_number}/{len(pages)}"
+        _require_upsert(
+            discord,
+            logical_name,
+            state,
+            f"report-v3:{key_prefix}:history:{page_number}",
+            history_page(title, page_rows, page_number, len(pages)),
+            page_title,
+        )
+    return len(pages)
+
+
+def _period_dates(rows: list[dict[str, str]]) -> list[date]:
+    return sorted({effective_closed_at(row).date() for row in canonical_closed_rows(rows)})
+
+
+def _period_weeks(rows: list[dict[str, str]]) -> list[date]:
+    return sorted({week_start(value) for value in _period_dates(rows)})
+
+
+def _period_months(rows: list[dict[str, str]]) -> list[date]:
+    months = sorted({month_start(value) for value in _period_dates(rows)})
+    return months[-MAX_MONTHS:]
+
+
+def _sync_daily(discord: Any, state: dict[str, Any], rows: list[dict[str, str]]) -> dict[str, int]:
+    completed = canonical_closed_rows(rows)
+    dates = _period_dates(rows)
+    _require_upsert(
+        discord,
+        "daily_recap",
+        state,
+        "report-v3:daily:index",
+        "\n".join(
+            [
+                "## Daily Performance Index",
+                f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades.",
+                f"**Recorded trading days:** **{len(dates)}**",
+                "Each date below contains a summary and every closed trade in paginated history.",
+            ]
+        ),
+        "Daily Performance Index",
+    )
+    pages = 0
+    for report_date in dates:
+        day_rows = rows_closed_on(rows, report_date)
+        token = f"Daily Report · {report_date.strftime('%m/%d/%y')}"
+        _require_upsert(
+            discord,
+            "daily_recap",
+            state,
+            f"report-v3:daily:{report_date.isoformat()}:summary",
+            format_daily_recap(rows, report_date, market_open=False),
+            token,
+        )
+        pages += _sync_history(
+            discord,
+            state,
+            "daily_recap",
+            f"daily:{report_date.isoformat()}",
+            f"Daily Trade History · {report_date.strftime('%m/%d/%y')}",
+            day_rows,
+        )
+    return {"periods": len(dates), "history_pages": pages, "trades": len(completed)}
+
+
+def _sync_weekly(discord: Any, state: dict[str, Any], rows: list[dict[str, str]]) -> dict[str, int]:
+    completed = canonical_closed_rows(rows)
+    weeks = _period_weeks(rows)
+    _require_upsert(
+        discord,
+        "weekly_report",
+        state,
+        "report-v3:weekly:index",
+        "\n".join(
+            [
+                "## Weekly Performance Index",
+                f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades.",
+                f"**Recorded weeks:** **{len(weeks)}**",
+                "Each week below contains a weekly-format summary and every closed trade.",
+            ]
+        ),
+        "Weekly Performance Index",
+    )
+    pages = 0
+    for monday in weeks:
+        friday = monday + timedelta(days=4)
+        week_rows = rows_closed_between(rows, monday, friday)
+        _require_upsert(
+            discord,
+            "weekly_report",
+            state,
+            f"report-v3:weekly:{monday.isoformat()}:summary",
+            format_weekly_report(rows, friday, final=True),
+            f"Weekly Report · {monday.strftime('%m/%d')}",
+        )
+        pages += _sync_history(
+            discord,
+            state,
+            "weekly_report",
+            f"weekly:{monday.isoformat()}",
+            f"Weekly Trade History · {monday.strftime('%m/%d/%y')}",
+            week_rows,
+        )
+    return {"periods": len(weeks), "history_pages": pages, "trades": len(completed)}
+
+
+def _sync_strategy(discord: Any, state: dict[str, Any], rows: list[dict[str, str]]) -> dict[str, int]:
+    completed = canonical_closed_rows(rows)
+    summaries = strategy_summary_pages(rows)
+    for page_number, content in enumerate(summaries, 1):
+        _require_upsert(
+            discord,
+            "strategy_breakdown",
+            state,
+            f"report-v3:strategy:summary:{page_number}",
+            content,
+            f"Strategy Breakdown · Page {page_number}/{len(summaries)}",
+        )
+    pages = 0
+    groups = strategy_groups(rows)
+    for label in sorted(groups):
+        safe_key = hashlib.sha256(label.encode("utf-8")).hexdigest()[:10]
+        pages += _sync_history(
+            discord,
+            state,
+            "strategy_breakdown",
+            f"strategy:{safe_key}",
+            f"Strategy Trade History · {label}",
+            groups[label],
+        )
+    return {
+        "periods": len(groups),
+        "history_pages": pages,
+        "summary_pages": len(summaries),
+        "trades": len(completed),
+    }
+
+
+def _sync_monthly(discord: Any, state: dict[str, Any], rows: list[dict[str, str]]) -> dict[str, int]:
+    completed = canonical_closed_rows(rows)
+    months = _period_months(rows)
+    _require_upsert(
+        discord,
+        "performance_stats",
+        state,
+        "report-v3:monthly:index",
+        "\n".join(
+            [
+                "## Monthly Performance Index",
+                f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades.",
+                f"**Recorded months shown:** **{len(months)}**",
+                "Monthly summaries use the weekly layout and include every trade in history pages.",
+            ]
+        ),
+        "Monthly Performance Index",
+    )
+    pages = 0
+    covered = 0
+    for month in months:
+        month_rows = rows_closed_between(rows, month, month_end(month))
+        covered += len(month_rows)
+        _require_upsert(
+            discord,
+            "performance_stats",
+            state,
+            f"report-v3:monthly:{month.isoformat()}:summary",
+            format_monthly_report(rows, month),
+            f"Monthly Performance · {month.strftime('%B %Y')}",
+        )
+        pages += _sync_history(
+            discord,
+            state,
+            "performance_stats",
+            f"monthly:{month.isoformat()}",
+            f"Monthly Trade History · {month.strftime('%B %Y')}",
+            month_rows,
+        )
+    if covered != len(completed):
+        raise RuntimeError(
+            f"Monthly reporting omitted canonical trades: {covered}/{len(completed)}"
+        )
+    return {"periods": len(months), "history_pages": pages, "trades": covered}
+
+
+def update_performance_pages(
+    discord: Any, state: dict[str, Any], rows: list[dict[str, str]]
+) -> None:
+    """The complete rebuild is owned by sync_reports to prevent split routing."""
+    return None
 
 
 def sync_reports(
@@ -290,68 +602,52 @@ def sync_reports(
     *,
     market_open: bool,
 ) -> None:
-    """Backfill recent daily/weekly cards and prove ledger coverage before success."""
     if not discord.ready:
         return
-
-    today = timestamp.date()
     signature = ledger_signature(rows)
-    force_rebuild = (
+    rebuild = (
         state.get("performance_reconciliation_version") != REPORT_VERSION
         or state.get("performance_ledger_signature") != signature
     )
-    if force_rebuild:
-        ford_scan.update_performance_pages(discord, state, rows)
+    removed = 0
+    if rebuild:
+        for logical_name in REPORT_ROUTES:
+            removed += _purge_report_channel(discord, logical_name)
+        _clear_report_state(state)
 
-    daily_dates = daily_report_dates(rows, today)
-    for report_date in daily_dates:
-        daily = format_daily_recap(
-            rows,
-            report_date,
-            market_open=market_open and report_date == today,
-        )
-        _require_upsert(
-            discord,
-            "daily_recap",
-            state,
-            f"daily-recap:{report_date.isoformat()}",
-            daily,
-            search_token=f"Daily Recap · {report_date.strftime('%m/%d/%y')}",
-        )
+    daily = _sync_daily(discord, state, rows)
+    weekly = _sync_weekly(discord, state, rows)
+    strategy = _sync_strategy(discord, state, rows)
+    monthly = _sync_monthly(discord, state, rows)
 
-    for monday in weekly_report_starts(today):
-        current_week = monday <= today <= monday + timedelta(days=6)
-        friday = monday + timedelta(days=4)
-        report_end = min(today, friday) if current_week else friday
-        iso_year, iso_week, _ = monday.isocalendar()
-        week_key = f"{iso_year}-W{iso_week:02d}"
-        weekly = format_weekly_report(
-            rows,
-            report_end,
-            final=(not current_week or today >= friday),
-        )
-        _require_upsert(
-            discord,
-            "weekly_report",
-            state,
-            f"weekly-report:{week_key}",
-            weekly,
-            search_token=f"Weekly Report · {monday.strftime('%m/%d')}",
-        )
+    expected = len(canonical_closed_rows(rows))
+    for name, result in (
+        ("daily", daily),
+        ("weekly", weekly),
+        ("strategy", strategy),
+        ("monthly", monthly),
+    ):
+        if result["trades"] != expected:
+            raise RuntimeError(
+                f"{name} reporting coverage failed: {result['trades']}/{expected}"
+            )
 
-    coverage = coverage_snapshot(rows, today)
     state.update(
         {
-            "daily_report_date": today.isoformat(),
-            "weekly_report_key": (
-                f"{today.isocalendar().year}-W{today.isocalendar().week:02d}"
-            ),
             "performance_reconciliation_version": REPORT_VERSION,
             "performance_ledger_signature": signature,
-            "performance_reconciliation_closed_trades": coverage["canonical_closed"],
-            "performance_reconciliation_week_trades": coverage["current_week_closed"],
-            "performance_reconciliation_daily_reports": len(daily_dates),
-            "performance_reconciliation_weekly_reports": MAX_WEEKLY_REPORTS,
+            "performance_reconciliation_closed_trades": expected,
+            "performance_reconciliation_daily_reports": daily["periods"],
+            "performance_reconciliation_weekly_reports": weekly["periods"],
+            "performance_reconciliation_strategy_groups": strategy["periods"],
+            "performance_reconciliation_monthly_reports": monthly["periods"],
+            "performance_reconciliation_history_pages": (
+                daily["history_pages"]
+                + weekly["history_pages"]
+                + strategy["history_pages"]
+                + monthly["history_pages"]
+            ),
+            "performance_reconciliation_removed_misplaced_cards": removed,
             "performance_reconciliation_checked_at": timestamp.isoformat(),
         }
     )
@@ -361,52 +657,69 @@ def install() -> None:
     global _INSTALLED
     if _INSTALLED:
         return
+    ford_scan.CHANNEL_NAMES.update(REPORT_ROUTES)
+    for logical_name in REPORT_ROUTES:
+        if logical_name not in ford_scan.AUTOMATED_CHANNEL_KEYS:
+            ford_scan.AUTOMATED_CHANNEL_KEYS.append(logical_name)
     ford_scan.rows_closed_on = rows_closed_on
     ford_scan.rows_closed_between = rows_closed_between
     ford_scan.format_daily_recap = format_daily_recap
     ford_scan.format_weekly_report = format_weekly_report
     ford_scan.format_strategy_breakdown = format_strategy_breakdown
     ford_scan.format_performance_stats = format_performance_stats
+    ford_scan.update_performance_pages = update_performance_pages
     ford_scan.sync_reports = sync_reports
     _INSTALLED = True
 
 
 def validate_reconciliation() -> dict[str, int]:
     rows: list[dict[str, str]] = []
-    monday = date(2026, 7, 27)
-    for index in range(5):
+    monday = datetime(2026, 7, 27, 14, 30, tzinfo=ford_scan.MARKET_TZ)
+    strategies = (
+        ("REGULAR", "call"),
+        ("REGULAR", "put"),
+        ("SWING", "call"),
+        ("SWING", "put"),
+        ("SPREAD", "call"),
+    )
+    for index in range(100):
+        closed_at = monday + timedelta(days=index % 5, minutes=index)
+        play_type, side = strategies[index % len(strategies)]
         row = ford_scan.blank_row()
-        closed_at = datetime(2026, 7, 27 + index, 14, 30, tzinfo=ford_scan.MARKET_TZ)
         row.update(
             {
-                "trade_id": f"TEST-{index + 1}",
-                "timestamp": closed_at.isoformat(),
-                "closed_at": closed_at.isoformat() if index != 2 else "",
+                "trade_id": f"TEST-{index + 1:03d}",
+                "timestamp": (closed_at - timedelta(hours=1)).isoformat(),
+                "closed_at": closed_at.isoformat() if index != 49 else "",
                 "last_evaluated_at": closed_at.isoformat(),
-                "outcome": "WIN" if index % 2 == 0 else "LOSS",
-                "play_type": "REGULAR",
-                "call_or_put": "call" if index % 2 == 0 else "put",
+                "outcome": "WIN" if index % 3 else "LOSS",
+                "play_type": play_type,
+                "call_or_put": side,
                 "ticker": "F",
-                "strike": "12",
+                "strike": "12" if play_type != "SPREAD" else "12/11",
                 "entry_price": "0.50",
-                "exit_price": "0.60" if index % 2 == 0 else "0.40",
-                "realized_pl_dollars": "10" if index % 2 == 0 else "-10",
-                "pct_gain_loss": "20" if index % 2 == 0 else "-20",
+                "exit_price": "0.60" if index % 3 else "0.40",
+                "realized_pl_dollars": "10" if index % 3 else "-10",
+                "pct_gain_loss": "20" if index % 3 else "-20",
             }
         )
         rows.append(row)
 
-    snapshot = coverage_snapshot(rows, date(2026, 8, 1))
-    if snapshot["canonical_closed"] != 5 or snapshot["current_week_closed"] != 5:
-        raise RuntimeError(f"Synthetic performance reconciliation failed: {snapshot}")
-    dates = daily_report_dates(rows, date(2026, 8, 1))
-    if not all(monday + timedelta(days=offset) in dates for offset in range(5)):
-        raise RuntimeError("Synthetic daily backfill omitted a weekday from the test week")
+    completed = canonical_closed_rows(rows)
+    daily = sum(len(rows_closed_on(rows, monday.date() + timedelta(days=i))) for i in range(5))
+    weekly = len(rows_closed_between(rows, monday.date(), monday.date() + timedelta(days=4)))
+    grouped = sum(len(group) for group in strategy_groups(rows).values())
+    monthly = len(rows_closed_between(rows, date(2026, 7, 1), date(2026, 7, 31)))
+    if {len(completed), daily, weekly, grouped, monthly} != {100}:
+        raise RuntimeError(
+            f"Synthetic 100-trade reconciliation failed: {len(completed)}, {daily}, {weekly}, {grouped}, {monthly}"
+        )
     return {
-        "canonical_closed": snapshot["canonical_closed"],
-        "current_week_closed": snapshot["current_week_closed"],
-        "daily_dates": len(dates),
-        "weekly_reports": len(weekly_report_starts(date(2026, 8, 1))),
+        "canonical_closed": len(completed),
+        "daily_covered": daily,
+        "weekly_covered": weekly,
+        "strategy_covered": grouped,
+        "monthly_covered": monthly,
     }
 
 
