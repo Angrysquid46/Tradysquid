@@ -83,9 +83,12 @@ def install_runtime_overrides(
         import multi_ticker_scan
         import provider_lanes
         import resource_mesh_runtime
+        import resource_mesh_worker
+        import resource_mesh_worker_extensions
         import targeted_scan_runtime
         import trade_intelligence
 
+        resource_mesh_worker_extensions.install(resource_mesh_worker)
         provider_lanes.install(information_engine)
         targeted_scan_runtime.install(
             information_engine,
