@@ -20,6 +20,8 @@ on:
       - "local_information_engine_public.py"
       - "local_information_engine_bootstrap.py"
       - "run_with_env.py"
+      - "network_compat.py"
+      - "applied_upgrades.py"
       - "github_upgrade_bridge.py"
       - "github_upgrade_patch.py"
       - "upgrade_batch_44.py"
@@ -55,6 +57,7 @@ on:
       - "test_github_upgrade_bridge.py"
       - "test_upgrade_batch_44.py"
       - "test_upgrade_batch_44_live_acceptance.py"
+      - "test_applied_upgrades.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -99,6 +102,8 @@ jobs:
             discord_command_bot.py \
             discord_command_bot_public.py \
             register_discord_commands_public.py \
+            network_compat.py \
+            applied_upgrades.py \
             github_upgrade_bridge.py \
             github_upgrade_patch.py \
             upgrade_batch_44.py \
@@ -127,6 +132,7 @@ jobs:
             test_github_upgrade_bridge.py \
             test_upgrade_batch_44.py \
             test_upgrade_batch_44_live_acceptance.py \
+            test_applied_upgrades.py \
             test_supervisor_discord_readiness.py \
             test_supervisor_entrypoint_diagnostics.py
 
@@ -140,6 +146,7 @@ jobs:
           python journal_contract.py
           python always_on_operations.py
           python upgrade_batch_44.py
+          python applied_upgrades.py
 
       - name: Run focused tests
         run: |
@@ -157,4 +164,5 @@ jobs:
             test_journal_contract.py \
             test_github_upgrade_bridge.py \
             test_upgrade_batch_44.py \
-            test_upgrade_batch_44_live_acceptance.py
+            test_upgrade_batch_44_live_acceptance.py \
+            test_applied_upgrades.py
