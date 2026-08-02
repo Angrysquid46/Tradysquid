@@ -85,6 +85,7 @@ def install_runtime_overrides(
         import market_data_optimizations
         import multi_ticker_scan
         import provider_lanes
+        import resource_compute_runtime
         import resource_mesh_runtime
         import resource_mesh_worker
         import resource_mesh_worker_extensions
@@ -107,6 +108,12 @@ def install_runtime_overrides(
             dynamic_universe,
             ford_scan,
             trade_intelligence,
+        )
+        resource_compute_runtime.install(
+            information_engine,
+            ford_scan,
+            resource_mesh_runtime,
+            resource_mesh_worker,
         )
         resource_mesh_runtime.start_local_fallback()
 
