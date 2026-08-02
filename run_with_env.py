@@ -36,6 +36,14 @@ def install_runtime_overrides(
     include_information_engine: bool = False,
     include_supervisor_guard: bool = False,
 ) -> None:
+    # Use the owner's observed 125-request allowance by default. Live Tradier
+    # response headers remain authoritative and can raise or lower this value.
+    # Only two calls are held in reserve so open-position safety is not starved
+    # by a discovery burst at the very end of a rate window.
+    os.environ.setdefault("TRADIER_REQUESTS_PER_MINUTE", "125")
+    os.environ.setdefault("TRADIER_RATE_SAFETY_RESERVE", "2")
+    os.environ.setdefault("TARGETED_SCAN_MIN_TRADIER_AVAILABLE", "12")
+
     import ford_scan
     import github_upgrade_bridge
     import github_upgrade_bridge_runtime
