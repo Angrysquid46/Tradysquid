@@ -22,6 +22,7 @@ on:
       - "run_with_env.py"
       - "github_upgrade_bridge.py"
       - "github_upgrade_patch.py"
+      - "upgrade_batch_44.py"
       - "strict_learning_order.py"
       - "sync_learning_center.py"
       - "sync_discord_cards.py"
@@ -47,6 +48,7 @@ on:
       - "test_performance_reconciliation.py"
       - "test_journal_contract.py"
       - "test_github_upgrade_bridge.py"
+      - "test_upgrade_batch_44.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -93,6 +95,7 @@ jobs:
             register_discord_commands_public.py \
             github_upgrade_bridge.py \
             github_upgrade_patch.py \
+            upgrade_batch_44.py \
             discord_cards.py \
             learning_center_catalog.py \
             learning_center_content.py \
@@ -113,7 +116,8 @@ jobs:
             test_market_intelligence_bootstrap.py \
             test_performance_reconciliation.py \
             test_journal_contract.py \
-            test_github_upgrade_bridge.py
+            test_github_upgrade_bridge.py \
+            test_upgrade_batch_44.py
 
       - name: Validate curriculum and operations engine
         run: |
@@ -124,6 +128,7 @@ jobs:
           python performance_scorecards.py
           python journal_contract.py
           python always_on_operations.py
+          python upgrade_batch_44.py
 
       - name: Run focused tests
         run: |
@@ -137,4 +142,5 @@ jobs:
             test_market_intelligence_bootstrap.py \
             test_performance_reconciliation.py \
             test_journal_contract.py \
-            test_github_upgrade_bridge.py
+            test_github_upgrade_bridge.py \
+            test_upgrade_batch_44.py
