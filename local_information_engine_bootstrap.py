@@ -1,10 +1,8 @@
 """Start the public information engine only after required Discord cards exist.
 
 The supervisor previously treated a live socket as sufficient proof that the
-information engine was ready. That allowed deployment to announce success
-before required Discord cards and ledger-backed performance reports had been
-written. This bootstrap runs the required jobs synchronously and exits on any
-failure, so the supervisor keeps the service unhealthy and retries it.
+information engine was ready. Required Discord status cards and performance
+scorecards must be acknowledged before the health port opens.
 """
 
 from __future__ import annotations
@@ -13,13 +11,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-import performance_reconciliation
+import performance_scorecards
 
-# Install and validate the canonical reporting overrides before the information
-# engine imports its scheduler callbacks. A bad reporting deployment must fail
-# startup instead of leaving stale performance cards behind.
-performance_reconciliation.install()
-performance_reconciliation.validate_reconciliation()
+performance_scorecards.install()
+performance_scorecards.validate_reconciliation()
 
 import local_information_engine_public as public
 
@@ -82,10 +77,19 @@ def run_required_startup_jobs() -> dict[str, Any]:
         performance_version = str(
             report_state.get("performance_reconciliation_version") or ""
         )
-        if performance_version != performance_reconciliation.REPORT_VERSION:
+        if performance_version != performance_scorecards.REPORT_VERSION:
             raise RuntimeError(
                 "discord-reporting did not persist the required performance "
-                f"reconciliation version: {performance_version or 'missing'}"
+                f"scorecard version: {performance_version or 'missing'}"
+            )
+        if not report_state.get("performance_reconciliation_scorecard_only"):
+            raise RuntimeError("discord-reporting did not confirm scorecard-only mode")
+        history_pages = int(
+            report_state.get("performance_reconciliation_history_pages", -1)
+        )
+        if history_pages != 0:
+            raise RuntimeError(
+                f"performance channels still contain history-page output: {history_pages}"
             )
 
         payload = {
@@ -97,20 +101,24 @@ def run_required_startup_jobs() -> dict[str, Any]:
                 "canonical_closed_trades": report_state.get(
                     "performance_reconciliation_closed_trades", 0
                 ),
-                "current_week_trades": report_state.get(
-                    "performance_reconciliation_week_trades", 0
-                ),
-                "daily_reports": report_state.get(
+                "daily_scorecards": report_state.get(
                     "performance_reconciliation_daily_reports", 0
                 ),
-                "weekly_reports": report_state.get(
+                "weekly_scorecards": report_state.get(
                     "performance_reconciliation_weekly_reports", 0
                 ),
+                "monthly_scorecards": report_state.get(
+                    "performance_reconciliation_monthly_reports", 0
+                ),
+                "strategy_scorecards": report_state.get(
+                    "performance_reconciliation_strategy_groups", 0
+                ),
+                "history_pages": history_pages,
             },
             "contract": (
-                "#breaking-alerts heartbeat, #premarket session card, and "
-                "canonical daily/weekly/strategy performance reconciliation were "
-                "acknowledged before the engine health port opened"
+                "#breaking-alerts heartbeat, #premarket session card, daily/weekly/"
+                "monthly scorecards, and one scorecard per play type were acknowledged "
+                "before the engine health port opened"
             ),
         }
         _write_acceptance(payload)
