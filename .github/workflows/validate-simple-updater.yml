@@ -63,5 +63,6 @@ jobs:
       - name: Run simple updater and diagnostic contracts
         run: |
           python -m unittest -q \
+            test_applied_upgrades.py \
             test_simple_upgrade_flow.py \
             test_diagnostic_upgrade_system.py
