@@ -93,6 +93,45 @@ class LearningCenterTests(unittest.TestCase):
         self.assertEqual(tuple(counts), ORDERED_CHANNELS)
         self.assertGreater(sum(counts.values()), 27)
 
+    def test_duplicate_curriculum_markers_are_deleted_and_verified(self) -> None:
+        channel_name = ORDERED_CHANNELS[0]
+        content = sync_learning_center.lesson_marker(channel_name, 1, 1) + "\n# Test"
+        messages = [
+            {"id": "100", "content": content, "author": {"bot": True}},
+            {"id": "101", "content": content, "author": {"bot": True}},
+        ]
+
+        class Tracker:
+            def __init__(self):
+                self.deleted: list[str] = []
+
+            def _request(self, method, path, payload=None):
+                if method == "GET":
+                    return list(messages)
+                if method == "DELETE":
+                    self.deleted.append(path.rsplit("/", 1)[-1])
+                    return {}
+                if method == "PUT":
+                    return {}
+                raise AssertionError(f"Unexpected request: {method} {path}")
+
+        tracker = Tracker()
+        with (
+            patch.object(sync_learning_center, "expected_messages", return_value=[content]),
+            patch.object(sync_learning_center, "message_has_source", return_value=True),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Duplicates"):
+                sync_learning_center.verify_channel_uniqueness(
+                    tracker, {"id": "channel-1"}, channel_name, "lesson"
+                )
+            created, updated, deleted = sync_learning_center.synchronize_channel(
+                tracker, {"id": "channel-1"}, channel_name, "lesson"
+            )
+
+        self.assertEqual((created, updated, deleted), (0, 0, 1))
+        self.assertEqual(len(tracker.deleted), 1)
+        self.assertIn(tracker.deleted[0], {"100", "101"})
+
     def test_search_routes_representative_questions(self) -> None:
         result = learning_search_router.validate_search()
         self.assertGreater(result["sections"], 100)
