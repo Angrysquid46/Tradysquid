@@ -1,9 +1,4 @@
-"""Run Tradysquids with resilient Discord and engine-readiness handling.
-
-Discord slash-command registration is independent from channel/card readiness.
-The information engine must remain alive during transient Discord failures, while
-services-ready remains blocked until its durable startup acceptance passes.
-"""
+"""Run Tradysquids with resilient Discord, updater, and engine readiness."""
 
 from __future__ import annotations
 
@@ -12,12 +7,38 @@ import sys
 import time
 from typing import Iterable
 
+import network_compat
+
+network_compat.install()
+
 import run_supervisor as base
 
 
 COMMAND_FAILURE_PREFIX = "command registration failed:"
 ENGINE_ACCEPTANCE_PATH = base.ROOT / "state" / "market-intelligence-startup.json"
 _LAST_ENGINE_ACCEPTANCE_STATUS = ""
+
+
+def ipv4_fetch_remote_sha() -> str:
+    """Fetch origin/main over IPv4 with bounded retries and no service restart."""
+    failures: list[str] = []
+    for attempt in range(1, 4):
+        result = base.supervisor.git(
+            "fetch",
+            "--ipv4",
+            "--quiet",
+            "origin",
+            "main",
+            timeout=180,
+        )
+        if result.returncode == 0:
+            remote = base.supervisor.git("rev-parse", "origin/main", check=True)
+            return remote.stdout.strip()
+        detail = (result.stderr or result.stdout or "git fetch failed").strip()
+        failures.append(f"attempt {attempt}: {detail[-700:]}")
+        if attempt < 3:
+            time.sleep(3 * attempt)
+    raise RuntimeError("IPv4 Git fetch failed after 3 attempts: " + " | ".join(failures))
 
 
 def command_registration_failed(results: Iterable[object] | None) -> bool:
@@ -170,9 +191,7 @@ def retry_pending_discord_configuration() -> bool:
         return False
 
     if blocking_pending:
-        base.supervisor.supervisor_log(
-            "Retrying failed Discord structure configuration"
-        )
+        base.supervisor.supervisor_log("Retrying failed Discord structure configuration")
         results = base.public_run_discord_configuration()
     else:
         base.supervisor.supervisor_log(
@@ -216,9 +235,7 @@ def deployment_sync_ready(version: str) -> bool:
     base.supervisor.write_state(
         information_engine_acceptance_status=acceptance_status,
         information_engine_acceptance_detail=acceptance_detail,
-        information_engine_acceptance_checked_at=time.strftime(
-            "%Y-%m-%dT%H:%M:%S%z"
-        ),
+        information_engine_acceptance_checked_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     )
     return discord_ready and acceptance_status == "PASSED"
 
@@ -239,11 +256,7 @@ def ensure_services_with_acceptance() -> None:
         information_engine_acceptance_detail=detail,
     )
     engine_online = bool(base.supervisor.LAST_HEALTH.get("information-engine", False))
-    if (
-        engine_online
-        and status != "PASSED"
-        and status != _LAST_ENGINE_ACCEPTANCE_STATUS
-    ):
+    if engine_online and status != "PASSED" and status != _LAST_ENGINE_ACCEPTANCE_STATUS:
         base.supervisor.discord_post(
             "\n".join(
                 [
@@ -260,6 +273,7 @@ def ensure_services_with_acceptance() -> None:
 
 
 def install() -> None:
+    base.ORIGINAL_FETCH_REMOTE_SHA = ipv4_fetch_remote_sha
     base.command_registration_failed = command_registration_failed
     base.discord_results_failed = blocking_discord_results_failed
     base.record_discord_sync_results = record_discord_sync_results
