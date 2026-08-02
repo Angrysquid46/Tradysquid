@@ -64,20 +64,82 @@ class JournalContractTests(unittest.TestCase):
             )
         return row
 
+    @staticmethod
+    def rendered_text(content: str) -> tuple[str, dict]:
+        card = ford_scan.discord_card(content)
+        message = {"content": "", "embeds": [card]}
+        return ford_scan.message_search_text(message), card
+
     def test_entry_card_contains_complete_contract(self) -> None:
         row = self.make_row()
         content = ford_scan.entry_alert_text(row)
+        rendered, card = self.rendered_text(content)
         for marker in journal_contract.REQUIRED_ENTRY_MARKERS:
-            self.assertIn(marker, content)
-        self.assertIn("5m / daily / weekly / monthly", content)
-        self.assertIn("not substituted as entry-time evidence", content)
-        self.assertEqual(ford_scan.DISCORD_FORMAT_VERSION, "14")
+            self.assertIn(marker, rendered)
+        self.assertIn("5m / daily / weekly / monthly", rendered)
+        self.assertIn("not substituted as entry-time evidence", rendered)
+        self.assertLessEqual(len(card.get("fields") or []), 25)
+        self.assertTrue(
+            all(len(str(field.get("value") or "")) <= 1024 for field in card.get("fields") or [])
+        )
+        self.assertEqual(ford_scan.DISCORD_FORMAT_VERSION, "15")
+
+    def test_rendered_card_does_not_truncate_long_learning_evidence(self) -> None:
+        row = self.make_row()
+        fields = {
+            "thesis": "THESIS START " + ("trend evidence " * 24) + "THESIS END",
+            "entry_confirmation": "CONFIRM START " + ("confirmation evidence " * 24) + "CONFIRM END",
+            "invalidation": "INVALIDATION START " + ("risk boundary " * 24) + "INVALIDATION END",
+            "risk_plan": "RISK START " + ("position control " * 24) + "RISK END",
+            "learning_plan": "LEARNING START " + ("lesson application " * 24) + "LEARNING END",
+            "evidence_limitations": "LIMIT START " + ("recorded limitation " * 24) + "LIMIT END",
+        }
+        row.update(fields)
+        content = ford_scan.entry_alert_text(row)
+        rendered, card = self.rendered_text(content)
+        for sentinel in (
+            "THESIS END",
+            "CONFIRM END",
+            "INVALIDATION END",
+            "RISK END",
+            "LEARNING END",
+            "LIMIT END",
+            "Learning Center version",
+            "Data confidence",
+            "Journal Evidence Status",
+        ):
+            self.assertIn(sentinel, rendered)
+        self.assertGreater(len(card.get("fields") or []), 7)
+        self.assertTrue(
+            all(len(str(field.get("value") or "")) <= 1024 for field in card.get("fields") or [])
+        )
+
+    def test_missing_historical_fields_are_marked_unavailable_not_reconstructed(self) -> None:
+        row = self.make_row()
+        for key in (
+            "thesis",
+            "entry_confirmation",
+            "invalidation",
+            "risk_plan",
+            "learning_plan",
+            "evidence_limitations",
+            "learning_version",
+            "data_confidence",
+        ):
+            row[key] = ""
+        content = ford_scan.entry_alert_text(row)
+        rendered, _ = self.rendered_text(content)
+        self.assertGreaterEqual(rendered.count("Unavailable (not recorded at entry)."), 8)
+        self.assertNotIn("This regular call expresses a bullish paper thesis", rendered)
+        self.assertNotIn("Apply 17-directional-options", rendered)
 
     def test_closed_journal_requires_post_trade_review(self) -> None:
         row = self.make_row(outcome="WIN")
         entry = ford_scan.entry_alert_text(row)
         close = ford_scan.close_alert_text(row, ford_scan.stored_close_evaluation(row))
-        messages = [{"content": entry}, {"content": close}]
+        entry_card = ford_scan.discord_card(entry)
+        close_card = ford_scan.discord_card(close)
+        messages = [{"embeds": [entry_card]}, {"embeds": [close_card]}]
         self.assertEqual(journal_contract.missing_markers(row, messages), [])
 
     def test_partial_journal_is_rejected(self) -> None:
@@ -98,7 +160,7 @@ class JournalContractTests(unittest.TestCase):
             outcome = "OPEN" if index < 2 else "LOSS"
             row = self.make_row(f"TEST-{index:03d}", outcome=outcome)
             row["discord_thread_id"] = f"thread-{index}"
-            row["discord_format_version"] = "13"
+            row["discord_format_version"] = "14"
             rows.append(row)
         selected, pending = journal_contract._pending_rows(rows)
         self.assertEqual(pending, len(rows))
@@ -107,7 +169,8 @@ class JournalContractTests(unittest.TestCase):
 
     def test_contract_self_validation(self) -> None:
         result = journal_contract.validate_contract()
-        self.assertEqual(result["format_version"], "14")
+        self.assertEqual(result["format_version"], "15")
+        self.assertGreater(result["rendered_fields"], 0)
         self.assertEqual(result["missing"], 0)
 
 
