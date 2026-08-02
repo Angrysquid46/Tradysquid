@@ -3,6 +3,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$MeshRoot,
 
+    [string]$ShareUser = "",
+
     [string]$TaskName = "Tradysquid Resource Worker",
 
     [string]$PythonCommand = "python"
@@ -40,6 +42,25 @@ function Set-EnvValue(
         $updated += "$Name=$Value"
     }
     Set-Content -LiteralPath $Path -Value $updated -Encoding UTF8
+}
+
+if ($MeshRoot -match '^\\\\([^\\]+)\\' -and $ShareUser) {
+    $shareHost = $Matches[1]
+    Write-Step "Saving the authenticated share credential for the current Windows user"
+    $credential = Get-Credential `
+        -UserName $ShareUser `
+        -Message "Enter the password created by SETUP-RESOURCE-MESH-SHARE.ps1"
+    $plainPassword = $credential.GetNetworkCredential().Password
+    try {
+        & cmdkey.exe "/add:$shareHost" "/user:$ShareUser" "/pass:$plainPassword" | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Windows Credential Manager rejected the share credential."
+        }
+    }
+    finally {
+        $plainPassword = $null
+        $credential = $null
+    }
 }
 
 Write-Step "Checking the shared resource-mesh folder"
