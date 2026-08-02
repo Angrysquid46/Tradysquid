@@ -1,0 +1,36 @@
+repos:
+  - repo: local
+    hooks:
+      - id: tradysquid-secret-hygiene
+        name: Tradysquid secret and runtime-state hygiene
+        entry: python security_hygiene.py
+        language: system
+        pass_filenames: false
+
+      - id: resource-mesh-ruff
+        name: Resource mesh Ruff checks
+        entry: >-
+          python -m ruff check
+          market_data_runtime.py provider_lanes.py targeted_scan_runtime.py
+          resource_mesh.py resource_mesh_worker.py resource_mesh_runtime.py
+          security_hygiene.py test_resource_mesh.py test_market_data_runtime.py
+        language: system
+        pass_filenames: false
+
+      - id: resource-mesh-format
+        name: Resource mesh Ruff format verification
+        entry: >-
+          python -m ruff format --check
+          market_data_runtime.py provider_lanes.py targeted_scan_runtime.py
+          resource_mesh.py resource_mesh_worker.py resource_mesh_runtime.py
+          security_hygiene.py test_resource_mesh.py test_market_data_runtime.py
+        language: system
+        pass_filenames: false
+
+      - id: resource-mesh-tests
+        name: Resource mesh unit tests
+        entry: >-
+          python -m unittest -q
+          test_resource_mesh.py test_market_data_runtime.py
+        language: system
+        pass_filenames: false
