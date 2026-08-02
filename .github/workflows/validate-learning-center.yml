@@ -20,6 +20,8 @@ on:
       - "local_information_engine_public.py"
       - "local_information_engine_bootstrap.py"
       - "run_with_env.py"
+      - "github_upgrade_bridge.py"
+      - "github_upgrade_patch.py"
       - "strict_learning_order.py"
       - "sync_learning_center.py"
       - "sync_discord_cards.py"
@@ -27,6 +29,7 @@ on:
       - "sync_discord_structure_public.py"
       - "sync_discord_structure_reports.py"
       - "discord_command_bot_public.py"
+      - "register_discord_commands_public.py"
       - "run_supervisor.py"
       - "automation_acceptance.py"
       - "ENSURE-SUPERVISOR.ps1"
@@ -43,6 +46,7 @@ on:
       - "test_market_intelligence_bootstrap.py"
       - "test_performance_reconciliation.py"
       - "test_journal_contract.py"
+      - "test_github_upgrade_bridge.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -86,6 +90,9 @@ jobs:
             operations_acceptance.py \
             discord_command_bot.py \
             discord_command_bot_public.py \
+            register_discord_commands_public.py \
+            github_upgrade_bridge.py \
+            github_upgrade_patch.py \
             discord_cards.py \
             learning_center_catalog.py \
             learning_center_content.py \
@@ -105,7 +112,8 @@ jobs:
             test_market_intelligence_visibility.py \
             test_market_intelligence_bootstrap.py \
             test_performance_reconciliation.py \
-            test_journal_contract.py
+            test_journal_contract.py \
+            test_github_upgrade_bridge.py
 
       - name: Validate curriculum and operations engine
         run: |
@@ -128,4 +136,5 @@ jobs:
             test_market_intelligence_visibility.py \
             test_market_intelligence_bootstrap.py \
             test_performance_reconciliation.py \
-            test_journal_contract.py
+            test_journal_contract.py \
+            test_github_upgrade_bridge.py
