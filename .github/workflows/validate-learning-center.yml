@@ -32,6 +32,7 @@ on:
       - "test_supervisor_availability.py"
       - "test_automation_acceptance.py"
       - "test_always_on_operations.py"
+      - "test_market_intelligence_visibility.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -84,7 +85,8 @@ jobs:
             sync_discord_structure_public.py \
             tradysquid_supervisor.py \
             run_supervisor.py \
-            automation_acceptance.py
+            automation_acceptance.py \
+            test_market_intelligence_visibility.py
 
       - name: Validate curriculum and operations engine
         run: |
@@ -100,4 +102,5 @@ jobs:
             test_strict_learning_order.py \
             test_supervisor_availability.py \
             test_automation_acceptance.py \
-            test_always_on_operations.py
+            test_always_on_operations.py \
+            test_market_intelligence_visibility.py
