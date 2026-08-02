@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import unittest
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -66,16 +66,9 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
         with (
             patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
             patch.object(diagnostics, "_engine", return_value=engine),
-            patch.object(
-                scheduler_runtime,
-                "REQUIRED_JOBS",
-                ("self-diagnostics",),
-            ),
-            patch.object(
-                diagnostics.ford_scan,
-                "market_is_open_now",
-                return_value=(True, "open"),
-            ),
+            patch.object(scheduler_runtime, "REQUIRED_JOBS", ("self-diagnostics",)),
+            patch.object(diagnostics.ford_scan, "market_is_open_now", return_value=(True, "open")),
+            patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
         ):
             checks = scheduler_runtime.job_checks(connection)
         self.assertEqual(len(checks), 1)
@@ -103,9 +96,7 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
         )
         self.assertTrue(all(not check.passed for check in checks))
         self.assertTrue(all(check.force_upgrade for check in checks))
-        self.assertTrue(
-            all("not registered" in check.detail for check in checks)
-        )
+        self.assertTrue(all("not registered" in check.detail for check in checks))
 
     def test_after_hours_interval_controls_next_expected_run(self) -> None:
         connection = self.connection()
@@ -133,20 +124,79 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
         with (
             patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
             patch.object(diagnostics, "_engine", return_value=engine),
-            patch.object(
-                scheduler_runtime,
-                "REQUIRED_JOBS",
-                ("market-hours-upgrade-review",),
-            ),
-            patch.object(
-                diagnostics.ford_scan,
-                "market_is_open_now",
-                return_value=(False, "closed"),
-            ),
+            patch.object(scheduler_runtime, "REQUIRED_JOBS", ("market-hours-upgrade-review",)),
+            patch.object(diagnostics.ford_scan, "market_is_open_now", return_value=(False, "closed")),
+            patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
         ):
             check = scheduler_runtime.job_checks(connection)[0]
         self.assertIn("next expected=2026-08-02T07:00:00-05:00", check.detail)
         self.assertIn("retry interval=900s", check.detail)
+
+    def test_market_hours_only_job_is_not_overdue_while_market_closed(self) -> None:
+        connection = self.connection()
+        job = FakeJob(
+            "position-tracker",
+            timedelta(minutes=5),
+            market_hours_only=True,
+        )
+        base = diagnostics.HealthCheck(
+            "job-position-tracker",
+            False,
+            "scheduler",
+            "job position-tracker",
+            "status=OK; overdue=True; preserved Friday receipt",
+            severity="WARNING",
+        )
+        engine = SimpleNamespace(JOBS=[job])
+        with (
+            patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
+            patch.object(diagnostics, "_engine", return_value=engine),
+            patch.object(scheduler_runtime, "REQUIRED_JOBS", ()),
+            patch.object(diagnostics.ford_scan, "market_is_open_now", return_value=(False, "weekend")),
+            patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
+        ):
+            check = scheduler_runtime.job_checks(connection)[0]
+        self.assertTrue(check.passed)
+        self.assertEqual(check.severity, "INFO")
+        self.assertIn("outside market session", check.detail)
+
+    def test_preserved_receipt_predating_new_engine_uses_startup_grace(self) -> None:
+        connection = self.connection()
+        connection.execute(
+            """
+            INSERT INTO job_runs(job_name,status,started_at,finished_at,detail)
+            VALUES ('position-tracker','OK','2026-07-31T14:58:07-05:00','2026-07-31T14:58:07-05:00','24 refreshed')
+            """
+        )
+        connection.commit()
+        job = FakeJob("position-tracker", timedelta(minutes=5))
+        base = diagnostics.HealthCheck(
+            "job-position-tracker",
+            False,
+            "scheduler",
+            "job position-tracker",
+            "status=OK; overdue=True",
+            severity="WARNING",
+        )
+        engine = SimpleNamespace(JOBS=[job])
+        engine_started = datetime(2026, 8, 2, 4, 0, tzinfo=timezone(timedelta(hours=-5)))
+        with (
+            patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
+            patch.object(diagnostics, "_engine", return_value=engine),
+            patch.object(scheduler_runtime, "REQUIRED_JOBS", ()),
+            patch.object(diagnostics.ford_scan, "market_is_open_now", return_value=(True, "open")),
+            patch.object(scheduler_runtime, "_engine_started_at", return_value=engine_started),
+            patch.object(
+                diagnostics,
+                "now",
+                return_value=engine_started + timedelta(minutes=5),
+            ),
+        ):
+            check = scheduler_runtime.job_checks(connection)[0]
+        self.assertTrue(check.passed)
+        self.assertEqual(check.severity, "INFO")
+        self.assertIn("startup grace", check.detail)
+        self.assertIn("predates", check.detail)
 
     def test_install_wraps_current_job_check_chain(self) -> None:
         active = lambda connection: []

@@ -59,15 +59,22 @@ def install_runtime_overrides(
         import applied_upgrade_status_runtime
         import applied_upgrades
         import diagnostic_nonblocking_runtime
+        import diagnostic_review_runtime
         import diagnostic_runtime_integration
         import diagnostic_startup_runtime
+        import diagnostic_state_migration
         import diagnostic_upgrade_system
         import discord_command_diagnostics
         import market_calendar_runtime
+        import scheduler_diagnostic_runtime
         import simple_upgrade_runtime
+        import supervisor_diagnostic_runtime
         import upgrade_batch_44_live_acceptance
         import upgrade_lifecycle_dashboard
 
+        # Install the complete runtime chain in dependency order. The review
+        # layer is deliberately last so it observes every validated diagnostic
+        # module and controls only publication, not health collection.
         upgrade_batch_44.install_engine()
         upgrade_batch_44_live_acceptance.install()
         simple_upgrade_runtime.install()
@@ -77,8 +84,12 @@ def install_runtime_overrides(
         diagnostic_startup_runtime.install()
         diagnostic_nonblocking_runtime.install()
         discord_command_diagnostics.install()
+        supervisor_diagnostic_runtime.install()
+        scheduler_diagnostic_runtime.install()
         upgrade_lifecycle_dashboard.install()
         applied_upgrade_status_runtime.install()
+        diagnostic_state_migration.install()
+        diagnostic_review_runtime.install()
         applied_upgrades.install_engine()
 
     if include_discord_upgrade_commands:
