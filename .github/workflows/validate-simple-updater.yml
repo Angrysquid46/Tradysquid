@@ -5,6 +5,7 @@ on:
     paths:
       - "run_supervisor_simple.py"
       - "simple_upgrade_runtime.py"
+      - "applied_upgrade_status_runtime.py"
       - "diagnostic_upgrade_system.py"
       - "diagnostic_runtime_integration.py"
       - "diagnostic_startup_runtime.py"
@@ -21,6 +22,7 @@ on:
       - "github_upgrade_patch.py"
       - ".gitignore"
       - "test_simple_upgrade_flow.py"
+      - "test_applied_upgrade_status_runtime.py"
       - "test_diagnostic_upgrade_system.py"
       - "test_diagnostic_startup_runtime.py"
       - "test_diagnostic_nonblocking_runtime.py"
@@ -56,6 +58,7 @@ jobs:
           python -m py_compile \
             run_supervisor_simple.py \
             simple_upgrade_runtime.py \
+            applied_upgrade_status_runtime.py \
             diagnostic_upgrade_system.py \
             diagnostic_runtime_integration.py \
             diagnostic_startup_runtime.py \
@@ -81,6 +84,7 @@ jobs:
         run: |
           python -m unittest -q \
             test_applied_upgrades.py \
+            test_applied_upgrade_status_runtime.py \
             test_simple_upgrade_flow.py \
             test_diagnostic_upgrade_system.py \
             test_diagnostic_startup_runtime.py \
