@@ -1,9 +1,9 @@
 """Start the public information engine with retrying Discord acceptance.
 
 The engine health listener must remain available even when Discord or a provider
-has a transient outage. Required cards, scorecards, and open-journal contracts
-are still verified, but failures put startup acceptance into RETRYING state
-instead of crashing the entire information engine into a supervisor restart loop.
+has a transient outage. Required cards, scorecards, open-journal contracts, and
+read-only strategy-control cards are verified, but failures put startup
+acceptance into RETRYING state instead of crashing the information engine.
 """
 
 from __future__ import annotations
@@ -17,12 +17,14 @@ from typing import Any
 
 import journal_contract
 import performance_scorecards
+import strategy_control_sync
 import trade_intelligence
 
 journal_contract.install()
 journal_contract.validate_contract()
 performance_scorecards.install()
 performance_scorecards.validate_reconciliation()
+strategy_control_sync.validate_contract()
 
 import local_information_engine_public as public
 
@@ -75,6 +77,7 @@ def run_required_startup_jobs() -> dict[str, Any]:
     """Publish and verify required Discord output without owning process health."""
     connection = public.engine.connect_db()
     results: dict[str, Any] = {}
+    strategy_control_result: dict[str, Any] = {}
     try:
         for name in REQUIRED_STARTUP_JOBS:
             job = _required_job(name)
@@ -88,6 +91,16 @@ def run_required_startup_jobs() -> dict[str, Any]:
                 "finished_at": str(row["finished_at"] or ""),
                 "detail": str(row["detail"] or ""),
             }
+
+        strategy_control_result = strategy_control_sync.sync_once()
+        if strategy_control_result.get("status") != "OK":
+            raise RuntimeError("strategy-control cards did not synchronize")
+        if set(strategy_control_result.get("cards") or {}) != set(
+            strategy_control_sync.strategy_profiles.PROFILE_IDENTITIES
+        ):
+            raise RuntimeError("strategy-control did not publish one card per profile")
+        if not strategy_control_result.get("read_only"):
+            raise RuntimeError("strategy-control PR 1 unexpectedly enabled writes")
 
         report_state = public.ford_scan.read_report_state()
         performance_version = str(
@@ -149,6 +162,15 @@ def run_required_startup_jobs() -> dict[str, Any]:
             "status": "PASSED",
             "verified_at": public.engine.iso_now(),
             "required_jobs": results,
+            "strategy_control": {
+                "status": strategy_control_result.get("status"),
+                "category": strategy_control_result.get("category"),
+                "channels": strategy_control_result.get("channels"),
+                "cards": strategy_control_result.get("cards"),
+                "profile_statuses": strategy_control_result.get("profile_statuses"),
+                "read_only": strategy_control_result.get("read_only"),
+                "updater_involved": strategy_control_result.get("updater_involved"),
+            },
             "performance_reconciliation": {
                 "version": performance_version,
                 "canonical_closed_trades": report_state.get(
@@ -180,10 +202,10 @@ def run_required_startup_jobs() -> dict[str, Any]:
             },
             "contract": (
                 "#breaking-alerts heartbeat, #premarket session card, daily/weekly/"
-                "monthly scorecards, one scorecard per play type, and the complete "
-                "entry checklist for every open journal were acknowledged; the engine "
-                "health listener remains available while transient acceptance failures "
-                "retry in the background"
+                "monthly scorecards, one scorecard per play type, six private read-only "
+                "strategy cards, and the complete entry checklist for every open journal "
+                "were acknowledged; the engine health listener remains available while "
+                "transient acceptance failures retry in the background"
             ),
         }
         _write_acceptance(payload)
@@ -193,6 +215,7 @@ def run_required_startup_jobs() -> dict[str, Any]:
             "status": "FAILED",
             "verified_at": public.engine.iso_now(),
             "required_jobs": results,
+            "strategy_control": strategy_control_result,
             "error": f"{type(exc).__name__}: {exc}",
         }
         _write_acceptance(payload)
@@ -259,6 +282,7 @@ def main() -> int:
             ),
         }
     )
+    strategy_control_sync.start_worker()
     start_acceptance_retry_worker()
     return public.engine.main()
 
