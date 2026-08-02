@@ -1,4 +1,4 @@
-"""Windows supervisor ownership checks for the self-diagnostic cycle."""
+"""Windows ownership checks for the one active simple supervisor."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import os
 import subprocess
 from typing import Any, Callable
 
-import diagnostic_startup_runtime as startup
 import diagnostic_upgrade_system as diagnostics
 
 _INSTALLED = False
@@ -92,11 +91,7 @@ def stop_flag_check() -> diagnostics.HealthCheck:
         not exists,
         "supervisor",
         "stale stop flag",
-        (
-            f"Unexpected stop flag exists at {path}."
-            if exists
-            else "No supervisor stop flag is present."
-        ),
+        f"Unexpected stop flag exists at {path}." if exists else "No supervisor stop flag is present.",
         runtime_target="state/supervisor-stop.flag",
         automatic_retry="owner restart removes an unintended stale flag",
         repair_objective="Remove unintended stale stop state without creating duplicate supervisors.",
@@ -198,8 +193,7 @@ def install() -> None:
     global _INSTALLED, _BASE_COLLECT
     if _INSTALLED:
         return
-    _BASE_COLLECT = startup.collect_health_checks
+    _BASE_COLLECT = diagnostics.collect_health_checks
     diagnostics._watchdog_check = watchdog_check
-    startup.collect_health_checks = collect_health_checks
     diagnostics.collect_health_checks = collect_health_checks
     _INSTALLED = True
