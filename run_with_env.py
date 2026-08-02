@@ -1,4 +1,4 @@
-"""Load the ignored local .env file, then run another Python script."""
+"""Load the ignored local .env file, install runtime overrides, then run a script."""
 
 from __future__ import annotations
 
@@ -29,10 +29,18 @@ def load_env() -> None:
         os.environ.setdefault(name.strip(), value.strip())
 
 
+def install_runtime_overrides() -> None:
+    """Install reporting behavior shared by every local Tradysquids process."""
+    import performance_reconciliation
+
+    performance_reconciliation.install()
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("Usage: python run_with_env.py <script.py> [arguments...]")
     load_env()
+    install_runtime_overrides()
     requested = str(sys.argv[1])
     requested = SCRIPT_OVERRIDES.get(Path(requested).name.casefold(), requested)
     target = (ROOT / requested).resolve()

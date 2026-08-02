@@ -10,6 +10,7 @@ on:
       - "learning_application.py"
       - "learning_application_public.py"
       - "learning_question_gaps.py"
+      - "performance_reconciliation.py"
       - "always_on_operations.py"
       - "operations_acceptance.py"
       - "local_information_engine.py"
@@ -35,6 +36,7 @@ on:
       - "test_always_on_operations.py"
       - "test_market_intelligence_visibility.py"
       - "test_market_intelligence_bootstrap.py"
+      - "test_performance_reconciliation.py"
       - ".github/workflows/validate-learning-center.yml"
   workflow_dispatch:
 
@@ -70,6 +72,7 @@ jobs:
             local_information_engine.py \
             local_information_engine_public.py \
             local_information_engine_bootstrap.py \
+            performance_reconciliation.py \
             always_on_operations.py \
             operations_acceptance.py \
             discord_command_bot.py \
@@ -90,13 +93,15 @@ jobs:
             run_supervisor.py \
             automation_acceptance.py \
             test_market_intelligence_visibility.py \
-            test_market_intelligence_bootstrap.py
+            test_market_intelligence_bootstrap.py \
+            test_performance_reconciliation.py
 
       - name: Validate curriculum and operations engine
         run: |
           python sync_learning_center.py
           python learning_search_router.py
           python learning_application_public.py
+          python performance_reconciliation.py
           python always_on_operations.py
 
       - name: Run focused tests
@@ -108,4 +113,5 @@ jobs:
             test_automation_acceptance.py \
             test_always_on_operations.py \
             test_market_intelligence_visibility.py \
-            test_market_intelligence_bootstrap.py
+            test_market_intelligence_bootstrap.py \
+            test_performance_reconciliation.py
