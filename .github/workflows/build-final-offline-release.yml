@@ -1,0 +1,92 @@
+name: Build Corrected Offline Tradysquid Release
+
+on:
+  pull_request:
+    paths:
+      - "OFFLINE-RECOVERY-INSTALL.ps1"
+      - "RUN-OFFLINE-RECOVERY.cmd"
+      - ".github/workflows/build-final-offline-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out recovery branch with full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Create isolated environment
+        run: cp .env.example .env
+
+      - name: Verify recovery branch contains corrected main
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor refs/remotes/origin/main HEAD
+          python - <<'PY'
+          import deployment_validation_manifest as manifest
+          print(manifest.validate_manifest())
+          PY
+
+      - name: Run exact laptop validation manifest with live runtime fixtures
+        run: |
+          mkdir -p state
+          printf '{"test":"runtime file may exist locally"}\n' > state/discord-report-state.json
+          printf 'trade_id,status\n' > state/ford-plays-log.csv
+          python - <<'PY'
+          import subprocess
+          import sys
+          import deployment_validation_manifest as manifest
+
+          compile_result = subprocess.run(
+              [sys.executable, "-m", "py_compile", *manifest.COMPILE_MODULES]
+          )
+          if compile_result.returncode:
+              raise SystemExit(compile_result.returncode)
+          test_result = subprocess.run(
+              [sys.executable, "-m", "unittest", "-q", *manifest.FOCUSED_TEST_MODULES]
+          )
+          raise SystemExit(test_result.returncode)
+          PY
+
+      - name: Verify runtime fixtures are ignored and untracked
+        run: |
+          git check-ignore state/discord-report-state.json state/ford-plays-log.csv
+          test -z "$(git ls-files -- state/discord-report-state.json state/ford-plays-log.csv)"
+
+      - name: Build exact corrected main Git bundle
+        run: |
+          mkdir -p final-offline-release
+          git bundle create final-offline-release/tradysquid-final-release.bundle refs/remotes/origin/main
+          git bundle verify final-offline-release/tradysquid-final-release.bundle
+          cp OFFLINE-RECOVERY-INSTALL.ps1 final-offline-release/
+          cp RUN-OFFLINE-RECOVERY.cmd final-offline-release/
+          git rev-parse refs/remotes/origin/main > final-offline-release/RELEASE-COMMIT.txt
+          sha256sum \
+            final-offline-release/tradysquid-final-release.bundle \
+            final-offline-release/OFFLINE-RECOVERY-INSTALL.ps1 \
+            final-offline-release/RUN-OFFLINE-RECOVERY.cmd \
+            > final-offline-release/SHA256SUMS.txt
+
+      - name: Upload corrected offline release
+        uses: actions/upload-artifact@v4
+        with:
+          name: tradysquid-final-offline-release-v4
+          path: final-offline-release/
+          if-no-files-found: error
+          retention-days: 7
