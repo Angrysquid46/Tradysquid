@@ -5,11 +5,14 @@ on:
   pull_request:
     paths:
       - "market_data_runtime.py"
+      - "market_data_optimizations.py"
       - "provider_lanes.py"
       - "targeted_scan_runtime.py"
+      - "iv_history_runtime.py"
       - "resource_mesh.py"
       - "resource_mesh_worker.py"
       - "resource_mesh_runtime.py"
+      - "resource_compute_runtime.py"
       - "resource_mesh_worker_extensions.py"
       - "resource_mesh_worker_bootstrap.py"
       - "free_provider_policy.py"
@@ -17,6 +20,8 @@ on:
       - "test_resource_mesh.py"
       - "test_market_data_runtime.py"
       - "test_targeted_scan_runtime.py"
+      - "test_iv_history_runtime.py"
+      - "test_resource_compute_runtime.py"
       - "requirements-worker.txt"
       - "requirements-dev.txt"
       - "pyproject.toml"
@@ -53,7 +58,7 @@ jobs:
       - name: Compile resource runtime
         shell: pwsh
         run: |
-          python -m py_compile market_data_runtime.py provider_lanes.py targeted_scan_runtime.py resource_mesh.py resource_mesh_worker.py resource_mesh_runtime.py resource_mesh_worker_extensions.py resource_mesh_worker_bootstrap.py free_provider_policy.py security_hygiene.py
+          python -m py_compile market_data_runtime.py market_data_optimizations.py provider_lanes.py targeted_scan_runtime.py iv_history_runtime.py resource_mesh.py resource_mesh_worker.py resource_mesh_runtime.py resource_compute_runtime.py resource_mesh_worker_extensions.py resource_mesh_worker_bootstrap.py free_provider_policy.py security_hygiene.py
 
       - name: Run secret hygiene
         run: python security_hygiene.py
@@ -62,18 +67,20 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "market_data_runtime.py", "provider_lanes.py", "targeted_scan_runtime.py",
-            "resource_mesh.py", "resource_mesh_worker.py", "resource_mesh_runtime.py",
+            "market_data_runtime.py", "market_data_optimizations.py", "provider_lanes.py",
+            "targeted_scan_runtime.py", "iv_history_runtime.py", "resource_mesh.py",
+            "resource_mesh_worker.py", "resource_mesh_runtime.py", "resource_compute_runtime.py",
             "resource_mesh_worker_extensions.py", "resource_mesh_worker_bootstrap.py",
             "free_provider_policy.py", "security_hygiene.py",
             "test_resource_mesh.py", "test_market_data_runtime.py",
-            "test_targeted_scan_runtime.py"
+            "test_targeted_scan_runtime.py", "test_iv_history_runtime.py",
+            "test_resource_compute_runtime.py"
           )
           python -m ruff check @files
           python -m ruff format --check @files
 
       - name: Run unit tests
-        run: python -m unittest -q test_resource_mesh.py test_market_data_runtime.py test_targeted_scan_runtime.py
+        run: python -m unittest -q test_resource_mesh.py test_market_data_runtime.py test_targeted_scan_runtime.py test_iv_history_runtime.py test_resource_compute_runtime.py
 
       - name: Audit Python dependencies
         shell: pwsh
