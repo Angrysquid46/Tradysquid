@@ -24,26 +24,32 @@ function Write-WatchdogLog {
     Add-Content -Path $LogPath -Value "$stamp | $Message" -Encoding UTF8
 }
 
+function Get-AllProcesses {
+    @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+}
+
 function Get-TradysquidsSupervisorProcesses {
+    param($AllProcesses = $null)
+    $items = if ($null -eq $AllProcesses) { Get-AllProcesses } else { $AllProcesses }
     @(
-        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.Name -match '^python(w)?\.exe$' -and
-                $_.CommandLine -and
-                $_.CommandLine -match $SupervisorCommandPattern
-            }
+        $items | Where-Object {
+            $_.Name -match '^python(w)?\.exe$' -and
+            $_.CommandLine -and
+            $_.CommandLine -match $SupervisorCommandPattern
+        }
     )
 }
 
 function Get-TradysquidsLauncherProcesses {
+    param($AllProcesses = $null)
+    $items = if ($null -eq $AllProcesses) { Get-AllProcesses } else { $AllProcesses }
     $escaped = [regex]::Escape($LauncherCommand)
     @(
-        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.Name -eq 'cmd.exe' -and
-                $_.CommandLine -and
-                $_.CommandLine -match $escaped
-            }
+        $items | Where-Object {
+            $_.Name -eq 'cmd.exe' -and
+            $_.CommandLine -and
+            $_.CommandLine -match $escaped
+        }
     )
 }
 
@@ -52,6 +58,20 @@ function Get-HealthPortOwner {
         Select-Object -First 1
     if ($listener) { return [int]$listener.OwningProcess }
     return 0
+}
+
+function Get-AncestorIds {
+    param([int]$ProcessId, $AllProcesses)
+    $ids = [System.Collections.Generic.HashSet[int]]::new()
+    $current = $ProcessId
+    while ($current -gt 0 -and $ids.Add([int]$current)) {
+        $item = $AllProcesses |
+            Where-Object { $_.ProcessId -eq $current } |
+            Select-Object -First 1
+        if (-not $item) { break }
+        $current = [int]$item.ParentProcessId
+    }
+    return $ids
 }
 
 function Get-HeartbeatStatus {
@@ -78,15 +98,38 @@ function Get-HeartbeatStatus {
 }
 
 function Get-OwnershipStatus {
-    $processes = @(Get-TradysquidsSupervisorProcesses)
+    $all = Get-AllProcesses
+    $processes = @(Get-TradysquidsSupervisorProcesses -AllProcesses $all)
     $ids = @($processes | ForEach-Object { [int]$_.ProcessId })
     $portOwner = Get-HealthPortOwner
     return [pscustomobject]@{
+        AllProcesses = $all
         Processes = $processes
         ProcessIds = $ids
         PortOwner = $portOwner
         Healthy = ($ids.Count -eq 1 -and $portOwner -eq $ids[0])
     }
+}
+
+function Stop-ExtraOwnership {
+    param($Ownership)
+    if ($Ownership.PortOwner -le 0 -or -not ($Ownership.ProcessIds -contains $Ownership.PortOwner)) {
+        return 0
+    }
+    $keep = Get-AncestorIds -ProcessId $Ownership.PortOwner -AllProcesses $Ownership.AllProcesses
+    $stopped = 0
+    foreach ($process in $Ownership.Processes) {
+        if ([int]$process.ProcessId -eq $Ownership.PortOwner) { continue }
+        Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+        $stopped += 1
+    }
+    foreach ($launcherProcess in @(Get-TradysquidsLauncherProcesses -AllProcesses $Ownership.AllProcesses)) {
+        if ($keep.Contains([int]$launcherProcess.ProcessId)) { continue }
+        Stop-Process -Id $launcherProcess.ProcessId -Force -ErrorAction SilentlyContinue
+        $stopped += 1
+    }
+    if ($stopped -gt 0) { Start-Sleep -Seconds 2 }
+    return $stopped
 }
 
 function Stop-StaleSupervisor {
@@ -97,7 +140,7 @@ function Stop-StaleSupervisor {
     foreach ($id in $ids) {
         Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
     }
-    foreach ($launcherProcess in @(Get-TradysquidsLauncherProcesses)) {
+    foreach ($launcherProcess in @(Get-TradysquidsLauncherProcesses -AllProcesses $Ownership.AllProcesses)) {
         Stop-Process -Id $launcherProcess.ProcessId -Force -ErrorAction SilentlyContinue
     }
     if ($ids.Count -gt 0) { Start-Sleep -Seconds 2 }
@@ -113,6 +156,22 @@ if (Test-Path $stopFlag) {
 
 $ownership = Get-OwnershipStatus
 $heartbeat = Get-HeartbeatStatus
+
+if ($ownership.PortOwner -gt 0 -and $ownership.ProcessIds -contains $ownership.PortOwner -and $ownership.ProcessIds.Count -gt 1) {
+    if ($CheckOnly) { exit 1 }
+    Write-WatchdogLog (
+        "Removing extra supervisor ownership while preserving healthy PID $($ownership.PortOwner); " +
+        "all supervisor PIDs=$($ownership.ProcessIds -join ',')."
+    )
+    $removed = Stop-ExtraOwnership -Ownership $ownership
+    $ownership = Get-OwnershipStatus
+    $heartbeat = Get-HeartbeatStatus
+    if ($ownership.Healthy -and $heartbeat.Fresh) {
+        Write-WatchdogLog "Removed $removed extra owner/launcher process(es); healthy PID $($ownership.PortOwner) remained online; $($heartbeat.Detail)."
+        exit 0
+    }
+}
+
 if ($ownership.Healthy -and $heartbeat.Fresh) {
     if (-not $CheckOnly) {
         Write-WatchdogLog "Supervisor verified; PID $($ownership.ProcessIds[0]); port $HealthPort owner matches; $($heartbeat.Detail)."
@@ -134,11 +193,16 @@ if (-not (Test-Path $Launcher)) {
 }
 
 Start-Process -FilePath 'wscript.exe' -ArgumentList ('"' + $Launcher + '"') -WindowStyle Hidden
-$deadline = (Get-Date).AddSeconds(45)
+$deadline = (Get-Date).AddSeconds(120)
 while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 3
     $ownership = Get-OwnershipStatus
     $heartbeat = Get-HeartbeatStatus
+    if ($ownership.PortOwner -gt 0 -and $ownership.ProcessIds -contains $ownership.PortOwner -and $ownership.ProcessIds.Count -gt 1) {
+        [void](Stop-ExtraOwnership -Ownership $ownership)
+        $ownership = Get-OwnershipStatus
+        $heartbeat = Get-HeartbeatStatus
+    }
     if ($ownership.Healthy -and $heartbeat.Fresh) {
         Write-WatchdogLog "Supervisor recovery verified; PID $($ownership.ProcessIds[0]); port $HealthPort owner matches; $($heartbeat.Detail)."
         exit 0
