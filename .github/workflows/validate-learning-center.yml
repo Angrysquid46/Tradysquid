@@ -43,6 +43,7 @@ on:
       - "INSTALL-SUPERVISOR-WATCHDOG.ps1"
       - "START-SUPERVISOR.cmd"
       - "stop_tradysquid_processes.ps1"
+      - "OFFLINE-RECOVERY-INSTALL.ps1"
       - "test_learning_center.py"
       - "test_strict_learning_order.py"
       - "test_supervisor_availability.py"
@@ -166,3 +167,20 @@ jobs:
             test_upgrade_batch_44.py \
             test_upgrade_batch_44_live_acceptance.py \
             test_applied_upgrades.py
+
+      - name: Build exact offline recovery bundle
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          mkdir -p offline-recovery
+          git bundle create offline-recovery/tradysquid-offline-recovery.bundle refs/remotes/origin/main
+          git bundle verify offline-recovery/tradysquid-offline-recovery.bundle
+          cp OFFLINE-RECOVERY-INSTALL.ps1 offline-recovery/
+          sha256sum offline-recovery/tradysquid-offline-recovery.bundle offline-recovery/OFFLINE-RECOVERY-INSTALL.ps1 > offline-recovery/SHA256SUMS.txt
+
+      - name: Upload offline recovery package
+        uses: actions/upload-artifact@v4
+        with:
+          name: tradysquid-offline-recovery
+          path: offline-recovery/
+          if-no-files-found: error
+          retention-days: 7
