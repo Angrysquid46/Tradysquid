@@ -66,6 +66,7 @@ def install_runtime_overrides(
         import diagnostic_upgrade_system
         import discord_command_diagnostics
         import market_calendar_runtime
+        import outbound_connectivity_runtime
         import scheduler_diagnostic_runtime
         import simple_upgrade_runtime
         import supervisor_diagnostic_runtime
@@ -73,8 +74,8 @@ def install_runtime_overrides(
         import upgrade_lifecycle_dashboard
 
         # Install the complete runtime chain in dependency order. The review
-        # layer is deliberately last so it observes every validated diagnostic
-        # module and controls only publication, not health collection.
+        # layer controls publication; outbound aggregation runs immediately
+        # after it so all current HTTPS symptoms enter one root-cause record.
         upgrade_batch_44.install_engine()
         upgrade_batch_44_live_acceptance.install()
         simple_upgrade_runtime.install()
@@ -90,6 +91,7 @@ def install_runtime_overrides(
         applied_upgrade_status_runtime.install()
         diagnostic_state_migration.install()
         diagnostic_review_runtime.install()
+        outbound_connectivity_runtime.install()
         applied_upgrades.install_engine()
 
     if include_discord_upgrade_commands:
