@@ -1,21 +1,21 @@
-"""Narrow runtime integration for the diagnostic and applied-upgrade systems.
+"""Narrow runtime integration for diagnostics and applied-upgrade proof.
 
-This module does not patch deployment. It refines scheduler proof so a newly
-registered job is PENDING rather than falsely FAILED, and adds factual cards for
-the shared diagnostic upgrade path.
+The active infrastructure renderer is captured at install time, after the simple
+updater runtime has installed its cards. This prevents import order from silently
+replacing the active updater proof with an obsolete renderer.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any
+from typing import Any, Callable
 
 import applied_upgrades as dashboard
 import diagnostic_upgrade_system as diagnostics
 
 _INSTALLED = False
-_ORIGINAL_JOB_CHECKS = diagnostics._job_checks
-_ORIGINAL_INFRA_RECORDS = dashboard._infra_records
+_BASE_JOB_CHECKS: Callable[[Any], list[diagnostics.HealthCheck]] | None = None
+_BASE_INFRA_RECORDS: Callable[[Any, dict[str, dict[str, Any]]], list[dict[str, Any]]] | None = None
 
 DIAGNOSTIC_SPECS = (
     dashboard.UpgradeSpec(
@@ -45,7 +45,7 @@ DIAGNOSTIC_SPECS = (
     dashboard.UpgradeSpec(
         "diagnostic-live-acceptance",
         "Diagnostic live acceptance",
-        "Lists each runtime acceptance item separately as PASS or FAIL and updates one stable review card.",
+        "Lists each runtime acceptance item separately and updates one stable review card.",
         "diagnostic_upgrade_system._post_live_acceptance",
         ("upgrade-review", "applied-upgrades"),
         group="Upgrade delivery and verification",
@@ -54,7 +54,9 @@ DIAGNOSTIC_SPECS = (
 
 
 def job_checks(connection: Any) -> list[diagnostics.HealthCheck]:
-    checks = _ORIGINAL_JOB_CHECKS(connection)
+    if _BASE_JOB_CHECKS is None:
+        raise RuntimeError("Diagnostic job integration was not installed")
+    checks = _BASE_JOB_CHECKS(connection)
     refined: list[diagnostics.HealthCheck] = []
     for check in checks:
         detail = check.detail.casefold()
@@ -64,7 +66,10 @@ def job_checks(connection: Any) -> list[diagnostics.HealthCheck]:
                     check,
                     passed=True,
                     severity="INFO",
-                    detail=check.detail + " The registered job is awaiting its first scheduled run.",
+                    detail=(
+                        check.detail
+                        + " The registered job is awaiting its first scheduled run."
+                    ),
                 )
             )
             continue
@@ -74,7 +79,10 @@ def job_checks(connection: Any) -> list[diagnostics.HealthCheck]:
                     check,
                     passed=True,
                     severity="INFO",
-                    detail=check.detail + " The job is currently running within its allowed window.",
+                    detail=(
+                        check.detail
+                        + " The job is currently running within its allowed window."
+                    ),
                 )
             )
             continue
@@ -86,28 +94,47 @@ def diagnostic_infra_records(
     connection: Any,
     channels: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    records = list(_ORIGINAL_INFRA_RECORDS(connection, channels))
+    if _BASE_INFRA_RECORDS is None:
+        raise RuntimeError("Applied-upgrade diagnostic integration was not installed")
+    records = list(_BASE_INFRA_RECORDS(connection, channels))
     jobs = {job.name: job for job in dashboard._engine().JOBS}
     summary = diagnostics.diagnostics_summary()
     open_count = len(summary.get("open") or [])
 
     for spec in DIAGNOSTIC_SPECS:
-        channels_present, affected, channel_detail = dashboard._channel_proof(spec, channels)
+        channels_present, affected, channel_detail = dashboard._channel_proof(
+            spec, channels
+        )
         if spec.key == "shared-diagnostic-upgrade-path":
             attached = all(
-                marker in (diagnostics.ROOT / "github_upgrade_bridge.py").read_text(encoding="utf-8")
-                for marker in ("add_or_update_diagnostic", "AUTOMATIC DIAGNOSTIC", "DIAGNOSTIC-GENERATED")
+                marker
+                in (diagnostics.ROOT / "github_upgrade_bridge.py").read_text(
+                    encoding="utf-8"
+                )
+                for marker in (
+                    "add_or_update_diagnostic",
+                    "AUTOMATIC DIAGNOSTIC",
+                    "DIAGNOSTIC-GENERATED",
+                )
             )
             status = "PASS" if attached else "FAIL"
             detail = f"shared batch bridge attached; {open_count} open diagnostic(s)"
         elif spec.key == "five-minute-self-diagnostics":
             job = jobs.get(diagnostics.DIAGNOSTIC_JOB)
-            attached = bool(job and job.callback is diagnostics.diagnostic_cycle_job)
-            status, detail = dashboard._job_status(connection, diagnostics.DIAGNOSTIC_JOB)
+            attached = bool(
+                job and job.callback is diagnostics.diagnostic_cycle_job
+            )
+            status, detail = dashboard._job_status(
+                connection, diagnostics.DIAGNOSTIC_JOB
+            )
         elif spec.key == "two-hour-market-review":
             job = jobs.get(diagnostics.MARKET_REVIEW_JOB)
-            attached = bool(job and job.callback is diagnostics.market_upgrade_review_job)
-            status, detail = dashboard._job_status(connection, diagnostics.MARKET_REVIEW_JOB)
+            attached = bool(
+                job and job.callback is diagnostics.market_upgrade_review_job
+            )
+            status, detail = dashboard._job_status(
+                connection, diagnostics.MARKET_REVIEW_JOB
+            )
         else:
             attached = bool(
                 jobs.get(diagnostics.DIAGNOSTIC_JOB)
@@ -137,11 +164,17 @@ def diagnostic_infra_records(
 
 
 def install() -> None:
-    global _INSTALLED
+    global _INSTALLED, _BASE_JOB_CHECKS, _BASE_INFRA_RECORDS
     if _INSTALLED:
         return
+    _BASE_JOB_CHECKS = diagnostics._job_checks
+    _BASE_INFRA_RECORDS = dashboard._infra_records
     diagnostics._job_checks = job_checks
-    dashboard.INFRA_SPECS = (*dashboard.INFRA_SPECS, *DIAGNOSTIC_SPECS)
+    existing = {spec.key for spec in dashboard.INFRA_SPECS}
+    dashboard.INFRA_SPECS = (
+        *dashboard.INFRA_SPECS,
+        *(spec for spec in DIAGNOSTIC_SPECS if spec.key not in existing),
+    )
     dashboard.ALL_SPECS = (*dashboard.BATCH_SPECS, *dashboard.INFRA_SPECS)
     dashboard._infra_records = diagnostic_infra_records
     _INSTALLED = True
