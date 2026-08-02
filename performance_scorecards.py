@@ -101,10 +101,18 @@ def play_type_groups(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str
     return groups
 
 
+def clean_period_scorecard(content: str) -> str:
+    """Never label an empty scoreboard as trade history."""
+    return content.replace(
+        "### Trade History\nNo trades closed during this period.",
+        "### Status\nNo trades closed during this period yet.",
+    )
+
+
 def play_type_scorecard(label: str, completed: list[dict[str, str]]) -> str:
     metrics = ford_scan.result_metrics(completed)
     lines = [
-        f"## 🧭 {label}",
+        f"## 🧭 Strategy Scorecard · {label}",
         f"**Closed trades:** **{len(completed)}**",
         "### Record",
         (
@@ -181,16 +189,19 @@ def _sync_daily(
 ) -> int:
     dates = period_dates(rows, timestamp.date())
     for report_date in dates:
+        content = clean_period_scorecard(
+            base.format_daily_recap(
+                rows,
+                report_date,
+                market_open=market_open and report_date == timestamp.date(),
+            )
+        )
         _require_upsert(
             discord,
             "daily_recap",
             state,
             f"report-v4:daily:{report_date.isoformat()}",
-            base.format_daily_recap(
-                rows,
-                report_date,
-                market_open=market_open and report_date == timestamp.date(),
-            ),
+            content,
             f"Daily Report · {report_date.strftime('%m/%d/%y')}",
         )
     return len(dates)
@@ -208,12 +219,15 @@ def _sync_weekly(
         friday = monday + timedelta(days=4)
         report_end = min(today, friday) if monday == current_monday else friday
         final = monday < current_monday or today >= friday
+        content = clean_period_scorecard(
+            base.format_weekly_report(rows, report_end, final=final)
+        )
         _require_upsert(
             discord,
             "weekly_report",
             state,
             f"report-v4:weekly:{monday.isoformat()}",
-            base.format_weekly_report(rows, report_end, final=final),
+            content,
             f"Weekly Report · {monday.strftime('%m/%d')}",
         )
     return len(weeks)
@@ -227,12 +241,13 @@ def _sync_monthly(
 ) -> int:
     months = period_months(rows, today)
     for month in months:
+        content = clean_period_scorecard(base.format_monthly_report(rows, month))
         _require_upsert(
             discord,
             "performance_stats",
             state,
             f"report-v4:monthly:{month.isoformat()}",
-            base.format_monthly_report(rows, month),
+            content,
             f"Monthly Performance · {month.strftime('%B %Y')}",
         )
     return len(months)
@@ -248,13 +263,14 @@ def _sync_strategies(
         label for label in groups if label not in PLAY_TYPE_ORDER
     )
     for label in ordered:
+        token = f"Strategy Scorecard · {label}"
         _require_upsert(
             discord,
             "strategy_breakdown",
             state,
             f"report-v4:strategy:{safe_key(label)}",
             play_type_scorecard(label, groups[label]),
-            f"{label} Scorecard",
+            token,
         )
     return len(ordered)
 
@@ -284,11 +300,16 @@ def sync_reports(
     strategy_count = _sync_strategies(discord, state, rows)
     monthly_count = _sync_monthly(discord, state, rows, timestamp.date())
 
+    monday = base.week_start(timestamp.date())
+    friday = monday + timedelta(days=4)
+    current_week_rows = base.rows_closed_between(rows, monday, min(timestamp.date(), friday))
+
     state.update(
         {
             "performance_reconciliation_version": REPORT_VERSION,
             "performance_ledger_signature": signature,
             "performance_reconciliation_closed_trades": len(canonical_rows(rows)),
+            "performance_reconciliation_week_trades": len(current_week_rows),
             "performance_reconciliation_daily_reports": daily_count,
             "performance_reconciliation_weekly_reports": weekly_count,
             "performance_reconciliation_strategy_groups": strategy_count,
@@ -359,6 +380,11 @@ def install() -> None:
         return
     base.install()
     base.REPORT_VERSION = REPORT_VERSION
+    base.REPORT_MARKERS["strategy_breakdown"] = tuple(
+        dict.fromkeys(
+            (*base.REPORT_MARKERS["strategy_breakdown"], "Strategy Scorecard ·")
+        )
+    )
     base.sync_reports = sync_reports
     base.validate_reconciliation = validate_reconciliation
     ford_scan.sync_reports = sync_reports
