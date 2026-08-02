@@ -31,10 +31,10 @@ def load_env() -> None:
 
 
 def install_runtime_overrides() -> None:
-    """Install reporting behavior shared by every local Tradysquids process."""
-    import performance_reconciliation
+    """Install scorecard reporting behavior shared by every local process."""
+    import performance_scorecards
 
-    performance_reconciliation.install()
+    performance_scorecards.install()
 
 
 def main() -> None:
