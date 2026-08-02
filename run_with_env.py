@@ -14,7 +14,8 @@ SCRIPT_OVERRIDES = {
     "local_information_engine.py": "local_information_engine_bootstrap.py",
     "local_information_engine_public.py": "local_information_engine_bootstrap.py",
     "register_discord_commands.py": "register_discord_commands_public.py",
-    "sync_discord_structure.py": "sync_discord_structure_public.py",
+    "sync_discord_structure.py": "sync_discord_structure_reports.py",
+    "sync_discord_structure_public.py": "sync_discord_structure_reports.py",
 }
 
 
