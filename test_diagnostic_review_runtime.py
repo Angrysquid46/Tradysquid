@@ -5,10 +5,8 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import applied_upgrades as dashboard
 import diagnostic_review_runtime as review
 import diagnostic_upgrade_system as diagnostics
 import github_upgrade_bridge as bridge
@@ -132,6 +130,7 @@ class DiagnosticReviewRuntimeTests(unittest.TestCase):
             "old error: Discord request failed\n", encoding="utf-8"
         )
         with (
+            patch.object(diagnostics, "ROOT", self.root),
             patch.object(diagnostics, "LOG_DIR", log_dir),
             patch.object(diagnostics, "STARTUP_LOG", startup),
             patch.object(diagnostics, "WATCHDOG_LOG", watchdog),
