@@ -119,6 +119,7 @@ def validate_checkout() -> tuple[bool, str]:
         "run_with_env.py",
         "tradysquid_supervisor.py",
         "run_supervisor_simple.py",
+        "simple_upgrade_runtime.py",
         "github_upgrade_bridge.py",
         "github_upgrade_patch.py",
         "upgrade_batch_44.py",
@@ -143,6 +144,7 @@ def validate_checkout() -> tuple[bool, str]:
             "test_supervisor_availability.py",
             "test_runtime_state_hygiene.py",
             "test_applied_upgrades.py",
+            "test_simple_upgrade_flow.py",
         ],
         timeout=300,
     )
