@@ -59,9 +59,11 @@ def install_runtime_overrides(
     openai_discord_patch.install()
 
     if include_supervisor_guard:
+        import ngrok_process_runtime
         import single_owner_runtime
 
         single_owner_runtime.install()
+        ngrok_process_runtime.install()
 
     if include_information_engine:
         runtime_contract.install_information_engine()
