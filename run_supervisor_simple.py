@@ -112,6 +112,11 @@ def validate_checkout() -> tuple[bool, str]:
         "run_supervisor_simple.py",
         "simple_upgrade_runtime.py",
         "diagnostic_upgrade_system.py",
+        "diagnostic_runtime_integration.py",
+        "diagnostic_startup_runtime.py",
+        "shared_upgrade_lifecycle.py",
+        "upgrade_lifecycle_dashboard.py",
+        "market_calendar_runtime.py",
         "github_upgrade_bridge.py",
         "github_upgrade_patch.py",
         "upgrade_batch_44.py",
@@ -138,8 +143,11 @@ def validate_checkout() -> tuple[bool, str]:
             "test_applied_upgrades.py",
             "test_simple_upgrade_flow.py",
             "test_diagnostic_upgrade_system.py",
+            "test_diagnostic_startup_runtime.py",
+            "test_upgrade_lifecycle_dashboard.py",
+            "test_market_calendar_runtime.py",
         ],
-        timeout=360,
+        timeout=420,
     )
     if tests.returncode:
         return False, (tests.stderr or tests.stdout or "focused tests failed")[-2000:]
