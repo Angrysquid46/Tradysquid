@@ -1,13 +1,13 @@
-"""Run Tradysquids with non-blocking Discord command-registration retries.
+"""Run Tradysquids with resilient Discord and engine-readiness handling.
 
-Discord slash-command registration is independent from the information engine
-and channel/card synchronization. A transient timeout while registering commands
-must remain visible and retry automatically, but it must not mark an otherwise
-healthy deployment unusable or suppress services-ready/system-health updates.
+Discord slash-command registration is independent from channel/card readiness.
+The information engine must remain alive during transient Discord failures, while
+services-ready remains blocked until its durable startup acceptance passes.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 import time
 from typing import Iterable
@@ -16,6 +16,8 @@ import run_supervisor as base
 
 
 COMMAND_FAILURE_PREFIX = "command registration failed:"
+ENGINE_ACCEPTANCE_PATH = base.ROOT / "state" / "market-intelligence-startup.json"
+_LAST_ENGINE_ACCEPTANCE_STATUS = ""
 
 
 def command_registration_failed(results: Iterable[object] | None) -> bool:
@@ -139,7 +141,7 @@ def record_discord_sync_results(results: list[str], *, source: str) -> bool:
             "✅ **Tradysquids deployment completed**",
             f"Version `{version}`",
             *[f"• {item}" for item in results],
-            "Discord synchronization is verified and services-ready is allowed.",
+            "Discord synchronization is verified; engine acceptance determines final services-ready status.",
         ]
     )[:1900]
     if (
@@ -182,19 +184,73 @@ def retry_pending_discord_configuration() -> bool:
     return True
 
 
+def engine_acceptance() -> tuple[str, str]:
+    if not ENGINE_ACCEPTANCE_PATH.exists():
+        return "STARTING", "acceptance receipt has not been written yet"
+    try:
+        payload = json.loads(ENGINE_ACCEPTANCE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        return "RETRYING", f"acceptance receipt unreadable: {type(exc).__name__}"
+    if not isinstance(payload, dict):
+        return "RETRYING", "acceptance receipt is not an object"
+    status = str(payload.get("status") or "STARTING").upper()
+    detail = str(payload.get("error") or payload.get("contract") or "")
+    return status, " ".join(detail.split())[:700]
+
+
 def deployment_sync_ready(version: str) -> bool:
-    """Structure readiness is independent from slash-command registration."""
+    """Require structure readiness and durable engine startup acceptance."""
     payload = base.supervisor.state_payload()
     update_status = str(payload.get("last_update_status") or "")
     sync_status = str(payload.get("last_discord_sync_status") or "")
     deployed_sha = str(payload.get("deployed_sha") or "")
-    if not update_status and not sync_status:
-        return True
-    return (
-        update_status == "DEPLOYED"
-        and sync_status == "OK"
-        and deployed_sha[:12] == version[:12]
+    discord_ready = (
+        (not update_status and not sync_status)
+        or (
+            update_status == "DEPLOYED"
+            and sync_status == "OK"
+            and deployed_sha[:12] == version[:12]
+        )
     )
+    acceptance_status, acceptance_detail = engine_acceptance()
+    base.supervisor.write_state(
+        information_engine_acceptance_status=acceptance_status,
+        information_engine_acceptance_detail=acceptance_detail,
+        information_engine_acceptance_checked_at=time.strftime(
+            "%Y-%m-%dT%H:%M:%S%z"
+        ),
+    )
+    return discord_ready and acceptance_status == "PASSED"
+
+
+def ensure_services_with_acceptance() -> None:
+    """Keep services alive while reporting acceptance as a separate state."""
+    global _LAST_ENGINE_ACCEPTANCE_STATUS
+    base.ensure_services_with_readiness()
+    status, detail = engine_acceptance()
+    base.supervisor.write_state(
+        information_engine_acceptance_status=status,
+        information_engine_acceptance_detail=detail,
+    )
+    engine_online = bool(base.supervisor.LAST_HEALTH.get("information-engine", False))
+    if (
+        engine_online
+        and status != "PASSED"
+        and status != _LAST_ENGINE_ACCEPTANCE_STATUS
+    ):
+        base.supervisor.discord_post(
+            "\n".join(
+                [
+                    "⚠️ **Tradysquids services running; startup verification retrying**",
+                    "• information-engine process: **ONLINE**",
+                    f"• startup acceptance: **{status}**",
+                    f"• detail: {detail or 'required Discord receipts are still pending'}",
+                    "The engine remains online and retries automatically; final services-ready waits for PASS.",
+                ]
+            )[:1900],
+            "system-health",
+        )
+    _LAST_ENGINE_ACCEPTANCE_STATUS = status
 
 
 def install() -> None:
@@ -203,6 +259,7 @@ def install() -> None:
     base.record_discord_sync_results = record_discord_sync_results
     base.retry_pending_discord_configuration = retry_pending_discord_configuration
     base.deployment_sync_ready = deployment_sync_ready
+    base.supervisor.ensure_services = ensure_services_with_acceptance
 
 
 install()
