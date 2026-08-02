@@ -18,6 +18,7 @@ import ford_scan
 import learning_application
 import learning_center_content as learning
 import learning_search_router as routed
+import updater_test_command
 from discord_cards import style_message_payload
 
 ROOT = Path(__file__).resolve().parent
@@ -26,6 +27,12 @@ DEFAULT_REVIEW_CHANNEL = os.environ.get(
     "LEARNING_GAP_CHANNEL", "upgrade-review"
 ).strip() or "upgrade-review"
 MAX_RECORDS = 1000
+UPDATER_TEST_PHRASES = {
+    "updater test",
+    "test updater",
+    "automatic updater test",
+    "test automatic updater",
+}
 
 
 def now_iso() -> str:
@@ -254,6 +261,8 @@ def answer_with_gap_tracking(
     question: str,
 ) -> str:
     cleaned = str(question or "").strip()
+    if learning.normalize(cleaned) in UPDATER_TEST_PHRASES:
+        return updater_test_command.updater_test_reply()
     if learning_application.is_application_request(cleaned):
         return learning_application.answer(cleaned)
 
