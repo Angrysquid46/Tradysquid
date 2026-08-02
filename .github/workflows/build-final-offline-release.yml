@@ -1,0 +1,96 @@
+name: Build Final Offline Tradysquid Release
+
+on:
+  pull_request:
+    paths:
+      - "OFFLINE-RECOVERY-INSTALL.ps1"
+      - "RUN-OFFLINE-RECOVERY.cmd"
+      - ".github/workflows/build-final-offline-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out recovery branch with full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Create isolated environment
+        run: cp .env.example .env
+
+      - name: Verify recovery branch contains the merged release
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor refs/remotes/origin/main HEAD
+          python - <<'PY'
+          import deployment_validation_manifest as manifest
+          print(manifest.validate_manifest())
+          PY
+
+      - name: Run the exact laptop validation manifest
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+          import deployment_validation_manifest as manifest
+
+          compile_result = subprocess.run(
+              [sys.executable, "-m", "py_compile", *manifest.COMPILE_MODULES]
+          )
+          if compile_result.returncode:
+              raise SystemExit(compile_result.returncode)
+          test_result = subprocess.run(
+              [
+                  sys.executable,
+                  "-m",
+                  "unittest",
+                  "-q",
+                  *manifest.FOCUSED_TEST_MODULES,
+              ]
+          )
+          raise SystemExit(test_result.returncode)
+          PY
+
+      - name: Verify one intended launcher
+        run: |
+          grep -q "run_supervisor_simple.py" START-SUPERVISOR.cmd
+          ! grep -E "python -u.*run_supervisor_resilient.py" START-SUPERVISOR.cmd
+          grep -q "120" test_simple_upgrade_flow.py
+
+      - name: Build exact main Git bundle
+        run: |
+          mkdir -p final-offline-release
+          git bundle create final-offline-release/tradysquid-final-release.bundle refs/remotes/origin/main
+          git bundle verify final-offline-release/tradysquid-final-release.bundle
+          cp OFFLINE-RECOVERY-INSTALL.ps1 final-offline-release/
+          cp RUN-OFFLINE-RECOVERY.cmd final-offline-release/
+          git rev-parse refs/remotes/origin/main > final-offline-release/RELEASE-COMMIT.txt
+          sha256sum \
+            final-offline-release/tradysquid-final-release.bundle \
+            final-offline-release/OFFLINE-RECOVERY-INSTALL.ps1 \
+            final-offline-release/RUN-OFFLINE-RECOVERY.cmd \
+            > final-offline-release/SHA256SUMS.txt
+
+      - name: Upload final offline release
+        uses: actions/upload-artifact@v4
+        with:
+          name: tradysquid-final-offline-release
+          path: final-offline-release/
+          if-no-files-found: error
+          retention-days: 7
