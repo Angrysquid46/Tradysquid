@@ -121,9 +121,17 @@ class RuntimeContractTests(unittest.TestCase):
             "rollback_ref",
             "ROLLED_BACK",
             "supervisor.stop_all_services()",
-            "supervisor.start_all_services()",
+            "return True for one BAT restart",
         ):
             self.assertIn(marker, text)
+
+    def test_hidden_launcher_is_the_only_supervisor_restart_owner(self) -> None:
+        launcher = (ROOT / "START-SUPERVISOR.cmd").read_text(encoding="utf-8")
+        watchdog = (ROOT / "ENSURE-SUPERVISOR.ps1").read_text(encoding="utf-8")
+        self.assertEqual(launcher.lower().count("python -u"), 1)
+        self.assertIn("goto restart", launcher.lower())
+        self.assertIn("wscript.exe", watchdog)
+        self.assertNotIn("python -u", watchdog.lower())
 
     def test_active_runtime_does_not_install_historical_acceptance_layers(self) -> None:
         loader = (ROOT / "run_with_env.py").read_text(encoding="utf-8")
