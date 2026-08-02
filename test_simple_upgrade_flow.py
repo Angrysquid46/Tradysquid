@@ -11,6 +11,7 @@ import github_upgrade_bridge
 # validation, not CI-only decoration.
 from test_runtime_contract import RuntimeContractTests  # noqa: F401
 from test_scheduler_diagnostic_runtime import SchedulerDiagnosticRuntimeTests  # noqa: F401
+from test_single_owner_runtime import SingleOwnerRuntimeTests  # noqa: F401
 from test_supervisor_diagnostic_runtime import SupervisorDiagnosticRuntimeTests  # noqa: F401
 from test_supervisor_entrypoint_diagnostics import SupervisorEntrypointDiagnosticsTests  # noqa: F401
 
