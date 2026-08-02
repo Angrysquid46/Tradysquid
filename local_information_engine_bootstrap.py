@@ -97,17 +97,27 @@ def run_required_startup_jobs() -> dict[str, Any]:
                 f"performance channels still contain history-page output: {history_pages}"
             )
 
-        journal_tracker = public.ford_scan.DiscordTracker(
-            public.ford_scan.DISCORD_BOT_TOKEN,
-            public.ford_scan.DISCORD_GUILD_ID,
-        )
-        if not journal_tracker.ready:
-            raise RuntimeError("Discord tracker is unavailable for journal verification")
         trade_rows = public.ford_scan.read_log()
-        journal_result = public.ford_scan.sync_all_trade_journals(
-            trade_rows, journal_tracker
-        )
-        public.ford_scan.write_log(trade_rows)
+        journal_result = {
+            "created": 0,
+            "refreshed": 0,
+            "closed_reviews": 0,
+            "verified": 0,
+            "entry_snapshots": 0,
+            "pending": 0,
+        }
+        if trade_rows:
+            journal_tracker = public.ford_scan.DiscordTracker(
+                public.ford_scan.DISCORD_BOT_TOKEN,
+                public.ford_scan.DISCORD_GUILD_ID,
+            )
+            if not journal_tracker.ready:
+                raise RuntimeError("Discord tracker is unavailable for journal verification")
+            journal_result = public.ford_scan.sync_all_trade_journals(
+                trade_rows, journal_tracker
+            )
+            public.ford_scan.write_log(trade_rows)
+
         open_unverified = [
             str(row.get("trade_id") or "unknown")
             for row in trade_rows
@@ -149,6 +159,7 @@ def run_required_startup_jobs() -> dict[str, Any]:
             },
             "journal_contract": {
                 "format_version": journal_contract.JOURNAL_FORMAT_VERSION,
+                "canonical_trades": len(trade_rows),
                 "verified_this_startup": journal_result.get("verified", 0),
                 "entry_snapshots_found": journal_result.get("entry_snapshots", 0),
                 "historical_journals_pending_batched_refresh": journal_result.get(
