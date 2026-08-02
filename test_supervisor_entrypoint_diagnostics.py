@@ -8,12 +8,14 @@ ROOT = Path(__file__).resolve().parent
 
 
 class SupervisorEntrypointDiagnosticsTests(unittest.TestCase):
-    def test_watchdog_enforces_one_simple_supervisor_owner(self) -> None:
+    def test_watchdog_enforces_one_simple_supervisor_tree(self) -> None:
         text = (ROOT / "ENSURE-SUPERVISOR.ps1").read_text(encoding="utf-8")
         self.assertIn("run_supervisor_simple.py", text)
         self.assertIn("Get-HealthPortOwner", text)
-        self.assertIn("$ids.Count -eq 1", text)
-        self.assertIn("$portOwner -eq $ids[0]", text)
+        self.assertIn("Get-AncestorIds", text)
+        self.assertIn("OwnerTreeIds", text)
+        self.assertIn("ForeignSupervisorIds", text)
+        self.assertIn("$foreign.Count -eq 0", text)
         self.assertIn("wscript.exe", text)
         self.assertNotIn("run_supervisor_resilient.py", text)
         self.assertNotIn("run_supervisor.py'", text)

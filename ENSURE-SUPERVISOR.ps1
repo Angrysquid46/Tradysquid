@@ -71,7 +71,7 @@ function Get-AncestorIds {
         if (-not $item) { break }
         $current = [int]$item.ParentProcessId
     }
-    return $ids
+    return ,$ids
 }
 
 function Get-HeartbeatStatus {
@@ -102,12 +102,19 @@ function Get-OwnershipStatus {
     $processes = @(Get-TradysquidsSupervisorProcesses -AllProcesses $all)
     $ids = @($processes | ForEach-Object { [int]$_.ProcessId })
     $portOwner = Get-HealthPortOwner
+    $ownerTree = [System.Collections.Generic.HashSet[int]]::new()
+    if ($portOwner -gt 0 -and $ids -contains $portOwner) {
+        $ownerTree = Get-AncestorIds -ProcessId $portOwner -AllProcesses $all
+    }
+    $foreign = @($ids | Where-Object { -not $ownerTree.Contains([int]$_) })
     return [pscustomobject]@{
         AllProcesses = $all
         Processes = $processes
         ProcessIds = $ids
         PortOwner = $portOwner
-        Healthy = ($ids.Count -eq 1 -and $portOwner -eq $ids[0])
+        OwnerTreeIds = @($ownerTree)
+        ForeignSupervisorIds = $foreign
+        Healthy = ($portOwner -gt 0 -and $ids -contains $portOwner -and $foreign.Count -eq 0)
     }
 }
 
@@ -116,15 +123,14 @@ function Stop-ExtraOwnership {
     if ($Ownership.PortOwner -le 0 -or -not ($Ownership.ProcessIds -contains $Ownership.PortOwner)) {
         return 0
     }
-    $keep = Get-AncestorIds -ProcessId $Ownership.PortOwner -AllProcesses $Ownership.AllProcesses
     $stopped = 0
     foreach ($process in $Ownership.Processes) {
-        if ([int]$process.ProcessId -eq $Ownership.PortOwner) { continue }
+        if ($Ownership.OwnerTreeIds -contains [int]$process.ProcessId) { continue }
         Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
         $stopped += 1
     }
     foreach ($launcherProcess in @(Get-TradysquidsLauncherProcesses -AllProcesses $Ownership.AllProcesses)) {
-        if ($keep.Contains([int]$launcherProcess.ProcessId)) { continue }
+        if ($Ownership.OwnerTreeIds -contains [int]$launcherProcess.ProcessId) { continue }
         Stop-Process -Id $launcherProcess.ProcessId -Force -ErrorAction SilentlyContinue
         $stopped += 1
     }
@@ -157,24 +163,24 @@ if (Test-Path $stopFlag) {
 $ownership = Get-OwnershipStatus
 $heartbeat = Get-HeartbeatStatus
 
-if ($ownership.PortOwner -gt 0 -and $ownership.ProcessIds -contains $ownership.PortOwner -and $ownership.ProcessIds.Count -gt 1) {
+if ($ownership.ForeignSupervisorIds.Count -gt 0) {
     if ($CheckOnly) { exit 1 }
     Write-WatchdogLog (
-        "Removing extra supervisor ownership while preserving healthy PID $($ownership.PortOwner); " +
-        "all supervisor PIDs=$($ownership.ProcessIds -join ',')."
+        "Removing foreign supervisor ownership while preserving owner tree $($ownership.OwnerTreeIds -join ','); " +
+        "foreign PIDs=$($ownership.ForeignSupervisorIds -join ',')."
     )
     $removed = Stop-ExtraOwnership -Ownership $ownership
     $ownership = Get-OwnershipStatus
     $heartbeat = Get-HeartbeatStatus
     if ($ownership.Healthy -and $heartbeat.Fresh) {
-        Write-WatchdogLog "Removed $removed extra owner/launcher process(es); healthy PID $($ownership.PortOwner) remained online; $($heartbeat.Detail)."
+        Write-WatchdogLog "Removed $removed foreign owner/launcher process(es); owner tree $($ownership.OwnerTreeIds -join ',') remained online; $($heartbeat.Detail)."
         exit 0
     }
 }
 
 if ($ownership.Healthy -and $heartbeat.Fresh) {
     if (-not $CheckOnly) {
-        Write-WatchdogLog "Supervisor verified; PID $($ownership.ProcessIds[0]); port $HealthPort owner matches; $($heartbeat.Detail)."
+        Write-WatchdogLog "Supervisor verified; owner tree=$($ownership.OwnerTreeIds -join ','); port $HealthPort owner=$($ownership.PortOwner); $($heartbeat.Detail)."
     }
     exit 0
 }
@@ -182,8 +188,9 @@ if ($ownership.Healthy -and $heartbeat.Fresh) {
 if ($CheckOnly) { exit 1 }
 
 Write-WatchdogLog (
-    "Supervisor ownership unhealthy; processes=$($ownership.ProcessIds -join ','); " +
-    "portOwner=$($ownership.PortOwner); $($heartbeat.Detail). Rebuilding one hidden owner."
+    "Supervisor ownership unhealthy; matched=$($ownership.ProcessIds -join ','); " +
+    "ownerTree=$($ownership.OwnerTreeIds -join ','); foreign=$($ownership.ForeignSupervisorIds -join ','); " +
+    "portOwner=$($ownership.PortOwner); $($heartbeat.Detail). Rebuilding one hidden owner tree."
 )
 Stop-StaleSupervisor -Ownership $ownership
 
@@ -198,20 +205,21 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 3
     $ownership = Get-OwnershipStatus
     $heartbeat = Get-HeartbeatStatus
-    if ($ownership.PortOwner -gt 0 -and $ownership.ProcessIds -contains $ownership.PortOwner -and $ownership.ProcessIds.Count -gt 1) {
+    if ($ownership.ForeignSupervisorIds.Count -gt 0) {
         [void](Stop-ExtraOwnership -Ownership $ownership)
         $ownership = Get-OwnershipStatus
         $heartbeat = Get-HeartbeatStatus
     }
     if ($ownership.Healthy -and $heartbeat.Fresh) {
-        Write-WatchdogLog "Supervisor recovery verified; PID $($ownership.ProcessIds[0]); port $HealthPort owner matches; $($heartbeat.Detail)."
+        Write-WatchdogLog "Supervisor recovery verified; owner tree=$($ownership.OwnerTreeIds -join ','); port $HealthPort owner=$($ownership.PortOwner); $($heartbeat.Detail)."
         exit 0
     }
 }
 
 $ownership = Get-OwnershipStatus
 Write-WatchdogLog (
-    "Supervisor recovery failed; processes=$($ownership.ProcessIds -join ','); " +
+    "Supervisor recovery failed; matched=$($ownership.ProcessIds -join ','); " +
+    "ownerTree=$($ownership.OwnerTreeIds -join ','); foreign=$($ownership.ForeignSupervisorIds -join ','); " +
     "portOwner=$($ownership.PortOwner)."
 )
 exit 3
