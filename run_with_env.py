@@ -31,9 +31,11 @@ def load_env() -> None:
 
 
 def install_runtime_overrides() -> None:
-    """Install scorecard reporting behavior shared by every local process."""
+    """Install journal and scorecard behavior shared by every local process."""
+    import journal_contract
     import performance_scorecards
 
+    journal_contract.install()
     performance_scorecards.install()
 
 
