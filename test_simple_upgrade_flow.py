@@ -9,6 +9,7 @@ import github_upgrade_bridge
 # The laptop updater already runs this module. Importing these TestCase classes
 # makes the same one-supervisor/runtime-contract checks part of local deployment
 # validation, not CI-only decoration.
+from test_ngrok_process_runtime import NgrokProcessRuntimeTests  # noqa: F401
 from test_runtime_contract import RuntimeContractTests  # noqa: F401
 from test_scheduler_diagnostic_runtime import SchedulerDiagnosticRuntimeTests  # noqa: F401
 from test_single_owner_runtime import SingleOwnerRuntimeTests  # noqa: F401
