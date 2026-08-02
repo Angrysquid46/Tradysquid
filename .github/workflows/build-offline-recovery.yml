@@ -19,6 +19,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Create isolated environment
+        run: cp .env.example .env
       - name: Verify current release tests
         run: |
           python -m py_compile network_compat.py applied_upgrades.py run_with_env.py run_supervisor_resilient.py local_information_engine_bootstrap.py sync_discord_structure_reports.py
