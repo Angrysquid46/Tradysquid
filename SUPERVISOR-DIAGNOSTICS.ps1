@@ -29,9 +29,10 @@ function Get-GitValue([string[]]$Arguments) {
 }
 
 Write-Section 'Git and updater'
+Write-Host 'configured transport: IPv4 for Tradysquid updater and Python requests'
 if ($FetchRemote) {
-    $fetchOutput = & git -C $Root fetch origin main 2>&1
-    Write-Host "fetch origin/main exit: $LASTEXITCODE"
+    $fetchOutput = & git -C $Root fetch --ipv4 origin main 2>&1
+    Write-Host "IPv4 fetch origin/main exit: $LASTEXITCODE"
     if ($fetchOutput) { Write-Host ($fetchOutput -join "`n") }
 }
 $branch = Get-GitValue @('rev-parse', '--abbrev-ref', 'HEAD')
@@ -109,7 +110,7 @@ else {
         $state |
             Select-Object supervisor, supervisor_heartbeat_at, local_sha, deployed_sha,
                 last_remote_sha, last_fetch_status, last_fetch_attempt_at,
-                last_update_status, last_update_detail,
+                last_fetch_detail, last_update_status, last_update_detail,
                 last_discord_sync_status, last_command_registration_status,
                 last_discord_sync_attempt_at, deployment_sync_ready,
                 information_engine_acceptance_status,
