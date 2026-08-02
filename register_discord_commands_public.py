@@ -1,4 +1,4 @@
-"""Register TradeBot commands with public capped ticker access and free-form learning."""
+"""Register TradeBot commands with public ticker access and AI-enhanced learning."""
 
 from __future__ import annotations
 
@@ -27,6 +27,16 @@ for command in registry.COMMANDS:
                 "Example: gamma, IV crush, credit spreads, pin risk, or expectancy"
             )
             options[0]["max_length"] = 100
+    elif name == "ask":
+        command["description"] = (
+            "Ask AI-enhanced TradeBot an educational trading or options question"
+        )
+        options = command.get("options") or []
+        if options:
+            options[0]["description"] = (
+                "Ask about options, charts, risk, scanner logic, or trade mechanics"
+            )
+            options[0]["max_length"] = 600
 
 
 if __name__ == "__main__":
