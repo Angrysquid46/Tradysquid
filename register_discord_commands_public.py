@@ -7,10 +7,16 @@ import register_discord_commands as registry
 
 registry.OWNER_ONLY_COMMANDS.discard("ticker-remove")
 registry.OWNER_ONLY_COMMANDS.update(
-    {"upgrade-add", "upgrade-list", "upgrade-ready", "upgrade-cancel"}
+    {"upgrade-add", "upgrade-list", "upgrade-ready", "upgrade-cancel", "updater-test"}
 )
 
 UPGRADE_COMMANDS = [
+    {
+        "name": "updater-test",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: prove the existing automatic updater deployed this running version",
+    },
     {
         "name": "upgrade-add",
         "type": 1,
