@@ -59,6 +59,7 @@ def install_runtime_overrides(
         import diagnostic_runtime_integration
         import diagnostic_startup_runtime
         import diagnostic_upgrade_system
+        import discord_command_diagnostics
         import market_calendar_runtime
         import simple_upgrade_runtime
         import upgrade_batch_44_live_acceptance
@@ -72,6 +73,7 @@ def install_runtime_overrides(
         diagnostic_runtime_integration.install()
         diagnostic_startup_runtime.install()
         diagnostic_nonblocking_runtime.install()
+        discord_command_diagnostics.install()
         upgrade_lifecycle_dashboard.install()
         applied_upgrades.install_engine()
 
