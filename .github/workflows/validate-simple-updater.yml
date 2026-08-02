@@ -10,6 +10,7 @@ on:
       - "diagnostic_runtime_integration.py"
       - "diagnostic_startup_runtime.py"
       - "diagnostic_nonblocking_runtime.py"
+      - "diagnostic_state_migration.py"
       - "diagnostic_review_runtime.py"
       - "discord_command_diagnostics.py"
       - "supervisor_diagnostic_runtime.py"
@@ -31,6 +32,7 @@ on:
       - "test_diagnostic_upgrade_system.py"
       - "test_diagnostic_startup_runtime.py"
       - "test_diagnostic_nonblocking_runtime.py"
+      - "test_diagnostic_state_migration.py"
       - "test_diagnostic_review_runtime.py"
       - "test_discord_command_diagnostics.py"
       - "test_supervisor_diagnostic_runtime.py"
@@ -102,4 +104,5 @@ jobs:
           ! grep -E "python -u.*run_supervisor_resilient.py" START-SUPERVISOR.cmd
           grep -q "supervisor_diagnostic_runtime.install()" run_with_env.py
           grep -q "scheduler_diagnostic_runtime.install()" run_with_env.py
+          grep -q "diagnostic_state_migration.install()" run_with_env.py
           grep -q "diagnostic_review_runtime.install()" run_with_env.py
