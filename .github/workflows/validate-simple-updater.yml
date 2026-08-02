@@ -10,11 +10,15 @@ on:
       - "diagnostic_runtime_integration.py"
       - "diagnostic_startup_runtime.py"
       - "diagnostic_nonblocking_runtime.py"
+      - "diagnostic_review_runtime.py"
       - "discord_command_diagnostics.py"
+      - "supervisor_diagnostic_runtime.py"
+      - "scheduler_diagnostic_runtime.py"
       - "github_upgrade_bridge_runtime.py"
       - "shared_upgrade_lifecycle.py"
       - "upgrade_lifecycle_dashboard.py"
       - "market_calendar_runtime.py"
+      - "deployment_validation_manifest.py"
       - "run_with_env.py"
       - "START-SUPERVISOR.cmd"
       - "ENSURE-SUPERVISOR.ps1"
@@ -27,7 +31,10 @@ on:
       - "test_diagnostic_upgrade_system.py"
       - "test_diagnostic_startup_runtime.py"
       - "test_diagnostic_nonblocking_runtime.py"
+      - "test_diagnostic_review_runtime.py"
       - "test_discord_command_diagnostics.py"
+      - "test_supervisor_diagnostic_runtime.py"
+      - "test_scheduler_diagnostic_runtime.py"
       - "test_github_upgrade_bridge_runtime.py"
       - "test_upgrade_lifecycle_dashboard.py"
       - "test_market_calendar_runtime.py"
@@ -41,7 +48,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -55,44 +62,44 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements.txt
       - name: Create isolated environment
         run: cp .env.example .env
-      - name: Compile upgrade deployment and diagnostics
+      - name: Validate deployment manifest
+        run: python -c "import deployment_validation_manifest as m; print(m.validate_manifest())"
+      - name: Compile the exact laptop deployment modules
         run: |
-          python -m py_compile \
-            run_supervisor_simple.py \
-            simple_upgrade_runtime.py \
-            applied_upgrade_status_runtime.py \
-            diagnostic_upgrade_system.py \
-            diagnostic_runtime_integration.py \
-            diagnostic_startup_runtime.py \
-            diagnostic_nonblocking_runtime.py \
-            discord_command_diagnostics.py \
-            github_upgrade_bridge_runtime.py \
-            shared_upgrade_lifecycle.py \
-            upgrade_lifecycle_dashboard.py \
-            market_calendar_runtime.py \
-            tradysquid_supervisor.py \
-            github_upgrade_bridge.py \
-            github_upgrade_patch.py \
-            run_with_env.py \
-            applied_upgrades.py \
-            network_compat.py
-      - name: Run existing safety tests
+          python - <<'PY'
+          import subprocess
+          import sys
+          import deployment_validation_manifest as manifest
+
+          raise SystemExit(
+              subprocess.run(
+                  [sys.executable, "-m", "py_compile", *manifest.COMPILE_MODULES]
+              ).returncode
+          )
+          PY
+      - name: Run the exact laptop focused tests
         run: |
-          python -m unittest -q \
-            test_github_upgrade_bridge.py \
-            test_supervisor_availability.py \
-            test_runtime_state_hygiene.py \
-            test_applied_upgrades.py
-      - name: Run simple updater and diagnostic contracts
+          python - <<'PY'
+          import subprocess
+          import sys
+          import deployment_validation_manifest as manifest
+
+          raise SystemExit(
+              subprocess.run(
+                  [
+                      sys.executable,
+                      "-m",
+                      "unittest",
+                      "-q",
+                      *manifest.FOCUSED_TEST_MODULES,
+                  ]
+              ).returncode
+          )
+          PY
+      - name: Verify one intended supervisor and complete runtime attachment
         run: |
-          python -m unittest -q \
-            test_applied_upgrades.py \
-            test_applied_upgrade_status_runtime.py \
-            test_simple_upgrade_flow.py \
-            test_diagnostic_upgrade_system.py \
-            test_diagnostic_startup_runtime.py \
-            test_diagnostic_nonblocking_runtime.py \
-            test_discord_command_diagnostics.py \
-            test_github_upgrade_bridge_runtime.py \
-            test_upgrade_lifecycle_dashboard.py \
-            test_market_calendar_runtime.py
+          grep -q "run_supervisor_simple.py" START-SUPERVISOR.cmd
+          ! grep -E "python -u.*run_supervisor_resilient.py" START-SUPERVISOR.cmd
+          grep -q "supervisor_diagnostic_runtime.install()" run_with_env.py
+          grep -q "scheduler_diagnostic_runtime.install()" run_with_env.py
+          grep -q "diagnostic_review_runtime.install()" run_with_env.py
