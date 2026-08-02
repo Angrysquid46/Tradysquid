@@ -33,13 +33,15 @@ class SingleOwnerRuntimeTests(unittest.TestCase):
         finally:
             single_owner_runtime._INSTALLED = original
 
-    def test_watchdog_preserves_port_owner_and_removes_only_extras(self) -> None:
+    def test_watchdog_preserves_entire_port_owner_tree_and_removes_only_foreign_trees(self) -> None:
         text = (ROOT / "ENSURE-SUPERVISOR.ps1").read_text(encoding="utf-8")
         self.assertIn("function Stop-ExtraOwnership", text)
-        self.assertIn("ProcessId -eq $Ownership.PortOwner", text)
+        self.assertIn("OwnerTreeIds", text)
+        self.assertIn("ForeignSupervisorIds", text)
         self.assertIn("Get-AncestorIds", text)
-        self.assertIn("healthy PID $($ownership.PortOwner) remained online", text)
+        self.assertIn("owner tree", text)
         self.assertIn("AddSeconds(120)", text)
+        self.assertNotIn("ProcessId -eq $Ownership.PortOwner", text)
 
     def test_loader_installs_guard_only_for_simple_supervisor(self) -> None:
         text = (ROOT / "run_with_env.py").read_text(encoding="utf-8")
