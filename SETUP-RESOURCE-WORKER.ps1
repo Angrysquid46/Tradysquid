@@ -90,7 +90,7 @@ if (-not ((Get-Content -LiteralPath $WorkerEnv) -match '^RESOURCE_WORKER_ID=.+')
 }
 
 Write-Step "Running a worker self-test"
-& $VenvPython "resource_mesh_worker.py" --once
+& $VenvPython "resource_mesh_worker_bootstrap.py" --once
 if ($LASTEXITCODE -ne 0) {
     throw "The resource worker self-test failed with exit code $LASTEXITCODE"
 }
