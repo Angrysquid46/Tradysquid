@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import free_provider_policy
 import resource_mesh_worker
 import resource_mesh_worker_extensions
 
+free_provider_policy.install(resource_mesh_worker)
 resource_mesh_worker_extensions.install(resource_mesh_worker)
 
 
