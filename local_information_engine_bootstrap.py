@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import discord_reconciliation_safety
 import journal_contract
 import performance_scorecards
 import trade_intelligence
@@ -22,6 +23,8 @@ import trade_intelligence
 journal_contract.install()
 journal_contract.validate_contract()
 performance_scorecards.install()
+discord_reconciliation_safety.install()
+discord_reconciliation_safety.validate_contract()
 performance_scorecards.validate_reconciliation()
 
 import local_information_engine_public as public
@@ -178,12 +181,12 @@ def run_required_startup_jobs() -> dict[str, Any]:
                 ),
                 "all_open_journals_verified": True,
             },
+            "discord_reconciliation": discord_reconciliation_safety.validate_contract(),
             "contract": (
                 "#breaking-alerts heartbeat, #premarket session card, daily/weekly/"
                 "monthly scorecards, one scorecard per play type, and the complete "
-                "entry checklist for every open journal were acknowledged; the engine "
-                "health listener remains available while transient acceptance failures "
-                "retry in the background"
+                "entry checklist for every open journal were acknowledged; existing "
+                "Discord report cards were preserved while replacements used upserts"
             ),
         }
         _write_acceptance(payload)
