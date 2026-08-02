@@ -224,9 +224,15 @@ def deployment_sync_ready(version: str) -> bool:
 
 
 def ensure_services_with_acceptance() -> None:
-    """Keep services alive while reporting acceptance as a separate state."""
+    """Keep services alive while applying acceptance only to this health cycle."""
     global _LAST_ENGINE_ACCEPTANCE_STATUS
-    base.ensure_services_with_readiness()
+    original_readiness = base.deployment_sync_ready
+    base.deployment_sync_ready = deployment_sync_ready
+    try:
+        base.ensure_services_with_readiness()
+    finally:
+        base.deployment_sync_ready = original_readiness
+
     status, detail = engine_acceptance()
     base.supervisor.write_state(
         information_engine_acceptance_status=status,
@@ -258,7 +264,6 @@ def install() -> None:
     base.discord_results_failed = blocking_discord_results_failed
     base.record_discord_sync_results = record_discord_sync_results
     base.retry_pending_discord_configuration = retry_pending_discord_configuration
-    base.deployment_sync_ready = deployment_sync_ready
     base.supervisor.ensure_services = ensure_services_with_acceptance
 
 
