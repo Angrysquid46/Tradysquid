@@ -28,6 +28,7 @@ on:
       - "diagnostic_startup_runtime.py"
       - "shared_upgrade_lifecycle.py"
       - "upgrade_lifecycle_dashboard.py"
+      - "market_calendar_runtime.py"
       - "github_upgrade_bridge.py"
       - "github_upgrade_patch.py"
       - "upgrade_batch_44.py"
@@ -60,6 +61,7 @@ on:
       - "test_diagnostic_upgrade_system.py"
       - "test_diagnostic_startup_runtime.py"
       - "test_upgrade_lifecycle_dashboard.py"
+      - "test_market_calendar_runtime.py"
       - "test_runtime_state_hygiene.py"
       - "test_automation_acceptance.py"
       - "test_always_on_operations.py"
@@ -123,6 +125,7 @@ jobs:
             diagnostic_startup_runtime.py \
             shared_upgrade_lifecycle.py \
             upgrade_lifecycle_dashboard.py \
+            market_calendar_runtime.py \
             github_upgrade_bridge.py \
             github_upgrade_patch.py \
             upgrade_batch_44.py \
@@ -159,6 +162,7 @@ jobs:
             test_diagnostic_upgrade_system.py \
             test_diagnostic_startup_runtime.py \
             test_upgrade_lifecycle_dashboard.py \
+            test_market_calendar_runtime.py \
             test_runtime_state_hygiene.py
 
       - name: Validate curriculum and operations engine
@@ -186,6 +190,7 @@ jobs:
             test_diagnostic_upgrade_system.py \
             test_diagnostic_startup_runtime.py \
             test_upgrade_lifecycle_dashboard.py \
+            test_market_calendar_runtime.py \
             test_runtime_state_hygiene.py \
             test_automation_acceptance.py \
             test_always_on_operations.py \
