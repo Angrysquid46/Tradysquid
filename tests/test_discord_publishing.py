@@ -255,6 +255,7 @@ def test_original_layout_routes_every_bootstrap_card() -> None:
     assert CARD_ROUTES["strategy-versions"]["category"] == "STRATEGY CONTROL"
     assert CARD_ROUTES["strategy-recommendations"]["category"] == "STRATEGY CONTROL"
     assert CARD_ROUTES["system-health"]["category"] == "SYSTEM"
+    assert "shadow-candidates" not in CARD_ROUTES
 
 
 def test_multiple_stable_cards_share_original_channels() -> None:
@@ -277,7 +278,6 @@ def test_multiple_stable_cards_share_original_channels() -> None:
         "latest-scan",
         "accepted-candidates",
         "rejected-candidates",
-        "shadow-candidates",
     }
     assert performance_cards == {
         "daily-recap",
@@ -311,11 +311,11 @@ def test_event_refresh_keeps_scanner_and_market_cards_active(tmp_path: Path) -> 
         "latest-scan",
         "accepted-candidates",
         "rejected-candidates",
-        "shadow-candidates",
         "market-regime",
         "scanner-status",
         "system-activity",
     } <= stable_ids
+    assert "shadow-candidates" not in stable_ids
 
 
 def test_closed_trade_history_repopulates_wins_losses_and_performance(
