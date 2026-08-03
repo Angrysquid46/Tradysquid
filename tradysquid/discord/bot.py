@@ -8,7 +8,7 @@ from typing import Any
 try:
     import discord
     from discord import app_commands
-except ImportError:  # pragma: no cover - production dependency check handles this
+except ImportError:  # pragma: no cover
     discord = None
     app_commands = None
 
@@ -127,11 +127,21 @@ class DiscordBotService:
                 _name: str = command_name,
             ) -> None:
                 try:
-                    result = self.dispatcher.execute(_name, interaction.user.id, value)
-                except Exception as exc:  # command boundary returns a readable error
-                    result = {"status": "FAILED", "error": f"{type(exc).__name__}: {exc}"}
+                    result = self.dispatcher.execute(
+                        _name,
+                        interaction.user.id,
+                        value,
+                    )
+                except Exception as exc:
+                    result = {
+                        "status": "FAILED",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
                 chunks = format_command_response(result)
-                await interaction.response.send_message(chunks[0], ephemeral=True)
+                await interaction.response.send_message(
+                    chunks[0],
+                    ephemeral=True,
+                )
                 for chunk in chunks[1:]:
                     await interaction.followup.send(chunk, ephemeral=True)
 
@@ -150,10 +160,12 @@ class DiscordBotService:
                 "status": "FAILED",
                 "bot_user_id": str(self.client.user.id) if self.client.user else None,
                 "guild_id": str(self.guild_id),
+                "layout": "original-dashboard",
                 "categories_resolved": 0,
                 "channels_resolved": 0,
                 "slash_commands_synchronized": 0,
                 "publishing_bootstrap": None,
+                "layout_cleanup": None,
                 "completed_at": None,
                 "secret_values_written": False,
             }
@@ -162,35 +174,74 @@ class DiscordBotService:
                 if guild is None:
                     guild = await self.client.fetch_guild(self.guild_id)
                 if guild is None:
-                    raise RuntimeError("Configured Discord guild could not be resolved")
+                    raise RuntimeError(
+                        "Configured Discord guild could not be resolved"
+                    )
 
                 database = getattr(self.publishing, "db", None)
-                structure_receipts = await DiscordStructureService(
+                structure = DiscordStructureService(
                     self.schema,
                     database=database,
-                ).sync(guild)
-                channel_map: dict[str, Any] = {}
-                categories = list(getattr(guild, "categories", []))
-                for category in categories:
-                    for channel in getattr(category, "text_channels", []):
-                        channel_map[channel.name.casefold()] = channel
-                for channel in getattr(guild, "text_channels", []):
-                    channel_map[channel.name.casefold()] = channel
+                )
+                structure_receipts = await structure.sync(guild)
 
-                synchronized = await self.tree.sync(guild=discord.Object(id=self.guild_id))
+                channel_map: dict[str, Any] = dict(structure.resolved_channels)
+                for category in list(getattr(guild, "categories", []) or []):
+                    for attribute in ("channels", "text_channels", "forums"):
+                        for channel in list(getattr(category, attribute, []) or []):
+                            channel_map.setdefault(channel.name.casefold(), channel)
+                for attribute in ("channels", "text_channels", "forums"):
+                    for channel in list(getattr(guild, attribute, []) or []):
+                        name = getattr(channel, "name", "")
+                        if name:
+                            channel_map.setdefault(name.casefold(), channel)
+
+                synchronized = await self.tree.sync(
+                    guild=discord.Object(id=self.guild_id)
+                )
+
                 publishing_receipt = None
                 if self.publishing is not None:
-                    publishing_receipt = await self.publishing.bootstrap(guild, channel_map)
+                    publishing_receipt = await self.publishing.bootstrap(
+                        guild,
+                        channel_map,
+                    )
 
+                protected_channel_ids = {
+                    str(channel.id)
+                    for channel in structure.resolved_channels.values()
+                    if getattr(channel, "id", None) is not None
+                }
+                cleanup_receipt = await structure.cleanup(
+                    guild,
+                    protected_channel_ids=protected_channel_ids,
+                    bot_user_id=(
+                        str(self.client.user.id) if self.client.user else ""
+                    ),
+                )
+
+                categories = list(getattr(guild, "categories", []) or [])
                 receipt.update(
                     {
                         "status": "PASS",
                         "categories_resolved": len(categories),
-                        "channels_resolved": len(channel_map),
+                        "channels_resolved": len(
+                            {
+                                str(channel.id)
+                                for channel in structure.resolved_channels.values()
+                                if getattr(channel, "id", None) is not None
+                            }
+                        ),
                         "structure_receipts": len(structure_receipts),
                         "structure_details": structure_receipts,
+                        "missing_original_channels": structure.missing_channels,
+                        "invented_categories_detected": [
+                            getattr(category, "name", "")
+                            for category in structure.invented_categories
+                        ],
                         "slash_commands_synchronized": len(synchronized),
                         "publishing_bootstrap": publishing_receipt,
+                        "layout_cleanup": cleanup_receipt,
                         "completed_at": _utc_now(),
                     }
                 )
