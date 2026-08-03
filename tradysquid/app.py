@@ -26,7 +26,6 @@ from .providers.tradier import TradierClient
 from .reporting.periods import group_period
 from .reporting.service import ReportingService
 from .scanner.service import ScanService
-from .scanner.shadow_tracking import ShadowTrackingService
 from .strategies.registry import StrategyRegistry
 from .strategies.versioning import StrategyVersionService
 from .trading.paper_broker import PaperBroker
@@ -55,7 +54,6 @@ class Application:
         self.universe_controls = UniverseControls(self.db)
         self.discovery = UniverseDiscovery(self.provider)
         self.scanner = ScanService(self.db, self.provider, self.registry)
-        self.shadow = ShadowTrackingService(self.db)
         self.paper = PaperBroker(self.db)
         self.reporting = ReportingService(self.db)
         self.learning = LearningCenter(self.config.learning_center)
@@ -128,42 +126,71 @@ class Application:
                     "acknowledgements": acknowledgements,
                 }
             )
-        return next((x for x in values if x["strategy_id"] == value), values) if value else values
+        return (
+            next((item for item in values if item["strategy_id"] == value), values)
+            if value
+            else values
+        )
 
     def strategy_change(self, name, parts):
         if not parts:
             raise ValueError("Strategy ID is required")
-        sid = parts[0]
+        strategy_id = parts[0]
         if name in {"strategy-enable", "strategy-disable"}:
-            proposed = self.versions.propose(sid, "enabled", name == "strategy-enable", name)
-            result = self.versions.activate(sid, proposed, name).__dict__
+            proposed = self.versions.propose(
+                strategy_id,
+                "enabled",
+                name == "strategy-enable",
+                name,
+            )
+            result = self.versions.activate(strategy_id, proposed, name).__dict__
         elif name == "strategy-preset":
             if len(parts) < 2 or parts[1] not in self.config.presets:
                 raise ValueError("A valid preset is required")
             proposed = self.versions.propose(
-                sid, "preset", parts[1], f"Owner selected {parts[1]} preset"
+                strategy_id,
+                "preset",
+                parts[1],
+                f"Owner selected {parts[1]} preset",
             )
             overrides = self.config.presets[parts[1]]["overrides"]
             for path, value in overrides.items():
-                group = "contract_filters" if path in proposed["contract_filters"] else "entry"
+                group = (
+                    "contract_filters"
+                    if path in proposed["contract_filters"]
+                    else "entry"
+                )
                 if hasattr(self.versions, "propose_from_config"):
                     proposed = self.versions.propose_from_config(
-                        proposed, f"{group}.{path}", value
+                        proposed,
+                        f"{group}.{path}",
+                        value,
                     )
                 proposed[group][path] = value
             result = self.versions.activate(
-                sid, proposed, f"Owner selected {parts[1]} preset"
+                strategy_id,
+                proposed,
+                f"Owner selected {parts[1]} preset",
             ).__dict__
         elif name == "strategy-setting":
             if len(parts) < 3:
                 raise ValueError("Usage: strategy-id setting.path JSON-value")
             value = json.loads(" ".join(parts[2:]))
-            proposed = self.versions.propose(sid, parts[1], value, "Owner setting change")
-            result = self.versions.activate(sid, proposed, "Owner setting change").__dict__
+            proposed = self.versions.propose(
+                strategy_id,
+                parts[1],
+                value,
+                "Owner setting change",
+            )
+            result = self.versions.activate(
+                strategy_id,
+                proposed,
+                "Owner setting change",
+            ).__dict__
         elif name == "strategy-rollback":
             if len(parts) < 2:
                 raise ValueError("A stored version is required")
-            result = self.versions.rollback(sid, parts[1]).__dict__
+            result = self.versions.rollback(strategy_id, parts[1]).__dict__
         else:
             raise ValueError(name)
         self.publisher.notify("strategy")
@@ -211,7 +238,8 @@ class Application:
         result = {
             "recommendation_id": parts[0],
             "status": self.recommendation_service.decide(
-                parts[0], name == "strategy-approve"
+                parts[0],
+                name == "strategy-approve",
             ),
         }
         self.publisher.notify("strategy")
@@ -227,17 +255,22 @@ class Application:
             if not value:
                 raise ValueError("Candidate ID is required")
             return {
-                "candidate": self.db.query("SELECT * FROM candidates WHERE id=?", (value,)),
+                "candidate": self.db.query(
+                    "SELECT * FROM candidates WHERE id=?",
+                    (value,),
+                ),
                 "evidence": self.db.query(
-                    "SELECT * FROM candidate_evidence WHERE candidate_id=?", (value,)
+                    "SELECT * FROM candidate_evidence WHERE candidate_id=?",
+                    (value,),
                 ),
                 "rejections": self.db.query(
-                    "SELECT * FROM candidate_rejections WHERE candidate_id=?", (value,)
+                    "SELECT * FROM candidate_rejections WHERE candidate_id=?",
+                    (value,),
                 ),
             }
         if name == "rejections":
             return self.reporting.rejected_analysis()
-        return self.reporting.shadow_analysis()
+        raise ValueError(f"Unsupported candidate view: {name}")
 
     def _position_quotes(self, position_id):
         legs = self.db.query(
@@ -245,18 +278,23 @@ class Application:
             (position_id,),
         )
         position = self.db.query(
-            "SELECT symbol FROM paper_positions WHERE id=?", (position_id,)
+            "SELECT symbol FROM paper_positions WHERE id=?",
+            (position_id,),
         )
         if not position:
             raise KeyError(position_id)
         by_expiration = {}
         for leg in legs:
-            by_expiration.setdefault(leg["expiration"], []).append(leg["contract_symbol"])
+            by_expiration.setdefault(leg["expiration"], []).append(
+                leg["contract_symbol"]
+            )
         output = {}
         for expiration, symbols in by_expiration.items():
             chain = {
                 contract.symbol: contract
-                for contract in self.provider.option_chain(position[0]["symbol"], expiration)
+                for contract in self.provider.option_chain(
+                    position[0]["symbol"], expiration
+                )
             }
             for symbol in symbols:
                 contract = chain.get(symbol)
@@ -276,7 +314,11 @@ class Application:
             if not parts:
                 raise ValueError("Position ID is required")
             reason = " ".join(parts[1:]) or "owner-close"
-            result = self.paper.close(parts[0], self._position_quotes(parts[0]), reason)
+            result = self.paper.close(
+                parts[0],
+                self._position_quotes(parts[0]),
+                reason,
+            )
             self.publisher.notify("paper")
             return result
         if name == "paper-position":
@@ -284,20 +326,24 @@ class Application:
                 raise ValueError("Position ID is required")
             return {
                 "position": self.db.query(
-                    "SELECT * FROM paper_positions WHERE id=?", (parts[0],)
+                    "SELECT * FROM paper_positions WHERE id=?",
+                    (parts[0],),
                 ),
                 "legs": self.db.query(
-                    "SELECT * FROM paper_legs WHERE position_id=?", (parts[0],)
+                    "SELECT * FROM paper_legs WHERE position_id=?",
+                    (parts[0],),
                 ),
                 "events": self.db.query(
-                    "SELECT * FROM lifecycle_events WHERE position_id=? ORDER BY observed_at",
+                    "SELECT * FROM lifecycle_events WHERE position_id=? "
+                    "ORDER BY observed_at",
                     (parts[0],),
                 ),
             }
         if name == "open-positions":
             return self.db.query(
                 "SELECT * FROM paper_positions WHERE state IN "
-                "('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING') ORDER BY opened_at"
+                "('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING') "
+                "ORDER BY opened_at"
             )
         return self.db.query(
             "SELECT p.*,o.exit_reason,o.closed_at FROM paper_positions p "
@@ -325,7 +371,9 @@ class Application:
 
     def initialize_universe(self):
         configured_rows = self.universe_controls.configured()
-        configured = [row["symbol"] for row in configured_rows if not row["excluded"]]
+        configured = [
+            row["symbol"] for row in configured_rows if not row["excluded"]
+        ]
         pinned = {
             row["symbol"]
             for row in configured_rows
@@ -353,7 +401,9 @@ class Application:
                 discovered = self.discovery.discover(25)
                 known = {decision.symbol for decision in decisions}
                 decisions.extend(
-                    decision for decision in discovered if decision.symbol not in known
+                    decision
+                    for decision in discovered
+                    if decision.symbol not in known
                 )
             except Exception as exc:
                 self.diagnostics.observe(
@@ -364,7 +414,11 @@ class Application:
                 )
         else:
             decisions = self.discovery.discover(25)
-        active = self.universe.rotate(decisions, protected=open_symbols, pinned=pinned)
+        active = self.universe.rotate(
+            decisions,
+            protected=open_symbols,
+            pinned=pinned,
+        )
         self.publisher.notify("universe")
         return active
 
@@ -386,7 +440,8 @@ class Application:
             raise RuntimeError("DISCORD_BOT_TOKEN is missing")
 
         self.discord_task = asyncio.create_task(
-            self.discord.start(token), name="tradysquid-discord-bot"
+            self.discord.start(token),
+            name="tradysquid-discord-bot",
         )
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
@@ -400,7 +455,8 @@ class Application:
                     self.discord_task.result()
                 except Exception as exc:
                     raise RuntimeError(
-                        f"Discord task exited before readiness: {type(exc).__name__}: {exc}"
+                        "Discord task exited before readiness: "
+                        f"{type(exc).__name__}: {exc}"
                     ) from exc
                 raise RuntimeError("Discord task exited before readiness")
 
@@ -408,7 +464,10 @@ class Application:
             if discord_receipt.get("status") == "FAILED":
                 raise RuntimeError(
                     "Discord readiness failed: "
-                    + str(discord_receipt.get("error") or "unknown Discord error")
+                    + str(
+                        discord_receipt.get("error")
+                        or "unknown Discord error"
+                    )
                 )
 
             publishing_receipt = self._read_state_receipt(
@@ -444,28 +503,42 @@ class Application:
         }
         state_path = self.root / "state" / "startup.json"
         state_path.parent.mkdir(parents=True, exist_ok=True)
-        state_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+        state_path.write_text(
+            json.dumps(receipt, indent=2),
+            encoding="utf-8",
+        )
 
     async def run(self):
         self.lock.acquire()
         try:
             self.initialize_universe()
             raw_jobs = {
-                "provider-budget-refresh": lambda: self.publisher.notify("diagnostics"),
-                "market-session-refresh": lambda: self.publisher.notify("diagnostics"),
+                "provider-budget-refresh": lambda: self.publisher.notify(
+                    "diagnostics"
+                ),
+                "market-session-refresh": lambda: self.publisher.notify(
+                    "diagnostics"
+                ),
                 "universe-evaluation": self.initialize_universe,
                 "universe-rotation": self.initialize_universe,
-                "active-universe-quotes": lambda: self.publisher.notify("universe"),
+                "active-universe-quotes": lambda: self.publisher.notify(
+                    "universe"
+                ),
                 "full-strategy-scan": self.scan_all,
                 "open-position-monitoring": self.monitor_positions,
-                "shadow-candidate-monitoring": lambda: self.publisher.notify("scan"),
-                "market-intelligence-refresh": lambda: self.publisher.notify("universe"),
+                "market-intelligence-refresh": lambda: self.publisher.notify(
+                    "universe"
+                ),
                 "daily-reporting": lambda: self.publisher.notify("reports"),
                 "weekly-reporting": lambda: self.publisher.notify("reports"),
                 "monthly-reporting": lambda: self.publisher.notify("reports"),
                 "learning-results": lambda: self.publisher.notify("reports"),
-                "learning-center-reconciliation": lambda: self.publisher.notify("all"),
-                "strategy-control-reconciliation": lambda: self.publisher.notify("strategy"),
+                "learning-center-reconciliation": lambda: self.publisher.notify(
+                    "all"
+                ),
+                "strategy-control-reconciliation": lambda: self.publisher.notify(
+                    "strategy"
+                ),
                 "diagnostics": lambda: self.publisher.notify("diagnostics"),
                 "database-backup": self.backup,
                 "retention-cleanup": lambda: None,
@@ -480,15 +553,16 @@ class Application:
             self._write_startup("RUNNING")
 
             loop = asyncio.get_running_loop()
-            for sig in (signal.SIGINT, signal.SIGTERM):
+            for signal_value in (signal.SIGINT, signal.SIGTERM):
                 try:
-                    loop.add_signal_handler(sig, self._stop.set)
+                    loop.add_signal_handler(signal_value, self._stop.set)
                 except NotImplementedError:
                     pass
             await self._stop.wait()
         except Exception as exc:
             self._write_startup(
-                "FAILED", error=f"{type(exc).__name__}: {exc}"
+                "FAILED",
+                error=f"{type(exc).__name__}: {exc}",
             )
             raise
         finally:
@@ -523,7 +597,12 @@ class Application:
             "('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING')"
         ):
             try:
-                results.append(self.paper.mark(row["id"], self._position_quotes(row["id"])))
+                results.append(
+                    self.paper.mark(
+                        row["id"],
+                        self._position_quotes(row["id"]),
+                    )
+                )
             except Exception as exc:
                 self.diagnostics.observe(
                     "PAPER_TRADING",
@@ -539,7 +618,9 @@ class Application:
         from datetime import datetime
 
         return self.db.backup(
-            self.root / "backups" / f"tradysquid-{datetime.now():%Y%m%d-%H%M%S}.db"
+            self.root
+            / "backups"
+            / f"tradysquid-{datetime.now():%Y%m%d-%H%M%S}.db"
         )
 
 
