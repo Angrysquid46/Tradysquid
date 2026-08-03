@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from tradysquid.core.config import AppConfig
@@ -160,7 +159,10 @@ def test_every_card_route_points_to_an_approved_existing_channel() -> None:
 def test_all_six_strategies_and_controls_remain_configured() -> None:
     config = AppConfig.load(ROOT)
     assert set(config.strategies) == EXPECTED_STRATEGIES
-    assert all(config.strategies[strategy_id]["enabled"] for strategy_id in EXPECTED_STRATEGIES)
+    assert all(
+        config.strategies[strategy_id]["enabled"]
+        for strategy_id in EXPECTED_STRATEGIES
+    )
     assert float(config.defaults["risk"]["maximum_position_risk_dollars"]) == 100.0
     assert int(config.defaults["universe"]["maximum_active"]) == 25
 
@@ -191,7 +193,6 @@ def test_owner_commands_cover_scanning_positions_reports_learning_and_strategies
         "scan-status",
         "candidate",
         "rejections",
-        "shadow-results",
         "paper-open",
         "paper-close",
         "paper-position",
@@ -219,6 +220,7 @@ def test_owner_commands_cover_scanning_positions_reports_learning_and_strategies
         "why",
     }
     assert required <= set(REQUIRED_COMMANDS)
+    assert "shadow-results" not in REQUIRED_COMMANDS
 
 
 def test_scheduler_starts_scanning_and_position_work_immediately() -> None:
@@ -230,9 +232,10 @@ def test_scheduler_starts_scanning_and_position_work_immediately() -> None:
     assert {
         "full-strategy-scan",
         "open-position-monitoring",
-        "shadow-candidate-monitoring",
         "market-intelligence-refresh",
     } <= set(LIVE_STARTUP_JOBS)
+    assert "shadow-candidate-monitoring" not in definitions
+    assert "shadow-candidate-monitoring" not in LIVE_STARTUP_JOBS
 
     service.register({job_id: (lambda: None) for job_id in definitions})
     service.start()
@@ -290,3 +293,4 @@ def test_performance_and_learning_cards_are_part_of_bootstrap() -> None:
         "bear-call-spread",
         "learning-results",
     } <= stable_ids
+    assert "shadow-candidates" not in stable_ids
