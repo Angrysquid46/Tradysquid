@@ -1,15 +1,15 @@
 param(
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9a-fA-F]{40}$')]
     [string]$ExpectedCleanCommit,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$RepositoryPath,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$CredentialHandoffPath,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9a-fA-F]{64}$')]
     [string]$CredentialHandoffSha256
 )
@@ -36,99 +36,107 @@ $SetupProcess = $null
 $SetupReceipt = $null
 $Handoff = $null
 $InstalledEnvironment = $null
+$AttemptId = $null
+$EvidencePath = $null
+$InnerFailedStage = $null
+$InnerFailureReason = $null
 $Switched = $false
 $RollbackResult = 'NOT REQUIRED'
 $Steps = New-Object System.Collections.Generic.List[string]
 
 function Add-Step {
-    param([Parameter(Mandatory=$true)][string]$Message)
+    param([Parameter(Mandatory = $true)][string]$Message)
+
     $Steps.Add($Message)
     Write-Host $Message
 }
 
 function Test-Administrator {
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
-    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $Principal = New-Object System.Security.Principal.WindowsPrincipal($Identity)
+    return $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 function Resolve-VerifiedRepository {
-    param([Parameter(Mandatory=$true)][string]$Root)
+    param([Parameter(Mandatory = $true)][string]$Root)
 
-    $resolved = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).Path
-    if (-not (Test-Path -LiteralPath (Join-Path $resolved '.git'))) {
+    $Resolved = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).Path
+    if (-not (Test-Path -LiteralPath (Join-Path $Resolved '.git'))) {
         throw 'Supplied repository path is not a Git working tree.'
     }
-    $remote = (& git -C $resolved remote get-url origin 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $remote -notmatch [regex]::Escape($ExpectedRemote)) {
+
+    $Remote = (& git -C $Resolved remote get-url origin 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $Remote -notmatch [regex]::Escape($ExpectedRemote)) {
         throw 'Supplied repository has an unexpected or unreadable Git remote.'
     }
-    return $resolved
+    return $Resolved
 }
 
 function New-ExternalBackup {
-    param([Parameter(Mandatory=$true)][string]$Root)
+    param([Parameter(Mandatory = $true)][string]$Root)
 
-    $parent = Split-Path -Parent $Root
-    $destination = Join-Path $parent ('Tradysquid-legacy-backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-    $installation = Join-Path $destination 'installation'
-    New-Item -ItemType Directory -Force -Path $installation | Out-Null
+    $Parent = Split-Path -Parent $Root
+    $Destination = Join-Path $Parent ('Tradysquid-legacy-backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $Installation = Join-Path $Destination 'installation'
+    New-Item -ItemType Directory -Force -Path $Installation | Out-Null
 
-    & git -C $Root status --porcelain=v1 -uall |
-        Set-Content (Join-Path $destination 'git-status.txt') -Encoding UTF8
-    & git -C $Root diff |
-        Set-Content (Join-Path $destination 'tracked-working-tree.patch') -Encoding UTF8
-    & git -C $Root diff --cached |
-        Set-Content (Join-Path $destination 'staged-working-tree.patch') -Encoding UTF8
-    & git -C $Root branch --all --verbose |
-        Set-Content (Join-Path $destination 'git-branches.txt') -Encoding UTF8
-    & git -C $Root log -1 --format=fuller |
-        Set-Content (Join-Path $destination 'git-head.txt') -Encoding UTF8
+    & git -C $Root status --porcelain=v1 -uall | Set-Content (Join-Path $Destination 'git-status.txt') -Encoding UTF8
+    & git -C $Root diff | Set-Content (Join-Path $Destination 'tracked-working-tree.patch') -Encoding UTF8
+    & git -C $Root diff --cached | Set-Content (Join-Path $Destination 'staged-working-tree.patch') -Encoding UTF8
+    & git -C $Root branch --all --verbose | Set-Content (Join-Path $Destination 'git-branches.txt') -Encoding UTF8
+    & git -C $Root log -1 --format=fuller | Set-Content (Join-Path $Destination 'git-head.txt') -Encoding UTF8
 
-    $robocopyArgs = @(
-        $Root,
-        $installation,
-        '/E',
-        '/COPY:DAT',
-        '/DCOPY:DAT',
-        '/R:1',
-        '/W:1',
-        '/XJ',
-        '/XD', '.git', '.venv', '.venv-tradysquid', '__pycache__', '.pytest_cache',
-        '/XF', '*.pyc', '*.pyo'
+    $RobocopyArguments = @(
+        $Root
+        $Installation
+        '/E'
+        '/COPY:DAT'
+        '/DCOPY:DAT'
+        '/R:1'
+        '/W:1'
+        '/XJ'
+        '/XD'
+        '.git'
+        '.venv'
+        '.venv-tradysquid'
+        '__pycache__'
+        '.pytest_cache'
+        '/XF'
+        '*.pyc'
+        '*.pyo'
     )
-    & robocopy @robocopyArgs | Out-Null
+    & robocopy @RobocopyArguments | Out-Null
     if ($LASTEXITCODE -gt 7) {
         throw "Local backup failed with robocopy exit code $LASTEXITCODE."
     }
 
-    $envBackup = Join-Path $installation '.env'
-    if (-not (Test-Path -LiteralPath $envBackup -PathType Leaf)) {
+    $EnvBackup = Join-Path $Installation '.env'
+    if (-not (Test-Path -LiteralPath $EnvBackup -PathType Leaf)) {
         throw 'The ignored .env was not preserved in the external backup.'
     }
-    $envHash = Get-VerifiedFileHash -Path $envBackup
+
+    $EnvHash = Get-VerifiedFileHash -Path $EnvBackup
     [ordered]@{
         status = 'PASS'
         observed_at = (Get-Date).ToString('o')
         repository = $Root
-        installation = $installation
-        env_backup = $envBackup
-        env_sha256 = $envHash
+        installation = $Installation
+        env_backup = $EnvBackup
+        env_sha256 = $EnvHash
         secret_values_written = $false
-    } | ConvertTo-Json -Depth 5 |
-        Set-Content (Join-Path $destination 'backup-receipt.json') -Encoding UTF8
-    return $destination
+    } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Destination 'backup-receipt.json') -Encoding UTF8
+    return $Destination
 }
 
 function Stop-TradysquidPython {
-    param([Parameter(Mandatory=$true)][string]$Root)
+    param([Parameter(Mandatory = $true)][string]$Root)
 
-    $escaped = [regex]::Escape($Root)
+    $Escaped = [regex]::Escape($Root)
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.ProcessId -ne $PID -and
             $_.CommandLine -and
-            $_.CommandLine -match $escaped -and
+            $_.CommandLine -match $Escaped -and
             $_.Name -in @('python.exe', 'pythonw.exe')
         } |
         ForEach-Object {
@@ -144,42 +152,29 @@ function Stop-TradysquidPython {
         }
 }
 
-function Read-SetupReceipt {
-    param([Parameter(Mandatory=$true)][string]$Root)
-
-    $path = Join-Path $Root 'SETUP-RESULT.json'
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
-    try {
-        return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-    } catch {
-        Add-Step ('Could not parse setup receipt: ' + $_.Exception.Message)
-        return $null
-    }
-}
-
 function Restore-PreviousInstallation {
     param(
-        [Parameter(Mandatory=$true)][string]$Root,
-        [Parameter(Mandatory=$true)][string]$Branch,
-        [Parameter(Mandatory=$true)][string]$BackupRoot
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Branch,
+        [Parameter(Mandatory = $true)][string]$BackupRoot
     )
 
     try {
         & git -C $Root switch --force $Branch
         if ($LASTEXITCODE -ne 0) {
             & git -C $Root switch --force main
-            if ($LASTEXITCODE -ne 0) { throw 'Could not restore the previous Git branch.' }
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Could not restore the previous Git branch.'
+            }
         }
 
-        $envBackup = Join-Path $BackupRoot 'installation\.env'
-        $restoredHash = Restore-FileExact `
-            -BackupPath $envBackup `
-            -DestinationPath (Join-Path $Root '.env')
-        Add-Step "Original .env restored with SHA-256 $restoredHash"
+        $EnvBackup = Join-Path $BackupRoot 'installation\.env'
+        $RestoredHash = Restore-FileExact -BackupPath $EnvBackup -DestinationPath (Join-Path $Root '.env')
+        Add-Step "Original .env restored with SHA-256 $RestoredHash"
 
-        $legacyStart = Join-Path $Root 'START-SUPERVISOR.cmd'
-        if (Test-Path -LiteralPath $legacyStart -PathType Leaf) {
-            Start-Process -FilePath $legacyStart -WorkingDirectory $Root | Out-Null
+        $LegacyStart = Join-Path $Root 'START-SUPERVISOR.cmd'
+        if (Test-Path -LiteralPath $LegacyStart -PathType Leaf) {
+            Start-Process -FilePath $LegacyStart -WorkingDirectory $Root | Out-Null
         }
         return 'PASS'
     } catch {
@@ -189,22 +184,30 @@ function Restore-PreviousInstallation {
 }
 
 if (-not (Test-Administrator)) {
-    $arguments = @(
-        '-NoProfile',
-        '-ExecutionPolicy', 'Bypass',
-        '-File', ('"' + $ScriptPath + '"'),
-        '-ExpectedCleanCommit', $ExpectedCleanCommit,
-        '-RepositoryPath', ('"' + $RepositoryPath + '"'),
-        '-CredentialHandoffPath', ('"' + $CredentialHandoffPath + '"'),
-        '-CredentialHandoffSha256', $CredentialHandoffSha256
+    $ElevationArguments = @(
+        '-NoProfile'
+        '-ExecutionPolicy'
+        'Bypass'
+        '-File'
+        ('"' + $ScriptPath + '"')
+        '-ExpectedCleanCommit'
+        $ExpectedCleanCommit
+        '-RepositoryPath'
+        ('"' + $RepositoryPath + '"')
+        '-CredentialHandoffPath'
+        ('"' + $CredentialHandoffPath + '"')
+        '-CredentialHandoffSha256'
+        $CredentialHandoffSha256
     )
-    $elevated = Start-Process `
-        -FilePath 'powershell.exe' `
-        -ArgumentList $arguments `
-        -Verb RunAs `
-        -Wait `
-        -PassThru
-    exit $elevated.ExitCode
+    $ElevationParameters = @{
+        FilePath = 'powershell.exe'
+        ArgumentList = $ElevationArguments
+        Verb = 'RunAs'
+        Wait = $true
+        PassThru = $true
+    }
+    $Elevated = Start-Process @ElevationParameters
+    exit $Elevated.ExitCode
 }
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
@@ -224,15 +227,14 @@ try {
 
     $OriginalBranch = (& git -C $Repository branch --show-current).Trim()
     $OriginalCommit = (& git -C $Repository rev-parse HEAD).Trim()
-    if (-not $OriginalBranch) { $OriginalBranch = 'main' }
+    if (-not $OriginalBranch) {
+        $OriginalBranch = 'main'
+    }
     Add-Step "Current branch: $OriginalBranch"
     Add-Step "Current commit: $OriginalCommit"
 
     $FailureStage = 'credential-handoff-verification'
-    $Handoff = Read-CanonicalCredentialHandoff `
-        -RepositoryPath $Repository `
-        -HandoffPath $CredentialHandoffPath `
-        -ExpectedSha256 $CredentialHandoffSha256
+    $Handoff = Read-CanonicalCredentialHandoff -RepositoryPath $Repository -HandoffPath $CredentialHandoffPath -ExpectedSha256 $CredentialHandoffSha256
     Add-Step "Credential handoff path received: $($Handoff.HandoffPath)"
     Add-Step "Credential handoff SHA-256 verified: $($Handoff.Sha256)"
     Add-Step "Five canonical credential names verified: $($Handoff.CanonicalNameCount)"
@@ -245,16 +247,24 @@ try {
     Stop-TradysquidPython -Root $Repository
 
     $FailureStage = 'git-fetch'
-    & git -C $Repository fetch origin `
-        "+refs/heads/$CleanBranch`:refs/remotes/origin/$CleanBranch" `
+    $FetchArguments = @(
+        '-C'
+        $Repository
+        'fetch'
+        'origin'
+        "+refs/heads/$CleanBranch`:refs/remotes/origin/$CleanBranch"
         "+refs/heads/$ArchiveBranch`:refs/remotes/origin/$ArchiveBranch"
-    if ($LASTEXITCODE -ne 0) { throw 'Git fetch failed.' }
-
-    $archiveCommit = (& git -C $Repository rev-parse "refs/remotes/origin/$ArchiveBranch").Trim()
-    if ($archiveCommit -ne $LegacyCommit) {
-        throw "Archive branch mismatch. Expected $LegacyCommit but received $archiveCommit."
+    )
+    & git @FetchArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Git fetch failed.'
     }
-    Add-Step "Archive branch verified at $archiveCommit"
+
+    $ArchiveCommit = (& git -C $Repository rev-parse "refs/remotes/origin/$ArchiveBranch").Trim()
+    if ($ArchiveCommit -ne $LegacyCommit) {
+        throw "Archive branch mismatch. Expected $LegacyCommit but received $ArchiveCommit."
+    }
+    Add-Step "Archive branch verified at $ArchiveCommit"
 
     $CleanCommit = (& git -C $Repository rev-parse "refs/remotes/origin/$CleanBranch").Trim()
     if ($CleanCommit -ne $ExpectedCleanCommit) {
@@ -264,67 +274,102 @@ try {
 
     $FailureStage = 'branch-switch'
     & git -C $Repository switch --force-create $CleanBranch "origin/$CleanBranch"
-    if ($LASTEXITCODE -ne 0) { throw 'Could not switch to the clean-rebuild branch.' }
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not switch to the clean-rebuild branch.'
+    }
     $Switched = $true
     Add-Step 'Switched to clean-rebuild.'
 
     $FailureStage = 'canonical-env-installation'
-    $InstalledEnvironment = Install-CanonicalCredentialHandoff `
-        -Handoff $Handoff `
-        -DestinationPath (Join-Path $Repository '.env')
+    $InstalledEnvironment = Install-CanonicalCredentialHandoff -Handoff $Handoff -DestinationPath (Join-Path $Repository '.env')
     Add-Step "Canonical environment installed: $($InstalledEnvironment.DestinationPath)"
     Add-Step "Canonical environment reread passed: $($InstalledEnvironment.CanonicalNameCount) names"
     Add-Step 'Canonical source and destination hashes match.'
 
+    $FailureStage = 'setup-script-parse-validation'
+    $SetupEntryScript = Join-Path $Repository 'scripts\setup_entry.ps1'
+    $SetupBodyScript = Join-Path $Repository 'scripts\setup.ps1'
+    Test-PowerShellScriptSyntax -Path $SetupEntryScript | Out-Null
+    Test-PowerShellScriptSyntax -Path $SetupBodyScript | Out-Null
+    Add-Step 'PowerShell setup scripts parsed successfully.'
+
     $FailureStage = 'clean-setup-process'
-    $setupScript = Join-Path $Repository 'scripts\setup.ps1'
-    $SetupProcess = Invoke-SetupProcess `
-        -SetupScript $setupScript `
-        -WorkingDirectory $Repository
+    $AttemptId = [guid]::NewGuid().ToString()
+    Add-Step "Starting setup attempt $AttemptId"
+    $SetupProcess = Invoke-SetupProcess -SetupEntryScript $SetupEntryScript -SetupBodyScript $SetupBodyScript -WorkingDirectory $Repository -AttemptId $AttemptId -ExpectedCleanCommit $ExpectedCleanCommit
     Add-Step "Setup process $($SetupProcess.ProcessId) exited with code $($SetupProcess.ExitCode)."
 
-    $SetupReceipt = Read-SetupReceipt -Root $Repository
+    $SetupReceipt = Read-CurrentSetupReceipt -Root $Repository -AttemptId $AttemptId -ProcessStartedAt ([datetime]$SetupProcess.StartedAt) -ExpectedRepositoryPath $Repository -ExpectedCleanCommit $ExpectedCleanCommit
+    if ($SetupReceipt) {
+        $InnerFailedStage = $SetupReceipt.failed_stage
+        $InnerFailureReason = $SetupReceipt.error
+    } elseif ($SetupProcess.TimedOutStage) {
+        $InnerFailedStage = $SetupProcess.TimedOutStage
+        $InnerFailureReason = "Setup stage exceeded its timeout: $($SetupProcess.TimedOutStage)"
+    } else {
+        $InnerFailedStage = 'setup-process-before-receipt'
+        $InnerFailureReason = 'Current setup receipt is missing or invalid for the current attempt.'
+    }
+
     if ($SetupProcess.ExitCode -ne 0) {
-        throw "Clean setup exited with code $($SetupProcess.ExitCode)."
+        throw "Inner setup failed at $InnerFailedStage`: $InnerFailureReason"
     }
     if ($null -eq $SetupReceipt) {
-        throw 'Clean setup did not create a readable SETUP-RESULT.json.'
+        throw 'Current setup receipt is missing or invalid for the current attempt.'
     }
     if ($SetupReceipt.status -ne 'PASS') {
         throw "Clean setup receipt reported $($SetupReceipt.status)."
     }
 
     $FailureStage = 'final-verification'
-    $activeBranch = (& git -C $Repository branch --show-current).Trim()
-    if ($activeBranch -ne $CleanBranch) {
-        throw "Unexpected final branch: $activeBranch"
+    $ActiveBranch = (& git -C $Repository branch --show-current).Trim()
+    if ($ActiveBranch -ne $CleanBranch) {
+        throw "Unexpected final branch: $ActiveBranch"
     }
+
     $Status = 'PASS'
     Add-Step 'Clean Tradysquid installation passed.'
 } catch {
     $FailureReason = $_.Exception.Message
     Add-Step ("FAILED at $FailureStage`: $FailureReason")
+
     if ($Switched -and $Repository -and $Backup) {
-        $RollbackResult = Restore-PreviousInstallation `
-            -Root $Repository `
-            -Branch $OriginalBranch `
-            -BackupRoot $Backup
-        $Status = if ($RollbackResult -eq 'PASS') { 'ROLLED BACK' } else { 'FAILED' }
+        if ($AttemptId) {
+            try {
+                $EvidencePath = Copy-SanitizedSetupEvidence -Root $Repository -BackupRoot $Backup -AttemptId $AttemptId -ExpectedCleanCommit $ExpectedCleanCommit
+                Add-Step "Current-attempt failure evidence preserved: $EvidencePath"
+            } catch {
+                Add-Step ('Failure-evidence preservation error: ' + $_.Exception.Message)
+            }
+        }
+
+        $RollbackResult = Restore-PreviousInstallation -Root $Repository -Branch $OriginalBranch -BackupRoot $Backup
+        if ($RollbackResult -eq 'PASS') {
+            $Status = 'ROLLED BACK'
+        } else {
+            $Status = 'FAILED'
+        }
     } else {
         $Status = 'FAILED'
     }
 } finally {
-    $finalBranch = $null
+    $FinalBranch = $null
     if ($Repository) {
-        try { $finalBranch = (& git -C $Repository branch --show-current).Trim() }
-        catch { $finalBranch = $null }
+        try {
+            $FinalBranch = (& git -C $Repository branch --show-current).Trim()
+        } catch {
+            $FinalBranch = $null
+        }
     }
 
-    $result = [ordered]@{
+    $Result = [ordered]@{
         status = $Status
         observed_at = (Get-Date).ToString('o')
-        failed_stage = $FailureStage
+        outer_failed_stage = $FailureStage
+        inner_failed_stage = $InnerFailedStage
         sanitized_error = $FailureReason
+        inner_error = $InnerFailureReason
+        attempt_id = $AttemptId
         repository_path = $Repository
         requested_repository_path = $RepositoryPath
         original_branch = $OriginalBranch
@@ -338,30 +383,65 @@ try {
         destination_env_path = if ($InstalledEnvironment) { $InstalledEnvironment.DestinationPath } else { $null }
         source_destination_hashes_match = if ($InstalledEnvironment) {
             $InstalledEnvironment.SourceSha256 -eq $InstalledEnvironment.DestinationSha256
-        } else { $false }
-        credential_reauthentication = 'PERFORMED BY CLEAN SETUP LIVE VERIFIER'
+        } else {
+            $false
+        }
         external_backup = $Backup
+        failure_evidence = $EvidencePath
         inner_setup_process = $SetupProcess
         inner_setup_receipt_status = if ($SetupReceipt) { $SetupReceipt.status } else { $null }
+        setup_receipt = if ($Repository) { Join-Path $Repository 'SETUP-RESULT.json' } else { $null }
         setup_log = if ($SetupReceipt) { $SetupReceipt.log } else { $null }
+        child_stdout = if ($SetupProcess) { $SetupProcess.StdoutPath } else { $null }
+        child_stderr = if ($SetupProcess) { $SetupProcess.StderrPath } else { $null }
         rollback_result = $RollbackResult
-        final_active_branch = $finalBranch
+        final_active_branch = $FinalBranch
         secret_values_written = $false
         steps = @($Steps)
     }
-    $result | ConvertTo-Json -Depth 8 | Set-Content $ResultPath -Encoding UTF8
+    $Result | ConvertTo-Json -Depth 10 | Set-Content $ResultPath -Encoding UTF8
 
     Write-Host ''
     Write-Host "FINAL STATUS: $Status"
-    if ($FailureStage) { Write-Host "Failed stage: $FailureStage" }
-    if ($FailureReason) { Write-Host "Error: $FailureReason" }
-    if ($SetupProcess) { Write-Host "Inner setup exit code: $($SetupProcess.ExitCode)" }
-    if ($SetupReceipt -and $SetupReceipt.log) { Write-Host "Setup log: $($SetupReceipt.log)" }
-    if ($Backup) { Write-Host "External backup: $Backup" }
+    if ($FailureStage) {
+        Write-Host "Outer failed stage: $FailureStage"
+    }
+    if ($InnerFailedStage) {
+        Write-Host "Inner failed stage: $InnerFailedStage"
+    }
+    if ($InnerFailureReason) {
+        Write-Host "Inner error: $InnerFailureReason"
+    } elseif ($FailureReason) {
+        Write-Host "Error: $FailureReason"
+    }
+    if ($SetupProcess) {
+        Write-Host "Inner process exit code: $($SetupProcess.ExitCode)"
+        Write-Host "Child stdout: $($SetupProcess.StdoutPath)"
+        Write-Host "Child stderr: $($SetupProcess.StderrPath)"
+    }
+    if ($AttemptId) {
+        Write-Host "Attempt ID: $AttemptId"
+    }
+    if ($Repository) {
+        Write-Host "Setup receipt: $(Join-Path $Repository 'SETUP-RESULT.json')"
+    }
+    if ($SetupReceipt -and $SetupReceipt.log) {
+        Write-Host "Setup log: $($SetupReceipt.log)"
+    }
+    if ($Backup) {
+        Write-Host "External backup: $Backup"
+    }
+    if ($EvidencePath) {
+        Write-Host "Failure evidence: $EvidencePath"
+    }
     Write-Host "Rollback result: $RollbackResult"
-    if ($finalBranch) { Write-Host "Final active branch: $finalBranch" }
+    if ($FinalBranch) {
+        Write-Host "Final branch: $FinalBranch"
+    }
 
     Stop-Transcript | Out-Null
 }
 
-if ($Status -ne 'PASS') { exit 1 }
+if ($Status -ne 'PASS') {
+    exit 1
+}
