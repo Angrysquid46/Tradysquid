@@ -10,6 +10,7 @@ CANONICAL_CATEGORY_ORDER = (
     "LEARNING CENTER",
     "PERFORMANCE",
     "SYSTEM",
+    "STRATEGY CONTROL",
     "OWNER CONTROL",
 )
 
@@ -17,7 +18,6 @@ INVENTED_CATEGORIES = frozenset(
     {
         "SCANNING",
         "PAPER TRADING",
-        "STRATEGY CONTROL",
         "LEARNING CENTER 2",
     }
 )
@@ -104,6 +104,14 @@ ORIGINAL_CHANNELS: dict[str, tuple[str, ...]] = {
         "update-status",
         "provider-status",
     ),
+    "STRATEGY CONTROL": (
+        "strategy-control",
+        "strategy-settings",
+        "strategy-versions",
+        "trade-overrides",
+        "strategy-change-log",
+        "strategy-recommendations",
+    ),
     "OWNER CONTROL": (
         "owner-controls",
         "scanner-controls",
@@ -114,11 +122,6 @@ ORIGINAL_CHANNELS: dict[str, tuple[str, ...]] = {
         "automation-diagnostics",
         "applied-upgrades",
         "admin-notes",
-        "strategy-settings",
-        "strategy-versions",
-        "trade-overrides",
-        "strategy-change-log",
-        "strategy-recommendations",
     ),
 }
 
@@ -139,7 +142,6 @@ def _route(
 
 
 CARD_ROUTES: dict[str, dict[str, Any]] = {
-    # SYSTEM: operational visibility only.
     "system-health": _route("SYSTEM", "system-health", mandatory=True),
     "system-activity": _route("SYSTEM", "system-activity"),
     "diagnostics": _route("SYSTEM", "diagnostics"),
@@ -147,48 +149,60 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "provider-status": _route("SYSTEM", "provider-status", mandatory=True),
     "scanner-status": _route("SYSTEM", "scanner-status"),
     "api-errors": _route("SYSTEM", "api-errors"),
-    # MARKET INTELLIGENCE: research and current market context.
-    "active-universe": _route("MARKET INTELLIGENCE", "universe-watch", mandatory=True),
-    "market-regime": _route("MARKET INTELLIGENCE", "market-regime", mandatory=True),
+    "active-universe": _route(
+        "MARKET INTELLIGENCE", "universe-watch", mandatory=True
+    ),
+    "market-regime": _route(
+        "MARKET INTELLIGENCE", "market-regime", mandatory=True
+    ),
     "session-preparation": _route("MARKET INTELLIGENCE", "premarket"),
     "breaking-events": _route("MARKET INTELLIGENCE", "breaking-alerts"),
     "ticker-intelligence": _route("MARKET INTELLIGENCE", "news-and-events"),
     "charts-and-levels": _route("MARKET INTELLIGENCE", "charts-and-levels"),
-    # LIVE TRADING DESK: scans, candidates, and paper-position lifecycle.
-    "latest-scan": _route("LIVE TRADING DESK", "scanner-feed", mandatory=True),
+    "latest-scan": _route(
+        "LIVE TRADING DESK", "scanner-feed", mandatory=True
+    ),
     "accepted-candidates": _route("LIVE TRADING DESK", "scanner-feed"),
     "rejected-candidates": _route("LIVE TRADING DESK", "scanner-feed"),
     "shadow-candidates": _route("LIVE TRADING DESK", "scanner-feed"),
     "new-positions": _route("LIVE TRADING DESK", "new-positions"),
-    "open-positions": _route("LIVE TRADING DESK", "held-positions", mandatory=True),
-    "recent-lifecycle-events": _route("LIVE TRADING DESK", "held-positions"),
+    "open-positions": _route(
+        "LIVE TRADING DESK", "held-positions", mandatory=True
+    ),
+    "recent-lifecycle-events": _route(
+        "LIVE TRADING DESK", "held-positions"
+    ),
     "wins": _route("LIVE TRADING DESK", "wins"),
     "losses": _route("LIVE TRADING DESK", "losses"),
-    # PERFORMANCE: P/L, scorecards, and learning measurements.
-    "daily-recap": _route("PERFORMANCE", "performance-dashboard", mandatory=True),
+    "daily-recap": _route(
+        "PERFORMANCE", "performance-dashboard", mandatory=True
+    ),
     "weekly-report": _route("PERFORMANCE", "performance-dashboard"),
     "monthly-dashboard": _route("PERFORMANCE", "performance-dashboard"),
     "ticker-results": _route("PERFORMANCE", "ticker-results"),
-    "strategy-breakdown": _route("PERFORMANCE", "strategy-results", mandatory=True),
+    "strategy-breakdown": _route(
+        "PERFORMANCE", "strategy-results", mandatory=True
+    ),
     "regular-call": _route("PERFORMANCE", "regular-calls"),
     "regular-put": _route("PERFORMANCE", "regular-puts"),
     "swing-call": _route("PERFORMANCE", "swing-calls"),
     "swing-put": _route("PERFORMANCE", "swing-puts"),
     "bull-put-spread": _route("PERFORMANCE", "bull-put-spreads"),
     "bear-call-spread": _route("PERFORMANCE", "bear-call-spreads"),
-    "learning-results": _route("PERFORMANCE", "learning-results", mandatory=True),
-    # OWNER CONTROL: private configuration, approvals, and deployment history.
+    "learning-results": _route(
+        "PERFORMANCE", "learning-results", mandatory=True
+    ),
     "strategy-control": _route(
-        "OWNER CONTROL", "scanner-controls", mandatory=True, owner_only=True
+        "STRATEGY CONTROL", "strategy-control", mandatory=True, owner_only=True
     ),
     "strategy-settings": _route(
-        "OWNER CONTROL", "strategy-settings", owner_only=True
+        "STRATEGY CONTROL", "strategy-settings", owner_only=True
     ),
     "strategy-versions": _route(
-        "OWNER CONTROL", "strategy-versions", owner_only=True
+        "STRATEGY CONTROL", "strategy-versions", owner_only=True
     ),
     "strategy-recommendations": _route(
-        "OWNER CONTROL", "strategy-recommendations", owner_only=True
+        "STRATEGY CONTROL", "strategy-recommendations", owner_only=True
     ),
     "workflow-log": _route("OWNER CONTROL", "workflow-log", owner_only=True),
     "automation-diagnostics": _route(
@@ -197,7 +211,9 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "applied-upgrades": _route(
         "OWNER CONTROL", "applied-upgrades", owner_only=True
     ),
-    "upgrade-review": _route("OWNER CONTROL", "upgrade-review", owner_only=True),
+    "upgrade-review": _route(
+        "OWNER CONTROL", "upgrade-review", owner_only=True
+    ),
 }
 
 CARD_TITLES = {
@@ -218,12 +234,10 @@ CARD_TITLES.update(
         "monthly-dashboard": "Monthly Performance",
         "strategy-breakdown": "Strategy Results",
         "learning-results": "Learning Results",
-        "strategy-control": "Scanner and Strategy Controls",
+        "strategy-control": "Strategy Control",
     }
 )
 
-# Current clean-rebuild lesson IDs are aliases for the established 27-topic
-# curriculum. The canonical original lesson IDs map to themselves.
 LESSON_ROUTES: dict[str, str] = {
     channel: channel for channel in ORIGINAL_LEARNING_CHANNELS
 }
@@ -259,8 +273,6 @@ LESSON_ROUTES.update(
     }
 )
 
-# Canonical channel -> names created by older or failed layouts. These aliases
-# are resolution hints, not permission to rename or move the chosen channel.
 CHANNEL_ALIASES: dict[str, tuple[str, ...]] = {
     "scanner-feed": (
         "scan-results",
@@ -274,17 +286,24 @@ CHANNEL_ALIASES: dict[str, tuple[str, ...]] = {
     "premarket": ("session-preparation",),
     "breaking-alerts": ("breaking-events",),
     "news-and-events": ("ticker-intelligence",),
-    "performance-dashboard": ("daily-recap", "weekly-report", "monthly-dashboard"),
+    "performance-dashboard": (
+        "daily-recap",
+        "weekly-report",
+        "monthly-dashboard",
+    ),
     "strategy-results": ("strategy-breakdown",),
-    "scanner-controls": ("strategy-control",),
-    "workflow-log": ("strategy-change-log",),
-    "upgrade-review": ("strategy-recommendations",),
-    "automation-diagnostics": ("diagnostics",),
-    "applied-upgrades": ("update-status",),
+    "scanner-controls": (),
+    "workflow-log": (),
+    "upgrade-review": (),
+    "automation-diagnostics": (),
+    "applied-upgrades": (),
     "api-errors": (),
+    "strategy-control": (),
     "strategy-settings": (),
     "strategy-versions": (),
     "strategy-recommendations": (),
+    "trade-overrides": (),
+    "strategy-change-log": (),
     "trade-journal": (),
     "system-health": (),
     "system-activity": (),
