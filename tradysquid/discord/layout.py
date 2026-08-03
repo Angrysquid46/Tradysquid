@@ -142,6 +142,7 @@ def _route(
 
 
 CARD_ROUTES: dict[str, dict[str, Any]] = {
+    # SYSTEM
     "system-health": _route("SYSTEM", "system-health", mandatory=True),
     "system-activity": _route("SYSTEM", "system-activity"),
     "diagnostics": _route("SYSTEM", "diagnostics"),
@@ -149,6 +150,7 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "provider-status": _route("SYSTEM", "provider-status", mandatory=True),
     "scanner-status": _route("SYSTEM", "scanner-status"),
     "api-errors": _route("SYSTEM", "api-errors"),
+    # MARKET INTELLIGENCE
     "active-universe": _route(
         "MARKET INTELLIGENCE", "universe-watch", mandatory=True
     ),
@@ -159,6 +161,7 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "breaking-events": _route("MARKET INTELLIGENCE", "breaking-alerts"),
     "ticker-intelligence": _route("MARKET INTELLIGENCE", "news-and-events"),
     "charts-and-levels": _route("MARKET INTELLIGENCE", "charts-and-levels"),
+    # LIVE TRADING DESK
     "latest-scan": _route(
         "LIVE TRADING DESK", "scanner-feed", mandatory=True
     ),
@@ -174,6 +177,7 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     ),
     "wins": _route("LIVE TRADING DESK", "wins"),
     "losses": _route("LIVE TRADING DESK", "losses"),
+    # PERFORMANCE
     "daily-recap": _route(
         "PERFORMANCE", "performance-dashboard", mandatory=True
     ),
@@ -192,6 +196,7 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "learning-results": _route(
         "PERFORMANCE", "learning-results", mandatory=True
     ),
+    # STRATEGY CONTROL
     "strategy-control": _route(
         "STRATEGY CONTROL", "strategy-control", mandatory=True, owner_only=True
     ),
@@ -210,16 +215,28 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "strategy-recommendations": _route(
         "STRATEGY CONTROL", "strategy-recommendations", owner_only=True
     ),
+    # OWNER CONTROL
+    "owner-controls": _route(
+        "OWNER CONTROL", "owner-controls", mandatory=True, owner_only=True
+    ),
+    "scanner-controls": _route(
+        "OWNER CONTROL", "scanner-controls", owner_only=True
+    ),
     "workflow-log": _route("OWNER CONTROL", "workflow-log", owner_only=True),
+    "upgrade-requests": _route(
+        "OWNER CONTROL", "upgrade-requests", owner_only=True
+    ),
+    "upgrade-review": _route(
+        "OWNER CONTROL", "upgrade-review", owner_only=True
+    ),
+    "security-log": _route("OWNER CONTROL", "security-log", owner_only=True),
     "automation-diagnostics": _route(
         "OWNER CONTROL", "automation-diagnostics", owner_only=True
     ),
     "applied-upgrades": _route(
         "OWNER CONTROL", "applied-upgrades", owner_only=True
     ),
-    "upgrade-review": _route(
-        "OWNER CONTROL", "upgrade-review", owner_only=True
-    ),
+    "admin-notes": _route("OWNER CONTROL", "admin-notes", owner_only=True),
 }
 
 CARD_TITLES = {
@@ -243,6 +260,14 @@ CARD_TITLES.update(
         "strategy-control": "Strategy Control",
         "trade-overrides": "Trade Overrides",
         "strategy-change-log": "Strategy Change Log",
+        "owner-controls": "Owner Control Center",
+        "scanner-controls": "Scanner and Universe Controls",
+        "upgrade-requests": "Upgrade Requests",
+        "upgrade-review": "Upgrade Review",
+        "security-log": "Security Log",
+        "automation-diagnostics": "Automation Diagnostics",
+        "applied-upgrades": "Applied Upgrades",
+        "admin-notes": "Admin Notes",
     }
 )
 
@@ -302,9 +327,13 @@ CHANNEL_ALIASES: dict[str, tuple[str, ...]] = {
     "strategy-results": ("strategy-breakdown",),
     "scanner-controls": (),
     "workflow-log": (),
+    "upgrade-requests": (),
     "upgrade-review": (),
+    "security-log": (),
     "automation-diagnostics": (),
     "applied-upgrades": (),
+    "admin-notes": (),
+    "owner-controls": (),
     "api-errors": (),
     "strategy-control": (),
     "strategy-settings": (),
