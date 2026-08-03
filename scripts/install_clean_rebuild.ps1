@@ -1,7 +1,17 @@
 param(
     [Parameter(Mandatory=$true)]
     [ValidatePattern('^[0-9a-fA-F]{40}$')]
-    [string]$ExpectedCleanCommit
+    [string]$ExpectedCleanCommit,
+
+    [Parameter(Mandatory=$true)]
+    [string]$RepositoryPath,
+
+    [Parameter(Mandatory=$true)]
+    [string]$CredentialHandoffPath,
+
+    [Parameter(Mandatory=$true)]
+    [ValidatePattern('^[0-9a-fA-F]{64}$')]
+    [string]$CredentialHandoffSha256
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +34,8 @@ $OriginalCommit = $null
 $CleanCommit = $null
 $SetupProcess = $null
 $SetupReceipt = $null
+$Handoff = $null
+$InstalledEnvironment = $null
 $Switched = $false
 $RollbackResult = 'NOT REQUIRED'
 $Steps = New-Object System.Collections.Generic.List[string]
@@ -40,31 +52,18 @@ function Test-Administrator {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Find-TradysquidRepository {
-    $candidates = New-Object System.Collections.Generic.List[string]
-    $candidates.Add((Get-Location).Path)
-    $candidates.Add((Split-Path -Parent $ScriptRoot))
-    $candidates.Add('C:\Tradysquid\app')
-    $candidates.Add('C:\Tradysquid')
-    if ($env:USERPROFILE) {
-        $candidates.Add((Join-Path $env:USERPROFILE 'Tradysquid'))
-        $candidates.Add((Join-Path $env:USERPROFILE 'Documents\Tradysquid'))
-        $candidates.Add((Join-Path $env:USERPROFILE 'Desktop\Tradysquid'))
-    }
+function Resolve-VerifiedRepository {
+    param([Parameter(Mandatory=$true)][string]$Root)
 
-    foreach ($candidate in ($candidates | Select-Object -Unique)) {
-        if (-not $candidate -or -not (Test-Path -LiteralPath $candidate)) { continue }
-        if (-not (Test-Path -LiteralPath (Join-Path $candidate '.git'))) { continue }
-        try {
-            $remote = (& git -C $candidate remote get-url origin 2>$null)
-            if ($LASTEXITCODE -eq 0 -and $remote -match [regex]::Escape($ExpectedRemote)) {
-                return (Resolve-Path -LiteralPath $candidate).Path
-            }
-        } catch {
-            continue
-        }
+    $resolved = (Resolve-Path -LiteralPath $Root -ErrorAction Stop).Path
+    if (-not (Test-Path -LiteralPath (Join-Path $resolved '.git'))) {
+        throw 'Supplied repository path is not a Git working tree.'
     }
-    throw "Could not locate the local $ExpectedRemote repository."
+    $remote = (& git -C $resolved remote get-url origin 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $remote -notmatch [regex]::Escape($ExpectedRemote)) {
+        throw 'Supplied repository has an unexpected or unreadable Git remote.'
+    }
+    return $resolved
 }
 
 function New-ExternalBackup {
@@ -103,13 +102,12 @@ function New-ExternalBackup {
         throw "Local backup failed with robocopy exit code $LASTEXITCODE."
     }
 
-    $envSource = Join-Path $Root '.env'
     $envBackup = Join-Path $installation '.env'
     if (-not (Test-Path -LiteralPath $envBackup -PathType Leaf)) {
         throw 'The ignored .env was not preserved in the external backup.'
     }
     $envHash = Get-VerifiedFileHash -Path $envBackup
-    $receipt = [ordered]@{
+    [ordered]@{
         status = 'PASS'
         observed_at = (Get-Date).ToString('o')
         repository = $Root
@@ -117,8 +115,7 @@ function New-ExternalBackup {
         env_backup = $envBackup
         env_sha256 = $envHash
         secret_values_written = $false
-    }
-    $receipt | ConvertTo-Json -Depth 5 |
+    } | ConvertTo-Json -Depth 5 |
         Set-Content (Join-Path $destination 'backup-receipt.json') -Encoding UTF8
     return $destination
 }
@@ -196,10 +193,18 @@ if (-not (Test-Administrator)) {
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
         '-File', ('"' + $ScriptPath + '"'),
-        '-ExpectedCleanCommit', $ExpectedCleanCommit
+        '-ExpectedCleanCommit', $ExpectedCleanCommit,
+        '-RepositoryPath', ('"' + $RepositoryPath + '"'),
+        '-CredentialHandoffPath', ('"' + $CredentialHandoffPath + '"'),
+        '-CredentialHandoffSha256', $CredentialHandoffSha256
     )
-    Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -Verb RunAs | Out-Null
-    exit 0
+    $elevated = Start-Process `
+        -FilePath 'powershell.exe' `
+        -ArgumentList $arguments `
+        -Verb RunAs `
+        -Wait `
+        -PassThru
+    exit $elevated.ExitCode
 }
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
@@ -213,9 +218,9 @@ try {
         throw 'Git for Windows is not installed or is not available in PATH.'
     }
 
-    $FailureStage = 'repository-discovery'
-    $Repository = Find-TradysquidRepository
-    Add-Step "Repository found: $Repository"
+    $FailureStage = 'repository-verification'
+    $Repository = Resolve-VerifiedRepository -Root $RepositoryPath
+    Add-Step "Repository path received and verified: $Repository"
 
     $OriginalBranch = (& git -C $Repository branch --show-current).Trim()
     $OriginalCommit = (& git -C $Repository rev-parse HEAD).Trim()
@@ -223,13 +228,18 @@ try {
     Add-Step "Current branch: $OriginalBranch"
     Add-Step "Current commit: $OriginalCommit"
 
+    $FailureStage = 'credential-handoff-verification'
+    $Handoff = Read-CanonicalCredentialHandoff `
+        -RepositoryPath $Repository `
+        -HandoffPath $CredentialHandoffPath `
+        -ExpectedSha256 $CredentialHandoffSha256
+    Add-Step "Credential handoff path received: $($Handoff.HandoffPath)"
+    Add-Step "Credential handoff SHA-256 verified: $($Handoff.Sha256)"
+    Add-Step "Five canonical credential names verified: $($Handoff.CanonicalNameCount)"
+
     $FailureStage = 'external-backup'
     $Backup = New-ExternalBackup -Root $Repository
     Add-Step "Verified local backup: $Backup"
-
-    $FailureStage = 'pre-migration-validation'
-    $preflight = Test-MigrationSourceCredentials -EnvPath (Join-Path $Repository '.env')
-    Add-Step ('Migration sources accepted: ' + (($preflight.Sources.Values | Sort-Object) -join ', '))
 
     $FailureStage = 'runtime-stop'
     Stop-TradysquidPython -Root $Repository
@@ -256,28 +266,15 @@ try {
     & git -C $Repository switch --force-create $CleanBranch "origin/$CleanBranch"
     if ($LASTEXITCODE -ne 0) { throw 'Could not switch to the clean-rebuild branch.' }
     $Switched = $true
+    Add-Step 'Switched to clean-rebuild.'
 
-    $FailureStage = 'environment-restore-before-migration'
-    Restore-FileExact `
-        -BackupPath (Join-Path $Backup 'installation\.env') `
-        -DestinationPath (Join-Path $Repository '.env') | Out-Null
-    Add-Step 'Original .env restored unchanged before migration.'
-
-    $FailureStage = 'credential-migration'
-    Push-Location $Repository
-    try {
-        & py -3.12 -m tradysquid.operations.credential_migration --root $Repository
-        $migrationExitCode = $LASTEXITCODE
-    } finally {
-        Pop-Location
-    }
-    if ($migrationExitCode -ne 0) {
-        throw "Credential migration failed with exit code $migrationExitCode."
-    }
-
-    $FailureStage = 'post-migration-validation'
-    $canonical = Test-CanonicalCredentials -EnvPath (Join-Path $Repository '.env')
-    Add-Step ('Canonical credentials validated: ' + (($canonical.CanonicalNames | Sort-Object) -join ', '))
+    $FailureStage = 'canonical-env-installation'
+    $InstalledEnvironment = Install-CanonicalCredentialHandoff `
+        -Handoff $Handoff `
+        -DestinationPath (Join-Path $Repository '.env')
+    Add-Step "Canonical environment installed: $($InstalledEnvironment.DestinationPath)"
+    Add-Step "Canonical environment reread passed: $($InstalledEnvironment.CanonicalNameCount) names"
+    Add-Step 'Canonical source and destination hashes match.'
 
     $FailureStage = 'clean-setup-process'
     $setupScript = Join-Path $Repository 'scripts\setup.ps1'
@@ -328,11 +325,21 @@ try {
         observed_at = (Get-Date).ToString('o')
         failed_stage = $FailureStage
         sanitized_error = $FailureReason
-        repository = $Repository
+        repository_path = $Repository
+        requested_repository_path = $RepositoryPath
         original_branch = $OriginalBranch
         original_commit = $OriginalCommit
         expected_clean_commit = $ExpectedCleanCommit
         observed_clean_commit = $CleanCommit
+        credential_handoff_path = if ($Handoff) { $Handoff.HandoffPath } else { $CredentialHandoffPath }
+        credential_handoff_sha256_verified = ($null -ne $Handoff)
+        canonical_names_present = if ($Handoff) { @($Handoff.CanonicalNames) } else { @() }
+        canonical_name_count = if ($Handoff) { $Handoff.CanonicalNameCount } else { 0 }
+        destination_env_path = if ($InstalledEnvironment) { $InstalledEnvironment.DestinationPath } else { $null }
+        source_destination_hashes_match = if ($InstalledEnvironment) {
+            $InstalledEnvironment.SourceSha256 -eq $InstalledEnvironment.DestinationSha256
+        } else { $false }
+        credential_reauthentication = 'PERFORMED BY CLEAN SETUP LIVE VERIFIER'
         external_backup = $Backup
         inner_setup_process = $SetupProcess
         inner_setup_receipt_status = if ($SetupReceipt) { $SetupReceipt.status } else { $null }
