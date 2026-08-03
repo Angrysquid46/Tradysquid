@@ -17,6 +17,7 @@ $ResultJson = Join-Path $Root 'SETUP-RESULT.json'
 $ResultText = Join-Path $Root 'SETUP-RESULT.txt'
 $StateDirectory = Join-Path $Root 'state'
 $LogDirectory = Join-Path $Root 'logs'
+$ExitCodePath = Join-Path $StateDirectory 'setup-entry-exit-code.txt'
 $StartedAt = Get-Date
 $ParentProcessId = $null
 
@@ -27,6 +28,17 @@ try {
     }
 } catch {
     $ParentProcessId = $null
+}
+
+function Write-EntryExitCode {
+    param([Parameter(Mandatory = $true)][int]$Code)
+
+    New-Item -ItemType Directory -Force -Path $StateDirectory | Out-Null
+    [IO.File]::WriteAllText(
+        $ExitCodePath,
+        [string]$Code,
+        [Text.UTF8Encoding]::new($false)
+    )
 }
 
 function Write-EarlyFailureReceipt {
@@ -61,6 +73,7 @@ function Write-EarlyFailureReceipt {
         expected_clean_commit = $ExpectedCleanCommit
         process_id = $PID
         parent_process_id = $ParentProcessId
+        exit_code_receipt = $ExitCodePath
         secret_values_written = $false
     }
 
@@ -77,6 +90,7 @@ try {
     foreach ($Directory in @($StateDirectory, $LogDirectory)) {
         New-Item -ItemType Directory -Force -Path $Directory | Out-Null
     }
+    Remove-Item -LiteralPath $ExitCodePath -Force -ErrorAction SilentlyContinue
 
     if (-not (Test-Path -LiteralPath $SetupBody -PathType Leaf)) {
         throw "Setup body was not found: $SetupBody"
@@ -103,6 +117,7 @@ try {
         )
         $Message = 'PowerShell syntax validation failed: ' + ($SafeErrors | ConvertTo-Json -Compress)
         Write-EarlyFailureReceipt -Stage 'setup-script-parse-validation' -Message $Message -ParserErrors $SafeErrors
+        Write-EntryExitCode -Code 1
         Write-Host 'FAILED SETUP STAGE: setup-script-parse-validation' -ForegroundColor Red
         Write-Host "ERROR: $Message" -ForegroundColor Red
         exit 1
@@ -111,10 +126,25 @@ try {
     Write-Host 'PASS: setup-script-parse-validation'
     Write-Host "SETUP ATTEMPT: $AttemptId"
     & $SetupBody -AttemptId $AttemptId -ExpectedCleanCommit $ExpectedCleanCommit
-    exit $LASTEXITCODE
+
+    $BodyExitCode = 1
+    if (Test-Path -LiteralPath $ResultJson -PathType Leaf) {
+        try {
+            $Receipt = Get-Content -LiteralPath $ResultJson -Raw | ConvertFrom-Json
+            if ($Receipt.attempt_id -eq $AttemptId -and $Receipt.status -eq 'PASS') {
+                $BodyExitCode = 0
+            }
+        } catch {
+            $BodyExitCode = 1
+        }
+    }
+
+    Write-EntryExitCode -Code $BodyExitCode
+    exit $BodyExitCode
 } catch {
     $Message = $_.Exception.Message
     Write-EarlyFailureReceipt -Stage 'setup-process-before-receipt' -Message $Message
+    Write-EntryExitCode -Code 1
     Write-Host 'FAILED SETUP STAGE: setup-process-before-receipt' -ForegroundColor Red
     Write-Host "ERROR: $Message" -ForegroundColor Red
     exit 1
