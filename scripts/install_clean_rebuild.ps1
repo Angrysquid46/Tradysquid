@@ -40,15 +40,36 @@ $AttemptId = $null
 $EvidencePath = $null
 $InnerFailedStage = $null
 $InnerFailureReason = $null
+$SetupLog = $null
 $Switched = $false
 $RollbackResult = 'NOT REQUIRED'
-$Steps = New-Object System.Collections.Generic.List[string]
+$Steps = @()
 
 function Add-Step {
     param([Parameter(Mandatory = $true)][string]$Message)
 
-    $Steps.Add($Message)
+    $script:Steps += $Message
     Write-Host $Message
+}
+
+function Get-OptionalProperty {
+    param(
+        [AllowNull()][object]$Object,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [AllowNull()][object]$Default = $null
+    )
+
+    if ($null -eq $Object) {
+        return $Default
+    }
+    $Property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $Property) {
+        return $Default
+    }
+    if ($null -eq $Property.Value) {
+        return $Default
+    }
+    return $Property.Value
 }
 
 function Test-Administrator {
@@ -297,28 +318,35 @@ try {
     $AttemptId = [guid]::NewGuid().ToString()
     Add-Step "Starting setup attempt $AttemptId"
     $SetupProcess = Invoke-SetupProcess -SetupEntryScript $SetupEntryScript -SetupBodyScript $SetupBodyScript -WorkingDirectory $Repository -AttemptId $AttemptId -ExpectedCleanCommit $ExpectedCleanCommit
-    Add-Step "Setup process $($SetupProcess.ProcessId) exited with code $($SetupProcess.ExitCode)."
+    Add-Step "Setup process $(Get-OptionalProperty $SetupProcess 'ProcessId' 'not available') exited with code $(Get-OptionalProperty $SetupProcess 'ExitCode' 1)."
 
-    $SetupReceipt = Read-CurrentSetupReceipt -Root $Repository -AttemptId $AttemptId -ProcessStartedAt ([datetime]$SetupProcess.StartedAt) -ExpectedRepositoryPath $Repository -ExpectedCleanCommit $ExpectedCleanCommit
+    $ProcessStartedAt = Get-OptionalProperty $SetupProcess 'StartedAt' (Get-Date)
+    $SetupReceipt = Read-CurrentSetupReceipt -Root $Repository -AttemptId $AttemptId -ProcessStartedAt ([datetime]$ProcessStartedAt) -ExpectedRepositoryPath $Repository -ExpectedCleanCommit $ExpectedCleanCommit
     if ($SetupReceipt) {
-        $InnerFailedStage = $SetupReceipt.failed_stage
-        $InnerFailureReason = $SetupReceipt.error
-    } elseif ($SetupProcess.TimedOutStage) {
-        $InnerFailedStage = $SetupProcess.TimedOutStage
-        $InnerFailureReason = "Setup stage exceeded its timeout: $($SetupProcess.TimedOutStage)"
+        $InnerFailedStage = [string](Get-OptionalProperty $SetupReceipt 'failed_stage' 'not available')
+        $InnerFailureReason = [string](Get-OptionalProperty $SetupReceipt 'error' 'not available')
+        $SetupLog = Get-OptionalProperty $SetupReceipt 'log' $null
     } else {
-        $InnerFailedStage = 'setup-process-before-receipt'
-        $InnerFailureReason = 'Current setup receipt is missing or invalid for the current attempt.'
+        $TimedOutStage = Get-OptionalProperty $SetupProcess 'TimedOutStage' $null
+        if ($TimedOutStage) {
+            $InnerFailedStage = [string]$TimedOutStage
+            $InnerFailureReason = "Setup stage exceeded its timeout: $TimedOutStage"
+        } else {
+            $InnerFailedStage = 'setup-process-before-receipt'
+            $InnerFailureReason = 'Current setup receipt is missing or invalid for the current attempt.'
+        }
     }
 
-    if ($SetupProcess.ExitCode -ne 0) {
+    $SetupExitCode = [int](Get-OptionalProperty $SetupProcess 'ExitCode' 1)
+    if ($SetupExitCode -ne 0) {
         throw "Inner setup failed at $InnerFailedStage`: $InnerFailureReason"
     }
     if ($null -eq $SetupReceipt) {
         throw 'Current setup receipt is missing or invalid for the current attempt.'
     }
-    if ($SetupReceipt.status -ne 'PASS') {
-        throw "Clean setup receipt reported $($SetupReceipt.status)."
+    $ReceiptStatus = [string](Get-OptionalProperty $SetupReceipt 'status' 'FAILED')
+    if ($ReceiptStatus -ne 'PASS') {
+        throw "Clean setup receipt reported $ReceiptStatus."
     }
 
     $FailureStage = 'final-verification'
@@ -330,7 +358,7 @@ try {
     $Status = 'PASS'
     Add-Step 'Clean Tradysquid installation passed.'
 } catch {
-    $FailureReason = $_.Exception.Message
+    $FailureReason = [string]$_.Exception.Message
     Add-Step ("FAILED at $FailureStage`: $FailureReason")
 
     if ($Switched -and $Repository -and $Backup) {
@@ -362,6 +390,23 @@ try {
         }
     }
 
+    $CanonicalNames = @()
+    if ($Handoff) {
+        $RawNames = Get-OptionalProperty $Handoff 'CanonicalNames' @()
+        foreach ($Name in $RawNames) {
+            $CanonicalNames += [string]$Name
+        }
+    }
+
+    $SetupReceiptStatus = if ($SetupReceipt) {
+        Get-OptionalProperty $SetupReceipt 'status' $null
+    } else {
+        $null
+    }
+    if (-not $SetupLog -and $SetupReceipt) {
+        $SetupLog = Get-OptionalProperty $SetupReceipt 'log' $null
+    }
+
     $Result = [ordered]@{
         status = $Status
         observed_at = (Get-Date).ToString('o')
@@ -376,28 +421,28 @@ try {
         original_commit = $OriginalCommit
         expected_clean_commit = $ExpectedCleanCommit
         observed_clean_commit = $CleanCommit
-        credential_handoff_path = if ($Handoff) { $Handoff.HandoffPath } else { $CredentialHandoffPath }
+        credential_handoff_path = if ($Handoff) { Get-OptionalProperty $Handoff 'HandoffPath' $CredentialHandoffPath } else { $CredentialHandoffPath }
         credential_handoff_sha256_verified = ($null -ne $Handoff)
-        canonical_names_present = if ($Handoff) { @($Handoff.CanonicalNames) } else { @() }
-        canonical_name_count = if ($Handoff) { $Handoff.CanonicalNameCount } else { 0 }
-        destination_env_path = if ($InstalledEnvironment) { $InstalledEnvironment.DestinationPath } else { $null }
+        canonical_names_present = $CanonicalNames
+        canonical_name_count = $CanonicalNames.Count
+        destination_env_path = if ($InstalledEnvironment) { Get-OptionalProperty $InstalledEnvironment 'DestinationPath' $null } else { $null }
         source_destination_hashes_match = if ($InstalledEnvironment) {
-            $InstalledEnvironment.SourceSha256 -eq $InstalledEnvironment.DestinationSha256
+            (Get-OptionalProperty $InstalledEnvironment 'SourceSha256' '') -eq (Get-OptionalProperty $InstalledEnvironment 'DestinationSha256' 'mismatch')
         } else {
             $false
         }
         external_backup = $Backup
         failure_evidence = $EvidencePath
         inner_setup_process = $SetupProcess
-        inner_setup_receipt_status = if ($SetupReceipt) { $SetupReceipt.status } else { $null }
+        inner_setup_receipt_status = $SetupReceiptStatus
         setup_receipt = if ($Repository) { Join-Path $Repository 'SETUP-RESULT.json' } else { $null }
-        setup_log = if ($SetupReceipt) { $SetupReceipt.log } else { $null }
-        child_stdout = if ($SetupProcess) { $SetupProcess.StdoutPath } else { $null }
-        child_stderr = if ($SetupProcess) { $SetupProcess.StderrPath } else { $null }
+        setup_log = $SetupLog
+        child_stdout = if ($SetupProcess) { Get-OptionalProperty $SetupProcess 'StdoutPath' $null } else { $null }
+        child_stderr = if ($SetupProcess) { Get-OptionalProperty $SetupProcess 'StderrPath' $null } else { $null }
         rollback_result = $RollbackResult
         final_active_branch = $FinalBranch
         secret_values_written = $false
-        steps = @($Steps)
+        steps = $Steps
     }
     $Result | ConvertTo-Json -Depth 10 | Set-Content $ResultPath -Encoding UTF8
 
@@ -415,9 +460,9 @@ try {
         Write-Host "Error: $FailureReason"
     }
     if ($SetupProcess) {
-        Write-Host "Inner process exit code: $($SetupProcess.ExitCode)"
-        Write-Host "Child stdout: $($SetupProcess.StdoutPath)"
-        Write-Host "Child stderr: $($SetupProcess.StderrPath)"
+        Write-Host "Inner process exit code: $(Get-OptionalProperty $SetupProcess 'ExitCode' 'not available')"
+        Write-Host "Child stdout: $(Get-OptionalProperty $SetupProcess 'StdoutPath' 'not available')"
+        Write-Host "Child stderr: $(Get-OptionalProperty $SetupProcess 'StderrPath' 'not available')"
     }
     if ($AttemptId) {
         Write-Host "Attempt ID: $AttemptId"
@@ -425,8 +470,10 @@ try {
     if ($Repository) {
         Write-Host "Setup receipt: $(Join-Path $Repository 'SETUP-RESULT.json')"
     }
-    if ($SetupReceipt -and $SetupReceipt.log) {
-        Write-Host "Setup log: $($SetupReceipt.log)"
+    if ($SetupLog) {
+        Write-Host "Setup log: $SetupLog"
+    } else {
+        Write-Host 'Setup log: not available'
     }
     if ($Backup) {
         Write-Host "External backup: $Backup"
