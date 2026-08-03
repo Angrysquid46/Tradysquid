@@ -6,6 +6,7 @@ from typing import Any
 
 
 MAX_CHANNELS_PER_CATEGORY = 50
+MAPPING_PREFIX = "discord.channel."
 
 
 def _utc_now() -> str:
@@ -54,15 +55,22 @@ class DiscordStructureService:
             return {}
         try:
             rows = self.database.query(
-                "SELECT stable_key,channel_id FROM discord_channel_state"
+                "SELECT key,value_json FROM settings WHERE key LIKE ?",
+                (f"{MAPPING_PREFIX}%",),
             )
         except Exception:
             return {}
-        return {
-            str(row["stable_key"]).casefold(): str(row["channel_id"])
-            for row in rows
-            if row.get("stable_key") and row.get("channel_id")
-        }
+        output: dict[str, str] = {}
+        for row in rows:
+            try:
+                value = json.loads(str(row["value_json"]))
+            except (TypeError, ValueError, KeyError):
+                continue
+            stable_key = str(row.get("key", ""))[len(MAPPING_PREFIX) :].casefold()
+            channel_id = str(value.get("channel_id", "")) if isinstance(value, dict) else ""
+            if stable_key and channel_id:
+                output[stable_key] = channel_id
+        return output
 
     def _persist_mapping(
         self,
@@ -77,24 +85,21 @@ class DiscordStructureService:
         if self.database is None:
             return
         details = {
+            "stable_key": stable_key,
+            "channel_id": _channel_id(channel),
+            "channel_name": _name(channel),
             "action": action,
             "duplicates": duplicates,
             "requested_category": requested_category,
             "actual_category": actual_category,
+            "updated_at": _utc_now(),
         }
         self.database.execute(
-            "INSERT OR REPLACE INTO discord_channel_state("
-            "stable_key,requested_category,actual_category,channel_name,channel_id,"
-            "status,details_json,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO settings(key,value_json,updated_at) VALUES (?,?,?)",
             (
-                stable_key,
-                requested_category,
-                actual_category,
-                _name(channel),
-                _channel_id(channel),
-                "PASS",
+                f"{MAPPING_PREFIX}{stable_key}",
                 json.dumps(details, sort_keys=True),
-                _utc_now(),
+                details["updated_at"],
             ),
         )
 
