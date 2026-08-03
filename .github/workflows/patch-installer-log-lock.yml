@@ -6,6 +6,11 @@ on:
       - clean-rebuild
     paths:
       - ".github/workflows/patch-installer-log-lock.yml"
+  pull_request:
+    branches:
+      - clean-rebuild
+    paths:
+      - ".github/installer-log-lock-trigger"
 
 permissions:
   contents: write
