@@ -5,7 +5,7 @@ The replacement tree was assembled and tested in an isolated local checkout befo
 - Command: `python -m compileall -q tradysquid scripts tests`
 - Result: PASS
 - Command: `python -m pytest -q`
-- Result: 32 passed
+- Result: **51 passed**
 - Runtime dependencies were not connected to private Discord or Tradier credentials during automated tests.
 - Windows installation, Discord synchronization, Tradier live reads, scheduled startup, and rollback remain BLOCKED until run on the owner’s production computer.
 

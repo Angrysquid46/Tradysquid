@@ -24,6 +24,24 @@ class PaperBroker:
             self._event(c,p.position_id,None,PositionState.OPEN,'paper-entry','eligible candidate opened')
             c.execute('UPDATE candidates SET status=? WHERE id=?',(str(CandidateStatus.OPENED),d.candidate_id))
         return p
+
+    def open_candidate(self, candidate_id: str):
+        from ..core.enums import Direction, Regime, Structure
+        from ..core.models import CandidateDecision, CandidateLeg, OptionContract
+        rows=self.db.query('SELECT * FROM candidates WHERE id=?',(candidate_id,))
+        if not rows: raise KeyError(candidate_id)
+        row=rows[0]
+        if row['status'] not in {'ELIGIBLE','SELECTED'}: raise ValueError('Candidate is not eligible for a paper position')
+        raw_legs=self.db.query('SELECT * FROM candidate_legs WHERE candidate_id=? ORDER BY id',(candidate_id,))
+        legs=[]
+        for raw in raw_legs:
+            details=json.loads(raw['details_json'])
+            contract=OptionContract(**details)
+            legs.append(CandidateLeg(contract,raw['side'],raw['quantity']))
+        decision=CandidateDecision(
+            candidate_id=row['id'],scan_cycle_id=row['scan_cycle_id'],strategy_id=row['strategy_id'],strategy_version=row['strategy_version'],strategy_hash=row['strategy_hash'],preset=row['preset'],symbol=row['symbol'],direction=Direction(row['direction']),structure=Structure(row['structure']),regime=Regime(row['regime']),observed_at=row['observed_at'],underlying_price=0.0,legs=legs,setup_score=row['setup_score'],ranking_score=row['ranking_score'],status=CandidateStatus(row['status']),total_debit=row['total_debit'],total_credit=row['total_credit'],maximum_risk=row['maximum_risk'],configuration_snapshot=json.loads(row['config_json']))
+        return self.open(decision)
+
     def mark(self,position_id:str,leg_quotes:dict[str,tuple[float,float]])->dict:
         rows=self.db.query('SELECT * FROM paper_positions WHERE id=?',(position_id,));
         if not rows: raise KeyError(position_id)
@@ -31,9 +49,11 @@ class PaperBroker:
         with self.db.transaction() as c:
             for leg in legs:
                 bid,ask=leg_quotes[leg['contract_symbol']]
+                cfg=json.loads(p['config_json']); slip=float(cfg['management'].get('paper_slippage_per_share',0.01))
                 mark=(bid+ask)/2
+                liquidation=max(bid-slip,0) if leg['side']=='buy' else ask+slip
                 signed = -1 if leg['side']=='sell' else 1
-                value += signed*mark*leg['multiplier']*leg['quantity']
+                value += signed*liquidation*leg['multiplier']*leg['quantity']
                 c.execute('UPDATE paper_legs SET current_bid=?,current_ask=?,current_mark=? WHERE id=?',(bid,ask,mark,leg['id']))
             if p['structure']=='credit-spread':
                 current_value=-value; pnl=p['entry_value']-current_value
@@ -42,7 +62,6 @@ class PaperBroker:
                 current_value=value; pnl=current_value-p['entry_value']; denominator=max(p['entry_value'],.01)
             pnl_pct=pnl/denominator; mfe=max(p['mfe_pct'],pnl_pct); mae=min(p['mae_pct'],pnl_pct)
             state=p['state']; trigger=None
-            cfg=json.loads(p['config_json'])
             if pnl_pct>=float(cfg['management']['profit_target_pct']): state=str(PositionState.EXIT_PENDING); trigger='profit target'
             elif pnl_pct<=-float(cfg['management']['hard_stop_pct']): state=str(PositionState.EXIT_PENDING); trigger='hard stop'
             c.execute('UPDATE paper_positions SET current_value=?,pnl_dollars=?,pnl_pct=?,mfe_pct=?,mae_pct=?,state=? WHERE id=?',(current_value,pnl,pnl_pct,mfe,mae,state,position_id))

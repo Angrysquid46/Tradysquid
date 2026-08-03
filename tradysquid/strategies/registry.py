@@ -10,4 +10,8 @@ class StrategyRegistry:
     def all(self): return list(self._strategies.values())
     def enabled(self): return [s for s in self.all() if s.config['enabled']]
     def get(self,strategy_id): return self._strategies[strategy_id]
+    def replace(self,strategy_id,config):
+        if strategy_id not in self.REQUIRED: raise ValueError(strategy_id)
+        self._strategies[strategy_id]=Strategy(config)
+        return self._strategies[strategy_id]
     def acknowledgements(self,component): return [s.acknowledgement(component) for s in self.enabled()]

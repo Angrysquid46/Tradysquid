@@ -67,3 +67,13 @@ class Database:
                 version_id = f'{sid}:{config["version"]}:{h[:12]}'
                 conn.execute('INSERT OR IGNORE INTO strategy_versions(id,strategy_id,version,hash,preset,config_json,owner_approved,active,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
                              (version_id,sid,config['version'],h,config['preset'],json.dumps(config,sort_keys=True),1,1,utc_now()))
+                for component in ('scanner','position-manager','reporting'):
+                    conn.execute('INSERT OR REPLACE INTO strategy_acknowledgements(strategy_id,version,hash,component,acknowledged_at) VALUES (?,?,?,?,?)',
+                                 (sid,config['version'],h,component,utc_now()))
+
+    def active_strategy_configs(self, defaults: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        output = json.loads(json.dumps(defaults))
+        rows = self.query('SELECT strategy_id,config_json FROM strategy_versions WHERE active=1 ORDER BY created_at')
+        for row in rows:
+            output[row['strategy_id']] = json.loads(row['config_json'])
+        return output

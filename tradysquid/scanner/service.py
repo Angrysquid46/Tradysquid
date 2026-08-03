@@ -4,9 +4,10 @@ from datetime import date, timedelta
 from ..core.enums import CandidateStatus
 from ..core.models import CandidateDecision, utc_now
 from ..market.regime import classify_regime
+from .selection import CandidateSelector
 
 class ScanService:
-    def __init__(self,database,provider,registry): self.db=database; self.provider=provider; self.registry=registry
+    def __init__(self,database,provider,registry): self.db=database; self.provider=provider; self.registry=registry; self.selector=CandidateSelector()
     def _persist(self,d:CandidateDecision):
         with self.db.transaction() as c:
             c.execute('INSERT INTO candidates(id,scan_cycle_id,strategy_id,strategy_version,strategy_hash,preset,symbol,direction,structure,regime,status,setup_score,ranking_score,total_debit,total_credit,maximum_risk,config_json,observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -35,8 +36,14 @@ class ScanService:
             decisions=[]
             for strategy in self.registry.enabled():
                 d=strategy.evaluate(scan_id,symbol,price,regime.regime,contracts,setup_score)
+                open_duplicate=self.db.query("SELECT 1 FROM paper_positions WHERE strategy_id=? AND symbol=? AND state IN ('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING') LIMIT 1",(strategy.id,symbol))
+                if open_duplicate and d.status==CandidateStatus.ELIGIBLE:
+                    d.status=CandidateStatus.REJECTED; d.rejection_reasons.append('duplicate active paper position'); d.rules_failed.append('duplicate active paper position')
                 self._persist(d); decisions.append(d)
-            totals={'candidates':len(decisions),'rejected':sum(d.status==CandidateStatus.REJECTED for d in decisions),'eligible':sum(d.status==CandidateStatus.ELIGIBLE for d in decisions)}
+            selected=self.selector.select(decisions)
+            for d in selected:
+                self.db.execute('UPDATE candidates SET status=? WHERE id=?',(str(CandidateStatus.SELECTED),d.candidate_id))
+            totals={'candidates':len(decisions),'rejected':sum(d.status==CandidateStatus.REJECTED for d in decisions),'eligible':sum(d.status==CandidateStatus.ELIGIBLE for d in decisions),'selected':len(selected),'shadow':sum(d.status==CandidateStatus.REJECTED and bool(d.legs) for d in decisions)}
             self.db.execute('UPDATE scan_cycles SET status=?,completed_at=?,totals_json=? WHERE id=?',('COMPLETED',utc_now(),json.dumps(totals),scan_id))
             return decisions
         except Exception as exc:

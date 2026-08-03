@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, os, signal
+import asyncio, json, os, signal
 from pathlib import Path
 from dotenv import load_dotenv
 from .core.config import AppConfig
@@ -9,65 +9,275 @@ from .data.database import Database
 from .providers.request_manager import RequestManager
 from .providers.tradier import TradierClient
 from .strategies.registry import StrategyRegistry
-from .universe.service import UniverseService
+from .strategies.versioning import StrategyVersionService
+from .universe.service import UniverseService, UniverseDecision
 from .universe.discovery import UniverseDiscovery
+from .universe.controls import UniverseControls
 from .scanner.service import ScanService
 from .scanner.shadow_tracking import ShadowTrackingService
 from .trading.paper_broker import PaperBroker
 from .learning.center import LearningCenter
+from .learning.recommendations import RecommendationService
+from .learning.analysis import LearningAnalysisService
 from .reporting.service import ReportingService
+from .reporting.periods import group_period
 from .operations.scheduler import SchedulerService
+from .operations.jobs import JobRunner
+from .operations.diagnostics import DiagnosticService
 from .operations.health import build_health
 from .discord.bot import DiscordBotService
+
 class Application:
-    def __init__(self,root:Path):
-        self.root=root; load_dotenv(root/'.env',override=True); self.config=AppConfig.load(root); configure_logging(root/'logs',self.config.defaults['logging']['level'])
-        self.lock=ProcessLock(root/'state'/'tradysquid.pid.json'); self.db=Database(root/self.config.defaults['database']['path']); self.db.initialize(); self.db.register_strategies(self.config.strategies)
-        self.manager=RequestManager(self.db); self.provider=TradierClient(self.manager); self.registry=StrategyRegistry(self.config.strategies); self.universe=UniverseService(self.db,25); self.discovery=UniverseDiscovery(self.provider)
-        self.scanner=ScanService(self.db,self.provider,self.registry); self.shadow=ShadowTrackingService(self.db); self.paper=PaperBroker(self.db); self.reporting=ReportingService(self.db); self.learning=LearningCenter(self.config.learning_center)
-        self.scheduler=SchedulerService(self.config.defaults['market_timezone']); self._stop=asyncio.Event(); self.discord=None; self.discord_task=None
-        owner=os.environ.get('DISCORD_OWNER_USER_ID'); guild=os.environ.get('DISCORD_GUILD_ID')
+    def __init__(self, root: Path):
+        self.root = root
+        load_dotenv(root / '.env', override=True)
+        self.config = AppConfig.load(root)
+        configure_logging(root / 'logs', self.config.defaults['logging']['level'])
+        self.lock = ProcessLock(root / 'state' / 'tradysquid.pid.json')
+        self.db = Database(root / self.config.defaults['database']['path'])
+        self.db.initialize()
+        self.db.register_strategies(self.config.strategies)
+        active_configs = self.db.active_strategy_configs(self.config.strategies)
+        self.manager = RequestManager(self.db)
+        self.provider = TradierClient(self.manager)
+        self.registry = StrategyRegistry(active_configs)
+        self.versions = StrategyVersionService(self.db, self.registry)
+        self.universe = UniverseService(self.db, 25)
+        self.universe_controls = UniverseControls(self.db)
+        self.discovery = UniverseDiscovery(self.provider)
+        self.scanner = ScanService(self.db, self.provider, self.registry)
+        self.shadow = ShadowTrackingService(self.db)
+        self.paper = PaperBroker(self.db)
+        self.reporting = ReportingService(self.db)
+        self.learning = LearningCenter(self.config.learning_center)
+        self.learning_analysis = LearningAnalysisService(self.db)
+        self.recommendation_service = RecommendationService(self.db)
+        self.scheduler = SchedulerService(self.config.defaults['market_timezone'])
+        self.job_runner = JobRunner(self.db)
+        self.diagnostics = DiagnosticService(self.db)
+        self._stop = asyncio.Event()
+        self.discord = None
+        self.discord_task = None
+        owner = os.environ.get('DISCORD_OWNER_USER_ID')
+        guild = os.environ.get('DISCORD_GUILD_ID')
         if owner:
-            services={'health':self.health,'universe':self.universe.active,'scan':self.scanner.scan_symbol,'strategies':self.strategy_view,'report':self.report_view,'learn':self.learning.search}
-            self.discord=DiscordBotService(services,int(owner),int(guild) if guild else None,self.config.discord_schema)
-    def strategy_view(self,value=''):
-        values=[{'strategy_id':s.id,'version':s.config['version'],'hash':s.config['configuration_hash'],'preset':s.config['preset'],'enabled':s.config['enabled']} for s in self.registry.all()]
-        return next((x for x in values if x['strategy_id']==value),values) if value else values
-    def report_view(self,name,value=''):
-        if name=='strategy-report': return self.reporting.by_strategy()
-        if name=='ticker-report': return self.reporting.by_ticker()
+            services = {
+                'health': self.health,
+                'restart': self.request_restart,
+                'universe': self.universe.active,
+                'universe_configured': self.universe_controls.configured,
+                'universe_change': self.universe_change,
+                'universe_refresh': self.initialize_universe,
+                'scan': self.scanner.scan_symbol,
+                'scan_status': self.scan_status,
+                'candidate_view': self.candidate_view,
+                'paper': self.paper_command,
+                'strategies': self.strategy_view,
+                'strategy_change': self.strategy_change,
+                'recommendations': self.recommendation_command,
+                'report': self.report_view,
+                'learn': self.learning.search,
+            }
+            self.discord = DiscordBotService(services, int(owner), int(guild) if guild else None, self.config.discord_schema)
+
+    def request_restart(self):
+        self._stop.set()
+        return 'Restart requested. Windows startup ownership will relaunch the application.'
+
+    def strategy_view(self, value=''):
+        values = []
+        for strategy in self.registry.all():
+            acknowledgements = self.db.query('SELECT component,version,hash,acknowledged_at FROM strategy_acknowledgements WHERE strategy_id=? ORDER BY component', (strategy.id,))
+            values.append({'strategy_id': strategy.id, 'version': strategy.config['version'], 'hash': strategy.config['configuration_hash'], 'preset': strategy.config['preset'], 'enabled': strategy.config['enabled'], 'acknowledgements': acknowledgements})
+        return next((x for x in values if x['strategy_id'] == value), values) if value else values
+
+    def strategy_change(self, name, parts):
+        if not parts:
+            raise ValueError('Strategy ID is required')
+        sid = parts[0]
+        current = self.versions.active(sid)
+        if name in {'strategy-enable', 'strategy-disable'}:
+            proposed = self.versions.propose(sid, 'enabled', name == 'strategy-enable', name)
+            return self.versions.activate(sid, proposed, name).__dict__
+        if name == 'strategy-preset':
+            if len(parts) < 2 or parts[1] not in self.config.presets:
+                raise ValueError('A valid preset is required')
+            proposed = self.versions.propose(sid, 'preset', parts[1], f'Owner selected {parts[1]} preset')
+            overrides = self.config.presets[parts[1]]['overrides']
+            for path, value in overrides.items():
+                group = 'contract_filters' if path in proposed['contract_filters'] else 'entry'
+                proposed = self.versions.propose_from_config(proposed, f'{group}.{path}', value) if hasattr(self.versions, 'propose_from_config') else proposed
+                proposed[group][path] = value
+            return self.versions.activate(sid, proposed, f'Owner selected {parts[1]} preset').__dict__
+        if name == 'strategy-setting':
+            if len(parts) < 3:
+                raise ValueError('Usage: strategy-id setting.path JSON-value')
+            value = json.loads(' '.join(parts[2:]))
+            proposed = self.versions.propose(sid, parts[1], value, 'Owner setting change')
+            return self.versions.activate(sid, proposed, 'Owner setting change').__dict__
+        if name == 'strategy-rollback':
+            if len(parts) < 2:
+                raise ValueError('A stored version is required')
+            return self.versions.rollback(sid, parts[1]).__dict__
+        raise ValueError(name)
+
+    def universe_change(self, name, symbol):
+        actions = {
+            'universe-add': lambda: self.universe_controls.add(symbol),
+            'universe-remove': lambda: self.universe_controls.remove(symbol),
+            'universe-pin': lambda: self.universe_controls.pin(symbol, True),
+            'universe-unpin': lambda: self.universe_controls.pin(symbol, False),
+            'universe-exclude': lambda: self.universe_controls.exclude(symbol, True),
+            'universe-include': lambda: self.universe_controls.exclude(symbol, False),
+        }
+        result = actions[name]()
+        return {'action': name, 'symbol': result}
+
+    def report_view(self, name, value=''):
+        if name == 'strategy-report': return self.reporting.by_strategy()
+        if name == 'ticker-report': return self.reporting.by_ticker()
+        if name == 'learning-results': return {'strategies': self.learning_analysis.strategy_metrics(), 'rejections': self.learning_analysis.rejection_tradeoffs()}
+        rows = self.db.query('SELECT * FROM closed_outcomes ORDER BY closed_at')
+        if name == 'daily-report': return group_period(rows, 'daily')
+        if name == 'weekly-report': return group_period(rows, 'weekly')
+        if name == 'monthly-report': return group_period(rows, 'monthly')
         return self.reporting.overall()
-    def health(self): return build_health(self.db,self.registry,self.universe,self.scheduler,bool(self.discord and self.discord.ready))
+
+    def recommendation_command(self, name, parts):
+        if name == 'strategy-recommendations':
+            return self.db.query('SELECT * FROM learning_recommendations ORDER BY updated_at DESC')
+        if not parts:
+            raise ValueError('Recommendation ID is required')
+        return {'recommendation_id': parts[0], 'status': self.recommendation_service.decide(parts[0], name == 'strategy-approve')}
+
+    def scan_status(self):
+        return self.db.query('SELECT * FROM scan_cycles ORDER BY started_at DESC LIMIT 10')
+
+    def candidate_view(self, name, value=''):
+        if name == 'candidate':
+            if not value: raise ValueError('Candidate ID is required')
+            return {'candidate': self.db.query('SELECT * FROM candidates WHERE id=?', (value,)), 'evidence': self.db.query('SELECT * FROM candidate_evidence WHERE candidate_id=?', (value,)), 'rejections': self.db.query('SELECT * FROM candidate_rejections WHERE candidate_id=?', (value,))}
+        if name == 'rejections': return self.reporting.rejected_analysis()
+        return self.reporting.shadow_analysis()
+
+    def _position_quotes(self, position_id):
+        legs = self.db.query('SELECT contract_symbol,expiration FROM paper_legs WHERE position_id=?', (position_id,))
+        position = self.db.query('SELECT symbol FROM paper_positions WHERE id=?', (position_id,))
+        if not position: raise KeyError(position_id)
+        by_expiration = {}
+        for leg in legs: by_expiration.setdefault(leg['expiration'], []).append(leg['contract_symbol'])
+        output = {}
+        for expiration, symbols in by_expiration.items():
+            chain = {c.symbol: c for c in self.provider.option_chain(position[0]['symbol'], expiration)}
+            for symbol in symbols:
+                contract = chain.get(symbol)
+                if not contract: raise ValueError(f'Current quote missing for {symbol}')
+                output[symbol] = (contract.bid, contract.ask)
+        return output
+
+    def paper_command(self, name, parts):
+        if name == 'paper-open':
+            if not parts: raise ValueError('Candidate ID is required')
+            return self.paper.open_candidate(parts[0]).__dict__
+        if name == 'paper-close':
+            if not parts: raise ValueError('Position ID is required')
+            reason = ' '.join(parts[1:]) or 'owner-close'
+            return self.paper.close(parts[0], self._position_quotes(parts[0]), reason)
+        if name == 'paper-position':
+            if not parts: raise ValueError('Position ID is required')
+            return {'position': self.db.query('SELECT * FROM paper_positions WHERE id=?', (parts[0],)), 'legs': self.db.query('SELECT * FROM paper_legs WHERE position_id=?', (parts[0],)), 'events': self.db.query('SELECT * FROM lifecycle_events WHERE position_id=? ORDER BY observed_at', (parts[0],))}
+        if name == 'open-positions':
+            return self.db.query("SELECT * FROM paper_positions WHERE state IN ('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING') ORDER BY opened_at")
+        return self.db.query("SELECT p.*,o.exit_reason,o.closed_at FROM paper_positions p JOIN closed_outcomes o ON o.position_id=p.id ORDER BY o.closed_at DESC LIMIT 100")
+
+    def health(self):
+        health = build_health(self.db, self.registry, self.universe, self.scheduler, bool(self.discord and self.discord.ready))
+        health['open_diagnostics'] = self.diagnostics.current()
+        health['provider_budget'] = {'allowed': self.manager.allowed, 'used': self.manager.used, 'available': self.manager.available, 'expires_at': self.manager.expires_at}
+        return health
+
     def initialize_universe(self):
-        configured=self.config.defaults['universe']['candidate_pool']; self.universe.seed(configured)
+        configured_rows = self.universe_controls.configured()
+        configured = [r['symbol'] for r in configured_rows if not r['excluded']]
+        pinned = {r['symbol'] for r in configured_rows if r['pinned'] and not r['excluded']}
+        open_symbols = {r['symbol'] for r in self.db.query("SELECT DISTINCT symbol FROM paper_positions WHERE state IN ('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING')")}
         if configured:
-            decisions=[]
-            from .universe.service import UniverseDecision
-            for s in configured: decisions.append(UniverseDecision(s.upper(),1.0,True,{'source':'configuration'},[]))
-        else: decisions=self.discovery.discover(25)
-        return self.universe.rotate(decisions)
+            decisions = [UniverseDecision(s, 1.0, True, {'source': 'owner/configuration'}, []) for s in configured]
+            try:
+                discovered = self.discovery.discover(25)
+                known = {d.symbol for d in decisions}
+                decisions.extend(d for d in discovered if d.symbol not in known)
+            except Exception as exc:
+                self.diagnostics.observe('PROVIDER', 'universe-discovery', f'{type(exc).__name__}: {exc}', healthy=False)
+        else:
+            decisions = self.discovery.discover(25)
+        return self.universe.rotate(decisions, protected=open_symbols, pinned=pinned)
+
     async def run(self):
-        self.lock.acquire(); self.initialize_universe()
-        jobs={'universe-rotation':self.initialize_universe,'full-strategy-scan':self.scan_all,'daily-reporting':self.reporting.overall,'weekly-reporting':self.reporting.overall,'monthly-reporting':self.reporting.overall,'learning-results':self.reporting.by_strategy,'database-backup':self.backup,'diagnostics':self.health}
-        self.scheduler.register(jobs); self.scheduler.start()
-        token=os.environ.get('DISCORD_BOT_TOKEN')
-        if self.discord and token: self.discord_task=asyncio.create_task(self.discord.start(token))
-        loop=asyncio.get_running_loop()
-        for sig in (signal.SIGINT,signal.SIGTERM):
-            try: loop.add_signal_handler(sig,self._stop.set)
+        self.lock.acquire()
+        self.initialize_universe()
+        raw_jobs = {
+            'universe-rotation': self.initialize_universe,
+            'full-strategy-scan': self.scan_all,
+            'open-position-monitoring': self.monitor_positions,
+            'shadow-candidate-monitoring': lambda: None,
+            'daily-reporting': self.reporting.overall,
+            'weekly-reporting': self.reporting.overall,
+            'monthly-reporting': self.reporting.overall,
+            'learning-results': self.learning_analysis.strategy_metrics,
+            'database-backup': self.backup,
+            'diagnostics': self.health,
+        }
+        jobs = {job_id: self.job_runner.wrap(job_id, function) for job_id, function in raw_jobs.items()}
+        self.scheduler.register(jobs)
+        self.scheduler.start()
+        startup = {
+            'status': 'RUNNING',
+            'pid': os.getpid(),
+            'version': __import__('tradysquid.version', fromlist=['__version__']).__version__,
+            'database_integrity': self.db.integrity_check(),
+            'strategy_count': len(self.registry.all()),
+            'active_universe_count': len(self.universe.active()),
+            'scheduler_running': self.scheduler.running,
+        }
+        state_path = self.root / 'state' / 'startup.json'
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(startup, indent=2), encoding='utf-8')
+        token = os.environ.get('DISCORD_BOT_TOKEN')
+        if self.discord and token:
+            self.discord_task = asyncio.create_task(self.discord.start(token))
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try: loop.add_signal_handler(sig, self._stop.set)
             except NotImplementedError: pass
-        try: await self._stop.wait()
+        try:
+            await self._stop.wait()
         finally:
             self.scheduler.shutdown()
             if self.discord: await self.discord.close()
             if self.discord_task: self.discord_task.cancel()
             self.lock.release()
+
     def scan_all(self):
+        total = 0
         for symbol in self.universe.active():
-            try: self.scanner.scan_symbol(symbol,'scheduled')
-            except Exception: continue
+            try: total += len(self.scanner.scan_symbol(symbol, 'scheduled'))
+            except Exception as exc: self.diagnostics.observe('SCANNER', symbol, f'{type(exc).__name__}: {exc}', healthy=False)
+        return {'decisions': total}
+
+    def monitor_positions(self):
+        results = []
+        for row in self.db.query("SELECT id FROM paper_positions WHERE state IN ('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING')"):
+            try: results.append(self.paper.mark(row['id'], self._position_quotes(row['id'])))
+            except Exception as exc: self.diagnostics.observe('PAPER_TRADING', row['id'], f'{type(exc).__name__}: {exc}', healthy=False)
+        return results
+
     def backup(self):
         from datetime import datetime
-        self.db.backup(self.root/'backups'/f'tradysquid-{datetime.now():%Y%m%d-%H%M%S}.db')
-def main(): asyncio.run(Application(Path(__file__).resolve().parents[1]).run())
-if __name__=='__main__': main()
+        return self.db.backup(self.root / 'backups' / f'tradysquid-{datetime.now():%Y%m%d-%H%M%S}.db')
+
+def main():
+    asyncio.run(Application(Path(__file__).resolve().parents[1]).run())
+
+if __name__ == '__main__':
+    main()

@@ -32,7 +32,7 @@ class Strategy:
     def evaluate_long(self, scan_id: str, symbol: str, underlying_price: float, regime: Regime, contracts: list[OptionContract], setup_score: float) -> CandidateDecision:
         direction=Direction(self.config['direction']); target_type=direction.value
         matching=[c for c in contracts if c.option_type==target_type]
-        matching.sort(key=lambda c:(abs((abs(c.delta) if c.delta is not None else 9)-0.4), c.spread_pct, -c.open_interest))
+        matching.sort(key=lambda c:(len(self._base_rejections(c,regime)), abs((abs(c.delta) if c.delta is not None else 9)-0.4), c.spread_pct, -c.open_interest))
         if not matching:
             return self._empty(scan_id,symbol,regime,underlying_price,setup_score,['no matching option contracts'])
         contract=matching[0]; reasons=self._base_rejections(contract,regime)
