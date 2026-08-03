@@ -11,6 +11,14 @@ Start-Transcript -Path $Log -Append | Out-Null
 $status='FAILED'
 $steps=New-Object System.Collections.Generic.List[string]
 $backup=''
+$failure=$null
+$projectInstallation='NOT STARTED'
+$packageImport='NOT STARTED'
+$packagePath=$null
+$installationVerifierExitCode=$null
+$liveVerifierExitCode=$null
+$installationVerifierWorkingDirectory=$Root
+$liveVerifierWorkingDirectory=$Root
 
 function Add-Step([string]$Message) {
   $steps.Add($Message)
@@ -99,14 +107,56 @@ try {
 
   Invoke-Native 'pip-upgrade' { & $Python -m pip install --upgrade pip }
   Invoke-Native 'dependency-installation' { & $Python -m pip install -r (Join-Path $Root 'requirements-dev.txt') }
+  Invoke-Native 'project-installation' {
+    Push-Location $Root
+    try { & $Python -m pip install --editable . }
+    finally { Pop-Location }
+  }
+  $projectInstallation='PASS'
   Invoke-Native 'dependency-integrity-check' { & $Python -m pip check }
+
+  Add-Step 'package-import-check'
+  Push-Location $Root
+  try {
+    $packagePath = (& $Python -c "import pathlib, tradysquid; print(pathlib.Path(tradysquid.__file__).resolve())").Trim()
+    $packageImportExitCode = $LASTEXITCODE
+  } finally {
+    Pop-Location
+  }
+  if ($packageImportExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($packagePath)) {
+    throw "package-import-check failed with exit code $packageImportExitCode."
+  }
+  $packageImport='PASS'
+
   Invoke-Native 'automated-test-suite' {
     Push-Location $Root
     try { & $Python -m pytest }
     finally { Pop-Location }
   }
-  Invoke-Native 'installation-verification' { & $Python (Join-Path $PSScriptRoot 'verify_installation.py') }
-  Invoke-Native 'live-read-only-verification' { & $Python (Join-Path $PSScriptRoot 'verify_live.py') }
+
+  Add-Step 'installation-verification'
+  Push-Location $Root
+  try {
+    & $Python -m scripts.verify_installation
+    $installationVerifierExitCode = $LASTEXITCODE
+  } finally {
+    Pop-Location
+  }
+  if ($installationVerifierExitCode -ne 0) {
+    throw "installation-verification failed with exit code $installationVerifierExitCode."
+  }
+
+  Add-Step 'live-read-only-verification'
+  Push-Location $Root
+  try {
+    & $Python -m scripts.verify_live
+    $liveVerifierExitCode = $LASTEXITCODE
+  } finally {
+    Pop-Location
+  }
+  if ($liveVerifierExitCode -ne 0) {
+    throw "live-read-only-verification failed with exit code $liveVerifierExitCode."
+  }
 
   $taskName='Tradysquid Startup'
   $cmd = $env:ComSpec
@@ -134,8 +184,26 @@ try {
     steps=@($steps)
     backup=$backup
     log=$Log
+    error=$failure
+    python_executable=$Python
     virtual_environment=$VenvPath
-  } | ConvertTo-Json -Depth 5
+    tradysquid_package_path=$packagePath
+    project_installation=$projectInstallation
+    package_import=$packageImport
+    installation_verifier=@{
+      module='scripts.verify_installation'
+      invocation='python -m scripts.verify_installation'
+      working_directory=$installationVerifierWorkingDirectory
+      exit_code=$installationVerifierExitCode
+    }
+    live_verifier=@{
+      module='scripts.verify_live'
+      invocation='python -m scripts.verify_live'
+      working_directory=$liveVerifierWorkingDirectory
+      exit_code=$liveVerifierExitCode
+    }
+    secret_values_written=$false
+  } | ConvertTo-Json -Depth 7
   $result | Set-Content $ResultJson -Encoding UTF8
   ($status + [Environment]::NewLine + ($steps -join [Environment]::NewLine)) | Set-Content $ResultText -Encoding UTF8
   Stop-Transcript | Out-Null
