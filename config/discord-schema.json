@@ -1,107 +1,134 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "layout": "original-dashboard",
+  "allow_create_missing": false,
+  "allow_move_existing": false,
+  "migration": {
+    "version": "restore-original-dashboard-v1",
+    "restore_original_layout": true,
+    "cleanup_invented_categories": true
+  },
   "categories": [
     {
-      "name": "SYSTEM",
+      "name": "START HERE",
       "channels": [
-        "system-health",
-        "system-activity",
-        "diagnostics",
-        "update-status",
-        "owner-controls"
+        "welcome",
+        "rules-and-risk",
+        "how-to-use-tradebot",
+        "how-trades-are-found"
+      ]
+    },
+    {
+      "name": "COMMUNITY",
+      "channels": [
+        "general-chat"
+      ]
+    },
+    {
+      "name": "LIVE TRADING DESK",
+      "channels": [
+        "scanner-feed",
+        "new-positions",
+        "held-positions",
+        "wins",
+        "losses",
+        {
+          "name": "trade-journal",
+          "type": "forum"
+        }
       ]
     },
     {
       "name": "MARKET INTELLIGENCE",
       "channels": [
-        "active-universe",
-        "market-regime",
-        "session-preparation",
-        "ticker-intelligence",
-        "breaking-events",
+        "premarket",
+        "breaking-alerts",
         "charts-and-levels",
-        "provider-status"
+        "news-and-events",
+        "market-regime",
+        "universe-watch"
       ]
     },
     {
-      "name": "SCANNING",
+      "name": "LEARNING CENTER",
       "channels": [
-        "scan-results",
-        "accepted-candidates",
-        "rejected-candidates",
-        "shadow-candidates"
-      ]
-    },
-    {
-      "name": "PAPER TRADING",
-      "channels": [
-        "open-positions",
-        "lifecycle-events",
-        "trade-journal",
-        "wins",
-        "losses"
+        "learning-index",
+        "01-stock-market-foundations",
+        "02-company-fundamentals",
+        "03-financial-statements",
+        "04-valuation-and-quality",
+        "05-market-mechanics-orders",
+        "06-charts-price-action",
+        "07-technical-analysis",
+        "08-volume-breadth-internals",
+        "09-macro-sectors-catalysts",
+        "10-stock-trading-strategies",
+        "11-short-selling-margin",
+        "12-portfolio-risk",
+        "13-options-basics",
+        "14-option-chain-liquidity",
+        "15-option-pricing-greeks",
+        "16-volatility",
+        "17-directional-options",
+        "18-income-and-hedging",
+        "19-spreads-multi-leg",
+        "20-trade-planning-execution",
+        "21-expiration-assignment",
+        "22-events-corporate-actions",
+        "23-psychology-journaling",
+        "24-backtesting-statistics",
+        "25-brokers-accounts-taxes",
+        "26-research-data-tools",
+        "27-scams-security-myths",
+        "learning-search",
+        "ask-tradebot",
+        "examples-and-reviews"
       ]
     },
     {
       "name": "PERFORMANCE",
       "channels": [
-        "daily-recap",
-        "weekly-report",
-        "monthly-dashboard",
-        "ticker-results",
-        "strategy-breakdown",
+        "performance-dashboard",
+        "strategy-results",
         "regular-calls",
         "regular-puts",
         "swing-calls",
         "swing-puts",
         "bull-put-spreads",
         "bear-call-spreads",
+        "ticker-results",
         "learning-results"
       ]
     },
     {
-      "name": "STRATEGY CONTROL",
+      "name": "SYSTEM",
       "channels": [
-        "strategy-control",
+        "scanner-status",
+        "api-errors",
+        "system-health",
+        "system-activity",
+        "diagnostics",
+        "update-status",
+        "provider-status"
+      ]
+    },
+    {
+      "name": "OWNER CONTROL",
+      "channels": [
+        "owner-controls",
+        "scanner-controls",
+        "workflow-log",
+        "upgrade-requests",
+        "upgrade-review",
+        "security-log",
+        "automation-diagnostics",
+        "applied-upgrades",
+        "admin-notes",
         "strategy-settings",
         "strategy-versions",
         "trade-overrides",
         "strategy-change-log",
         "strategy-recommendations"
-      ]
-    },
-    {
-      "name": "LEARNING CENTER",
-      "channels": [
-        "01-market-foundations",
-        "02-instrument-identification",
-        "03-market-sessions",
-        "04-underlying-liquidity",
-        "05-chart-structure",
-        "06-price-action",
-        "07-technical-indicators",
-        "08-trend",
-        "09-momentum",
-        "10-support-resistance",
-        "11-volatility",
-        "12-market-regimes",
-        "13-options-foundations",
-        "14-option-chains",
-        "15-contract-liquidity",
-        "16-bid-ask-behavior",
-        "17-option-pricing",
-        "18-greeks",
-        "19-implied-volatility",
-        "20-directional-long-options",
-        "21-defined-risk-spreads",
-        "22-position-sizing",
-        "23-risk-limits",
-        "24-trade-planning",
-        "25-execution-assumptions",
-        "26-journaling",
-        "27-backtesting-review",
-        "examples-and-reviews",
-        "learning-search"
       ]
     }
   ]
