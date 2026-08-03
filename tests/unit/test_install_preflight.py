@@ -81,7 +81,7 @@ def test_canonical_validation_runs_only_after_migration() -> None:
     assert receipt["phase"] == "post-migration"
 
 
-def test_production_shaped_fixture_migrates_to_exact_canonical_names(
+def test_production_shaped_fixture_adds_canonical_names_without_deleting_legacy(
     tmp_path: Path,
 ) -> None:
     env_path = tmp_path / ".env"
@@ -93,13 +93,11 @@ def test_production_shaped_fixture_migrates_to_exact_canonical_names(
 
     migrate(tmp_path, allow_owner_lookup=False)
     migrated = parse_env(env_path.read_text(encoding="utf-8"))
-    assert migrated == {
-        "DISCORD_BOT_TOKEN": "test-discord-token",
-        "DISCORD_GUILD_ID": "123456789",
-        "DISCORD_OWNER_USER_ID": "987654321",
-        "TRADIER_ACCESS_TOKEN": "test-tradier-token",
-        "TRADIER_ENVIRONMENT": "production",
-    }
+    for name, value in PRODUCTION_SHAPED_ENV.items():
+        assert migrated[name] == value
+    assert migrated["DISCORD_OWNER_USER_ID"] == "987654321"
+    assert migrated["TRADIER_ACCESS_TOKEN"] == "test-tradier-token"
+    assert migrated["TRADIER_ENVIRONMENT"] == "production"
 
 
 def test_owner_lookup_and_environment_default_are_applied(
