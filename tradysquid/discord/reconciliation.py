@@ -56,6 +56,7 @@ class MessageReconciler:
             "version": version,
             "signature": sig,
             "acknowledged": True,
+            "action": action,
         }
         self.state.put(stable_id, state)
-        return {**state, "action": action}
+        return state
