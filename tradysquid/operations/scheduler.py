@@ -17,7 +17,6 @@ JOB_DEFINITIONS = (
     ("active-universe-quotes", "interval", {"minutes": 1}),
     ("full-strategy-scan", "interval", {"minutes": 5}),
     ("open-position-monitoring", "interval", {"minutes": 1}),
-    ("shadow-candidate-monitoring", "interval", {"minutes": 5}),
     ("market-intelligence-refresh", "interval", {"minutes": 5}),
     ("daily-reporting", "cron", {"hour": 15, "minute": 20}),
     ("weekly-reporting", "cron", {"day_of_week": "fri", "hour": 15, "minute": 30}),
@@ -34,7 +33,6 @@ LIVE_STARTUP_JOBS = (
     "active-universe-quotes",
     "full-strategy-scan",
     "open-position-monitoring",
-    "shadow-candidate-monitoring",
     "market-intelligence-refresh",
 )
 
