@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DDL = r"""
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -34,9 +34,6 @@ CREATE TABLE IF NOT EXISTS candidate_legs(id INTEGER PRIMARY KEY AUTOINCREMENT, 
 CREATE TABLE IF NOT EXISTS candidate_evidence(id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT NOT NULL REFERENCES candidates(id), evidence_type TEXT NOT NULL, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS candidate_rules(id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT NOT NULL REFERENCES candidates(id), rule_id TEXT NOT NULL, passed INTEGER NOT NULL, detail TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS candidate_rejections(id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT NOT NULL REFERENCES candidates(id), reason TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS shadow_candidates(candidate_id TEXT PRIMARY KEY REFERENCES candidates(id), source_status TEXT NOT NULL, target_value REAL, stop_value REAL, opened_at TEXT NOT NULL, closed_at TEXT, outcome TEXT);
-CREATE TABLE IF NOT EXISTS shadow_marks(id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT NOT NULL REFERENCES shadow_candidates(candidate_id), observed_at TEXT NOT NULL, value REAL NOT NULL, favorable_pct REAL NOT NULL, adverse_pct REAL NOT NULL);
-CREATE TABLE IF NOT EXISTS shadow_outcomes(candidate_id TEXT PRIMARY KEY REFERENCES shadow_candidates(candidate_id), outcome TEXT NOT NULL, mfe_pct REAL NOT NULL, mae_pct REAL NOT NULL, closed_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS trade_cycles(id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL, strategy_id TEXT NOT NULL, started_at TEXT NOT NULL, completed_at TEXT, status TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS paper_positions(id TEXT PRIMARY KEY, trade_cycle_id TEXT NOT NULL REFERENCES trade_cycles(id), candidate_id TEXT NOT NULL, strategy_id TEXT NOT NULL, strategy_version TEXT NOT NULL, strategy_hash TEXT NOT NULL, symbol TEXT NOT NULL, direction TEXT NOT NULL, structure TEXT NOT NULL, state TEXT NOT NULL, opened_at TEXT NOT NULL, closed_at TEXT, entry_value REAL NOT NULL, current_value REAL NOT NULL, maximum_risk REAL NOT NULL, pnl_dollars REAL NOT NULL, pnl_pct REAL NOT NULL, mfe_pct REAL NOT NULL, mae_pct REAL NOT NULL, config_json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS paper_legs(id INTEGER PRIMARY KEY AUTOINCREMENT, position_id TEXT NOT NULL REFERENCES paper_positions(id), contract_symbol TEXT NOT NULL, side TEXT NOT NULL, quantity INTEGER NOT NULL, option_type TEXT NOT NULL, strike REAL NOT NULL, expiration TEXT NOT NULL, multiplier INTEGER NOT NULL, entry_bid REAL NOT NULL, entry_ask REAL NOT NULL, entry_fill REAL NOT NULL, current_bid REAL NOT NULL, current_ask REAL NOT NULL, current_mark REAL NOT NULL, exit_fill REAL);
