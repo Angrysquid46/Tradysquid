@@ -64,8 +64,10 @@ def run_live_verification(
     *,
     application_factory: Callable[[Path], Any] = Application,
     http_get: Callable[..., Any] = requests.get,
+    load_environment: bool = True,
 ) -> dict[str, Any]:
-    load_dotenv(root / ".env", override=True)
+    if load_environment:
+        load_dotenv(root / ".env", override=True)
     missing = [name for name in REQUIRED_NAMES if not os.environ.get(name)]
     if missing:
         raise LiveVerificationFailure(
