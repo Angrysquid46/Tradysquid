@@ -122,74 +122,152 @@ ORIGINAL_CHANNELS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+
+def _route(
+    category: str,
+    channel: str,
+    *,
+    mandatory: bool = False,
+    owner_only: bool = False,
+) -> dict[str, Any]:
+    return {
+        "category": category,
+        "channel": channel,
+        "mandatory": mandatory,
+        "owner_only": owner_only,
+    }
+
+
 CARD_ROUTES: dict[str, dict[str, Any]] = {
-    "system-health": {"category": "SYSTEM", "channel": "system-health", "mandatory": True},
-    "system-activity": {"category": "SYSTEM", "channel": "system-activity", "mandatory": False},
-    "diagnostics": {"category": "SYSTEM", "channel": "diagnostics", "mandatory": False},
-    "update-status": {"category": "SYSTEM", "channel": "update-status", "mandatory": False},
-    "provider-status": {"category": "SYSTEM", "channel": "provider-status", "mandatory": True},
-    "scanner-status": {"category": "SYSTEM", "channel": "scanner-status", "mandatory": False},
-    "active-universe": {"category": "MARKET INTELLIGENCE", "channel": "universe-watch", "mandatory": True},
-    "market-regime": {"category": "MARKET INTELLIGENCE", "channel": "market-regime", "mandatory": True},
-    "latest-scan": {"category": "LIVE TRADING DESK", "channel": "scanner-feed", "mandatory": True},
-    "accepted-candidates": {"category": "LIVE TRADING DESK", "channel": "scanner-feed", "mandatory": False},
-    "rejected-candidates": {"category": "LIVE TRADING DESK", "channel": "scanner-feed", "mandatory": False},
-    "shadow-candidates": {"category": "LIVE TRADING DESK", "channel": "scanner-feed", "mandatory": False},
-    "new-positions": {"category": "LIVE TRADING DESK", "channel": "new-positions", "mandatory": False},
-    "open-positions": {"category": "LIVE TRADING DESK", "channel": "held-positions", "mandatory": True},
-    "recent-lifecycle-events": {"category": "LIVE TRADING DESK", "channel": "held-positions", "mandatory": False},
-    "wins": {"category": "LIVE TRADING DESK", "channel": "wins", "mandatory": False},
-    "losses": {"category": "LIVE TRADING DESK", "channel": "losses", "mandatory": False},
-    "daily-recap": {"category": "PERFORMANCE", "channel": "performance-dashboard", "mandatory": True},
-    "weekly-report": {"category": "PERFORMANCE", "channel": "performance-dashboard", "mandatory": False},
-    "monthly-dashboard": {"category": "PERFORMANCE", "channel": "performance-dashboard", "mandatory": False},
-    "ticker-results": {"category": "PERFORMANCE", "channel": "ticker-results", "mandatory": False},
-    "strategy-breakdown": {"category": "PERFORMANCE", "channel": "strategy-results", "mandatory": True},
-    "regular-call": {"category": "PERFORMANCE", "channel": "regular-calls", "mandatory": False},
-    "regular-put": {"category": "PERFORMANCE", "channel": "regular-puts", "mandatory": False},
-    "swing-call": {"category": "PERFORMANCE", "channel": "swing-calls", "mandatory": False},
-    "swing-put": {"category": "PERFORMANCE", "channel": "swing-puts", "mandatory": False},
-    "bull-put-spread": {"category": "PERFORMANCE", "channel": "bull-put-spreads", "mandatory": False},
-    "bear-call-spread": {"category": "PERFORMANCE", "channel": "bear-call-spreads", "mandatory": False},
-    "learning-results": {"category": "PERFORMANCE", "channel": "learning-results", "mandatory": True},
-    "strategy-control": {"category": "OWNER CONTROL", "channel": "scanner-controls", "mandatory": True, "owner_only": True},
-    "strategy-settings": {"category": "OWNER CONTROL", "channel": "strategy-settings", "mandatory": False, "owner_only": True},
-    "strategy-versions": {"category": "OWNER CONTROL", "channel": "strategy-versions", "mandatory": False, "owner_only": True},
-    "strategy-recommendations": {"category": "OWNER CONTROL", "channel": "strategy-recommendations", "mandatory": False, "owner_only": True},
+    # SYSTEM: operational visibility only.
+    "system-health": _route("SYSTEM", "system-health", mandatory=True),
+    "system-activity": _route("SYSTEM", "system-activity"),
+    "diagnostics": _route("SYSTEM", "diagnostics"),
+    "update-status": _route("SYSTEM", "update-status"),
+    "provider-status": _route("SYSTEM", "provider-status", mandatory=True),
+    "scanner-status": _route("SYSTEM", "scanner-status"),
+    "api-errors": _route("SYSTEM", "api-errors"),
+    # MARKET INTELLIGENCE: research and current market context.
+    "active-universe": _route("MARKET INTELLIGENCE", "universe-watch", mandatory=True),
+    "market-regime": _route("MARKET INTELLIGENCE", "market-regime", mandatory=True),
+    "session-preparation": _route("MARKET INTELLIGENCE", "premarket"),
+    "breaking-events": _route("MARKET INTELLIGENCE", "breaking-alerts"),
+    "ticker-intelligence": _route("MARKET INTELLIGENCE", "news-and-events"),
+    "charts-and-levels": _route("MARKET INTELLIGENCE", "charts-and-levels"),
+    # LIVE TRADING DESK: scans, candidates, and paper-position lifecycle.
+    "latest-scan": _route("LIVE TRADING DESK", "scanner-feed", mandatory=True),
+    "accepted-candidates": _route("LIVE TRADING DESK", "scanner-feed"),
+    "rejected-candidates": _route("LIVE TRADING DESK", "scanner-feed"),
+    "shadow-candidates": _route("LIVE TRADING DESK", "scanner-feed"),
+    "new-positions": _route("LIVE TRADING DESK", "new-positions"),
+    "open-positions": _route("LIVE TRADING DESK", "held-positions", mandatory=True),
+    "recent-lifecycle-events": _route("LIVE TRADING DESK", "held-positions"),
+    "wins": _route("LIVE TRADING DESK", "wins"),
+    "losses": _route("LIVE TRADING DESK", "losses"),
+    # PERFORMANCE: P/L, scorecards, and learning measurements.
+    "daily-recap": _route("PERFORMANCE", "performance-dashboard", mandatory=True),
+    "weekly-report": _route("PERFORMANCE", "performance-dashboard"),
+    "monthly-dashboard": _route("PERFORMANCE", "performance-dashboard"),
+    "ticker-results": _route("PERFORMANCE", "ticker-results"),
+    "strategy-breakdown": _route("PERFORMANCE", "strategy-results", mandatory=True),
+    "regular-call": _route("PERFORMANCE", "regular-calls"),
+    "regular-put": _route("PERFORMANCE", "regular-puts"),
+    "swing-call": _route("PERFORMANCE", "swing-calls"),
+    "swing-put": _route("PERFORMANCE", "swing-puts"),
+    "bull-put-spread": _route("PERFORMANCE", "bull-put-spreads"),
+    "bear-call-spread": _route("PERFORMANCE", "bear-call-spreads"),
+    "learning-results": _route("PERFORMANCE", "learning-results", mandatory=True),
+    # OWNER CONTROL: private configuration, approvals, and deployment history.
+    "strategy-control": _route(
+        "OWNER CONTROL", "scanner-controls", mandatory=True, owner_only=True
+    ),
+    "strategy-settings": _route(
+        "OWNER CONTROL", "strategy-settings", owner_only=True
+    ),
+    "strategy-versions": _route(
+        "OWNER CONTROL", "strategy-versions", owner_only=True
+    ),
+    "strategy-recommendations": _route(
+        "OWNER CONTROL", "strategy-recommendations", owner_only=True
+    ),
+    "workflow-log": _route("OWNER CONTROL", "workflow-log", owner_only=True),
+    "automation-diagnostics": _route(
+        "OWNER CONTROL", "automation-diagnostics", owner_only=True
+    ),
+    "applied-upgrades": _route(
+        "OWNER CONTROL", "applied-upgrades", owner_only=True
+    ),
+    "upgrade-review": _route("OWNER CONTROL", "upgrade-review", owner_only=True),
 }
 
+CARD_TITLES = {
+    stable_id: stable_id.replace("-", " ").title() for stable_id in CARD_ROUTES
+}
+CARD_TITLES.update(
+    {
+        "api-errors": "API and Provider Errors",
+        "active-universe": "Active Universe",
+        "session-preparation": "Session Preparation",
+        "breaking-events": "Breaking Alerts",
+        "ticker-intelligence": "Ticker News and Events",
+        "charts-and-levels": "Charts and Levels",
+        "latest-scan": "Latest Scan",
+        "recent-lifecycle-events": "Position Lifecycle",
+        "daily-recap": "Daily Performance",
+        "weekly-report": "Weekly Performance",
+        "monthly-dashboard": "Monthly Performance",
+        "strategy-breakdown": "Strategy Results",
+        "learning-results": "Learning Results",
+        "strategy-control": "Scanner and Strategy Controls",
+    }
+)
+
+# Current clean-rebuild lesson IDs are aliases for the established 27-topic
+# curriculum. The canonical original lesson IDs map to themselves.
 LESSON_ROUTES: dict[str, str] = {
-    "01-market-foundations": "01-stock-market-foundations",
-    "02-instrument-identification": "01-stock-market-foundations",
-    "03-market-sessions": "05-market-mechanics-orders",
-    "04-underlying-liquidity": "05-market-mechanics-orders",
-    "05-chart-structure": "06-charts-price-action",
-    "06-price-action": "06-charts-price-action",
-    "07-technical-indicators": "07-technical-analysis",
-    "08-trend": "06-charts-price-action",
-    "09-momentum": "07-technical-analysis",
-    "10-support-resistance": "06-charts-price-action",
-    "11-volatility": "16-volatility",
-    "12-market-regimes": "09-macro-sectors-catalysts",
-    "13-options-foundations": "13-options-basics",
-    "14-option-chains": "14-option-chain-liquidity",
-    "15-contract-liquidity": "14-option-chain-liquidity",
-    "16-bid-ask-behavior": "05-market-mechanics-orders",
-    "17-option-pricing": "15-option-pricing-greeks",
-    "18-greeks": "15-option-pricing-greeks",
-    "19-implied-volatility": "16-volatility",
-    "20-directional-long-options": "17-directional-options",
-    "21-defined-risk-spreads": "19-spreads-multi-leg",
-    "22-position-sizing": "12-portfolio-risk",
-    "23-risk-limits": "12-portfolio-risk",
-    "24-trade-planning": "20-trade-planning-execution",
-    "25-execution-assumptions": "20-trade-planning-execution",
-    "26-journaling": "23-psychology-journaling",
-    "27-backtesting-review": "24-backtesting-statistics",
+    channel: channel for channel in ORIGINAL_LEARNING_CHANNELS
 }
+LESSON_ROUTES.update(
+    {
+        "01-market-foundations": "01-stock-market-foundations",
+        "02-instrument-identification": "01-stock-market-foundations",
+        "03-market-sessions": "05-market-mechanics-orders",
+        "04-underlying-liquidity": "05-market-mechanics-orders",
+        "05-chart-structure": "06-charts-price-action",
+        "06-price-action": "06-charts-price-action",
+        "07-technical-indicators": "07-technical-analysis",
+        "08-trend": "06-charts-price-action",
+        "09-momentum": "07-technical-analysis",
+        "10-support-resistance": "06-charts-price-action",
+        "11-volatility": "16-volatility",
+        "12-market-regimes": "09-macro-sectors-catalysts",
+        "13-options-foundations": "13-options-basics",
+        "14-option-chains": "14-option-chain-liquidity",
+        "15-contract-liquidity": "14-option-chain-liquidity",
+        "16-bid-ask-behavior": "05-market-mechanics-orders",
+        "17-option-pricing": "15-option-pricing-greeks",
+        "18-greeks": "15-option-pricing-greeks",
+        "19-implied-volatility": "16-volatility",
+        "20-directional-long-options": "17-directional-options",
+        "21-defined-risk-spreads": "19-spreads-multi-leg",
+        "22-position-sizing": "12-portfolio-risk",
+        "23-risk-limits": "12-portfolio-risk",
+        "24-trade-planning": "20-trade-planning-execution",
+        "25-execution-assumptions": "20-trade-planning-execution",
+        "26-journaling": "23-psychology-journaling",
+        "27-backtesting-review": "24-backtesting-statistics",
+    }
+)
 
+# Canonical channel -> names created by older or failed layouts. These aliases
+# are resolution hints, not permission to rename or move the chosen channel.
 CHANNEL_ALIASES: dict[str, tuple[str, ...]] = {
-    "scanner-feed": ("scan-results", "accepted-candidates", "rejected-candidates", "shadow-candidates"),
+    "scanner-feed": (
+        "scan-results",
+        "accepted-candidates",
+        "rejected-candidates",
+        "shadow-candidates",
+    ),
     "new-positions": ("accepted-candidates",),
     "held-positions": ("open-positions", "lifecycle-events"),
     "universe-watch": ("active-universe",),
@@ -199,6 +277,11 @@ CHANNEL_ALIASES: dict[str, tuple[str, ...]] = {
     "performance-dashboard": ("daily-recap", "weekly-report", "monthly-dashboard"),
     "strategy-results": ("strategy-breakdown",),
     "scanner-controls": ("strategy-control",),
+    "workflow-log": ("strategy-change-log",),
+    "upgrade-review": ("strategy-recommendations",),
+    "automation-diagnostics": ("diagnostics",),
+    "applied-upgrades": ("update-status",),
+    "api-errors": (),
     "strategy-settings": (),
     "strategy-versions": (),
     "strategy-recommendations": (),
@@ -211,6 +294,8 @@ CHANNEL_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 for lesson_id, original_channel in LESSON_ROUTES.items():
+    if lesson_id == original_channel:
+        continue
     existing = list(CHANNEL_ALIASES.get(original_channel, ()))
     if lesson_id not in existing:
         existing.append(lesson_id)
