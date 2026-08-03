@@ -1,45 +1,196 @@
 from __future__ import annotations
-import json, os
+
+import json
+import os
 from pathlib import Path
+from typing import Any, Callable
+
 import requests
 from dotenv import load_dotenv
+
 from tradysquid.app import Application
+from tradysquid.core.config import redact
 
-root = Path(__file__).resolve().parents[1]
-load_dotenv(root / '.env', override=True)
-required = ['DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_OWNER_USER_ID','TRADIER_ACCESS_TOKEN','TRADIER_ENVIRONMENT']
-missing = [name for name in required if not os.environ.get(name)]
-if missing:
-    raise SystemExit('FAILED: missing required variable names: ' + ', '.join(missing))
 
-app = Application(root)
-clock = app.provider.market_clock()
-if not clock:
-    raise SystemExit('FAILED: Tradier market clock returned no data')
-active = app.initialize_universe()
-if not active:
-    raise SystemExit('FAILED: no optionable universe symbols were discovered')
-decisions = app.scanner.scan_symbol(active[0], 'setup-acceptance')
-if len(decisions) != 6:
-    raise SystemExit(f'FAILED: expected six strategy decisions, got {len(decisions)}')
+REQUIRED_NAMES = (
+    "DISCORD_BOT_TOKEN",
+    "DISCORD_GUILD_ID",
+    "DISCORD_OWNER_USER_ID",
+    "TRADIER_ACCESS_TOKEN",
+    "TRADIER_ENVIRONMENT",
+)
 
-headers = {'Authorization': 'Bot ' + os.environ['DISCORD_BOT_TOKEN'], 'User-Agent': 'Tradysquid/0.1'}
-user = requests.get('https://discord.com/api/v10/users/@me', headers=headers, timeout=(5, 20))
-if user.status_code != 200:
-    raise SystemExit(f'FAILED: Discord authentication returned HTTP {user.status_code}')
-guild = requests.get('https://discord.com/api/v10/guilds/' + os.environ['DISCORD_GUILD_ID'], headers=headers, timeout=(5, 20))
-if guild.status_code != 200:
-    raise SystemExit(f'FAILED: Discord guild access returned HTTP {guild.status_code}')
 
-receipt = {
-    'status': 'PASS',
-    'tradier_clock': True,
-    'universe_count': len(active),
-    'controlled_symbol': active[0],
-    'strategy_decisions': len(decisions),
-    'discord_bot_id': user.json().get('id'),
-    'discord_guild_id': guild.json().get('id'),
-}
-(root / 'state').mkdir(exist_ok=True)
-(root / 'state' / 'live-preflight.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
-print(json.dumps(receipt, sort_keys=True))
+class LiveVerificationFailure(RuntimeError):
+    """A categorized live acceptance check failed."""
+
+    def __init__(self, category: str, check: str, message: str) -> None:
+        super().__init__(message)
+        self.category = category
+        self.check = check
+
+
+def _http_json(response: Any, category: str, check: str) -> dict[str, Any]:
+    status_code = int(getattr(response, "status_code", 0))
+    if status_code != 200:
+        failure_category = "AUTHENTICATION" if status_code in {401, 403} else category
+        raise LiveVerificationFailure(
+            failure_category,
+            check,
+            f"{check} returned HTTP {status_code}",
+        )
+    try:
+        payload = response.json()
+    except (TypeError, ValueError) as exc:
+        raise LiveVerificationFailure(category, check, f"{check} returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise LiveVerificationFailure(category, check, f"{check} returned an invalid payload")
+    return payload
+
+
+def _classify_application_error(exc: Exception) -> str:
+    text = str(exc).lower()
+    if "authentication" in text or "401" in text or "403" in text:
+        return "AUTHENTICATION"
+    if "network" in text or isinstance(exc, requests.RequestException):
+        return "NETWORK"
+    if "tradier" in text or "provider" in text or "rate limit" in text:
+        return "PROVIDER"
+    return "APPLICATION"
+
+
+def run_live_verification(
+    root: Path,
+    *,
+    application_factory: Callable[[Path], Any] = Application,
+    http_get: Callable[..., Any] = requests.get,
+) -> dict[str, Any]:
+    load_dotenv(root / ".env", override=True)
+    missing = [name for name in REQUIRED_NAMES if not os.environ.get(name)]
+    if missing:
+        raise LiveVerificationFailure(
+            "CONFIGURATION",
+            "canonical-credentials",
+            "Missing required variable names: " + ", ".join(missing),
+        )
+
+    try:
+        app = application_factory(root)
+        clock = app.provider.market_clock()
+        if not clock:
+            raise LiveVerificationFailure(
+                "PROVIDER", "tradier-market-clock", "Tradier market clock returned no data"
+            )
+        active = app.initialize_universe()
+        if not active:
+            raise LiveVerificationFailure(
+                "PROVIDER", "universe-discovery", "No optionable universe symbols were discovered"
+            )
+        decisions = app.scanner.scan_symbol(active[0], "setup-acceptance")
+        if len(decisions) != 6:
+            raise LiveVerificationFailure(
+                "APPLICATION",
+                "controlled-scan",
+                f"Expected six strategy decisions, got {len(decisions)}",
+            )
+    except LiveVerificationFailure:
+        raise
+    except Exception as exc:
+        raise LiveVerificationFailure(
+            _classify_application_error(exc),
+            "tradier-and-scan",
+            f"{type(exc).__name__}: {exc}",
+        ) from exc
+
+    headers = {
+        "Authorization": "Bot " + os.environ["DISCORD_BOT_TOKEN"],
+        "User-Agent": "Tradysquid/0.1",
+    }
+    try:
+        user_payload = _http_json(
+            http_get(
+                "https://discord.com/api/v10/users/@me",
+                headers=headers,
+                timeout=(5, 20),
+            ),
+            "DISCORD",
+            "discord-bot-authentication",
+        )
+        guild_payload = _http_json(
+            http_get(
+                "https://discord.com/api/v10/guilds/" + os.environ["DISCORD_GUILD_ID"],
+                headers=headers,
+                timeout=(5, 20),
+            ),
+            "DISCORD",
+            "discord-guild-access",
+        )
+    except LiveVerificationFailure:
+        raise
+    except requests.RequestException as exc:
+        raise LiveVerificationFailure(
+            "NETWORK",
+            "discord-network",
+            f"Discord network failure: {type(exc).__name__}",
+        ) from exc
+
+    configured_guild = os.environ["DISCORD_GUILD_ID"]
+    configured_owner = os.environ["DISCORD_OWNER_USER_ID"]
+    if str(guild_payload.get("id")) != configured_guild:
+        raise LiveVerificationFailure(
+            "DISCORD", "discord-guild-identity", "Discord returned a different guild identity"
+        )
+    if str(guild_payload.get("owner_id")) != configured_owner:
+        raise LiveVerificationFailure(
+            "DISCORD", "discord-owner-identity", "Configured owner does not match guild owner_id"
+        )
+
+    return {
+        "status": "PASS",
+        "tradier_read_only": True,
+        "tradier_clock": True,
+        "universe_count": len(active),
+        "controlled_symbol": active[0],
+        "strategy_decisions": len(decisions),
+        "discord_bot_id": user_payload.get("id"),
+        "discord_guild_id": guild_payload.get("id"),
+        "discord_owner_id": guild_payload.get("owner_id"),
+        "brokerage_write_request": False,
+        "second_computer_request": False,
+        "lan_service_dependency": False,
+        "secret_values_written": False,
+    }
+
+
+def main() -> int:
+    root = Path(__file__).resolve().parents[1]
+    state_path = root / "state" / "live-preflight.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        receipt = run_live_verification(root)
+        state_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+        print(json.dumps(receipt, sort_keys=True))
+        return 0
+    except LiveVerificationFailure as exc:
+        receipt = {
+            "status": "FAILED",
+            "category": exc.category,
+            "failed_check": exc.check,
+            "error": redact(str(exc)),
+            "secret_values_written": False,
+        }
+    except Exception as exc:  # production boundary: always create a sanitized receipt
+        receipt = {
+            "status": "FAILED",
+            "category": "APPLICATION",
+            "failed_check": "unexpected-error",
+            "error": redact(f"{type(exc).__name__}: {exc}"),
+            "secret_values_written": False,
+        }
+    state_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps(receipt, sort_keys=True))
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
