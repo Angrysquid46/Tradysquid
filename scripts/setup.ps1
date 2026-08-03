@@ -3,9 +3,14 @@ $Root = Split-Path -Parent $PSScriptRoot
 $ResultJson = Join-Path $Root 'SETUP-RESULT.json'
 $ResultText = Join-Path $Root 'SETUP-RESULT.txt'
 $Log = Join-Path $Root 'logs\setup.log'
+$VenvPath = Join-Path $Root '.venv-tradysquid'
+$Python = Join-Path $VenvPath 'Scripts\python.exe'
+
 New-Item -ItemType Directory -Force -Path (Join-Path $Root 'logs'),(Join-Path $Root 'backups'),(Join-Path $Root 'state'),(Join-Path $Root 'data') | Out-Null
 Start-Transcript -Path $Log -Append | Out-Null
-$status='FAILED'; $steps=New-Object System.Collections.Generic.List[string]; $backup=''
+$status='FAILED'
+$steps=New-Object System.Collections.Generic.List[string]
+$backup=''
 
 function Add-Step([string]$Message) {
   $steps.Add($Message)
@@ -14,9 +19,24 @@ function Add-Step([string]$Message) {
 
 function Invoke-Native([string]$Description, [scriptblock]$Command) {
   Add-Step $Description
+  $global:LASTEXITCODE = 0
   & $Command
-  if ($LASTEXITCODE -ne 0) {
-    throw "$Description failed with exit code $LASTEXITCODE."
+  $exitCode = $LASTEXITCODE
+  if ($exitCode -ne 0) {
+    throw "$Description failed with exit code $exitCode."
+  }
+}
+
+function Remove-IncompleteVenv([string]$Path) {
+  if (!(Test-Path $Path)) { return }
+  for ($attempt=1; $attempt -le 5; $attempt++) {
+    try {
+      Remove-Item $Path -Recurse -Force -ErrorAction Stop
+      return
+    } catch {
+      if ($attempt -eq 5) { throw }
+      Start-Sleep -Seconds 2
+    }
   }
 }
 
@@ -35,6 +55,7 @@ try {
 
   $py = Get-Command py -ErrorAction SilentlyContinue
   if (!$py) { throw 'Python launcher is not installed.' }
+
   Invoke-Native 'credential-name-migration' {
     Push-Location $Root
     try { & py -3.12 -m tradysquid.operations.credential_migration --root $Root }
@@ -45,19 +66,36 @@ try {
   & (Join-Path $PSScriptRoot 'clean_previous_runtime.ps1')
   Add-Step 'previous-runtime-cleaned'
 
-  Invoke-Native 'virtual-environment-creation' { & py -3.12 -m venv (Join-Path $Root '.venv') }
-  $python=Join-Path $Root '.venv\Scripts\python.exe'
-  if (!(Test-Path $python)) { throw 'Virtual environment Python was not created.' }
-  Invoke-Native 'pip-upgrade' { & $python -m pip install --upgrade pip }
-  Invoke-Native 'dependency-installation' { & $python -m pip install -r (Join-Path $Root 'requirements-dev.txt') }
-  Invoke-Native 'dependency-integrity-check' { & $python -m pip check }
+  # The failed application used .venv. The rebuild deliberately uses its own
+  # path so a locked legacy python.exe cannot block installation.
+  $reuseVenv = $false
+  if (Test-Path $Python) {
+    & $Python --version *> $null
+    if ($LASTEXITCODE -eq 0) {
+      $reuseVenv = $true
+      Add-Step 'isolated-virtual-environment-reused'
+    } else {
+      Remove-IncompleteVenv $VenvPath
+    }
+  } elseif (Test-Path $VenvPath) {
+    Remove-IncompleteVenv $VenvPath
+  }
+
+  if (!$reuseVenv) {
+    Invoke-Native 'isolated-virtual-environment-creation' { & py -3.12 -m venv $VenvPath }
+  }
+  if (!(Test-Path $Python)) { throw 'Isolated virtual environment Python was not created.' }
+
+  Invoke-Native 'pip-upgrade' { & $Python -m pip install --upgrade pip }
+  Invoke-Native 'dependency-installation' { & $Python -m pip install -r (Join-Path $Root 'requirements-dev.txt') }
+  Invoke-Native 'dependency-integrity-check' { & $Python -m pip check }
   Invoke-Native 'automated-test-suite' {
     Push-Location $Root
-    try { & $python -m pytest }
+    try { & $Python -m pytest }
     finally { Pop-Location }
   }
-  Invoke-Native 'installation-verification' { & $python (Join-Path $PSScriptRoot 'verify_installation.py') }
-  Invoke-Native 'live-read-only-verification' { & $python (Join-Path $PSScriptRoot 'verify_live.py') }
+  Invoke-Native 'installation-verification' { & $Python (Join-Path $PSScriptRoot 'verify_installation.py') }
+  Invoke-Native 'live-read-only-verification' { & $Python (Join-Path $PSScriptRoot 'verify_live.py') }
 
   $taskName='Tradysquid Startup'
   $cmd = $env:ComSpec
@@ -85,6 +123,7 @@ try {
     steps=@($steps)
     backup=$backup
     log=$Log
+    virtual_environment=$VenvPath
   } | ConvertTo-Json -Depth 5
   $result | Set-Content $ResultJson -Encoding UTF8
   ($status + [Environment]::NewLine + ($steps -join [Environment]::NewLine)) | Set-Content $ResultText -Encoding UTF8
