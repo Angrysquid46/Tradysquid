@@ -201,6 +201,12 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "strategy-versions": _route(
         "STRATEGY CONTROL", "strategy-versions", owner_only=True
     ),
+    "trade-overrides": _route(
+        "STRATEGY CONTROL", "trade-overrides", owner_only=True
+    ),
+    "strategy-change-log": _route(
+        "STRATEGY CONTROL", "strategy-change-log", owner_only=True
+    ),
     "strategy-recommendations": _route(
         "STRATEGY CONTROL", "strategy-recommendations", owner_only=True
     ),
@@ -235,6 +241,8 @@ CARD_TITLES.update(
         "strategy-breakdown": "Strategy Results",
         "learning-results": "Learning Results",
         "strategy-control": "Strategy Control",
+        "trade-overrides": "Trade Overrides",
+        "strategy-change-log": "Strategy Change Log",
     }
 )
 
