@@ -368,24 +368,66 @@ class Application:
         self.publisher.notify("universe")
         return active
 
-    async def _wait_for_discord_readiness(self, timeout: int = 120) -> None:
+    def _read_state_receipt(self, name: str) -> dict:
+        path = self.root / "state" / name
+        if not path.exists():
+            return {}
+        try:
+            value = json.loads(path.read_text(encoding="utf-8-sig"))
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError, TypeError):
+            return {}
+
+    async def _wait_for_discord_readiness(self, timeout: int = 600) -> None:
         if self.discord is None:
             raise RuntimeError("Discord owner or guild configuration is missing")
         token = os.environ.get("DISCORD_BOT_TOKEN")
         if not token:
             raise RuntimeError("DISCORD_BOT_TOKEN is missing")
-        self.discord_task = asyncio.create_task(self.discord.start(token))
-        publishing_wait = asyncio.create_task(self.publisher.ready_event.wait())
-        done, _ = await asyncio.wait(
-            {self.discord_task, publishing_wait},
-            timeout=timeout,
-            return_when=asyncio.FIRST_COMPLETED,
+
+        self.discord_task = asyncio.create_task(
+            self.discord.start(token), name="tradysquid-discord-bot"
         )
-        if self.discord_task in done:
-            self.discord_task.result()
-            raise RuntimeError("Discord task exited before readiness")
-        if publishing_wait not in done or not self.publisher.ready or not self.discord.ready:
-            raise TimeoutError("Discord publishing readiness was not reached")
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+
+        while loop.time() < deadline:
+            if self.publisher.ready and self.discord.ready:
+                return
+
+            if self.discord_task.done():
+                try:
+                    self.discord_task.result()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Discord task exited before readiness: {type(exc).__name__}: {exc}"
+                    ) from exc
+                raise RuntimeError("Discord task exited before readiness")
+
+            discord_receipt = self._read_state_receipt("discord-readiness.json")
+            if discord_receipt.get("status") == "FAILED":
+                raise RuntimeError(
+                    "Discord readiness failed: "
+                    + str(discord_receipt.get("error") or "unknown Discord error")
+                )
+
+            publishing_receipt = self._read_state_receipt(
+                "discord-publishing-bootstrap.json"
+            )
+            if publishing_receipt.get("status") == "FAILED":
+                cards = publishing_receipt.get("persistent_cards", {})
+                raise RuntimeError(
+                    "Discord publishing bootstrap failed: "
+                    f"mandatory card failures={cards.get('failed', 'unknown')}"
+                )
+
+            await asyncio.sleep(1)
+
+        raise TimeoutError(
+            "Discord publishing readiness was not reached within "
+            f"{timeout} seconds. Discord connected={bool(self.discord.ready)}; "
+            f"publishing ready={bool(self.publisher.ready)}."
+        )
 
     def _write_startup(self, status: str, **details) -> None:
         receipt = {
