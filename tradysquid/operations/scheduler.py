@@ -51,6 +51,7 @@ class SchedulerService:
                 "misfire_grace_time": 120,
             },
         )
+        self.startup_jobs_triggered: list[str] = []
 
     @property
     def running(self) -> bool:
@@ -69,13 +70,15 @@ class SchedulerService:
 
     def start(self) -> None:
         self.scheduler.start()
+        self.startup_jobs_triggered = self.trigger_now()
 
     def trigger_now(self, job_ids: tuple[str, ...] = LIVE_STARTUP_JOBS) -> list[str]:
         """Queue selected registered jobs for immediate scheduler execution.
 
-        This does not run provider work on the Discord event loop. APScheduler
-        executes the normal wrapped jobs in its background worker, preserving
-        max-instances, receipts, diagnostics, and the regular future cadence.
+        APScheduler executes the normal wrapped jobs in its background worker,
+        preserving max-instances, receipts, diagnostics, and future cadence.
+        The Discord event loop therefore remains free while market data and
+        paper positions begin updating immediately after application startup.
         """
 
         now = datetime.now(self.scheduler.timezone)
