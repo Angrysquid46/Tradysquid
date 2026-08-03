@@ -164,7 +164,11 @@ class DiscordBotService:
                 if guild is None:
                     raise RuntimeError("Configured Discord guild could not be resolved")
 
-                structure_receipts = await DiscordStructureService(self.schema).sync(guild)
+                database = getattr(self.publishing, "db", None)
+                structure_receipts = await DiscordStructureService(
+                    self.schema,
+                    database=database,
+                ).sync(guild)
                 channel_map: dict[str, Any] = {}
                 categories = list(getattr(guild, "categories", []))
                 for category in categories:
@@ -184,6 +188,7 @@ class DiscordBotService:
                         "categories_resolved": len(categories),
                         "channels_resolved": len(channel_map),
                         "structure_receipts": len(structure_receipts),
+                        "structure_details": structure_receipts,
                         "slash_commands_synchronized": len(synchronized),
                         "publishing_bootstrap": publishing_receipt,
                         "completed_at": _utc_now(),
