@@ -33,6 +33,10 @@ def load_simple_runtime():
     return importlib.import_module("simple_upgrade_runtime")
 
 
+def load_clean_handoff():
+    return importlib.import_module("clean_rebuild_auto_handoff")
+
+
 class SimpleUpgradeFlowTests(unittest.TestCase):
     def test_discord_bridge_logs_requests_without_editing_code(self) -> None:
         text = (ROOT / "github_upgrade_bridge.py").read_text(encoding="utf-8")
@@ -126,6 +130,22 @@ class SimpleUpgradeFlowTests(unittest.TestCase):
         self.assertIn("ensure_dashboard_channel", text)
         self.assertIn('/guilds/{tracker.guild_id}/channels', text)
         self.assertIn("permission_overwrites", text)
+
+    def test_clean_rebuild_handoff_is_exact_one_time_and_secret_safe(self) -> None:
+        handoff = load_clean_handoff()
+        text = (ROOT / "clean_rebuild_auto_handoff.py").read_text(encoding="utf-8")
+        self.assertEqual(
+            handoff.EXPECTED_CLEAN_COMMIT,
+            "3eaaf3fc5480adc94580ca2ee4527f791c22ae0e",
+        )
+        self.assertIn("refs/remotes/origin", text)
+        self.assertIn("worktree", text)
+        self.assertIn("supervisor-stop.flag", text)
+        self.assertIn("TERMINAL_STATUSES", text)
+        self.assertIn("secret_values_written", text)
+        self.assertNotIn("DISCORD_BOT_TOKEN=", text)
+        self.assertNotIn("TRADIER_ACCESS_TOKEN=", text)
+        self.assertTrue(callable(handoff.launch_if_needed))
 
 
 if __name__ == "__main__":
