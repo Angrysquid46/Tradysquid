@@ -355,7 +355,7 @@ ALIAS_TO_CANONICAL: dict[str, str] = {
     for alias in aliases
 }
 
-MIGRATION_CHANNEL_NAMES = frozenset(ALIAS_TO_CANONICAL)
+MIGRATION_CHANNEL_NAMES = frozenset({*ALIAS_TO_CANONICAL, "shadow-candidates"})
 
 
 def route_for(stable_id: str) -> dict[str, Any]:
