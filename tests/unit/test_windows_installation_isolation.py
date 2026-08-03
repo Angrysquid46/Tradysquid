@@ -20,9 +20,9 @@ def test_runtime_cleanup_only_terminates_repository_python_processes() -> None:
 def test_setup_uses_an_isolated_virtual_environment() -> None:
     setup = read("scripts/setup.ps1")
     assert ".venv-tradysquid" in setup
-    assert "isolated-virtual-environment-creation" in setup
-    assert "isolated-virtual-environment-reused" in setup
+    assert "isolated-virtual-environment" in setup
     assert "py -3.12 -m venv $VenvPath" in setup
+    assert "Remove-IncompleteVenv" in setup
 
 
 def test_start_and_update_use_the_same_isolated_environment() -> None:
@@ -31,6 +31,14 @@ def test_start_and_update_use_the_same_isolated_environment() -> None:
     expected = ".venv-tradysquid\\Scripts\\python.exe"
     assert expected in start
     assert expected in update
+
+
+def test_start_requires_discord_and_publishing_readiness() -> None:
+    start = read("scripts/start.ps1")
+    assert "discord-readiness.json" in start
+    assert "discord-publishing-bootstrap.json" in start
+    assert "discord_publishing_ready" in start
+    assert "slash_commands_synchronized" in start
 
 
 def test_isolated_environment_is_not_tracked() -> None:
