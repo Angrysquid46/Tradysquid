@@ -36,7 +36,6 @@ REQUIRED_COMMANDS = [
     "scan-status",
     "candidate",
     "rejections",
-    "shadow-results",
     "paper-open",
     "paper-close",
     "paper-position",
