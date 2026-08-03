@@ -125,19 +125,29 @@ try {
 
     Write-Host 'PASS: setup-script-parse-validation'
     Write-Host "SETUP ATTEMPT: $AttemptId"
-    & $SetupBody -AttemptId $AttemptId -ExpectedCleanCommit $ExpectedCleanCommit
 
-    $BodyExitCode = 1
-    if (Test-Path -LiteralPath $ResultJson -PathType Leaf) {
-        try {
-            $Receipt = Get-Content -LiteralPath $ResultJson -Raw | ConvertFrom-Json
-            if ($Receipt.attempt_id -eq $AttemptId -and $Receipt.status -eq 'PASS') {
-                $BodyExitCode = 0
-            }
-        } catch {
-            $BodyExitCode = 1
-        }
+    $PowerShellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
+    $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $ProcessInfo.FileName = $PowerShellPath
+    $ProcessInfo.Arguments = (
+        '-NoProfile -ExecutionPolicy Bypass -File "' +
+        $SetupBody +
+        '" -AttemptId "' +
+        $AttemptId +
+        '" -ExpectedCleanCommit "' +
+        $ExpectedCleanCommit +
+        '"'
+    )
+    $ProcessInfo.WorkingDirectory = $Root
+    $ProcessInfo.UseShellExecute = $false
+    $ProcessInfo.CreateNoWindow = $true
+
+    $BodyProcess = [System.Diagnostics.Process]::Start($ProcessInfo)
+    if ($null -eq $BodyProcess) {
+        throw 'Could not start the setup body process.'
     }
+    $BodyProcess.WaitForExit()
+    $BodyExitCode = [int]$BodyProcess.ExitCode
 
     Write-EntryExitCode -Code $BodyExitCode
     exit $BodyExitCode
