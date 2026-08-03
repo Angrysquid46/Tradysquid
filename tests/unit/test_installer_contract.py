@@ -86,9 +86,9 @@ def test_clean_runtime_uses_isolated_virtual_environment() -> None:
 
 def test_process_wait_contract_is_present() -> None:
     text = HELPERS.read_text(encoding="utf-8")
-    assert "Start-Process" in text
-    assert "-Wait" in text
-    assert "-PassThru" in text
+    assert "ProcessStartInfo" in text
+    assert "WaitForExit()" in text
+    assert "UseShellExecute = $false" in text
     assert "WaitedForExit = $true" in text
 
 
