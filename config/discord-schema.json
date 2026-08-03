@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "layout": "original-dashboard",
+  "layout": "original-dashboard-plus-strategy-control",
   "allow_create_missing": false,
   "allow_move_existing": false,
   "migration": {
@@ -113,6 +113,17 @@
       ]
     },
     {
+      "name": "STRATEGY CONTROL",
+      "channels": [
+        "strategy-control",
+        "strategy-settings",
+        "strategy-versions",
+        "trade-overrides",
+        "strategy-change-log",
+        "strategy-recommendations"
+      ]
+    },
+    {
       "name": "OWNER CONTROL",
       "channels": [
         "owner-controls",
@@ -123,12 +134,7 @@
         "security-log",
         "automation-diagnostics",
         "applied-upgrades",
-        "admin-notes",
-        "strategy-settings",
-        "strategy-versions",
-        "trade-overrides",
-        "strategy-change-log",
-        "strategy-recommendations"
+        "admin-notes"
       ]
     }
   ]
