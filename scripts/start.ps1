@@ -43,9 +43,9 @@ $StartParameters = @{
 }
 $p = Start-Process @StartParameters
 
-# Discord structure synchronization and first-run card creation can legitimately
-# take several minutes because Discord rate-limits message and channel writes.
-$ReadinessTimeoutSeconds = 660
+# Keep this below setup.ps1's 300-second stage ceiling while giving first-run
+# Discord structure/card synchronization more than twice the old 120 seconds.
+$ReadinessTimeoutSeconds = 285
 for ($i=0; $i -lt $ReadinessTimeoutSeconds; $i++) {
   if ($p.HasExited) {
     $details = New-Object System.Collections.Generic.List[string]
@@ -100,8 +100,7 @@ for ($i=0; $i -lt $ReadinessTimeoutSeconds; $i++) {
       )
       if ($valid) {
         Write-Host 'PASS'
-        # Return to setup.ps1 instead of terminating the entire parent
-        # PowerShell host, which previously prevented SETUP-RESULT.json.
+        # Return to setup.ps1 instead of terminating the entire parent host.
         return
       }
 
