@@ -150,3 +150,5 @@ class SimpleUpgradeFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# Validation branch marker: forces the exact updater workflow to execute.
