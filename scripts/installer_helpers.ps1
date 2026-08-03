@@ -123,7 +123,16 @@ function Get-VerifiedFileHash {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "File was not found for hashing: $Path"
     }
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $stream = [IO.File]::OpenRead($Path)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $sha.ComputeHash($stream)
+        return ([BitConverter]::ToString($hash)).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+        $stream.Dispose()
+    }
 }
 
 function Test-PathOutsideRepository {
@@ -284,14 +293,18 @@ function Invoke-SetupProcess {
     }
 
     $startedAt = Get-Date
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $SetupScript + '"'
-    $process = Start-Process `
-        -FilePath 'powershell.exe' `
-        -ArgumentList $arguments `
-        -WorkingDirectory $WorkingDirectory `
-        -NoNewWindow `
-        -Wait `
-        -PassThru
+    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processInfo.FileName = (Get-Command powershell.exe -ErrorAction Stop).Source
+    $processInfo.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $SetupScript + '"'
+    $processInfo.WorkingDirectory = $WorkingDirectory
+    $processInfo.UseShellExecute = $false
+    $processInfo.CreateNoWindow = $true
+
+    $process = [System.Diagnostics.Process]::Start($processInfo)
+    if ($null -eq $process) {
+        throw 'Could not start the clean setup process.'
+    }
+    $process.WaitForExit()
     $exitedAt = Get-Date
 
     return [pscustomobject]@{
