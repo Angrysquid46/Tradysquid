@@ -36,7 +36,11 @@ def test_setup_entry_guarantees_fallback_receipt_and_captures_body_streams() -> 
     assert "Setup body exited with code" in source
 
 
-def test_application_fails_immediately_from_discord_failure_receipt(tmp_path: Path) -> None:
+def test_application_fails_immediately_from_discord_failure_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "test-token")
     state = tmp_path / "state"
     state.mkdir(parents=True)
     (state / "discord-readiness.json").write_text(
