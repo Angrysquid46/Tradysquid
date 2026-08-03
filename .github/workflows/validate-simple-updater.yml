@@ -127,3 +127,5 @@ jobs:
           ! grep -q "diagnostic_state_migration.install()" run_with_env.py runtime_contract.py
           ! grep -q "upgrade_batch_44_live_acceptance.install()" run_with_env.py runtime_contract.py
           ! grep -q "applied_upgrades.install_engine()" run_with_env.py runtime_contract.py
+
+# Validation-only synchronization change for the repaired automatic handoff.
