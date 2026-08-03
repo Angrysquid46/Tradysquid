@@ -200,6 +200,28 @@ def test_original_layout_resolves_without_creating_or_moving(tmp_path: Path) -> 
     assert all(item["action"].startswith("channel-reused") for item in receipts)
 
 
+def test_strategy_control_and_exact_six_channels_are_preserved(tmp_path: Path) -> None:
+    guild, original = _production_guild()
+    service = DiscordStructureService(_schema(), database=_database(tmp_path))
+
+    asyncio.run(service.sync(guild))
+
+    strategy_category = next(
+        category for category in guild.categories if category.name == "STRATEGY CONTROL"
+    )
+    expected = {
+        "strategy-control",
+        "strategy-settings",
+        "strategy-versions",
+        "trade-overrides",
+        "strategy-change-log",
+        "strategy-recommendations",
+    }
+    assert {channel.name for channel in strategy_category.channels} == expected
+    assert all(original[name].deleted is False for name in expected)
+    assert "STRATEGY CONTROL" not in INVENTED_CATEGORIES
+
+
 def test_moved_original_channel_is_restored_once(tmp_path: Path) -> None:
     guild, original = _production_guild()
     scanning = FakeCategory(99, "SCANNING")
@@ -264,7 +286,6 @@ def test_bot_only_duplicate_dashboard_is_removed_after_rebinding(tmp_path: Path)
     duplicates = [
         ("SCANNING", "scan-results"),
         ("PAPER TRADING", "open-positions"),
-        ("STRATEGY CONTROL", "strategy-control"),
         ("LEARNING CENTER 2", "01-market-foundations"),
     ]
     next_id = 9000
@@ -296,9 +317,10 @@ def test_bot_only_duplicate_dashboard_is_removed_after_rebinding(tmp_path: Path)
     )
 
     assert cleanup["status"] == "PASS"
-    assert len(cleanup["deleted_channels"]) == 4
-    assert len(cleanup["deleted_categories"]) == 4
+    assert len(cleanup["deleted_channels"]) == 3
+    assert len(cleanup["deleted_categories"]) == 3
     assert not ({category.name for category in guild.categories} & INVENTED_CATEGORIES)
+    assert "STRATEGY CONTROL" in {category.name for category in guild.categories}
     assert all(not channel.deleted for channel in original.values())
 
 
