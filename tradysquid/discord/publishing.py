@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 try:
     import discord
-except ImportError:  # pragma: no cover - production dependency check handles this
+except ImportError:  # pragma: no cover
     discord = None
 
+from .contracts import signature
 from .journals import JournalService
+from .layout import CARD_ROUTES, LESSON_ROUTES, route_for
 from .reconciliation import MessageReconciler
 from .state import DiscordStateRepository
 
@@ -20,32 +24,282 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _json_text(value: Any, limit: int = 1600) -> str:
-    text = json.dumps(value, indent=2, sort_keys=True, default=str)
-    if len(text) > limit:
-        text = text[: limit - 32] + "\n... truncated by Discord limit"
-    return text
+def _freshness(value: Any) -> str:
+    timestamps: list[str] = []
+
+    def collect(item: Any) -> None:
+        if isinstance(item, dict):
+            for key, child in item.items():
+                key_text = str(key).casefold()
+                if (
+                    key_text.endswith("_at")
+                    or key_text in {"timestamp", "observed", "updated", "completed"}
+                ) and isinstance(child, str) and child:
+                    timestamps.append(child)
+                else:
+                    collect(child)
+        elif isinstance(item, (list, tuple)):
+            for child in item:
+                collect(child)
+
+    collect(value)
+    return max(timestamps) if timestamps else "Waiting for source data"
 
 
-def _payload(title: str, value: Any, *, freshness: str = "CURRENT") -> dict[str, Any]:
-    return {
-        "content": (
-            f"**{title}**\n"
-            f"Freshness: `{freshness}` | Updated: `{_utc_now()}`\n"
-            f"```json\n{_json_text(value)}\n```"
-        )
+def _clean(value: Any) -> Any:
+    hidden = {
+        "id",
+        "candidate_id",
+        "scan_cycle_id",
+        "trade_cycle_id",
+        "configuration_hash",
+        "strategy_hash",
+        "hash",
+        "config_json",
+        "details_json",
+        "errors_json",
+        "totals_json",
     }
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        output: dict[str, Any] = {}
+        for key, item in value.items():
+            if str(key).casefold() in hidden:
+                continue
+            cleaned = _clean(item)
+            if cleaned in (None, "", [], {}):
+                continue
+            output[str(key)] = cleaned
+        return output
+    if isinstance(value, (list, tuple)):
+        output = [_clean(item) for item in value]
+        return [item for item in output if item not in (None, "", [], {})]
+    return value
+
+
+def _label(key: str) -> str:
+    return key.replace("_", " ").strip().title()
+
+
+def _line_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, float):
+        if abs(value) < 1:
+            return f"{value:.2%}"
+        return f"{value:,.2f}"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, default=str)
+    return str(value)
+
+
+def _generic_lines(value: Any, *, limit: int = 18) -> list[str]:
+    cleaned = _clean(value)
+    if cleaned in (None, "", [], {}):
+        return ["No records yet. This card will update when data arrives."]
+    if isinstance(cleaned, dict):
+        lines: list[str] = []
+        for key, item in cleaned.items():
+            if len(lines) >= limit:
+                break
+            if isinstance(item, dict):
+                lines.append(f"**{_label(key)}**")
+                for child_key, child_value in list(item.items())[:5]:
+                    lines.append(f"• {_label(child_key)}: {_line_value(child_value)}")
+            elif isinstance(item, list):
+                lines.append(f"**{_label(key)}:** {len(item)} records")
+                for row in item[:4]:
+                    if isinstance(row, dict):
+                        summary = " • ".join(
+                            f"{_label(k)}: {_line_value(v)}"
+                            for k, v in list(row.items())[:4]
+                        )
+                        lines.append(f"• {summary}")
+                    else:
+                        lines.append(f"• {_line_value(row)}")
+            else:
+                lines.append(f"**{_label(key)}:** {_line_value(item)}")
+        return lines or ["No useful fields were present."]
+    if isinstance(cleaned, list):
+        lines = [f"**Total:** {len(cleaned)}"]
+        for row in cleaned[: min(limit - 1, 10)]:
+            if isinstance(row, dict):
+                lines.append(
+                    "• "
+                    + " • ".join(
+                        f"{_label(key)}: {_line_value(item)}"
+                        for key, item in list(row.items())[:5]
+                    )
+                )
+            else:
+                lines.append(f"• {_line_value(row)}")
+        return lines
+    return [_line_value(cleaned)]
+
+
+def _render_card(stable_id: str | None, value: Any) -> list[str]:
+    cleaned = _clean(value)
+    if stable_id in {"rejected-candidates", "learning-results"}:
+        rows: list[dict[str, Any]] = []
+        if isinstance(cleaned, list):
+            rows = [row for row in cleaned if isinstance(row, dict)]
+        elif isinstance(cleaned, dict):
+            raw = cleaned.get("rejections", [])
+            if isinstance(raw, list):
+                rows = [row for row in raw if isinstance(row, dict)]
+        if rows:
+            counts: Counter[str] = Counter()
+            total = 0
+            for row in rows:
+                reason = str(row.get("reason") or "Unspecified rejection")
+                count = int(row.get("rejected", 1) or 1)
+                counts[reason] += count
+                total += count
+            lines = [f"**Total rejected observations:** {total}"]
+            lines.extend(
+                f"• {reason}: **{count}**"
+                for reason, count in counts.most_common(10)
+            )
+            return lines
+    if stable_id == "shadow-candidates" and isinstance(cleaned, list):
+        total = len(cleaned)
+        open_count = sum(
+            not row.get("closed_at")
+            for row in cleaned
+            if isinstance(row, dict)
+        )
+        outcomes = Counter(
+            str(row.get("outcome"))
+            for row in cleaned
+            if isinstance(row, dict) and row.get("outcome")
+        )
+        lines = [
+            f"**Total tracked:** {total}",
+            f"**Still open:** {open_count}",
+            f"**Closed:** {total - open_count}",
+            "**Source:** Rejected candidates",
+        ]
+        lines.extend(f"• {name}: {count}" for name, count in outcomes.most_common())
+        return lines
+    if stable_id in {
+        "accepted-candidates",
+        "open-positions",
+        "new-positions",
+    } and isinstance(cleaned, list):
+        lines = [f"**Total:** {len(cleaned)}"]
+        for row in cleaned[:10]:
+            if not isinstance(row, dict):
+                continue
+            symbol = row.get("symbol", "Unknown")
+            strategy = row.get("strategy_id", "Unknown strategy")
+            status = row.get("status") or row.get("state") or "Unknown"
+            details = [f"**{symbol}**", str(strategy), str(status)]
+            if row.get("setup_score") is not None:
+                details.append(f"score {float(row['setup_score']):.1f}")
+            if row.get("pnl_dollars") is not None:
+                details.append(f"P/L ${float(row['pnl_dollars']):.2f}")
+            lines.append(" • ".join(details))
+        return lines
+    if stable_id in {"wins", "losses"} and isinstance(cleaned, list):
+        total = sum(
+            float(row.get("pnl_dollars", 0) or 0)
+            for row in cleaned
+            if isinstance(row, dict)
+        )
+        lines = [f"**Trades:** {len(cleaned)}", f"**Recorded P/L:** ${total:,.2f}"]
+        for row in cleaned[:8]:
+            if isinstance(row, dict):
+                lines.append(
+                    f"• **{row.get('symbol', 'Unknown')}** • "
+                    f"{row.get('strategy_id', '')} • "
+                    f"${float(row.get('pnl_dollars', 0) or 0):.2f} • "
+                    f"{row.get('exit_reason', 'No exit reason')}"
+                )
+        return lines
+    if stable_id == "active-universe" and isinstance(cleaned, list):
+        symbols = [
+            str(row.get("symbol"))
+            for row in cleaned
+            if isinstance(row, dict) and row.get("symbol")
+        ]
+        return [
+            f"**Active symbols:** {len(symbols)}",
+            ", ".join(symbols[:25]) if symbols else "No active symbols yet.",
+        ]
+    if stable_id == "latest-scan" and isinstance(cleaned, list) and cleaned:
+        row = cleaned[0]
+        return [
+            f"**Status:** {row.get('status', 'Unknown')}",
+            f"**Trigger:** {row.get('trigger', 'Unknown')}",
+            f"**Source:** {row.get('source', 'Unknown')}",
+            f"**Started:** {row.get('started_at', 'Unknown')}",
+            f"**Completed:** {row.get('completed_at') or 'Still running'}",
+        ]
+    return _generic_lines(cleaned)
+
+
+def _payload(
+    title: str,
+    value: Any,
+    *,
+    stable_id: str | None = None,
+) -> dict[str, Any]:
+    lines = [
+        f"**{title}**",
+        f"Source freshness: `{_freshness(value)}`",
+        *_render_card(stable_id, value),
+    ]
+    content = "\n".join(lines)
+    if len(content) > 1990:
+        content = content[:1940].rstrip() + "\n… additional details omitted"
+    return {"content": content}
+
+
+CARD_TITLES = {
+    "system-health": "System Health",
+    "system-activity": "System Activity",
+    "diagnostics": "Diagnostics",
+    "update-status": "Update Status",
+    "provider-status": "Provider Status",
+    "scanner-status": "Scanner Status",
+    "active-universe": "Universe Watch",
+    "market-regime": "Market Regime",
+    "latest-scan": "Scanner Feed • Latest Scan",
+    "accepted-candidates": "Scanner Feed • Accepted Candidates",
+    "rejected-candidates": "Scanner Feed • Rejection Summary",
+    "shadow-candidates": "Scanner Feed • Shadow Candidates",
+    "new-positions": "New Paper Positions",
+    "open-positions": "Held Paper Positions",
+    "recent-lifecycle-events": "Held Positions • Lifecycle Updates",
+    "wins": "Closed Paper Wins",
+    "losses": "Closed Paper Losses",
+    "daily-recap": "Performance Dashboard • Daily Recap",
+    "weekly-report": "Performance Dashboard • Weekly Report",
+    "monthly-dashboard": "Performance Dashboard • Monthly Dashboard",
+    "ticker-results": "Ticker Results",
+    "strategy-breakdown": "Strategy Results",
+    "regular-call": "Regular Calls",
+    "regular-put": "Regular Puts",
+    "swing-call": "Swing Calls",
+    "swing-put": "Swing Puts",
+    "bull-put-spread": "Bull Put Spreads",
+    "bear-call-spread": "Bear Call Spreads",
+    "learning-results": "Learning Results",
+    "strategy-control": "Scanner and Strategy Controls",
+    "strategy-settings": "Strategy Settings",
+    "strategy-versions": "Strategy Versions",
+    "strategy-recommendations": "Strategy Recommendations",
+}
 
 
 class DiscordChannelApi:
-    """Synchronous adapter used by MessageReconciler from a worker thread."""
-
     def __init__(self, loop: asyncio.AbstractEventLoop, channels: dict[str, Any]):
         self.loop = loop
         self.channels = channels
 
     def _wait(self, coroutine):
-        return asyncio.run_coroutine_threadsafe(coroutine, self.loop).result(timeout=30)
+        return asyncio.run_coroutine_threadsafe(coroutine, self.loop).result(timeout=45)
 
     def _channel(self, channel_id: str):
         channel = self.channels.get(str(channel_id))
@@ -97,38 +351,13 @@ class DiscordChannelApi:
 
 
 class DiscordPublishingService:
-    """Publishes SQLite-backed Discord views and reconciles them in place."""
-
-    REQUIRED_BOOTSTRAP_CARDS = (
-        ("system-health", "system-health", "System Health"),
-        ("system-activity", "system-activity", "System Activity"),
-        ("diagnostics", "diagnostics", "Diagnostics"),
-        ("update-status", "update-status", "Update Status"),
-        ("active-universe", "active-universe", "Active Universe"),
-        ("market-regime", "market-regime", "Market Regime"),
-        ("provider-status", "provider-status", "Provider Status"),
-        ("latest-scan", "scan-results", "Latest Scan"),
-        ("accepted-candidates", "accepted-candidates", "Accepted Candidates"),
-        ("rejected-candidates", "rejected-candidates", "Rejected Candidates"),
-        ("shadow-candidates", "shadow-candidates", "Shadow Candidates"),
-        ("open-positions", "open-positions", "Open Positions"),
-        ("recent-lifecycle-events", "lifecycle-events", "Lifecycle Events"),
-        ("daily-recap", "daily-recap", "Daily Recap"),
-        ("weekly-report", "weekly-report", "Weekly Report"),
-        ("monthly-dashboard", "monthly-dashboard", "Monthly Dashboard"),
-        ("ticker-results", "ticker-results", "Ticker Results"),
-        ("strategy-breakdown", "strategy-breakdown", "Strategy Breakdown"),
-        ("regular-call", "regular-calls", "Regular Calls"),
-        ("regular-put", "regular-puts", "Regular Puts"),
-        ("swing-call", "swing-calls", "Swing Calls"),
-        ("swing-put", "swing-puts", "Swing Puts"),
-        ("bull-put-spread", "bull-put-spreads", "Bull Put Spreads"),
-        ("bear-call-spread", "bear-call-spreads", "Bear Call Spreads"),
-        ("learning-results", "learning-results", "Learning Results"),
-        ("strategy-control", "strategy-control", "Strategy Control"),
-        ("strategy-settings", "strategy-settings", "Strategy Settings"),
-        ("strategy-versions", "strategy-versions", "Strategy Versions"),
-        ("strategy-recommendations", "strategy-recommendations", "Strategy Recommendations"),
+    REQUIRED_BOOTSTRAP_CARDS = tuple(
+        (
+            stable_id,
+            str(route["channel"]),
+            CARD_TITLES.get(stable_id, stable_id.replace("-", " ").title()),
+        )
+        for stable_id, route in CARD_ROUTES.items()
     )
 
     def __init__(
@@ -145,6 +374,7 @@ class DiscordPublishingService:
         self.state = DiscordStateRepository(database)
         self.journals = JournalService(database)
         self.loop: asyncio.AbstractEventLoop | None = None
+        self.guild: Any | None = None
         self.channel_by_name: dict[str, Any] = {}
         self.channel_by_id: dict[str, Any] = {}
         self.reconciler: MessageReconciler | None = None
@@ -153,11 +383,17 @@ class DiscordPublishingService:
         self._refresh_lock = asyncio.Lock()
 
     def _record_receipt(self, component: str, status: str, details: dict[str, Any]) -> None:
-        receipt_id = f"{component}:{_utc_now()}"
+        observed = _utc_now()
         self.db.execute(
             "INSERT INTO discord_sync_receipts(id,component,status,details_json,observed_at) "
             "VALUES (?,?,?,?,?)",
-            (receipt_id, component, status, json.dumps(details, sort_keys=True, default=str), _utc_now()),
+            (
+                f"{component}:{observed}",
+                component,
+                status,
+                json.dumps(details, sort_keys=True, default=str),
+                observed,
+            ),
         )
 
     def _service(self, name: str, *args, default: Any = None) -> Any:
@@ -166,11 +402,11 @@ class DiscordPublishingService:
             return default
         try:
             return function(*args)
-        except Exception as exc:  # publishing must not stop trading work
+        except Exception as exc:
             return {"status": "DEGRADED", "error": f"{type(exc).__name__}: {exc}"}
 
     def _card_value(self, stable_id: str) -> Any:
-        if stable_id == "system-health":
+        if stable_id in {"system-health", "scanner-status"}:
             return self._service("health", default={})
         if stable_id == "system-activity":
             return self.db.query(
@@ -203,32 +439,45 @@ class DiscordPublishingService:
             return health.get("provider_budget", health) if isinstance(health, dict) else health
         if stable_id == "latest-scan":
             return self.db.query(
-                "SELECT id,trigger,source,status,started_at,completed_at,totals_json,errors_json "
+                "SELECT trigger,source,status,started_at,completed_at "
                 "FROM scan_cycles ORDER BY started_at DESC LIMIT 1"
             )
         if stable_id == "accepted-candidates":
             return self.db.query(
-                "SELECT id,strategy_id,symbol,status,setup_score,maximum_risk,observed_at "
+                "SELECT strategy_id,symbol,status,setup_score,maximum_risk,observed_at "
                 "FROM candidates WHERE status IN ('ELIGIBLE','RANKED','SELECTED','OPENED') "
                 "ORDER BY observed_at DESC LIMIT 20"
             )
         if stable_id == "rejected-candidates":
             return self.db.query(
-                "SELECT c.id,c.strategy_id,c.symbol,c.observed_at,r.reason "
-                "FROM candidates c JOIN candidate_rejections r ON r.candidate_id=c.id "
-                "ORDER BY c.observed_at DESC LIMIT 20"
+                "SELECT r.reason,COUNT(*) AS rejected "
+                "FROM candidate_rejections r GROUP BY r.reason "
+                "ORDER BY rejected DESC LIMIT 20"
             )
         if stable_id == "shadow-candidates":
             return self.db.query(
-                "SELECT candidate_id,source_status,outcome,opened_at,closed_at "
+                "SELECT source_status,outcome,opened_at,closed_at "
                 "FROM shadow_candidates ORDER BY opened_at DESC LIMIT 20"
+            )
+        if stable_id == "new-positions":
+            return self.db.query(
+                "SELECT symbol,strategy_id,state,opened_at,entry_value,maximum_risk "
+                "FROM paper_positions ORDER BY opened_at DESC LIMIT 10"
             )
         if stable_id == "open-positions":
             return self._service("open_positions", default=[])
         if stable_id == "recent-lifecycle-events":
             return self.db.query(
-                "SELECT position_id,previous_state,new_state,reason,observed_at "
+                "SELECT previous_state,new_state,reason,observed_at "
                 "FROM lifecycle_events ORDER BY observed_at DESC LIMIT 20"
+            )
+        if stable_id in {"wins", "losses"}:
+            operator = "=" if stable_id == "wins" else "<>"
+            return self.db.query(
+                "SELECT p.symbol,p.strategy_id,o.outcome,o.exit_reason,o.pnl_dollars,"
+                "o.pnl_pct,o.closed_at FROM closed_outcomes o "
+                "JOIN paper_positions p ON p.id=o.position_id "
+                f"WHERE o.outcome {operator} 'WIN' ORDER BY o.closed_at DESC LIMIT 20"
             )
         if stable_id == "daily-recap":
             return self._service("report", "daily-report", default={})
@@ -258,81 +507,166 @@ class DiscordPublishingService:
             return self._service("strategies", default=[])
         if stable_id == "strategy-settings":
             return self.db.query(
-                "SELECT strategy_id,version,hash,preset,active,created_at "
+                "SELECT strategy_id,version,preset,active,created_at "
                 "FROM strategy_versions ORDER BY strategy_id,created_at DESC"
             )
         if stable_id == "strategy-versions":
             return self.db.query(
-                "SELECT strategy_id,version,hash,preset,owner_approved,active,created_at,retired_at "
+                "SELECT strategy_id,version,preset,owner_approved,active,created_at,retired_at "
                 "FROM strategy_versions ORDER BY strategy_id,created_at DESC"
             )
         if stable_id == "strategy-recommendations":
             return self.db.query(
-                "SELECT id,strategy_id,current_version,status,setting_path,owner_decision,updated_at "
+                "SELECT strategy_id,current_version,status,setting_path,owner_decision,updated_at "
                 "FROM learning_recommendations ORDER BY updated_at DESC LIMIT 30"
             )
         return {"status": "NO DATA"}
 
-    async def _publish(self, stable_id: str, channel_name: str, title: str, value: Any) -> str:
+    async def _publish(
+        self, stable_id: str, channel_name: str, title: str, value: Any
+    ) -> str:
         if self.reconciler is None:
             raise RuntimeError("Discord publishing is not initialized")
         channel = self.channel_by_name.get(channel_name.casefold())
         if channel is None:
-            raise KeyError(f"Required Discord channel was not resolved: {channel_name}")
+            raise KeyError(f"Original Discord channel was not resolved: {channel_name}")
         result = await asyncio.to_thread(
             self.reconciler.reconcile,
             stable_id,
             str(channel.id),
-            _payload(title, value),
-            "1",
+            _payload(title, value, stable_id=stable_id),
+            "2",
         )
-        return "unchanged" if result.get("signature") else "updated"
+        return str(result.get("action", "updated"))
 
-    async def _publish_bootstrap_cards(self) -> dict[str, int]:
-        totals = {"created_or_updated": 0, "unchanged": 0, "failed": 0}
+    async def _publish_bootstrap_cards(self) -> dict[str, Any]:
+        totals: dict[str, Any] = {
+            "created": 0,
+            "updated": 0,
+            "rebound": 0,
+            "unchanged": 0,
+            "failed": 0,
+            "mandatory_failed": 0,
+            "failures": [],
+        }
         for stable_id, channel_name, title in self.REQUIRED_BOOTSTRAP_CARDS:
             try:
-                result = await self._publish(
+                action = await self._publish(
                     stable_id,
                     channel_name,
                     title,
                     self._card_value(stable_id),
                 )
-                totals["unchanged" if result == "unchanged" else "created_or_updated"] += 1
+                totals[action if action in totals else "updated"] += 1
             except Exception as exc:
+                route = CARD_ROUTES[stable_id]
+                failure = {
+                    "stable_id": stable_id,
+                    "channel": channel_name,
+                    "mandatory": bool(route.get("mandatory", False)),
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
                 totals["failed"] += 1
-                self._record_receipt(
-                    f"card:{stable_id}",
-                    "FAILED",
-                    {"error": f"{type(exc).__name__}: {exc}"},
-                )
+                totals["mandatory_failed"] += int(failure["mandatory"])
+                totals["failures"].append(failure)
+                self._record_receipt(f"card:{stable_id}", "FAILED", failure)
         return totals
 
-    async def _publish_learning_center(self) -> dict[str, int]:
-        totals = {"reconciled": 0, "failed": 0}
+    def _manifest(self) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        for stable_id in CARD_ROUTES:
+            route = route_for(stable_id)
+            channel = self.channel_by_name.get(route["channel"].casefold())
+            state = self.state.get(stable_id)
+            output.append(
+                {
+                    **route,
+                    "destination_channel_id": str(channel.id) if channel else None,
+                    "message_id": state.get("message_id") if state else None,
+                    "migration_status": "BOUND" if channel else "MISSING",
+                }
+            )
+        output.append(
+            {
+                "stable_id": "trade-journal:<position-id>",
+                "category": "LIVE TRADING DESK",
+                "channel": "trade-journal",
+                "destination_channel_id": (
+                    str(self.channel_by_name["trade-journal"].id)
+                    if "trade-journal" in self.channel_by_name
+                    else None
+                ),
+                "mandatory": True,
+                "owner_only": False,
+                "updates_in_place": True,
+                "migration_status": (
+                    "BOUND" if "trade-journal" in self.channel_by_name else "MISSING"
+                ),
+            }
+        )
+        for lesson in self.learning_center.lessons.values():
+            lesson_id = str(lesson["lesson_id"])
+            channel_name = str(
+                LESSON_ROUTES.get(
+                    lesson_id,
+                    lesson.get("channel_name") or lesson_id,
+                )
+            )
+            channel = self.channel_by_name.get(channel_name.casefold())
+            output.append(
+                {
+                    "stable_id": f"learning-center:{lesson_id}",
+                    "category": "LEARNING CENTER",
+                    "channel": channel_name,
+                    "destination_channel_id": str(channel.id) if channel else None,
+                    "mandatory": True,
+                    "owner_only": False,
+                    "updates_in_place": True,
+                    "migration_status": "BOUND" if channel else "MISSING",
+                }
+            )
+        return output
+
+    async def _publish_learning_center(self) -> dict[str, Any]:
+        totals: dict[str, Any] = {"reconciled": 0, "failed": 0, "failures": []}
         lessons = list(self.learning_center.lessons.values())
         index = [
-            {"lesson_id": lesson["lesson_id"], "title": lesson["title"]}
-            for lesson in lessons
+            {
+                "lesson": index + 1,
+                "title": lesson["title"],
+                "channel": LESSON_ROUTES.get(
+                    str(lesson["lesson_id"]),
+                    str(lesson.get("channel_name") or lesson["lesson_id"]),
+                ),
+            }
+            for index, lesson in enumerate(lessons)
         ]
         try:
             await self._publish(
                 "learning-center:index",
-                "learning-search",
-                "Learning Center Index",
+                "learning-index",
+                "Learning Center • Lessons 1–27",
                 index,
             )
             totals["reconciled"] += 1
-        except Exception:
+        except Exception as exc:
             totals["failed"] += 1
+            totals["failures"].append(
+                {"stable_id": "learning-center:index", "error": f"{type(exc).__name__}: {exc}"}
+            )
+
         for lesson in lessons:
-            channel_name = str(lesson.get("channel_name") or lesson["lesson_id"]).casefold()
+            lesson_id = str(lesson["lesson_id"])
+            channel_name = str(
+                LESSON_ROUTES.get(
+                    lesson_id,
+                    lesson.get("channel_name") or lesson_id,
+                )
+            )
             value = {
                 key: lesson.get(key)
                 for key in (
-                    "lesson_id",
                     "title",
-                    "version",
                     "purpose",
                     "concept",
                     "scanner_application",
@@ -344,7 +678,7 @@ class DiscordPublishingService:
             }
             try:
                 await self._publish(
-                    f"learning-center:{lesson['lesson_id']}",
+                    f"learning-center:{lesson_id}",
                     channel_name,
                     str(lesson["title"]),
                     value,
@@ -352,78 +686,262 @@ class DiscordPublishingService:
                 totals["reconciled"] += 1
             except Exception as exc:
                 totals["failed"] += 1
-                self._record_receipt(
-                    f"lesson:{lesson['lesson_id']}",
-                    "FAILED",
-                    {"error": f"{type(exc).__name__}: {exc}"},
-                )
+                failure = {
+                    "stable_id": f"learning-center:{lesson_id}",
+                    "channel": channel_name,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                totals["failures"].append(failure)
+                self._record_receipt(f"lesson:{lesson_id}", "FAILED", failure)
         return totals
 
-    async def _publish_journals(self) -> dict[str, int]:
-        totals = {"reconciled": 0, "failed": 0}
+    def _journal_thread_id(self, position_id: str) -> str | None:
+        rows = self.db.query(
+            "SELECT message_id FROM journal_state WHERE position_id=?",
+            (position_id,),
+        )
+        if not rows or not rows[0].get("message_id"):
+            return None
+        return str(rows[0]["message_id"])
+
+    def _put_journal_thread(
+        self,
+        position_id: str,
+        thread_id: str,
+        chunks: list[str],
+    ) -> None:
+        digest = hashlib.sha256(
+            json.dumps(chunks, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        self.db.execute(
+            "INSERT OR REPLACE INTO journal_state(position_id,message_id,version,signature,updated_at) "
+            "VALUES (?,?,?,?,?)",
+            (position_id, thread_id, "2", digest, _utc_now()),
+        )
+
+    async def _resolve_journal_thread(self, thread_id: str) -> Any | None:
+        if self.guild is None:
+            return None
+        getter = getattr(self.guild, "get_thread", None)
+        if getter is not None:
+            thread = getter(int(thread_id))
+            if thread is not None:
+                return thread
+        fetch = getattr(self.guild, "fetch_channel", None)
+        if fetch is not None:
+            try:
+                return await fetch(int(thread_id))
+            except Exception:
+                return None
+        return None
+
+    @staticmethod
+    def _thread_result(result: Any) -> tuple[Any, Any | None]:
+        thread = getattr(result, "thread", None)
+        message = getattr(result, "message", None)
+        if thread is not None:
+            return thread, message
+        if isinstance(result, tuple):
+            return result[0], result[1] if len(result) > 1 else None
+        return result, None
+
+    async def _create_journal_thread(
+        self,
+        forum: Any,
+        position_id: str,
+        first_chunk: str,
+    ) -> tuple[Any, Any]:
+        rows = self.db.query(
+            "SELECT symbol,strategy_id FROM paper_positions WHERE id=?",
+            (position_id,),
+        )
+        row = rows[0] if rows else {}
+        name = (
+            f"{row.get('symbol', 'Trade')} • {row.get('strategy_id', 'journal')} • "
+            f"{position_id[:8]}"
+        )[:100]
+        result = await forum.create_thread(name=name, content=first_chunk)
+        thread, starter = self._thread_result(result)
+        if starter is None:
+            fetch = getattr(thread, "fetch_message", None)
+            if fetch is not None:
+                starter = await fetch(int(thread.id))
+        if starter is None:
+            raise RuntimeError("Discord forum did not return a starter message")
+        return thread, starter
+
+    async def _publish_forum_journal(
+        self,
+        forum: Any,
+        position_id: str,
+        chunks: list[str],
+    ) -> int:
+        thread_id = self._journal_thread_id(position_id)
+        thread = await self._resolve_journal_thread(thread_id) if thread_id else None
+        starter = None
+
+        if thread is None:
+            thread, starter = await self._create_journal_thread(
+                forum,
+                position_id,
+                chunks[0],
+            )
+            thread_id = str(thread.id)
+            self.channel_by_id[thread_id] = thread
+            first_payload = {"content": chunks[0]}
+            self.state.put(
+                f"trade-journal:{position_id}",
+                {
+                    "channel_id": thread_id,
+                    "message_id": str(starter.id),
+                    "version": "2",
+                    "signature": signature(first_payload),
+                    "acknowledged": True,
+                },
+            )
+        else:
+            self.channel_by_id[str(thread.id)] = thread
+
+        reconciler = MessageReconciler(
+            DiscordChannelApi(self.loop, self.channel_by_id),
+            self.state,
+        )
+        for index, chunk in enumerate(chunks):
+            stable_id = (
+                f"trade-journal:{position_id}"
+                if index == 0
+                else f"trade-journal:{position_id}:part:{index + 1}"
+            )
+            await asyncio.to_thread(
+                reconciler.reconcile,
+                stable_id,
+                str(thread.id),
+                {"content": chunk},
+                "2",
+            )
+        self._put_journal_thread(position_id, str(thread.id), chunks)
+        return len(chunks)
+
+    async def _publish_journals(self) -> dict[str, Any]:
+        totals: dict[str, Any] = {"reconciled": 0, "failed": 0, "failures": []}
+        destination = self.channel_by_name.get("trade-journal")
+        if destination is None:
+            return {
+                "reconciled": 0,
+                "failed": 1,
+                "failures": [{"error": "Original trade-journal destination is missing"}],
+            }
+
         positions = self.db.query(
             "SELECT id FROM paper_positions ORDER BY opened_at DESC LIMIT 100"
         )
+        is_forum = (
+            "forum" in str(getattr(destination, "type", "")).casefold()
+            or destination.__class__.__name__.casefold().endswith("forumchannel")
+            or hasattr(destination, "create_thread")
+        )
+
         for row in positions:
-            position_id = row["id"]
+            position_id = str(row["id"])
             try:
                 chunks = self.journals.render(position_id)
-                for index, chunk in enumerate(chunks):
-                    stable_id = (
-                        f"trade-journal:{position_id}"
-                        if index == 0
-                        else f"trade-journal:{position_id}:{index + 1}"
+                if is_forum:
+                    totals["reconciled"] += await self._publish_forum_journal(
+                        destination,
+                        position_id,
+                        chunks,
                     )
-                    await self._publish(
-                        stable_id,
-                        "trade-journal",
-                        f"Trade Journal {position_id}",
-                        {"part": index + 1, "content": chunk},
-                    )
-                    totals["reconciled"] += 1
+                else:
+                    for index, chunk in enumerate(chunks):
+                        stable_id = (
+                            f"trade-journal:{position_id}"
+                            if index == 0
+                            else f"trade-journal:{position_id}:part:{index + 1}"
+                        )
+                        await self._publish(
+                            stable_id,
+                            "trade-journal",
+                            f"Trade Journal • {position_id}",
+                            {"part": index + 1, "content": chunk},
+                        )
+                        totals["reconciled"] += 1
             except Exception as exc:
+                failure = {
+                    "position_id": position_id,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
                 totals["failed"] += 1
-                self._record_receipt(
-                    f"journal:{position_id}",
-                    "FAILED",
-                    {"error": f"{type(exc).__name__}: {exc}"},
-                )
+                totals["failures"].append(failure)
+                self._record_receipt(f"journal:{position_id}", "FAILED", failure)
         return totals
 
     async def bootstrap(self, guild: Any, channel_map: dict[str, Any]) -> dict[str, Any]:
         async with self._refresh_lock:
             self.loop = asyncio.get_running_loop()
+            self.guild = guild
             self.channel_by_name = {
                 name.casefold(): channel for name, channel in channel_map.items()
             }
-            self.channel_by_id = {
-                str(channel.id): channel for channel in self.channel_by_name.values()
-            }
+            self.channel_by_id = {}
+            for channel in self.channel_by_name.values():
+                self.channel_by_id[str(channel.id)] = channel
             self.reconciler = MessageReconciler(
-                DiscordChannelApi(self.loop, self.channel_by_id), self.state
+                DiscordChannelApi(self.loop, self.channel_by_id),
+                self.state,
             )
+
+            manifest_before = self._manifest()
+            missing_routes = [
+                row["stable_id"]
+                for row in manifest_before
+                if row["migration_status"] == "MISSING"
+            ]
             cards = await self._publish_bootstrap_cards()
             learning = await self._publish_learning_center()
             journals = await self._publish_journals()
-            mandatory_failures = cards["failed"]
-            status = "PASS" if mandatory_failures == 0 else "FAILED"
+            manifest = self._manifest()
+            manifest_path = self.root / "state" / "discord-routing-manifest.json"
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+
+            failures = (
+                int(cards["mandatory_failed"])
+                + int(learning["failed"])
+                + int(journals["failed"])
+                + len(missing_routes)
+            )
+            status = "PASS" if failures == 0 else "FAILED"
             receipt = {
                 "status": status,
                 "guild_id": str(guild.id),
-                "channels_resolved": len(self.channel_by_name),
+                "channels_resolved": len(
+                    {str(channel.id) for channel in self.channel_by_name.values()}
+                ),
+                "routes_total": len(manifest),
+                "routes_missing": missing_routes,
                 "persistent_cards": cards,
                 "learning_center": learning,
                 "journals": journals,
+                "routing_manifest": str(manifest_path),
                 "completed_at": _utc_now(),
                 "secret_values_written": False,
             }
             state_path = self.root / "state" / "discord-publishing-bootstrap.json"
             state_path.parent.mkdir(parents=True, exist_ok=True)
-            state_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+            state_path.write_text(
+                json.dumps(receipt, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
             self._record_receipt("publishing-bootstrap", status, receipt)
             if status != "PASS":
                 raise RuntimeError(
-                    f"Discord publishing bootstrap failed for {mandatory_failures} mandatory cards"
+                    "Discord publishing bootstrap failed: "
+                    f"missing routes={len(missing_routes)}, "
+                    f"mandatory cards={cards['mandatory_failed']}, "
+                    f"learning={learning['failed']}, journals={journals['failed']}"
                 )
             self.ready = True
             self.ready_event.set()
@@ -441,11 +959,15 @@ class DiscordPublishingService:
                     "rejected-candidates",
                     "shadow-candidates",
                     "market-regime",
+                    "scanner-status",
                     "system-activity",
                 },
                 "paper": {
+                    "new-positions",
                     "open-positions",
                     "recent-lifecycle-events",
+                    "wins",
+                    "losses",
                     "daily-recap",
                     "weekly-report",
                     "monthly-dashboard",
@@ -459,13 +981,24 @@ class DiscordPublishingService:
                     "strategy-versions",
                     "strategy-recommendations",
                 },
-                "diagnostics": {"system-health", "diagnostics", "provider-status"},
+                "diagnostics": {
+                    "system-health",
+                    "scanner-status",
+                    "diagnostics",
+                    "provider-status",
+                },
                 "reports": {
                     "daily-recap",
                     "weekly-report",
                     "monthly-dashboard",
                     "ticker-results",
                     "strategy-breakdown",
+                    "regular-call",
+                    "regular-put",
+                    "swing-call",
+                    "swing-put",
+                    "bull-put-spread",
+                    "bear-call-spread",
                     "learning-results",
                 },
             }
@@ -484,7 +1017,10 @@ class DiscordPublishingService:
                     self._record_receipt(
                         f"refresh:{stable_id}",
                         "FAILED",
-                        {"event": event, "error": f"{type(exc).__name__}: {exc}"},
+                        {
+                            "event": event,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        },
                     )
             if event == "paper":
                 await self._publish_journals()
