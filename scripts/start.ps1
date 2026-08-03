@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
-$Python = Join-Path $Root '.venv\Scripts\python.exe'
-if (!(Test-Path $Python)) { throw 'Virtual environment is missing. Run SETUP-AND-START.cmd.' }
+$Python = Join-Path $Root '.venv-tradysquid\Scripts\python.exe'
+if (!(Test-Path $Python)) { throw 'Tradysquid virtual environment is missing. Run SETUP-AND-START.cmd.' }
 $PidFile = Join-Path $Root 'state\tradysquid.pid.json'
 $Startup = Join-Path $Root 'state\startup.json'
 if (Test-Path $PidFile) {
@@ -21,7 +21,8 @@ for ($i=0; $i -lt 60; $i++) {
   if (Test-Path $Startup) {
     $receipt = Get-Content $Startup -Raw | ConvertFrom-Json
     if ($receipt.status -eq 'RUNNING' -and $receipt.pid -eq $p.Id -and $receipt.scheduler_running -and $receipt.strategy_count -eq 6) {
-      Write-Host 'PASS'; exit 0
+      Write-Host 'PASS'
+      exit 0
     }
   }
   Start-Sleep -Seconds 1
