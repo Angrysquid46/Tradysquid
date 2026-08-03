@@ -64,8 +64,6 @@ def infer_tradier_environment(values: Mapping[str, str]) -> str:
     if "api.tradier.com" in base_url:
         return "production"
 
-    # The previous Tradysquid configuration used api.tradier.com by default.
-    # This remains read-only market data; it does not enable brokerage writes.
     return "production"
 
 
@@ -170,12 +168,21 @@ def migrate(root: Path, *, allow_owner_lookup: bool = True) -> dict[str, object]
         receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
         raise
 
-    lines = [f"{name}={canonical[name]}" for name in CANONICAL_KEYS]
+    # Preserve every unrelated local integration setting. Canonical names are
+    # added or updated without deleting legacy aliases still consumed by older
+    # local components.
+    merged = dict(values)
+    merged.update(canonical)
+    ordered_names = list(values)
+    ordered_names.extend(name for name in CANONICAL_KEYS if name not in ordered_names)
+    lines = [f"{name}={merged[name]}" for name in ordered_names]
     env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
     receipt = {
         "status": "PASS",
         "canonical_keys": list(CANONICAL_KEYS),
         "sources": sources,
+        "preserved_names": sorted(name for name in values if name not in CANONICAL_KEYS),
         "secret_values_written": False,
     }
     receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
