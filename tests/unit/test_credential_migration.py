@@ -61,22 +61,51 @@ def test_missing_owner_is_reported_when_lookup_is_disabled() -> None:
         canonicalize(values, allow_owner_lookup=False)
 
 
-def test_migrate_writes_only_canonical_names_and_safe_receipt(tmp_path: Path) -> None:
+def test_migrate_adds_canonical_names_and_preserves_complete_env(tmp_path: Path) -> None:
     env_path = tmp_path / ".env"
+    values = {
+        **legacy_values(),
+        "DISCORD_APPLICATION_ID": "app-id",
+        "DISCORD_PUBLIC_KEY": "public-key",
+        "OPENAI_API_KEY": "openai-token",
+        "OPENAI_MODEL": "gpt-test",
+        "GITHUB_UPGRADE_TOKEN": "github-token",
+        "GITHUB_REPOSITORY": "owner/repository",
+        "SEC_USER_AGENT": "agent@example.com",
+        "NGROK_AUTHTOKEN": "ngrok-token",
+        "COMMAND_BOT_HOST": "127.0.0.1",
+        "COMMAND_BOT_PORT": "8080",
+        "LOCAL_FULL_SCAN_ENABLED": "true",
+        "TRADINGVIEW_WEBHOOK_SECRET": "webhook-token",
+    }
     env_path.write_text(
-        "\n".join(f"{key}={value}" for key, value in legacy_values().items()) + "\n",
+        "\n".join(f"{key}={value}" for key, value in values.items()) + "\n",
         encoding="utf-8",
     )
+
     receipt = migrate(tmp_path, allow_owner_lookup=False)
     migrated = parse_env(env_path.read_text(encoding="utf-8"))
-    assert tuple(migrated) == CANONICAL_KEYS
+
+    for name in CANONICAL_KEYS:
+        assert migrated[name]
+    for name, value in values.items():
+        assert migrated[name] == value
     assert migrated["TRADIER_ACCESS_TOKEN"] == "tradier-token"
     assert migrated["DISCORD_OWNER_USER_ID"] == "67890"
     assert receipt["status"] == "PASS"
+    assert "OPENAI_API_KEY" in receipt["preserved_names"]
+    assert "TRADINGVIEW_WEBHOOK_SECRET" in receipt["preserved_names"]
 
     receipt_text = (tmp_path / "state" / "credential-migration.json").read_text(
         encoding="utf-8"
     )
-    assert "discord-token" not in receipt_text
-    assert "tradier-token" not in receipt_text
+    for secret in (
+        "discord-token",
+        "tradier-token",
+        "openai-token",
+        "github-token",
+        "ngrok-token",
+        "webhook-token",
+    ):
+        assert secret not in receipt_text
     assert json.loads(receipt_text)["secret_values_written"] is False
