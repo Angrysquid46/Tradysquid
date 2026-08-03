@@ -142,7 +142,6 @@ def _route(
 
 
 CARD_ROUTES: dict[str, dict[str, Any]] = {
-    # SYSTEM
     "system-health": _route("SYSTEM", "system-health", mandatory=True),
     "system-activity": _route("SYSTEM", "system-activity"),
     "diagnostics": _route("SYSTEM", "diagnostics"),
@@ -150,7 +149,6 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "provider-status": _route("SYSTEM", "provider-status", mandatory=True),
     "scanner-status": _route("SYSTEM", "scanner-status"),
     "api-errors": _route("SYSTEM", "api-errors"),
-    # MARKET INTELLIGENCE
     "active-universe": _route(
         "MARKET INTELLIGENCE", "universe-watch", mandatory=True
     ),
@@ -161,13 +159,11 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "breaking-events": _route("MARKET INTELLIGENCE", "breaking-alerts"),
     "ticker-intelligence": _route("MARKET INTELLIGENCE", "news-and-events"),
     "charts-and-levels": _route("MARKET INTELLIGENCE", "charts-and-levels"),
-    # LIVE TRADING DESK
     "latest-scan": _route(
         "LIVE TRADING DESK", "scanner-feed", mandatory=True
     ),
     "accepted-candidates": _route("LIVE TRADING DESK", "scanner-feed"),
     "rejected-candidates": _route("LIVE TRADING DESK", "scanner-feed"),
-    "shadow-candidates": _route("LIVE TRADING DESK", "scanner-feed"),
     "new-positions": _route("LIVE TRADING DESK", "new-positions"),
     "open-positions": _route(
         "LIVE TRADING DESK", "held-positions", mandatory=True
@@ -177,7 +173,6 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     ),
     "wins": _route("LIVE TRADING DESK", "wins"),
     "losses": _route("LIVE TRADING DESK", "losses"),
-    # PERFORMANCE
     "daily-recap": _route(
         "PERFORMANCE", "performance-dashboard", mandatory=True
     ),
@@ -196,7 +191,6 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "learning-results": _route(
         "PERFORMANCE", "learning-results", mandatory=True
     ),
-    # STRATEGY CONTROL
     "strategy-control": _route(
         "STRATEGY CONTROL", "strategy-control", mandatory=True, owner_only=True
     ),
@@ -215,7 +209,6 @@ CARD_ROUTES: dict[str, dict[str, Any]] = {
     "strategy-recommendations": _route(
         "STRATEGY CONTROL", "strategy-recommendations", owner_only=True
     ),
-    # OWNER CONTROL
     "owner-controls": _route(
         "OWNER CONTROL", "owner-controls", mandatory=True, owner_only=True
     ),
@@ -311,7 +304,6 @@ CHANNEL_ALIASES: dict[str, tuple[str, ...]] = {
         "scan-results",
         "accepted-candidates",
         "rejected-candidates",
-        "shadow-candidates",
     ),
     "new-positions": ("accepted-candidates",),
     "held-positions": ("open-positions", "lifecycle-events"),
