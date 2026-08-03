@@ -63,6 +63,17 @@ try {
   }
   Add-Step 'credentials-preserved-with-canonical-names'
 
+  Invoke-Native 'canonical-credential-validation' {
+    Push-Location $Root
+    try {
+      & py -3.12 -m tradysquid.operations.install_preflight `
+        --env (Join-Path $Root '.env') `
+        --phase canonical `
+        --receipt (Join-Path $Root 'state\post-migration-credentials.json')
+    } finally { Pop-Location }
+  }
+  Add-Step 'canonical-credentials-validated-after-migration'
+
   & (Join-Path $PSScriptRoot 'clean_previous_runtime.ps1')
   Add-Step 'previous-runtime-cleaned'
 
