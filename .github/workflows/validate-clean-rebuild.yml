@@ -12,6 +12,71 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - run: python -m pip install -r requirements-dev.txt
-      - run: python -m compileall -q tradysquid scripts tests
-      - run: python -m pytest
+
+      - name: Create isolated production virtual environment
+        shell: pwsh
+        run: |
+          py -3.12 -m venv .venv-tradysquid
+          $python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          if (!(Test-Path $python)) { throw 'Isolated interpreter was not created.' }
+          & $python --version
+          if ($LASTEXITCODE -ne 0) { throw 'Isolated interpreter failed.' }
+
+      - name: Install dependencies and editable project
+        shell: pwsh
+        run: |
+          $python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'pip upgrade failed.' }
+          & $python -m pip install -r requirements-dev.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+          & $python -m pip install --editable .
+          if ($LASTEXITCODE -ne 0) { throw 'Editable project installation failed.' }
+          & $python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency integrity check failed.' }
+
+      - name: Compile installed source
+        shell: pwsh
+        run: |
+          $python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $python -m compileall -q tradysquid scripts tests
+          if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
+
+      - name: Run complete test suite
+        shell: pwsh
+        run: |
+          $python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $python -m pytest
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+
+      - name: Run production installation verifier from repository root
+        shell: pwsh
+        run: |
+          $repository = (Get-Location).Path
+          $python = Join-Path $repository '.venv-tradysquid\Scripts\python.exe'
+          Push-Location $repository
+          try {
+            & $python -m scripts.verify_installation
+            if ($LASTEXITCODE -ne 0) { throw 'Repository-root installation verification failed.' }
+          }
+          finally {
+            Pop-Location
+          }
+
+      - name: Run production verifier from an external path with spaces
+        shell: pwsh
+        run: |
+          $repository = (Get-Location).Path
+          $python = Join-Path $repository '.venv-tradysquid\Scripts\python.exe'
+          $external = Join-Path $env:RUNNER_TEMP 'Tradysquid Verifier Caller'
+          New-Item -ItemType Directory -Force -Path $external | Out-Null
+          Push-Location $external
+          try {
+            & $python -c "import pathlib, tradysquid, scripts; print(pathlib.Path(tradysquid.__file__).resolve())"
+            if ($LASTEXITCODE -ne 0) { throw 'External working-directory import failed.' }
+            & $python -m scripts.verify_installation
+            if ($LASTEXITCODE -ne 0) { throw 'External working-directory verification failed.' }
+          }
+          finally {
+            Pop-Location
+          }
