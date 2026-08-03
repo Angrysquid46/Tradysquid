@@ -371,6 +371,7 @@ function Archive-PreviousSetupArtifacts {
         (Join-Path $Root 'logs\setup-child-stderr.log')
         (Join-Path $Root 'state\setup-heartbeat.json')
         (Join-Path $Root 'state\setup-stage-state.json')
+        (Join-Path $Root 'state\setup-entry-exit-code.txt')
     )
 
     $Existing = @($Artifacts | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
@@ -459,6 +460,7 @@ function Invoke-SetupProcess {
     $StderrPath = Join-Path $LogDirectory 'setup-child-stderr.log'
     $HeartbeatPath = Join-Path $StateDirectory 'setup-heartbeat.json'
     $StageStatePath = Join-Path $StateDirectory 'setup-stage-state.json'
+    $EntryExitCodePath = Join-Path $StateDirectory 'setup-entry-exit-code.txt'
 
     $Arguments = @(
         '-NoProfile'
@@ -555,7 +557,27 @@ function Invoke-SetupProcess {
         }
     }
 
-    $ExitCode = $Process.ExitCode
+    $ExitCode = $null
+    if (Test-Path -LiteralPath $EntryExitCodePath -PathType Leaf) {
+        $RawExitCode = (Get-Content -LiteralPath $EntryExitCodePath -Raw).Trim()
+        $ParsedExitCode = 0
+        if ([int]::TryParse($RawExitCode, [ref]$ParsedExitCode)) {
+            $ExitCode = $ParsedExitCode
+        }
+    }
+    if ($null -eq $ExitCode) {
+        try {
+            $Process.Refresh()
+            if ($Process.HasExited) {
+                $ExitCode = [int]$Process.ExitCode
+            }
+        } catch {
+            $ExitCode = $null
+        }
+    }
+    if ($null -eq $ExitCode) {
+        $ExitCode = 1
+    }
     if ($TimedOutStage) {
         $ExitCode = 124
     }
@@ -569,6 +591,7 @@ function Invoke-SetupProcess {
         AttemptId = $AttemptId
         StdoutPath = $StdoutPath
         StderrPath = $StderrPath
+        EntryExitCodePath = $EntryExitCodePath
         PreviousArtifacts = $PreviousArtifacts
         TimedOutStage = $TimedOutStage
         LastObservedStage = $CurrentStage
@@ -629,6 +652,7 @@ function Copy-SanitizedSetupEvidence {
         (Join-Path $Root 'logs\setup-child-stderr.log')
         (Join-Path $Root 'state\setup-heartbeat.json')
         (Join-Path $Root 'state\setup-stage-state.json')
+        (Join-Path $Root 'state\setup-entry-exit-code.txt')
     )
 
     foreach ($File in $Files) {
