@@ -136,7 +136,7 @@ class SimpleUpgradeFlowTests(unittest.TestCase):
         text = (ROOT / "clean_rebuild_auto_handoff.py").read_text(encoding="utf-8")
         self.assertEqual(
             handoff.EXPECTED_CLEAN_COMMIT,
-            "3eaaf3fc5480adc94580ca2ee4527f791c22ae0e",
+            "a27b61b1198e575f66e339001b4c120e7085e0cd",
         )
         self.assertIn("refs/remotes/origin", text)
         self.assertIn("worktree", text)
