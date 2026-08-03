@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SETUP = ROOT / "scripts" / "setup.ps1"
 INSTALLER = ROOT / "scripts" / "install_clean_rebuild.ps1"
 STRUCTURE = ROOT / "tradysquid" / "discord" / "structure.py"
+LAYOUT = ROOT / "tradysquid" / "discord" / "layout.py"
+SCHEMA = ROOT / "config" / "discord-schema.json"
 
 
 def test_setup_does_not_serialize_generic_list_directly() -> None:
@@ -30,13 +32,33 @@ def test_installer_uses_safe_optional_receipt_properties() -> None:
         assert f"Get-OptionalProperty $SetupReceipt '{property_name}'" in source
 
 
-def test_structure_reconciler_checks_capacity_and_whole_guild() -> None:
-    source = STRUCTURE.read_text(encoding="utf-8")
-    assert "MAX_CHANNELS_PER_CATEGORY = 50" in source
-    assert "_all_text_channels" in source
-    assert "_overflow_category" in source
-    assert "channel-reused-other-category" in source
-    assert "discord.channel." in source
+def test_structure_reconciler_restores_original_layout_without_overflow() -> None:
+    structure = STRUCTURE.read_text(encoding="utf-8")
+    layout = LAYOUT.read_text(encoding="utf-8")
+    schema = SCHEMA.read_text(encoding="utf-8")
+
+    assert "MAX_CHANNELS_PER_CATEGORY = 50" in structure
+    assert "_all_channels" in structure
+    assert "channel-restored-to-original-category" in structure
+    assert "discord.channel." in structure
+    assert "_overflow_category" not in structure
+    assert "create_category" not in structure
+
+    assert '"SCANNING"' in layout
+    assert '"PAPER TRADING"' in layout
+    assert '"LEARNING CENTER 2"' in layout
+    assert '"STRATEGY CONTROL"' in layout
+    assert "INVENTED_CATEGORIES" in layout
+    assert "STRATEGY CONTROL" not in {
+        "SCANNING",
+        "PAPER TRADING",
+        "LEARNING CENTER 2",
+    }
+
+    assert '"allow_create_missing": false' in schema
+    assert '"allow_move_existing": false' in schema
+    assert '"STRATEGY CONTROL"' in schema
+    assert '"LEARNING CENTER 2"' not in schema
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows PowerShell only")
