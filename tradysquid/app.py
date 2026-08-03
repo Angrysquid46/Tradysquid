@@ -378,7 +378,7 @@ class Application:
         except (OSError, ValueError, TypeError):
             return {}
 
-    async def _wait_for_discord_readiness(self, timeout: int = 600) -> None:
+    async def _wait_for_discord_readiness(self, timeout: int = 270) -> None:
         if self.discord is None:
             raise RuntimeError("Discord owner or guild configuration is missing")
         token = os.environ.get("DISCORD_BOT_TOKEN")
