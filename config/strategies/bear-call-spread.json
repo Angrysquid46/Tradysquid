@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "version": "1.0.0",
+  "enabled": true,
+  "preset": "balanced",
+  "contract_filters": {
+    "minimum_option_volume": 1,
+    "minimum_open_interest": 100,
+    "maximum_bid_ask_pct": 0.25,
+    "minimum_abs_delta": 0.1,
+    "maximum_abs_delta": 0.25,
+    "maximum_quoted_premium": 99.0,
+    "maximum_risk_dollars": 100.0,
+    "maximum_spread_width": 1.0,
+    "minimum_spread_credit_dollars": 5.0,
+    "minimum_dte": 21,
+    "maximum_dte": 45,
+    "maximum_strike_distance_pct": 0.12
+  },
+  "entry": {
+    "allowed_regimes": ["BEARISH_CONTROLLED"],
+    "blocked_regimes": ["NO_TRADE","DATA_INSUFFICIENT"],
+    "minimum_setup_score": 50,
+    "maximum_selections_per_scan": 1,
+    "cooldown_minutes": 1440,
+    "selection_mode": "record-only",
+    "execution_timeframe": "intraday",
+    "confirmation_timeframes": ["daily"],
+    "context_timeframes": ["weekly","monthly"],
+    "maximum_data_age_seconds": 120
+  },
+  "management": {
+    "monitoring_interval_seconds": 60,
+    "hard_stop_pct": 1.0,
+    "profit_target_pct": 0.5,
+    "break_even_activation_pct": null,
+    "trailing_activation_pct": null,
+    "maximum_mfe_giveback_pct": null,
+    "paper_slippage_per_share": 0.01,
+    "estimated_fees": 0.0,
+    "close_by_dte": 5
+  },
+  "learning": {"minimum_sample_size":30,"evaluation_window":100,"automatic_application":false,"recommendation_sensitivity":"balanced"},
+  "strategy_id":"bear-call-spread","display_name":"Bear Call Spread","play_style":"SPREAD","direction":"call","structure":"credit-spread"
+}

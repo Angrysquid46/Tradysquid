@@ -1,0 +1,9 @@
+{
+  "legacy_commit": "ba75aae5f34f3889404bfe0c7c0b96663a92a657",
+  "archive_branch": "archive/current-failed-implementation",
+  "archive_branch_created": true,
+  "annotated_tag_created": false,
+  "annotated_tag_status": "BLOCKED: the connected GitHub tool does not expose tag creation",
+  "local_backup_status": "BLOCKED until SETUP-AND-START.cmd runs on the Windows computer",
+  "clean_tree_policy": "The clean-rebuild branch contains a replacement tree and does not copy legacy implementation modules."
+}

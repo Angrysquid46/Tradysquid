@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "note": "Non-secret defaults live under config/. Secrets remain in .env.",
+  "universe": {"maximum_active": 25, "candidate_pool": []},
+  "risk": {"maximum_position_risk_dollars": 100.0}
+}
