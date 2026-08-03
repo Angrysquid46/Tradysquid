@@ -32,22 +32,48 @@ foreach ($path in $Startup,$DiscordReadiness,$PublishingReadiness) {
   Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
 }
 
-$p = Start-Process `
-  -FilePath $Python `
-  -ArgumentList '-m','tradysquid.app' `
-  -WorkingDirectory $Root `
-  -WindowStyle Hidden `
-  -PassThru `
-  -RedirectStandardOutput $Log `
-  -RedirectStandardError $ErrorLog
+$StartParameters = @{
+  FilePath = $Python
+  ArgumentList = @('-m','tradysquid.app')
+  WorkingDirectory = $Root
+  WindowStyle = 'Hidden'
+  PassThru = $true
+  RedirectStandardOutput = $Log
+  RedirectStandardError = $ErrorLog
+}
+$p = Start-Process @StartParameters
 
-for ($i=0; $i -lt 180; $i++) {
+# Discord structure synchronization and first-run card creation can legitimately
+# take several minutes because Discord rate-limits message and channel writes.
+$ReadinessTimeoutSeconds = 660
+for ($i=0; $i -lt $ReadinessTimeoutSeconds; $i++) {
   if ($p.HasExited) {
-    $tail = ''
+    $details = New-Object System.Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $Startup) {
+      try {
+        $receipt = Get-Content -LiteralPath $Startup -Raw | ConvertFrom-Json
+        if ($receipt.error) { $details.Add("startup=$($receipt.error)") }
+      } catch { $null = $_ }
+    }
+    if (Test-Path -LiteralPath $DiscordReadiness) {
+      try {
+        $receipt = Get-Content -LiteralPath $DiscordReadiness -Raw | ConvertFrom-Json
+        if ($receipt.error) { $details.Add("discord=$($receipt.error)") }
+      } catch { $null = $_ }
+    }
+    if (Test-Path -LiteralPath $PublishingReadiness) {
+      try {
+        $receipt = Get-Content -LiteralPath $PublishingReadiness -Raw | ConvertFrom-Json
+        if ($receipt.status -ne 'PASS') {
+          $details.Add("publishing_status=$($receipt.status)")
+        }
+      } catch { $null = $_ }
+    }
     if (Test-Path -LiteralPath $ErrorLog) {
       $tail = (Get-Content -LiteralPath $ErrorLog -Tail 20 -ErrorAction SilentlyContinue) -join ' | '
+      if ($tail) { $details.Add("stderr=$tail") }
     }
-    throw "Tradysquid exited during startup with code $($p.ExitCode). $tail"
+    throw "Tradysquid exited during startup with code $($p.ExitCode). $($details -join ' ; ')"
   }
 
   if (
@@ -74,7 +100,9 @@ for ($i=0; $i -lt 180; $i++) {
       )
       if ($valid) {
         Write-Host 'PASS'
-        exit 0
+        # Return to setup.ps1 instead of terminating the entire parent
+        # PowerShell host, which previously prevented SETUP-RESULT.json.
+        return
       }
 
       if ($startupReceipt.status -eq 'FAILED') {
@@ -90,7 +118,11 @@ for ($i=0; $i -lt 180; $i++) {
       if ($_.Exception.Message -like '*failed*') { throw }
     }
   }
+
+  if ($i -gt 0 -and ($i % 15) -eq 0) {
+    Write-Host "Waiting for application, Discord, and publishing readiness: $i seconds"
+  }
   Start-Sleep -Seconds 1
 }
 
-throw 'Tradysquid did not reach application, Discord, and publishing readiness within 180 seconds.'
+throw "Tradysquid did not reach application, Discord, and publishing readiness within $ReadinessTimeoutSeconds seconds."
