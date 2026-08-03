@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "lesson_defaults": {
+    "version": "1.0.0",
+    "purpose_template": "Use {title} as timestamped evidence in paper-option decisions.",
+    "concept_template": "{title} must be evaluated from facts available at the decision time.",
+    "decision_framework": [
+      "facts",
+      "interpretation",
+      "opposition",
+      "invalidation",
+      "decision"
+    ],
+    "evidence_checklist": [
+      "timestamp",
+      "freshness",
+      "liquidity",
+      "risk",
+      "missing data"
+    ],
+    "failure_modes": [
+      "stale evidence",
+      "outcome leakage",
+      "unsupported certainty"
+    ],
+    "journal_fields": [
+      "facts",
+      "thesis",
+      "invalidation",
+      "limitations"
+    ],
+    "scanner_application_template": "Attach {title} evidence to qualification or rejection.",
+    "risk_considerations": "Never override the $100 paper-risk ceiling.",
+    "limitations": "Evidence supports review; it does not guarantee profit.",
+    "practice_drill_template": "Review one candidate using only its recorded {title} evidence.",
+    "related_lessons": []
+  },
+  "lessons": [
+    {"lesson_id":"01-market-foundations","channel_name":"01-market-foundations","title":"Market Foundations"},
+    {"lesson_id":"02-instrument-identification","channel_name":"02-instrument-identification","title":"Instrument Identification"},
+    {"lesson_id":"03-market-sessions","channel_name":"03-market-sessions","title":"Market Sessions"},
+    {"lesson_id":"04-underlying-liquidity","channel_name":"04-underlying-liquidity","title":"Underlying Liquidity"},
+    {"lesson_id":"05-chart-structure","channel_name":"05-chart-structure","title":"Chart Structure"},
+    {"lesson_id":"06-price-action","channel_name":"06-price-action","title":"Price Action"},
+    {"lesson_id":"07-technical-indicators","channel_name":"07-technical-indicators","title":"Technical Indicators"},
+    {"lesson_id":"08-trend","channel_name":"08-trend","title":"Trend"},
+    {"lesson_id":"09-momentum","channel_name":"09-momentum","title":"Momentum"},
+    {"lesson_id":"10-support-resistance","channel_name":"10-support-resistance","title":"Support and Resistance"},
+    {"lesson_id":"11-volatility","channel_name":"11-volatility","title":"Volatility"},
+    {"lesson_id":"12-market-regimes","channel_name":"12-market-regimes","title":"Market Regimes"},
+    {"lesson_id":"13-options-foundations","channel_name":"13-options-foundations","title":"Options Foundations"},
+    {"lesson_id":"14-option-chains","channel_name":"14-option-chains","title":"Option Chains"},
+    {"lesson_id":"15-contract-liquidity","channel_name":"15-contract-liquidity","title":"Contract Liquidity"},
+    {"lesson_id":"16-bid-ask-behavior","channel_name":"16-bid-ask-behavior","title":"Bid and Ask Behavior"},
+    {"lesson_id":"17-option-pricing","channel_name":"17-option-pricing","title":"Option Pricing"},
+    {"lesson_id":"18-greeks","channel_name":"18-greeks","title":"Greeks"},
+    {"lesson_id":"19-implied-volatility","channel_name":"19-implied-volatility","title":"Implied Volatility"},
+    {"lesson_id":"20-directional-long-options","channel_name":"20-directional-long-options","title":"Directional Long Options"},
+    {"lesson_id":"21-defined-risk-spreads","channel_name":"21-defined-risk-spreads","title":"Defined-Risk Spreads"},
+    {"lesson_id":"22-position-sizing","channel_name":"22-position-sizing","title":"Position Sizing"},
+    {"lesson_id":"23-risk-limits","channel_name":"23-risk-limits","title":"Risk Limits"},
+    {"lesson_id":"24-trade-planning","channel_name":"24-trade-planning","title":"Trade Planning"},
+    {"lesson_id":"25-execution-assumptions","channel_name":"25-execution-assumptions","title":"Execution Assumptions"},
+    {"lesson_id":"26-journaling","channel_name":"26-journaling","title":"Journaling"},
+    {"lesson_id":"27-backtesting-review","channel_name":"27-backtesting-review","title":"Backtesting, Statistics, and Post-Trade Review"}
+  ]
+}

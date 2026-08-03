@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "categories": [
+    {
+      "name": "SYSTEM",
+      "channels": [
+        "system-health",
+        "system-activity",
+        "diagnostics",
+        "update-status",
+        "owner-controls"
+      ]
+    },
+    {
+      "name": "MARKET INTELLIGENCE",
+      "channels": [
+        "active-universe",
+        "market-regime",
+        "session-preparation",
+        "ticker-intelligence",
+        "breaking-events",
+        "charts-and-levels",
+        "provider-status"
+      ]
+    },
+    {
+      "name": "SCANNING",
+      "channels": [
+        "scan-results",
+        "accepted-candidates",
+        "rejected-candidates",
+        "shadow-candidates"
+      ]
+    },
+    {
+      "name": "PAPER TRADING",
+      "channels": [
+        "open-positions",
+        "lifecycle-events",
+        "trade-journal",
+        "wins",
+        "losses"
+      ]
+    },
+    {
+      "name": "PERFORMANCE",
+      "channels": [
+        "daily-recap",
+        "weekly-report",
+        "monthly-dashboard",
+        "ticker-results",
+        "strategy-breakdown",
+        "regular-calls",
+        "regular-puts",
+        "swing-calls",
+        "swing-puts",
+        "bull-put-spreads",
+        "bear-call-spreads",
+        "learning-results"
+      ]
+    },
+    {
+      "name": "STRATEGY CONTROL",
+      "channels": [
+        "strategy-control",
+        "strategy-settings",
+        "strategy-versions",
+        "trade-overrides",
+        "strategy-change-log",
+        "strategy-recommendations"
+      ]
+    },
+    {
+      "name": "LEARNING CENTER",
+      "channels": [
+        "01-market-foundations",
+        "02-instrument-identification",
+        "03-market-sessions",
+        "04-underlying-liquidity",
+        "05-chart-structure",
+        "06-price-action",
+        "07-technical-indicators",
+        "08-trend",
+        "09-momentum",
+        "10-support-resistance",
+        "11-volatility",
+        "12-market-regimes",
+        "13-options-foundations",
+        "14-option-chains",
+        "15-contract-liquidity",
+        "16-bid-ask-behavior",
+        "17-option-pricing",
+        "18-greeks",
+        "19-implied-volatility",
+        "20-directional-long-options",
+        "21-defined-risk-spreads",
+        "22-position-sizing",
+        "23-risk-limits",
+        "24-trade-planning",
+        "25-execution-assumptions",
+        "26-journaling",
+        "27-backtesting-review",
+        "examples-and-reviews",
+        "learning-search"
+      ]
+    }
+  ]
+}

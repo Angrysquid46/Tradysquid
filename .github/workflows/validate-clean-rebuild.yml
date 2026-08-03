@@ -1,0 +1,17 @@
+name: Validate clean rebuild
+on:
+  pull_request:
+  push:
+    branches: [clean-rebuild]
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m compileall -q tradysquid scripts tests
+      - run: python -m pytest
