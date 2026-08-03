@@ -27,7 +27,10 @@ def load_env() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         name, value = line.split("=", 1)
-        os.environ.setdefault(name.strip(), value.strip())
+        # The local .env is the authoritative runtime configuration. Using
+        # setdefault allowed stale inherited Windows environment variables,
+        # including rotated Discord tokens, to override the saved values.
+        os.environ[name.strip()] = value.strip()
 
 
 def install_runtime_overrides(
