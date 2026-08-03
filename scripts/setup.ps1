@@ -57,7 +57,7 @@ $backup = ''
 $projectInstallation = 'NOT STARTED'
 $packageImport = 'NOT STARTED'
 $packagePath = $null
-$stageRecords = New-Object System.Collections.Generic.List[object]
+$stageRecords = @()
 $TranscriptStarted = $false
 
 function Write-StageState {
@@ -80,6 +80,43 @@ function Write-StageState {
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $StageStatePath -Encoding UTF8
 }
 
+function Add-StageRecord {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Status,
+        [Parameter(Mandatory = $true)][datetime]$Started,
+        [Parameter(Mandatory = $true)][datetime]$Finished,
+        [Parameter(Mandatory = $true)][int]$ExitCode,
+        [AllowNull()][string]$ErrorMessage
+    )
+
+    $script:stageRecords += [pscustomobject]@{
+        name = $Name
+        status = $Status
+        started_at = $Started.ToString('o')
+        finished_at = $Finished.ToString('o')
+        duration_seconds = [Math]::Round(($Finished - $Started).TotalSeconds, 3)
+        exit_code = $ExitCode
+        error = $ErrorMessage
+    }
+}
+
+function Convert-StageRecordsToPlainArray {
+    $PlainStages = @()
+    foreach ($StageRecord in $script:stageRecords) {
+        $PlainStages += [pscustomobject]@{
+            name = [string]$StageRecord.name
+            status = [string]$StageRecord.status
+            started_at = [string]$StageRecord.started_at
+            finished_at = [string]$StageRecord.finished_at
+            duration_seconds = [double]$StageRecord.duration_seconds
+            exit_code = [int]$StageRecord.exit_code
+            error = if ($null -eq $StageRecord.error) { $null } else { [string]$StageRecord.error }
+        }
+    }
+    return $PlainStages
+}
+
 function Invoke-SetupStage {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -100,30 +137,15 @@ function Invoke-SetupStage {
         }
 
         $Finished = Get-Date
-        $script:stageRecords.Add([pscustomobject]@{
-            name = $Name
-            status = 'PASS'
-            started_at = $StageStarted.ToString('o')
-            finished_at = $Finished.ToString('o')
-            duration_seconds = [Math]::Round(($Finished - $StageStarted).TotalSeconds, 3)
-            exit_code = if ($null -eq $ExitCode) { 0 } else { $ExitCode }
-            error = $null
-        })
+        $NormalizedExitCode = if ($null -eq $ExitCode) { 0 } else { [int]$ExitCode }
+        Add-StageRecord -Name $Name -Status 'PASS' -Started $StageStarted -Finished $Finished -ExitCode $NormalizedExitCode -ErrorMessage $null
         Write-StageState -Name $Name -Status 'PASS' -StageStartedAt $StageStarted
         Write-Host "PASS: $Name"
     } catch {
         $Finished = Get-Date
-        $Message = $_.Exception.Message
-        $StageExitCode = if ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
-        $script:stageRecords.Add([pscustomobject]@{
-            name = $Name
-            status = 'FAILED'
-            started_at = $StageStarted.ToString('o')
-            finished_at = $Finished.ToString('o')
-            duration_seconds = [Math]::Round(($Finished - $StageStarted).TotalSeconds, 3)
-            exit_code = $StageExitCode
-            error = $Message
-        })
+        $Message = [string]$_.Exception.Message
+        $StageExitCode = if ($LASTEXITCODE) { [int]$LASTEXITCODE } else { 1 }
+        Add-StageRecord -Name $Name -Status 'FAILED' -Started $StageStarted -Finished $Finished -ExitCode $StageExitCode -ErrorMessage $Message
         Write-StageState -Name $Name -Status 'FAILED' -StageStartedAt $StageStarted
         Write-Host "FAILED: $Name`: $Message" -ForegroundColor Red
         throw
@@ -400,7 +422,7 @@ try {
 
     $status = 'PASS'
 } catch {
-    $failure = $_.Exception.Message
+    $failure = [string]$_.Exception.Message
     $failedStage = $currentStage
     $status = 'FAILED'
     Write-Host "FAILED SETUP STAGE: $failedStage" -ForegroundColor Red
@@ -408,22 +430,23 @@ try {
     Write-Host "Detailed setup log: $Log" -ForegroundColor Yellow
 } finally {
     $FinishedAt = Get-Date
+    $StageArray = Convert-StageRecordsToPlainArray
     $ResultObject = [ordered]@{
-        status = $status
-        attempt_id = $AttemptId
+        status = [string]$status
+        attempt_id = [string]$AttemptId
         observed_at = $FinishedAt.ToString('o')
         started_at = $StartedAt.ToString('o')
         finished_at = $FinishedAt.ToString('o')
         failed_stage = $failedStage
         error = $failure
-        stages = @($stageRecords)
+        stages = $StageArray
         backup = $backup
         log = $Log
         repository_path = $Root
         setup_script_path = $PSCommandPath
         setup_commit = $SetupCommit
         expected_clean_commit = $ExpectedCleanCommit
-        process_id = $PID
+        process_id = [int]$PID
         parent_process_id = $ParentProcessId
         python_executable = $Python
         virtual_environment = $VenvPath
@@ -436,14 +459,42 @@ try {
         secret_values_written = $false
     }
 
-    $ResultObject | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $ResultJson -Encoding UTF8
-    @(
-        $status
-        "attempt_id=$AttemptId"
-        "failed_stage=$failedStage"
-        "error=$failure"
-        ($stageRecords | ForEach-Object { "$($_.status) $($_.name) $($_.duration_seconds)s" })
-    ) | Set-Content -LiteralPath $ResultText -Encoding UTF8
+    try {
+        $ResultObject | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $ResultJson -Encoding UTF8
+        $ResultLines = @(
+            [string]$status
+            "attempt_id=$AttemptId"
+            "failed_stage=$failedStage"
+            "error=$failure"
+        )
+        foreach ($StageRecord in $StageArray) {
+            $ResultLines += "$($StageRecord.status) $($StageRecord.name) $($StageRecord.duration_seconds)s"
+        }
+        $ResultLines | Set-Content -LiteralPath $ResultText -Encoding UTF8
+    } catch {
+        $ReceiptError = [string]$_.Exception.Message
+        $MinimalReceipt = [ordered]@{
+            status = [string]$status
+            attempt_id = [string]$AttemptId
+            observed_at = (Get-Date).ToString('o')
+            failed_stage = $failedStage
+            error = $failure
+            receipt_error = $ReceiptError
+            repository_path = $Root
+            setup_commit = $SetupCommit
+            expected_clean_commit = $ExpectedCleanCommit
+            log = $Log
+            secret_values_written = $false
+        }
+        $MinimalReceipt | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ResultJson -Encoding UTF8
+        @(
+            [string]$status
+            "attempt_id=$AttemptId"
+            "failed_stage=$failedStage"
+            "error=$failure"
+            "receipt_error=$ReceiptError"
+        ) | Set-Content -LiteralPath $ResultText -Encoding UTF8
+    }
 
     if ($TranscriptStarted) {
         Stop-Transcript | Out-Null
