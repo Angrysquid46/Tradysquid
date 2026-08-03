@@ -110,6 +110,7 @@ def validate_checkout() -> tuple[bool, str]:
         "run_with_env.py",
         "tradysquid_supervisor.py",
         "run_supervisor_simple.py",
+        "clean_rebuild_auto_handoff.py",
         "simple_upgrade_runtime.py",
         "applied_upgrade_status_runtime.py",
         "diagnostic_upgrade_system.py",
@@ -396,4 +397,8 @@ supervisor.SERVICES = [
 
 
 if __name__ == "__main__":
+    import clean_rebuild_auto_handoff
+
+    if clean_rebuild_auto_handoff.launch_if_needed():
+        raise SystemExit(76)
     raise SystemExit(supervisor.main())
