@@ -100,7 +100,7 @@ function Write-EarlyFailureReceipt {
         failed_stage = $Stage
         error = $SafeMessage
         parser_errors = @($ParserErrors)
-        setup_body_started = $SetupBodyStarted
+        setup_body_started = $false
         setup_body_exit_code = $BodyExitCode
         receipt_source = 'scripts/setup_entry.ps1'
         repository_path = $Root
@@ -113,6 +113,9 @@ function Write-EarlyFailureReceipt {
         body_stdout = $BodyStdoutPath
         body_stderr = $BodyStderrPath
         secret_values_written = $false
+    }
+    if ($SetupBodyStarted) {
+        $Receipt['setup_body_started'] = $true
     }
 
     $Receipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ResultJson -Encoding UTF8
