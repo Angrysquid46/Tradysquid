@@ -14,6 +14,7 @@ except ImportError:  # pragma: no cover
 
 from .commands import CommandDispatcher
 from .contracts import split_text
+from .retired import retire_stable_messages
 from .structure import DiscordStructureService
 
 
@@ -164,6 +165,7 @@ class DiscordBotService:
                 "channels_resolved": 0,
                 "slash_commands_synchronized": 0,
                 "publishing_bootstrap": None,
+                "retired_messages": None,
                 "layout_cleanup": None,
                 "completed_at": None,
                 "secret_values_written": False,
@@ -206,6 +208,16 @@ class DiscordBotService:
                         channel_map,
                     )
 
+                retired_receipt = None
+                if database is not None:
+                    retired_receipt = await retire_stable_messages(
+                        database,
+                        guild,
+                        bot_user_id=(
+                            str(self.client.user.id) if self.client.user else ""
+                        ),
+                    )
+
                 protected_channel_ids = {
                     str(channel.id)
                     for channel in structure.resolved_channels.values()
@@ -240,6 +252,7 @@ class DiscordBotService:
                         ],
                         "slash_commands_synchronized": len(synchronized),
                         "publishing_bootstrap": publishing_receipt,
+                        "retired_messages": retired_receipt,
                         "layout_cleanup": cleanup_receipt,
                         "completed_at": _utc_now(),
                     }
