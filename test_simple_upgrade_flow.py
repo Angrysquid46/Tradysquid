@@ -1,3 +1,4 @@
+# Validation-only synchronization commit for the repaired automatic handoff.
 from __future__ import annotations
 
 import importlib
