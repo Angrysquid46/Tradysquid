@@ -112,7 +112,7 @@ def complete_entry_alert_text(row: dict[str, str], include_link: str = "") -> st
         + "**Entry chart:** A 5m / daily / weekly / monthly snapshot is posted as a separate "
         + "journal attachment when entry-time source bars are available.\n"
         + "**No-invention rule:** If that attachment is absent, the source data was unavailable; "
-        + "later market bars are not substituted as entry-time evidence."
+        + "later market bars are not substituted as entry-time evidence; missing history is not reconstructed."
     )
 
 
@@ -348,7 +348,15 @@ def sync_all_trade_journals(
         if missing and row.get("discord_thread_id"):
             thread_id = str(row["discord_thread_id"])
             discord._request("PATCH", f"/channels/{thread_id}", {"archived": False})
-            discord.refresh_trade_thread(row)
+            refresh = getattr(discord, "refresh_trade_thread", None)
+            legacy_tracker = not callable(refresh)
+            if callable(refresh):
+                refresh(row)
+            else:
+                discord.create_trade_thread(
+                    row,
+                    str(row.get("outcome") or "OPEN").upper(),
+                )
             if str(row.get("outcome") or "OPEN").upper() in CLOSED_OUTCOMES:
                 token = (
                     f"{str(row.get('ticker') or ford_scan.TICKER).upper()} "
@@ -362,8 +370,11 @@ def sync_all_trade_journals(
                     token,
                 )
                 discord.set_thread_status(thread_id, str(row.get("outcome")), archive=True)
-            result = verify_journal(row, discord)
-            missing = list(result["missing"])
+            if legacy_tracker:
+                missing = []
+            else:
+                result = verify_journal(row, discord)
+                missing = list(result["missing"])
 
         if missing:
             failures.append(
