@@ -42,6 +42,18 @@ def validate_strategy_config(config: dict[str, Any]) -> None:
         raise ValueError('direction must be call or put')
     if config['structure'] not in {'long-option','credit-spread'}:
         raise ValueError('structure must be long-option or credit-spread')
+    selection_mode = str(config['entry'].get('selection_mode', 'record-only'))
+    supported_modes = {
+        'record-only',
+        'owner-confirmed paper entry',
+        'automatically open qualified paper trades',
+        'ranked top-N paper entries',
+    }
+    if selection_mode not in supported_modes:
+        raise ValueError(
+            'selection_mode must be record-only, owner-confirmed paper entry, '
+            'automatically open qualified paper trades, or ranked top-N paper entries'
+        )
 
 @dataclass(frozen=True)
 class AppConfig:

@@ -9,9 +9,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .core.config import AppConfig
+from .core.enums import CandidateStatus
 from .core.logging import configure_logging
 from .core.process_lock import ProcessLock
 from .data.database import Database
+from .data.legacy_import import import_legacy_closed_trades
 from .discord.bot import DiscordBotService
 from .discord.publishing import DiscordPublishingService
 from .learning.analysis import LearningAnalysisService
@@ -46,6 +48,11 @@ class Application:
         self.db.initialize()
         self.db.register_strategies(self.config.strategies)
         active_configs = self.db.active_strategy_configs(self.config.strategies)
+        self.legacy_import = import_legacy_closed_trades(
+            self.db,
+            root / "state" / "ford-plays-log.csv",
+            active_configs,
+        )
         self.manager = RequestManager(self.db)
         self.provider = TradierClient(self.manager)
         self.registry = StrategyRegistry(active_configs)
@@ -74,7 +81,7 @@ class Application:
             "universe_configured": self.universe_controls.configured,
             "universe_change": self.universe_change,
             "universe_refresh": self.initialize_universe,
-            "scan": self.scanner.scan_symbol,
+            "scan": self.scan_symbol,
             "scan_status": self.scan_status,
             "candidate_view": self.candidate_view,
             "paper": self.paper_command,
@@ -574,11 +581,53 @@ class Application:
                 self.discord_task.cancel()
             self.lock.release()
 
+    def scan_symbol(
+        self,
+        symbol: str,
+        trigger: str = "manual",
+        *,
+        publish: bool = True,
+    ):
+        decisions = self.scanner.scan_symbol(symbol, trigger)
+        opened = []
+        for decision in decisions:
+            mode = str(
+                decision.configuration_snapshot.get("entry", {}).get(
+                    "selection_mode",
+                    "record-only",
+                )
+            )
+            if (
+                decision.status == CandidateStatus.SELECTED
+                and mode
+                in {
+                    "automatically open qualified paper trades",
+                    "ranked top-N paper entries",
+                }
+            ):
+                try:
+                    opened.append(self.paper.open(decision).__dict__)
+                except Exception as exc:
+                    self.diagnostics.observe(
+                        "PAPER_TRADING",
+                        decision.candidate_id,
+                        f"{type(exc).__name__}: {exc}",
+                        healthy=False,
+                    )
+        if publish:
+            self.publisher.notify("scan")
+            if opened:
+                self.publisher.notify("paper")
+        return decisions
+
     def scan_all(self):
         total = 0
+        opened_before = self.db.query(
+            "SELECT COUNT(*) AS n FROM paper_positions"
+        )[0]["n"]
         for symbol in self.universe.active():
             try:
-                total += len(self.scanner.scan_symbol(symbol, "scheduled"))
+                total += len(self.scan_symbol(symbol, "scheduled", publish=False))
             except Exception as exc:
                 self.diagnostics.observe(
                     "SCANNER",
@@ -586,8 +635,18 @@ class Application:
                     f"{type(exc).__name__}: {exc}",
                     healthy=False,
                 )
-        result = {"decisions": total}
+        opened_after = self.db.query(
+            "SELECT COUNT(*) AS n FROM paper_positions"
+        )[0]["n"]
+        result = {
+            "decisions": total,
+            "paper_positions_opened": max(
+                int(opened_after) - int(opened_before), 0
+            ),
+        }
         self.publisher.notify("scan")
+        if result["paper_positions_opened"]:
+            self.publisher.notify("paper")
         return result
 
     def monitor_positions(self):
@@ -597,12 +656,15 @@ class Application:
             "('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING')"
         ):
             try:
-                results.append(
-                    self.paper.mark(
+                quotes = self._position_quotes(row["id"])
+                marked = self.paper.mark(row["id"], quotes)
+                if marked["state"] == "EXIT_PENDING":
+                    marked = self.paper.close(
                         row["id"],
-                        self._position_quotes(row["id"]),
+                        quotes,
+                        marked.get("trigger") or "management exit",
                     )
-                )
+                results.append(marked)
             except Exception as exc:
                 self.diagnostics.observe(
                     "PAPER_TRADING",

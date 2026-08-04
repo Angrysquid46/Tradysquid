@@ -1,0 +1,8 @@
+APScheduler==3.10.4
+discord.py==2.4.0
+python-dotenv==1.0.1
+requests==2.32.3
+
+[dev]
+pytest==8.3.4
+pytest-cov==6.0.0

@@ -1,18 +1,35 @@
 # Current requirements traceability
 
-This rebuild treats the owner-approved clean-rebuild specification as the only product source. Old runtime code and databases are not imported.
+This document reflects the owner-approved runtime after the August 3, 2026
+Discord-layout and full-audit corrections. Repository tests prove code behavior;
+only a receipt from the owner computer can prove live deployment.
 
-| Requirement | Implementation | Configuration | Data | Tests | Live proof |
-|---|---|---|---|---|---|
-| Six independent option strategies | `tradysquid/strategies` | `config/strategies/*.json` | strategy tables | `tests/test_strategies.py` | registry acknowledgements |
-| Rotating universe capped at 25 | `tradysquid/universe/service.py` | `config/defaults.json` | universe tables | `tests/test_universe.py` | universe receipt |
-| $100 paper-risk ceiling | `tradysquid/trading/risk.py` | global and profile risk fields | candidate and fill records | `tests/test_risk_and_fills.py` | controlled rejection |
-| Accepted, rejected, and shadow tracking | `tradysquid/scanner/service.py` | strategy selection mode | candidate and shadow tables | `tests/test_scanner.py` | controlled scan |
-| Conservative paper lifecycle | `tradysquid/trading` | fill and management settings | paper position tables | `tests/test_paper_broker.py` | controlled cycles |
-| Learning and recommendations | `tradysquid/learning` | learning settings | learning tables | `tests/test_learning.py` | Learning Results card |
-| 27-channel Learning Center | `tradysquid/learning/center.py` | `config/learning-center.json` | version table | `tests/test_learning_center.py` | Discord channel count |
-| Discord controls and reports | `tradysquid/discord` | `config/discord-schema.json` | message state tables | `tests/test_discord_contracts.py` | Discord acknowledgements |
-| One process and one-click Windows setup | `tradysquid/app.py`, `scripts/*.ps1` | `.env`, defaults | runtime receipts | `tests/test_process_lock.py` | setup receipt |
-| Safe update and rollback | `scripts/update.ps1`, `scripts/rollback.ps1` | repository remote | deployment receipts | contract tests | update/rollback receipt |
+| Requirement | Implementation | Configuration / data | Automated proof | Live proof |
+|---|---|---|---|---|
+| Exactly six independent option strategies | `tradysquid/strategies`, `config/strategies/*.json` | strategy profiles, versions, acknowledgements | strategy and installation tests | running registry receipt |
+| Rotating optionable universe, maximum 25 | `tradysquid/universe` | `config/defaults.json`, universe tables | universe tests | active-universe receipt/card |
+| Global maximum $100 paper risk | `tradysquid/trading/risk.py` | strategy filters and defaults | risk/fill tests | controlled rejection |
+| Accepted and rejected candidate tracking | `tradysquid/scanner` | candidate/evidence/rejection tables | scanner tests | current scan receipt |
+| No shadow-trading feature | no active shadow command, route, scheduler job, status, table, or renderer | obsolete bot-authored message/channel cleanup only | full-audit regression tests | retired-message cleanup receipt |
+| Automatic paper-entry modes actually open selected candidates | `Application.scan_symbol`, `PaperBroker.open` | versioned `entry.selection_mode` | full-audit regression tests | paper-entry lifecycle receipt |
+| Stops and targets actually close positions | `Application.monitor_positions`, `PaperBroker.mark/close` | position marks, closed outcomes, lifecycle events | paper lifecycle tests | closed outcome and journal |
+| Existing legacy closed paper trades are preserved | `tradysquid/data/legacy_import.py` | ignored `state/ford-plays-log.csv` to canonical SQLite ledger | idempotent importer tests | import receipt and historical cards |
+| Original Discord dashboard plus Strategy Control | `tradysquid/discord/layout.py`, `structure.py` | `config/discord-schema.json`, saved channel IDs | Discord layout tests | Discord readiness receipt |
+| No SCANNING, PAPER TRADING, or LEARNING CENTER 2 dashboard | safe migration cleanup in `structure.py` | cleanup receipts | migration tests | live cleanup receipt |
+| Stable readable cards update in place | publishing and message reconciliation | Discord message state | publishing tests | acknowledged message IDs |
+| One Learning Center with 27 numbered lessons | learning catalog and original channel mapping | `config/learning-center.json` | Learning Center tests | extended backfill receipt |
+| One stable Trade Journal thread per paper position | `discord/journals.py`, forum reconciliation | journal state | journal tests | extended backfill receipt |
+| Closed trades populate Wins, Losses, Performance, and Learning | canonical `closed_outcomes` queries | SQLite ledger | historical-card regression tests | Discord card acknowledgements |
+| Core startup does not wait for every historical journal | core bootstrap plus asynchronous extended backfill | core and extended receipts | bootstrap contract tests | both live receipts |
+| Scanning and position monitoring begin immediately | scheduler startup jobs | scheduler receipts | scheduler tests | recent scheduler runs |
+| Complete `.env`, data, state, and logs survive handoff | automatic handoff and setup scripts | external backup | installer contract tests | handoff receipt |
+| Rollback restores prior scheduled tasks | `auto_install_clean_rebuild.ps1` | task XML backup | PowerShell contract test | rollback receipt plus task inventory |
+| Read-only Tradier only | `tradysquid/providers/tradier.py` | market-data endpoints | forbidden-write tests | provider readiness |
+| One Windows application PID | process lock and startup task | PID/startup receipts | process-lock tests | exactly-one-process acceptance |
 
-Live checks remain blocked until executed on the owner’s Windows computer with its private `.env` and Discord server.
+## Current deployment boundary
+
+The tested target is not considered installed merely because GitHub CI passes.
+Live completion requires the owner computer to produce current PASS receipts for
+automatic handoff, setup, application startup, Discord core readiness, and the
+extended Discord backfill.

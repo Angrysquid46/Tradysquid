@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,6 +97,7 @@ class DiscordBotService:
         self.ready = False
         self.client = None
         self.tree = None
+        self.extended_task = None
 
     def _readiness_path(self) -> Path:
         path = self.root / "state" / "discord-readiness.json"
@@ -107,6 +109,79 @@ class DiscordBotService:
             json.dumps(receipt, indent=2, sort_keys=True, default=str),
             encoding="utf-8",
         )
+
+    async def _finish_extended_bootstrap(
+        self,
+        guild: Any,
+        structure: DiscordStructureService,
+        database: Any,
+    ) -> None:
+        receipt_path = self._readiness_path()
+        try:
+            current = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            current = {}
+
+        try:
+            extended = (
+                await self.publishing.complete_backfill()
+                if self.publishing is not None
+                else {"status": "SKIPPED"}
+            )
+            retired = (
+                await retire_stable_messages(
+                    database,
+                    guild,
+                    bot_user_id=(
+                        str(self.client.user.id)
+                        if self.client and self.client.user
+                        else ""
+                    ),
+                )
+                if database is not None
+                else {"status": "SKIPPED"}
+            )
+            protected_channel_ids = {
+                str(channel.id)
+                for channel in structure.resolved_channels.values()
+                if getattr(channel, "id", None) is not None
+            }
+            cleanup = await structure.cleanup(
+                guild,
+                protected_channel_ids=protected_channel_ids,
+                bot_user_id=(
+                    str(self.client.user.id)
+                    if self.client and self.client.user
+                    else ""
+                ),
+            )
+            statuses = {
+                str(extended.get("status", "SKIPPED")),
+                str(retired.get("status", "SKIPPED")),
+                str(cleanup.get("status", "SKIPPED")),
+            }
+            final_status = "PASS" if statuses <= {"PASS", "SKIPPED"} else "DEGRADED"
+            current.update(
+                {
+                    "status": final_status,
+                    "extended_backfill": extended,
+                    "retired_messages": retired,
+                    "layout_cleanup": cleanup,
+                    "extended_completed_at": _utc_now(),
+                }
+            )
+        except Exception as exc:
+            current.update(
+                {
+                    "status": "DEGRADED",
+                    "extended_backfill": {
+                        "status": "FAILED",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    },
+                    "extended_completed_at": _utc_now(),
+                }
+            )
+        self._write_readiness(current)
 
     async def start(self, token: str) -> None:
         if discord is None or app_commands is None:
@@ -208,28 +283,8 @@ class DiscordBotService:
                         channel_map,
                     )
 
-                retired_receipt = None
-                if database is not None:
-                    retired_receipt = await retire_stable_messages(
-                        database,
-                        guild,
-                        bot_user_id=(
-                            str(self.client.user.id) if self.client.user else ""
-                        ),
-                    )
-
-                protected_channel_ids = {
-                    str(channel.id)
-                    for channel in structure.resolved_channels.values()
-                    if getattr(channel, "id", None) is not None
-                }
-                cleanup_receipt = await structure.cleanup(
-                    guild,
-                    protected_channel_ids=protected_channel_ids,
-                    bot_user_id=(
-                        str(self.client.user.id) if self.client.user else ""
-                    ),
-                )
+                retired_receipt = {"status": "PENDING"}
+                cleanup_receipt = {"status": "PENDING"}
 
                 categories = list(getattr(guild, "categories", []) or [])
                 receipt.update(
@@ -259,6 +314,12 @@ class DiscordBotService:
                 )
                 self._write_readiness(receipt)
                 self.ready = True
+                if self.extended_task and not self.extended_task.done():
+                    self.extended_task.cancel()
+                self.extended_task = asyncio.create_task(
+                    self._finish_extended_bootstrap(guild, structure, database),
+                    name="tradysquid-discord-extended-backfill",
+                )
             except Exception as exc:
                 receipt.update(
                     {
@@ -273,5 +334,7 @@ class DiscordBotService:
         await self.client.start(token)
 
     async def close(self) -> None:
+        if self.extended_task and not self.extended_task.done():
+            self.extended_task.cancel()
         if self.client and not self.client.is_closed():
             await self.client.close()

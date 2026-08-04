@@ -404,6 +404,7 @@ class DiscordStructureService:
                 channel
                 for category in self.invented_categories
                 for channel in _category_channels(category)
+                if _name(channel).casefold() in MIGRATION_CHANNEL_NAMES
             ],
         ]:
             candidate_id = _object_id(candidate)
@@ -484,7 +485,7 @@ class DiscordStructureService:
         if history is None:
             return False
         try:
-            async for message in history(limit=100, oldest_first=False):
+            async for message in history(limit=None, oldest_first=False):
                 author = getattr(message, "author", None)
                 if author is None:
                     continue
@@ -515,12 +516,20 @@ class DiscordStructureService:
 
         categories = list(getattr(guild, "categories", []) or [])
         all_channels = _all_channels(guild, categories)
-        candidate_ids = {_object_id(item) for item in self.cleanup_candidates}
-        for channel in all_channels:
-            category_is_invented = _category_name(channel).upper() in INVENTED_CATEGORIES
-            name_is_migration = _name(channel).casefold() in MIGRATION_CHANNEL_NAMES
-            if category_is_invented or name_is_migration:
-                candidate_ids.add(_object_id(channel))
+        candidate_ids = {
+            _object_id(item)
+            for item in self.cleanup_candidates
+            if (
+                _category_name(item).upper() in INVENTED_CATEGORIES
+                and _name(item).casefold() in MIGRATION_CHANNEL_NAMES
+            )
+            or _name(item).casefold() == "shadow-candidates"
+        }
+        candidate_ids.update(
+            _object_id(channel)
+            for channel in all_channels
+            if _name(channel).casefold() == "shadow-candidates"
+        )
 
         deleted_channels: list[dict[str, str]] = []
         blocked_channels: list[dict[str, str]] = []

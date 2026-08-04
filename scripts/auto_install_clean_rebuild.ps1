@@ -127,6 +127,50 @@ function Restore-RuntimeSnapshot {
     }
 }
 
+function Export-TradysquidScheduledTasks {
+    param([Parameter(Mandatory = $true)][string]$Destination)
+
+    $TaskDirectory = Join-Path $Destination 'scheduled-tasks'
+    New-Item -ItemType Directory -Force -Path $TaskDirectory | Out-Null
+    $Records = @()
+    $Index = 0
+    foreach ($Task in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
+        $_.TaskName -like '*Tradysquid*'
+    })) {
+        $FileName = ('task-{0:D3}.xml' -f $Index)
+        $XmlPath = Join-Path $TaskDirectory $FileName
+        Export-ScheduledTask -TaskName $Task.TaskName -TaskPath $Task.TaskPath |
+            Set-Content -LiteralPath $XmlPath -Encoding Unicode
+        $Records += [pscustomobject]@{
+            task_name = [string]$Task.TaskName
+            task_path = [string]$Task.TaskPath
+            xml_file = $FileName
+        }
+        $Index++
+    }
+    $Records | ConvertTo-Json -Depth 5 |
+        Set-Content -LiteralPath (Join-Path $TaskDirectory 'manifest.json') -Encoding UTF8
+}
+
+function Restore-TradysquidScheduledTasks {
+    param([Parameter(Mandatory = $true)][string]$Source)
+
+    $TaskDirectory = Join-Path $Source 'scheduled-tasks'
+    $ManifestPath = Join-Path $TaskDirectory 'manifest.json'
+    if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) { return }
+    $Raw = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+    foreach ($Record in @($Raw)) {
+        $XmlPath = Join-Path $TaskDirectory ([string]$Record.xml_file)
+        if (-not (Test-Path -LiteralPath $XmlPath -PathType Leaf)) { continue }
+        $Xml = Get-Content -LiteralPath $XmlPath -Raw
+        Register-ScheduledTask `
+            -TaskName ([string]$Record.task_name) `
+            -TaskPath ([string]$Record.task_path) `
+            -Xml $Xml `
+            -Force | Out-Null
+    }
+}
+
 function Start-LegacySupervisor {
     param([Parameter(Mandatory = $true)][string]$Root)
 
@@ -163,6 +207,7 @@ try {
     $BackupRoot = Join-Path $Parent ('Tradysquid-auto-handoff-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     $ExternalResultPath = Join-Path $BackupRoot 'clean-rebuild-auto-handoff.json'
     $EnvironmentHash = Copy-RuntimeSnapshot -Root $Repository -Destination $BackupRoot
+    Export-TradysquidScheduledTasks -Destination $BackupRoot
     [ordered]@{
         status = 'PASS'
         repository = $Repository
@@ -262,6 +307,7 @@ try {
 
         if ($BackupRoot) {
             try { Restore-RuntimeSnapshot -Root $Repository -Source $BackupRoot } catch { $Status = 'FAILED' }
+            try { Restore-TradysquidScheduledTasks -Source $BackupRoot } catch { $Status = 'FAILED' }
         }
     } else {
         $Status = 'FAILED'

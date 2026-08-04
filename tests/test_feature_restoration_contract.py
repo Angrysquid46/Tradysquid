@@ -77,7 +77,7 @@ class RecordingDatabase:
     def query(self, sql: str, parameters=()):
         normalized = " ".join(sql.split())
         self.queries.append(normalized)
-        if "closed_outcomes" in normalized and "= 'WIN'" in normalized:
+        if "closed_outcomes" in normalized and "pnl_dollars > 0" in normalized:
             return [
                 {
                     "symbol": "SPY",
@@ -89,7 +89,7 @@ class RecordingDatabase:
                     "closed_at": "2026-08-03T15:00:00+00:00",
                 }
             ]
-        if "closed_outcomes" in normalized and "<> 'WIN'" in normalized:
+        if "closed_outcomes" in normalized and "pnl_dollars < 0" in normalized:
             return [
                 {
                     "symbol": "QQQ",

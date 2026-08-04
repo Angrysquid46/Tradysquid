@@ -1,5 +1,6 @@
 from enum import StrEnum
 
+
 class Regime(StrEnum):
     BULLISH_CONTROLLED = "BULLISH_CONTROLLED"
     BEARISH_CONTROLLED = "BEARISH_CONTROLLED"
@@ -7,16 +8,17 @@ class Regime(StrEnum):
     NO_TRADE = "NO_TRADE"
     DATA_INSUFFICIENT = "DATA_INSUFFICIENT"
 
+
 class CandidateStatus(StrEnum):
     EVALUATED = "EVALUATED"
     REJECTED = "REJECTED"
     ELIGIBLE = "ELIGIBLE"
     RANKED = "RANKED"
     SELECTED = "SELECTED"
-    SHADOW = "SHADOW"
     OPENED = "OPENED"
     EXPIRED_UNUSED = "EXPIRED_UNUSED"
     ERROR = "ERROR"
+
 
 class PositionState(StrEnum):
     CREATED = "CREATED"
@@ -33,13 +35,16 @@ class PositionState(StrEnum):
     CANCELLED = "CANCELLED"
     ERROR = "ERROR"
 
+
 class Direction(StrEnum):
     CALL = "call"
     PUT = "put"
 
+
 class Structure(StrEnum):
     LONG_OPTION = "long-option"
     CREDIT_SPREAD = "credit-spread"
+
 
 class DiagnosticCategory(StrEnum):
     CONFIGURATION = "CONFIGURATION"

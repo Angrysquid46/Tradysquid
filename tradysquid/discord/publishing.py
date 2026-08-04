@@ -179,26 +179,6 @@ def _render_card(stable_id: str | None, value: Any) -> list[str]:
                 for reason, count in counts.most_common(10)
             )
             return lines
-    if stable_id == "shadow-candidates" and isinstance(cleaned, list):
-        total = len(cleaned)
-        open_count = sum(
-            not row.get("closed_at")
-            for row in cleaned
-            if isinstance(row, dict)
-        )
-        outcomes = Counter(
-            str(row.get("outcome"))
-            for row in cleaned
-            if isinstance(row, dict) and row.get("outcome")
-        )
-        lines = [
-            f"**Total tracked:** {total}",
-            f"**Still open:** {open_count}",
-            f"**Closed:** {total - open_count}",
-            "**Source:** Rejected candidates",
-        ]
-        lines.extend(f"• {name}: {count}" for name, count in outcomes.most_common())
-        return lines
     if stable_id in {
         "accepted-candidates",
         "open-positions",
@@ -342,6 +322,12 @@ class DiscordPublishingService:
             CARD_TITLES.get(stable_id, stable_id.replace("-", " ").title()),
         )
         for stable_id, route in CARD_ROUTES.items()
+    )
+
+    CORE_BOOTSTRAP_IDS = frozenset(
+        stable_id
+        for stable_id, route in CARD_ROUTES.items()
+        if bool(route.get("mandatory", False))
     )
 
     def __init__(
@@ -488,11 +474,6 @@ class DiscordPublishingService:
                 "FROM candidate_rejections r GROUP BY r.reason "
                 "ORDER BY rejected DESC LIMIT 20"
             )
-        if stable_id == "shadow-candidates":
-            return self.db.query(
-                "SELECT source_status,outcome,opened_at,closed_at "
-                "FROM shadow_candidates ORDER BY opened_at DESC LIMIT 20"
-            )
         if stable_id == "new-positions":
             return self.db.query(
                 "SELECT symbol,strategy_id,state,opened_at,entry_value,maximum_risk "
@@ -506,12 +487,13 @@ class DiscordPublishingService:
                 "FROM lifecycle_events ORDER BY observed_at DESC LIMIT 25"
             )
         if stable_id in {"wins", "losses"}:
-            operator = "=" if stable_id == "wins" else "<>"
+            comparison = "> 0" if stable_id == "wins" else "< 0"
             return self.db.query(
                 "SELECT p.symbol,p.strategy_id,o.outcome,o.exit_reason,o.pnl_dollars,"
                 "o.pnl_pct,o.closed_at FROM closed_outcomes o "
                 "JOIN paper_positions p ON p.id=o.position_id "
-                f"WHERE o.outcome {operator} 'WIN' ORDER BY o.closed_at DESC LIMIT 50"
+                f"WHERE o.pnl_dollars {comparison} "
+                "ORDER BY o.closed_at DESC LIMIT 50"
             )
         if stable_id == "daily-recap":
             return self._service("report", "daily-report", default={})
@@ -616,7 +598,11 @@ class DiscordPublishingService:
         )
         return str(result.get("action", "updated"))
 
-    async def _publish_bootstrap_cards(self) -> dict[str, Any]:
+    async def _publish_bootstrap_cards(
+        self,
+        *,
+        stable_ids: set[str] | None = None,
+    ) -> dict[str, Any]:
         totals: dict[str, Any] = {
             "created": 0,
             "updated": 0,
@@ -627,6 +613,8 @@ class DiscordPublishingService:
             "failures": [],
         }
         for stable_id, channel_name, title in self.REQUIRED_BOOTSTRAP_CARDS:
+            if stable_ids is not None and stable_id not in stable_ids:
+                continue
             try:
                 action = await self._publish(
                     stable_id,
@@ -913,7 +901,7 @@ class DiscordPublishingService:
             }
 
         positions = self.db.query(
-            "SELECT id FROM paper_positions ORDER BY opened_at DESC LIMIT 250"
+            "SELECT id FROM paper_positions ORDER BY opened_at DESC"
         )
         is_forum = (
             "forum" in str(getattr(destination, "type", "")).casefold()
@@ -978,9 +966,21 @@ class DiscordPublishingService:
                 for row in manifest_before
                 if row["migration_status"] == "MISSING" and row["mandatory"]
             ]
-            cards = await self._publish_bootstrap_cards()
-            learning = await self._publish_learning_center()
-            journals = await self._publish_journals()
+            cards = await self._publish_bootstrap_cards(
+                stable_ids=set(self.CORE_BOOTSTRAP_IDS)
+            )
+            learning = {
+                "status": "PENDING",
+                "reconciled": 0,
+                "failed": 0,
+                "failures": [],
+            }
+            journals = {
+                "status": "PENDING",
+                "reconciled": 0,
+                "failed": 0,
+                "failures": [],
+            }
             manifest = self._manifest()
             state_directory = self.root / "state"
             state_directory.mkdir(parents=True, exist_ok=True)
@@ -990,12 +990,7 @@ class DiscordPublishingService:
                 encoding="utf-8",
             )
 
-            failures = (
-                int(cards["mandatory_failed"])
-                + int(learning["failed"])
-                + int(journals["failed"])
-                + len(missing_routes)
-            )
+            failures = int(cards["mandatory_failed"]) + len(missing_routes)
             status = "PASS" if failures == 0 else "FAILED"
             receipt = {
                 "status": status,
@@ -1008,6 +1003,7 @@ class DiscordPublishingService:
                 "persistent_cards": cards,
                 "learning_center": learning,
                 "journals": journals,
+                "extended_backfill": {"status": "PENDING"},
                 "routing_manifest": str(manifest_path),
                 "pending_events_captured": sorted(self._pending_events),
                 "completed_at": _utc_now(),
@@ -1022,8 +1018,7 @@ class DiscordPublishingService:
                 raise RuntimeError(
                     "Discord publishing bootstrap failed: "
                     f"missing routes={len(missing_routes)}, "
-                    f"mandatory cards={cards['mandatory_failed']}, "
-                    f"learning={learning['failed']}, journals={journals['failed']}"
+                    f"mandatory cards={cards['mandatory_failed']}"
                 )
             self.ready = True
             self.ready_event.set()
@@ -1031,6 +1026,40 @@ class DiscordPublishingService:
             self._pending_events.clear()
             for event in pending:
                 asyncio.create_task(self.refresh(event))
+            return receipt
+
+    async def complete_backfill(self) -> dict[str, Any]:
+        """Populate non-core cards, all lessons, and all historical journals.
+
+        This runs after core readiness so Discord history reconciliation cannot
+        roll back an otherwise healthy scanner and paper-trading runtime.
+        """
+
+        async with self._refresh_lock:
+            cards = await self._publish_bootstrap_cards()
+            learning = await self._publish_learning_center()
+            journals = await self._publish_journals()
+            failures = (
+                int(cards["failed"])
+                + int(learning["failed"])
+                + int(journals["failed"])
+            )
+            status = "PASS" if failures == 0 else "DEGRADED"
+            receipt = {
+                "status": status,
+                "persistent_cards": cards,
+                "learning_center": learning,
+                "journals": journals,
+                "completed_at": _utc_now(),
+                "secret_values_written": False,
+            }
+            state_directory = self.root / "state"
+            state_directory.mkdir(parents=True, exist_ok=True)
+            (state_directory / "discord-extended-backfill.json").write_text(
+                json.dumps(receipt, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            self._record_receipt("publishing-extended-backfill", status, receipt)
             return receipt
 
     async def refresh(self, event: str = "all") -> None:
@@ -1050,7 +1079,6 @@ class DiscordPublishingService:
                     "latest-scan",
                     "accepted-candidates",
                     "rejected-candidates",
-                    "shadow-candidates",
                     "market-regime",
                     "charts-and-levels",
                     "ticker-intelligence",
