@@ -25,6 +25,15 @@ def test_setup_uses_an_isolated_virtual_environment() -> None:
     assert "Remove-IncompleteVenv" in setup
 
 
+def test_setup_launcher_supplies_required_attempt_and_commit_parameters() -> None:
+    launcher = read("SETUP-AND-START.cmd")
+    assert "scripts\\setup_entry.ps1" in launcher
+    assert "-AttemptId" in launcher
+    assert "-ExpectedCleanCommit" in launcher
+    assert "[guid]::NewGuid().ToString()" in launcher
+    assert "git -C" in launcher
+
+
 def test_start_and_update_use_the_same_isolated_environment() -> None:
     start = read("scripts/start.ps1")
     update = read("scripts/update.ps1")
