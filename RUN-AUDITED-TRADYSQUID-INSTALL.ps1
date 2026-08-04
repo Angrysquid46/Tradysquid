@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$ExpectedCleanCommit = '831559b1de1cd90eb8df47e32e5462eabf4b8fa0'
+$ExpectedCleanCommit = 'eb1b04b2d6deeee42df8d939acb328e26d693f7f'
 $ExpectedArchiveCommit = 'ba75aae5f34f3889404bfe0c7c0b96663a92a657'
 $CleanBranch = 'clean-rebuild'
 $ArchiveBranch = 'archive/current-failed-implementation'
