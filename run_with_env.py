@@ -33,6 +33,16 @@ def load_env() -> None:
         os.environ[name.strip()] = value.strip()
 
 
+def launch_clean_handoff_before_runtime(target: Path) -> bool:
+    """Run the dependency-free installer bridge before importing the app stack."""
+
+    if target.name.casefold() != "run_supervisor_simple.py":
+        return False
+    import clean_rebuild_auto_handoff
+
+    return clean_rebuild_auto_handoff.launch_if_needed()
+
+
 def install_runtime_overrides(
     *,
     include_discord_upgrade_commands: bool = False,
@@ -80,12 +90,18 @@ def install_runtime_overrides(
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("Usage: python run_with_env.py <script.py> [arguments...]")
-    load_env()
     requested = SCRIPT_OVERRIDES.get(Path(sys.argv[1]).name.casefold(), sys.argv[1])
     target = (ROOT / requested).resolve()
     if target.parent != ROOT or not target.is_file() or target.suffix != ".py":
         raise SystemExit("Target must be a Python file in this repository.")
 
+    # The clean handoff intentionally uses only the standard library. It must run
+    # before load_env/runtime imports so a damaged or incomplete legacy Python
+    # environment cannot prevent the installer from repairing that environment.
+    if launch_clean_handoff_before_runtime(target):
+        raise SystemExit(76)
+
+    load_env()
     install_runtime_overrides(
         include_discord_upgrade_commands=(target.name.casefold() == "discord_command_bot_public.py"),
         include_information_engine=(target.name.casefold() == "local_information_engine_bootstrap.py"),
