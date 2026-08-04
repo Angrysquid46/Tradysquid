@@ -160,10 +160,15 @@ class DiscordBotService:
                 str(retired.get("status", "SKIPPED")),
                 str(cleanup.get("status", "SKIPPED")),
             }
-            final_status = "PASS" if statuses <= {"PASS", "SKIPPED"} else "DEGRADED"
+            extended_status = "PASS" if statuses <= {"PASS", "SKIPPED"} else "DEGRADED"
             current.update(
                 {
-                    "status": final_status,
+                    # Core identity, structure, command, and publishing readiness
+                    # already passed before this optional backfill/cleanup task.
+                    # Do not rewrite mandatory readiness to DEGRADED because an
+                    # optional card or best-effort legacy cleanup was blocked.
+                    "status": current.get("status", "PASS"),
+                    "extended_status": extended_status,
                     "extended_backfill": extended,
                     "retired_messages": retired,
                     "layout_cleanup": cleanup,
@@ -173,7 +178,8 @@ class DiscordBotService:
         except Exception as exc:
             current.update(
                 {
-                    "status": "DEGRADED",
+                    "status": current.get("status", "PASS"),
+                    "extended_status": "DEGRADED",
                     "extended_backfill": {
                         "status": "FAILED",
                         "error": f"{type(exc).__name__}: {exc}",
@@ -272,9 +278,20 @@ class DiscordBotService:
                         if name:
                             channel_map.setdefault(name.casefold(), channel)
 
-                synchronized = await self.tree.sync(
-                    guild=discord.Object(id=self.guild_id)
-                )
+                guild_object = discord.Object(id=self.guild_id)
+                # Commands are added to the global command tree above. A guild
+                # sync only sees guild-bound commands, so copy the global tree
+                # into the configured guild before synchronizing. Without this,
+                # Discord legitimately returns an empty list while the bot and
+                # publishing services otherwise appear healthy.
+                self.tree.copy_global_to(guild=guild_object)
+                synchronized = await self.tree.sync(guild=guild_object)
+                if not synchronized:
+                    synchronized = await self.tree.fetch_commands(guild=guild_object)
+                if not synchronized:
+                    raise RuntimeError(
+                        "Discord slash-command synchronization returned zero commands"
+                    )
 
                 publishing_receipt = None
                 if self.publishing is not None:
