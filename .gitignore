@@ -1,6 +1,7 @@
 .env
 __pycache__/
 *.pyc
+*.egg-info/
 state/local-information.db
 state/local-information.db-shm
 state/local-information.db-wal
