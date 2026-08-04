@@ -133,6 +133,14 @@ def _assert_read_only_provider(provider: Any) -> list[str]:
     return forbidden
 
 
+def _warning(category: str, check: str, message: str) -> dict[str, str]:
+    return {
+        "category": category,
+        "check": check,
+        "error": redact(message),
+    }
+
+
 def run_live_verification(
     root: Path,
     *,
@@ -154,18 +162,6 @@ def run_live_verification(
         app = application_factory(root)
         provider = app.provider
         _assert_read_only_provider(provider)
-
-        # The market clock is authenticated, read-only, and available whether the
-        # market is open or closed. Installation must not depend on an option chain,
-        # universe refresh, or a full strategy scan at midnight or on weekends.
-        clock = provider.market_clock()
-        if not isinstance(clock, dict) or not clock:
-            raise LiveVerificationFailure(
-                "PROVIDER",
-                "tradier-market-clock",
-                "Tradier market clock returned no data",
-            )
-
         strategy_count = _strategy_count(app)
         active_symbols = _local_universe(app)
     except LiveVerificationFailure:
@@ -173,9 +169,39 @@ def run_live_verification(
     except Exception as exc:
         raise LiveVerificationFailure(
             _classify_application_error(exc),
-            "tradier-read-only-verification",
+            "local-application-verification",
             f"{type(exc).__name__}: {exc}",
         ) from exc
+
+    warnings: list[dict[str, str]] = []
+    clock: dict[str, Any] = {}
+    tradier_live_status = "PASS"
+
+    # Tradier connectivity is useful evidence, but it is an external dependency.
+    # A bad token, provider outage, DNS failure, or rate limit must not erase a
+    # completed local installation. Runtime diagnostics will keep reporting the
+    # provider problem until it is corrected.
+    try:
+        raw_clock = provider.market_clock()
+        if not isinstance(raw_clock, dict) or not raw_clock:
+            raise LiveVerificationFailure(
+                "PROVIDER",
+                "tradier-market-clock",
+                "Tradier market clock returned no data",
+            )
+        clock = raw_clock
+    except LiveVerificationFailure as exc:
+        tradier_live_status = "DEGRADED"
+        warnings.append(_warning(exc.category, exc.check, str(exc)))
+    except Exception as exc:
+        tradier_live_status = "DEGRADED"
+        warnings.append(
+            _warning(
+                _classify_application_error(exc),
+                "tradier-market-clock",
+                f"{type(exc).__name__}: {exc}",
+            )
+        )
 
     headers = {
         "Authorization": "Bot " + os.environ["DISCORD_BOT_TOKEN"],
@@ -223,8 +249,10 @@ def run_live_verification(
     return {
         "status": "PASS",
         "tradier_read_only": True,
-        "tradier_clock": True,
-        "market_state": _market_state(clock),
+        "tradier_live_status": tradier_live_status,
+        "tradier_clock": bool(clock),
+        "market_state": _market_state(clock) if clock else "unavailable",
+        "warnings": warnings,
         "universe_count": len(active_symbols),
         "controlled_symbol": active_symbols[0] if active_symbols else None,
         "strategy_decisions": strategy_count,
@@ -233,6 +261,7 @@ def run_live_verification(
         "option_chain_required": False,
         "market_open_required": False,
         "provider_write_methods": [],
+        "discord_live_status": "PASS",
         "discord_bot_id": user_payload.get("id"),
         "discord_guild_id": guild_payload.get("id"),
         "discord_owner_id": guild_payload.get("owner_id"),
@@ -258,6 +287,7 @@ def main() -> int:
             "category": exc.category,
             "failed_check": exc.check,
             "error": redact(str(exc)),
+            "warnings": [],
             "secret_values_written": False,
         }
     except Exception as exc:  # production boundary: always create a sanitized receipt
@@ -266,6 +296,7 @@ def main() -> int:
             "category": "APPLICATION",
             "failed_check": "unexpected-error",
             "error": redact(f"{type(exc).__name__}: {exc}"),
+            "warnings": [],
             "secret_values_written": False,
         }
     state_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
