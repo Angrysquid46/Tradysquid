@@ -52,6 +52,7 @@ FOCUSED_TEST_MODULES = (
     "test_applied_upgrades.py",
     "test_applied_upgrade_status_runtime.py",
     "test_simple_upgrade_flow.py",
+    "test_visible_manual_installer.py",
     "test_diagnostic_upgrade_system.py",
     "test_diagnostic_startup_runtime.py",
     "test_diagnostic_nonblocking_runtime.py",
@@ -92,6 +93,7 @@ def validate_manifest() -> dict[str, object]:
         "test_single_owner_runtime.py",
         "test_ngrok_process_runtime.py",
         "test_simple_upgrade_flow.py",
+        "test_visible_manual_installer.py",
         "test_diagnostic_upgrade_system.py",
         "test_diagnostic_review_runtime.py",
         "test_outbound_connectivity_runtime.py",
@@ -115,4 +117,5 @@ def validate_manifest() -> dict[str, object]:
         "single_owner_guard_tested": True,
         "direct_ngrok_process_tested": True,
         "automatic_handoff_tested": True,
+        "visible_manual_installer_tested": True,
     }
