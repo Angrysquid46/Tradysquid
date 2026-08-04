@@ -20,6 +20,17 @@ REQUIRED_NAMES = (
     "TRADIER_ENVIRONMENT",
 )
 
+FORBIDDEN_PROVIDER_METHODS = (
+    "place_order",
+    "submit_order",
+    "preview_order",
+    "cancel_order",
+    "replace_order",
+    "modify_order",
+    "account_balances",
+    "account_positions",
+)
+
 
 class LiveVerificationFailure(RuntimeError):
     """A categorized live acceptance check failed."""
@@ -59,6 +70,69 @@ def _classify_application_error(exc: Exception) -> str:
     return "APPLICATION"
 
 
+def _strategy_count(app: Any) -> int:
+    registry = getattr(app, "registry", None)
+    all_strategies = getattr(registry, "all", None)
+    if not callable(all_strategies):
+        raise LiveVerificationFailure(
+            "APPLICATION",
+            "strategy-registry",
+            "Application strategy registry is unavailable",
+        )
+    strategies = list(all_strategies())
+    if len(strategies) != 6:
+        raise LiveVerificationFailure(
+            "APPLICATION",
+            "strategy-registry",
+            f"Expected six registered strategies, got {len(strategies)}",
+        )
+    return len(strategies)
+
+
+def _local_universe(app: Any) -> list[str]:
+    universe = getattr(app, "universe", None)
+    active = getattr(universe, "active", None)
+    if not callable(active):
+        return []
+    rows = active()
+    symbols: list[str] = []
+    for row in rows or []:
+        if isinstance(row, dict):
+            symbol = row.get("symbol")
+        else:
+            symbol = row
+        if symbol:
+            symbols.append(str(symbol).upper())
+    return symbols
+
+
+def _market_state(clock: dict[str, Any]) -> str:
+    payload = clock.get("clock", clock)
+    if not isinstance(payload, dict):
+        return "unknown"
+    return str(
+        payload.get("state")
+        or payload.get("status")
+        or payload.get("market_state")
+        or "unknown"
+    ).casefold()
+
+
+def _assert_read_only_provider(provider: Any) -> list[str]:
+    forbidden = sorted(
+        name
+        for name in FORBIDDEN_PROVIDER_METHODS
+        if callable(getattr(provider, name, None))
+    )
+    if forbidden:
+        raise LiveVerificationFailure(
+            "APPLICATION",
+            "read-only-provider-boundary",
+            "Provider exposes brokerage-write methods: " + ", ".join(forbidden),
+        )
+    return forbidden
+
+
 def run_live_verification(
     root: Path,
     *,
@@ -78,29 +152,28 @@ def run_live_verification(
 
     try:
         app = application_factory(root)
-        clock = app.provider.market_clock()
-        if not clock:
+        provider = app.provider
+        _assert_read_only_provider(provider)
+
+        # The market clock is authenticated, read-only, and available whether the
+        # market is open or closed. Installation must not depend on an option chain,
+        # universe refresh, or a full strategy scan at midnight or on weekends.
+        clock = provider.market_clock()
+        if not isinstance(clock, dict) or not clock:
             raise LiveVerificationFailure(
-                "PROVIDER", "tradier-market-clock", "Tradier market clock returned no data"
+                "PROVIDER",
+                "tradier-market-clock",
+                "Tradier market clock returned no data",
             )
-        active = app.initialize_universe()
-        if not active:
-            raise LiveVerificationFailure(
-                "PROVIDER", "universe-discovery", "No optionable universe symbols were discovered"
-            )
-        decisions = app.scanner.scan_symbol(active[0], "setup-acceptance")
-        if len(decisions) != 6:
-            raise LiveVerificationFailure(
-                "APPLICATION",
-                "controlled-scan",
-                f"Expected six strategy decisions, got {len(decisions)}",
-            )
+
+        strategy_count = _strategy_count(app)
+        active_symbols = _local_universe(app)
     except LiveVerificationFailure:
         raise
     except Exception as exc:
         raise LiveVerificationFailure(
             _classify_application_error(exc),
-            "tradier-and-scan",
+            "tradier-read-only-verification",
             f"{type(exc).__name__}: {exc}",
         ) from exc
 
@@ -151,9 +224,15 @@ def run_live_verification(
         "status": "PASS",
         "tradier_read_only": True,
         "tradier_clock": True,
-        "universe_count": len(active),
-        "controlled_symbol": active[0],
-        "strategy_decisions": len(decisions),
+        "market_state": _market_state(clock),
+        "universe_count": len(active_symbols),
+        "controlled_symbol": active_symbols[0] if active_symbols else None,
+        "strategy_decisions": strategy_count,
+        "strategy_registry_count": strategy_count,
+        "controlled_scan_performed": False,
+        "option_chain_required": False,
+        "market_open_required": False,
+        "provider_write_methods": [],
         "discord_bot_id": user_payload.get("id"),
         "discord_guild_id": guild_payload.get("id"),
         "discord_owner_id": guild_payload.get("owner_id"),
