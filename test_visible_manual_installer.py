@@ -13,7 +13,7 @@ INSTALLER = ROOT / "RUN-AUDITED-TRADYSQUID-INSTALL.ps1"
 class VisibleManualInstallerTests(unittest.TestCase):
     def test_foreground_installer_targets_exact_audited_build(self) -> None:
         text = INSTALLER.read_text(encoding="utf-8")
-        self.assertIn("254d67d0cf2a796fd9689693c7b061ce98ae2c63", text)
+        self.assertIn("831559b1de1cd90eb8df47e32e5462eabf4b8fa0", text)
         self.assertIn("ba75aae5f34f3889404bfe0c7c0b96663a92a657", text)
         self.assertIn("auto_install_clean_rebuild.ps1", text)
         self.assertIn("Start-Process -FilePath 'powershell.exe'", text)
