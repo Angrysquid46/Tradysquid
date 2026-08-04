@@ -443,7 +443,7 @@ try {
             $CommandShell = 'cmd.exe'
         }
 
-        $StartCommand = Join-Path $Root 'START.cmd'
+        $StartCommand = Join-Path $Root 'START-TRADYSQUID.cmd'
         $TaskActionParameters = @{
             Execute = $CommandShell
             Argument = '/d /c ""' + $StartCommand + '""'

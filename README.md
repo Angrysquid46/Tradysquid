@@ -12,7 +12,7 @@ Tradysquid is a single-computer, paper-only options research system. It scans a 
 
 ## Owner setup
 
-Double-click `SETUP-AND-START.cmd`. The installer preserves recognized local secrets, creates the virtual environment and database, runs tests, validates read-only services, registers startup, and starts one application process.
+For ordinary use, double-click `START-TRADYSQUID.cmd`. It starts the existing environment directly and waits for current Discord readiness. Installation and updating are separate maintenance operations.
 
 ## Development
 
