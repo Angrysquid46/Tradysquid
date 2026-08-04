@@ -13,6 +13,7 @@ INSTALLER = ROOT / "scripts" / "install_clean_rebuild.ps1"
 STRUCTURE = ROOT / "tradysquid" / "discord" / "structure.py"
 LAYOUT = ROOT / "tradysquid" / "discord" / "layout.py"
 SCHEMA = ROOT / "config" / "discord-schema.json"
+BOT = ROOT / "tradysquid" / "discord" / "bot.py"
 
 
 def test_setup_does_not_serialize_generic_list_directly() -> None:
@@ -59,6 +60,20 @@ def test_structure_reconciler_restores_original_layout_without_overflow() -> Non
     assert '"allow_move_existing": false' in schema
     assert '"STRATEGY CONTROL"' in schema
     assert '"LEARNING CENTER 2"' not in schema
+
+
+def test_guild_slash_commands_are_copied_synced_and_verified() -> None:
+    bot = BOT.read_text(encoding="utf-8")
+    assert "self.tree.copy_global_to(guild=guild_object)" in bot
+    assert "self.tree.sync(guild=guild_object)" in bot
+    assert "self.tree.fetch_commands(guild=guild_object)" in bot
+    assert "synchronization returned zero commands" in bot
+
+
+def test_optional_extended_cleanup_cannot_downgrade_core_readiness() -> None:
+    bot = BOT.read_text(encoding="utf-8")
+    assert '"extended_status": extended_status' in bot
+    assert '"status": current.get("status", "PASS")' in bot
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows PowerShell only")
