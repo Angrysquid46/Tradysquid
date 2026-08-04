@@ -21,6 +21,11 @@ class ClosedMarketProvider:
         return {"clock": {"state": "closed"}}
 
 
+class OfflineProvider:
+    def market_clock(self) -> dict:
+        raise RuntimeError("Tradier authentication failed")
+
+
 class SixStrategyRegistry:
     def all(self) -> list[object]:
         return [object() for _ in range(6)]
@@ -37,6 +42,12 @@ class OffHoursApplication:
         self.provider = ClosedMarketProvider()
         self.registry = SixStrategyRegistry()
         self.universe = EmptyLocalUniverse()
+
+
+class DegradedProviderApplication(OffHoursApplication):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.provider = OfflineProvider()
 
 
 class UnsafeProvider(ClosedMarketProvider):
@@ -84,6 +95,7 @@ def test_closed_market_and_empty_universe_do_not_fail_installation(
     )
 
     assert result["status"] == "PASS"
+    assert result["tradier_live_status"] == "PASS"
     assert result["market_state"] == "closed"
     assert result["universe_count"] == 0
     assert result["strategy_registry_count"] == 6
@@ -91,6 +103,29 @@ def test_closed_market_and_empty_universe_do_not_fail_installation(
     assert result["option_chain_required"] is False
     assert result["market_open_required"] is False
     assert result["brokerage_write_request"] is False
+
+
+def test_tradier_connectivity_failure_is_visible_but_does_not_erase_installation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_environment(monkeypatch)
+
+    result = run_live_verification(
+        tmp_path,
+        application_factory=DegradedProviderApplication,
+        http_get=_discord_get,
+        load_environment=False,
+    )
+
+    assert result["status"] == "PASS"
+    assert result["tradier_live_status"] == "DEGRADED"
+    assert result["tradier_clock"] is False
+    assert result["market_state"] == "unavailable"
+    assert result["discord_live_status"] == "PASS"
+    assert result["warnings"][0]["category"] == "AUTHENTICATION"
+    assert result["warnings"][0]["check"] == "tradier-market-clock"
+    assert "authentication failed" in result["warnings"][0]["error"].lower()
 
 
 def test_live_verifier_rejects_provider_write_methods(
