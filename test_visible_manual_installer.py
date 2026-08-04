@@ -8,9 +8,35 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 INSTALLER = ROOT / "RUN-AUDITED-TRADYSQUID-INSTALL.ps1"
+ONE_CLICK_CMD = ROOT / "ONE-CLICK-TRADYSQUID.cmd"
+ONE_CLICK_PS1 = ROOT / "ONE-CLICK-TRADYSQUID.ps1"
 
 
 class VisibleManualInstallerTests(unittest.TestCase):
+    def test_one_click_launcher_is_elevated_idempotent_entrypoint(self) -> None:
+        cmd = ONE_CLICK_CMD.read_text(encoding="utf-8")
+        script = ONE_CLICK_PS1.read_text(encoding="utf-8")
+        self.assertIn("ONE-CLICK-TRADYSQUID.ps1", cmd)
+        self.assertIn("pause", cmd.casefold())
+        self.assertIn("Test-IsAdministrator", script)
+        self.assertIn("-Verb RunAs", script)
+        self.assertIn("'remote', 'set-url', 'origin'", script)
+        self.assertIn("'--set-upstream-to=origin/main', 'main'", script)
+        self.assertIn("RUN-AUDITED-TRADYSQUID-INSTALL.ps1", script)
+        self.assertIn("Private configuration: present (values not read or displayed)", script)
+        self.assertIn("Tradysquid-private-config-", script)
+        self.assertIn("Add-CanonicalEnvironmentAliases", script)
+        self.assertIn("TRADINGVIEW_WEBHOOK_SECRET", script)
+        self.assertIn(".env.before-one-click-*.bak", script)
+        self.assertNotIn("DISCORD_BOT_TOKEN=", script)
+        self.assertNotIn("GITHUB_UPGRADE_TOKEN=", script)
+
+    def test_foreground_installer_returns_a_real_process_exit_code(self) -> None:
+        text = INSTALLER.read_text(encoding="utf-8")
+        self.assertIn("$FinalExitCode = 1", text)
+        self.assertIn("$FinalExitCode = 0", text)
+        self.assertIn("exit $FinalExitCode", text)
+
     def test_foreground_installer_targets_exact_audited_build(self) -> None:
         text = INSTALLER.read_text(encoding="utf-8")
         self.assertIn("d99523379f230bed0a026476baa5acd3bb228add", text)
