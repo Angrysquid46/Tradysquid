@@ -1,1 +1,2 @@
 Apply market-hours, provider-budget, grouped-position-quote, and fill-risk repairs. Run the complete isolated Windows suite and production verifier.
+Retry after making missing market-clock state fail closed instead of raising during recovery and test construction.
