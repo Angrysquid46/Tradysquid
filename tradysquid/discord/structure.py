@@ -540,8 +540,11 @@ class DiscordStructureService:
                 continue
             if channel_id in protected_channel_ids:
                 continue
-            if _name(channel).casefold() not in MIGRATION_CHANNEL_NAMES and (
-                _category_name(channel).upper() not in INVENTED_CATEGORIES
+            channel_name = _name(channel).casefold()
+            if (
+                channel_name not in MIGRATION_CHANNEL_NAMES
+                and channel_name != "shadow-candidates"
+                and _category_name(channel).upper() not in INVENTED_CATEGORIES
             ):
                 continue
             if not await self._is_bot_only(channel, bot_user_id):
