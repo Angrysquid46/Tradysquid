@@ -21,6 +21,8 @@ def test_auto_handoff_preserves_complete_environment() -> None:
     assert "full_environment_preserved = $true" in text
     assert "Test-MigrationSourceCredentials" in text
     assert "Install-CanonicalCredentialHandoff" not in text
+    assert "Invoke-RobocopyMirror" in text
+    assert "Process timed out after $TimeoutSeconds seconds" in text
 
 
 def test_auto_handoff_is_noninteractive_and_exact_commit_bound() -> None:
@@ -38,18 +40,51 @@ def test_auto_handoff_stops_old_runtime_and_runs_real_setup() -> None:
     assert "Stop-RepositoryPython" in text
     assert "Unregister-ScheduledTask" in text
     assert "scripts\\setup_entry.ps1" in text
-    assert "$Process.WaitForExit()" in text
+    assert "$Process.WaitForExit(5000)" in text
     assert "SETUP-RESULT.json" in text
     assert "Clean setup did not produce a current PASS receipt" in text
+    assert "Setup stage:" in text
+    assert "Clean setup exceeded the 45-minute hard timeout" in text
 
 
 def test_auto_handoff_rolls_back_and_restarts_legacy_on_failure() -> None:
     text = _text()
-    assert "git -C $Repository switch --force $OriginalBranch" in text
-    assert "git -C $Repository reset --hard $OriginalCommit" in text
+    assert "@('switch', '--force', $OriginalBranch)" in text
+    assert "@('reset', '--hard', $OriginalCommit)" in text
     assert "Restore-RuntimeSnapshot" in text
+    assert "Restore-TradysquidScheduledTasks" in text
     assert "Start-LegacySupervisor" in text
     assert "supervisor-stop.flag" in text
+
+
+def test_failure_is_visible_before_rollback_work_begins() -> None:
+    text = _text()
+    failure_banner = text.index("SETUP FAILED AT:")
+    preliminary_receipt = text.index("Write-AutoResult -CurrentStatus $Status", failure_banner)
+    rollback_start = text.index("Starting bounded rollback", preliminary_receipt)
+    branch_restore = text.index("Returning checkout to", rollback_start)
+    assert failure_banner < preliminary_receipt < rollback_start < branch_restore
+    assert "ROLLBACK IN PROGRESS" in text
+    assert "Failure receipt written" in text
+
+
+def test_rollback_steps_are_bounded_and_visible() -> None:
+    text = _text()
+    assert "Invoke-BoundedProcess" in text
+    assert "WaitForExit($TimeoutSeconds * 1000)" in text
+    assert "Restoring runtime directory:" in text
+    assert "Restoring scheduled task:" in text
+    assert "Stopping the partial clean runtime before rollback" in text
+    assert "Final installer status:" in text
+    assert "Restarting legacy supervisor after final receipt" in text
+
+
+def test_final_receipt_precedes_optional_legacy_restart() -> None:
+    text = _text()
+    rollback_status = text.index("$Status = if ($RollbackFailures.Count -eq 0)")
+    final_receipt = text.index("Write-AutoResult -CurrentStatus $Status", rollback_status)
+    legacy_restart = text.index("Start-LegacySupervisor -Root $Repository", final_receipt)
+    assert rollback_status < final_receipt < legacy_restart
 
 
 def test_auto_handoff_receipt_contains_no_secret_values() -> None:
