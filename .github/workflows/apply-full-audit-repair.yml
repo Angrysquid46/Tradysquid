@@ -32,7 +32,9 @@ jobs:
         shell: pwsh
         run: |
           python scripts/apply_full_audit_repairs.py
+          python scripts/apply_full_audit_followup.py
           Remove-Item -LiteralPath scripts/apply_full_audit_repairs.py -Force
+          Remove-Item -LiteralPath scripts/apply_full_audit_followup.py -Force
           Remove-Item -LiteralPath .github/workflows/apply-full-audit-repair.yml -Force
 
       - name: Parse every PowerShell script
@@ -56,24 +58,49 @@ jobs:
             throw 'PowerShell parsing failed.'
           }
 
+      - name: Create isolated production virtual environment
+        shell: pwsh
+        run: |
+          py -3.12 -m venv .venv-tradysquid
+          $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          if (!(Test-Path -LiteralPath $Python -PathType Leaf)) {
+            throw 'Isolated interpreter was not created.'
+          }
+          & $Python --version
+
       - name: Install dependencies
         shell: pwsh
         run: |
-          python -m pip install --disable-pip-version-check -r requirements-dev.txt
-          python -m pip install --editable .
-          python -m pip check
+          $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $Python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'pip upgrade failed.' }
+          & $Python -m pip install -r requirements-dev.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+          & $Python -m pip install --editable .
+          if ($LASTEXITCODE -ne 0) { throw 'Editable installation failed.' }
+          & $Python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency integrity failed.' }
 
       - name: Compile source
         shell: pwsh
-        run: python -m compileall -q tradysquid scripts tests
+        run: |
+          $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $Python -m compileall -q tradysquid scripts tests
+          if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
 
       - name: Run complete suite
         shell: pwsh
-        run: python -m pytest
+        run: |
+          $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $Python -m pytest
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 
       - name: Run production installation verifier
         shell: pwsh
-        run: python -m scripts.verify_installation
+        run: |
+          $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $Python -m scripts.verify_installation
+          if ($LASTEXITCODE -ne 0) { throw 'Installation verification failed.' }
 
       - name: Commit verified repairs
         shell: pwsh
