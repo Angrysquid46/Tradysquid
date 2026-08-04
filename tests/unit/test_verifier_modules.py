@@ -76,24 +76,36 @@ class _FakeResponse:
 
 class _FakeProvider:
     def market_clock(self) -> dict[str, Any]:
-        return {"clock": {"state": "open"}}
+        return {"clock": {"state": "closed"}}
+
+
+class _FakeRegistry:
+    def all(self) -> list[dict[str, str]]:
+        return [{"strategy": str(index)} for index in range(6)]
+
+
+class _FakeUniverse:
+    def active(self) -> list[dict[str, str]]:
+        return [{"symbol": "TEST"}]
 
 
 class _FakeScanner:
     def scan_symbol(self, symbol: str, trigger: str) -> list[dict[str, str]]:
-        assert symbol == "TEST"
-        assert trigger == "setup-acceptance"
-        return [{"strategy": str(index)} for index in range(6)]
+        raise AssertionError(
+            f"Live verification must not scan {symbol!r} with trigger {trigger!r}"
+        )
 
 
 class _FakeApplication:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.provider = _FakeProvider()
+        self.registry = _FakeRegistry()
+        self.universe = _FakeUniverse()
         self.scanner = _FakeScanner()
 
     def initialize_universe(self) -> list[str]:
-        return ["TEST"]
+        raise AssertionError("Live verification must not refresh the universe")
 
 
 def test_live_verifier_module_uses_mocked_read_only_services(monkeypatch, tmp_path: Path) -> None:
@@ -122,6 +134,10 @@ def test_live_verifier_module_uses_mocked_read_only_services(monkeypatch, tmp_pa
     assert receipt["status"] == "PASS"
     assert receipt["strategy_decisions"] == 6
     assert receipt["tradier_read_only"] is True
+    assert receipt["market_state"] == "closed"
+    assert receipt["controlled_scan_performed"] is False
+    assert receipt["option_chain_required"] is False
+    assert receipt["market_open_required"] is False
     assert receipt["brokerage_write_request"] is False
     assert receipt["second_computer_request"] is False
     assert receipt["lan_service_dependency"] is False
