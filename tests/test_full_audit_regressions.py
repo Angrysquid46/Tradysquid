@@ -120,7 +120,10 @@ def test_target_hit_closes_position_in_monitor(tmp_path):
     app.paper = broker
     app.publisher = Publisher()
     app.diagnostics = Diagnostics()
-    app._position_quotes = lambda position_id: {"CALL": (1.20, 1.25)}
+    app.market_is_open = lambda: True
+    app._position_quote_map = lambda rows: {
+        position.position_id: {"CALL": (1.20, 1.25)}
+    }
 
     results = Application.monitor_positions(app)
 

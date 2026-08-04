@@ -20,6 +20,7 @@ tests/test_learning.py
 tests/test_learning_center.py
 tests/test_management.py
 tests/test_no_shadow_trading.py
+tests/test_operational_audit_regressions.py
 tests/test_paper_broker.py
 tests/test_period_reports.py
 tests/test_presets.py

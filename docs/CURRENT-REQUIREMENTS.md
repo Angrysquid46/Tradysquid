@@ -21,7 +21,9 @@ only a receipt from the owner computer can prove live deployment.
 | One stable Trade Journal thread per paper position | `discord/journals.py`, forum reconciliation | journal state | journal tests | extended backfill receipt |
 | Closed trades populate Wins, Losses, Performance, and Learning | canonical `closed_outcomes` queries | SQLite ledger | historical-card regression tests | Discord card acknowledgements |
 | Core startup does not wait for every historical journal | core bootstrap plus asynchronous extended backfill | core and extended receipts | bootstrap contract tests | both live receipts |
-| Scanning and position monitoring begin immediately | scheduler startup jobs | scheduler receipts | scheduler tests | recent scheduler runs |
+| Scanning and position monitoring begin immediately during regular market hours | scheduler startup jobs plus cached Tradier market clock | scheduler receipts | scheduler and operational audit tests | recent scheduler runs |
+| Provider load remains below the shared minute budget | rotating batches of at most eight symbols, 25-request reserve, grouped position chains | persisted scan cursor and request ledger | operational audit tests | live provider-budget receipt |
+| Paper risk uses conservative executable fills | `PaperBroker.open` | stored leg fills and actual maximum risk | paper-fill regression tests | opened-position ledger |
 | Complete `.env`, data, state, and logs survive handoff | automatic handoff and setup scripts | external backup | installer contract tests | handoff receipt |
 | Rollback restores prior scheduled tasks | `auto_install_clean_rebuild.ps1` | task XML backup | PowerShell contract test | rollback receipt plus task inventory |
 | Read-only Tradier only | `tradysquid/providers/tradier.py` | market-data endpoints | forbidden-write tests | provider readiness |

@@ -62,11 +62,36 @@ class PaperBroker:
                 )
             )
 
-        entry_value = (
-            decision.total_debit
-            if decision.structure == Structure.LONG_OPTION
-            else decision.total_credit
+        signed_entry_cost = sum(
+            (1 if leg.side == "buy" else -1)
+            * float(leg.entry_fill)
+            * int(leg.multiplier)
+            * int(leg.quantity)
+            for leg in legs
         )
+        if decision.structure == Structure.LONG_OPTION:
+            entry_value = signed_entry_cost
+            actual_maximum_risk = entry_value
+        else:
+            entry_value = -signed_entry_cost
+            actual_maximum_risk = max(
+                float(decision.maximum_risk)
+                + float(decision.total_credit)
+                - entry_value,
+                0.0,
+            )
+        configured_limit = float(
+            decision.configuration_snapshot["contract_filters"]
+            ["maximum_risk_dollars"]
+        )
+        if entry_value <= 0:
+            raise ValueError("Conservative paper fill produced a non-positive entry value")
+        if actual_maximum_risk > configured_limit + 1e-9:
+            raise ValueError(
+                "Conservative paper fill exceeds the configured maximum risk: "
+                f"{actual_maximum_risk:.2f} > {configured_limit:.2f}"
+            )
+
         position = PaperPosition(
             position_id,
             decision.candidate_id,
@@ -80,7 +105,7 @@ class PaperBroker:
             utc_now(),
             legs,
             entry_value,
-            decision.maximum_risk,
+            actual_maximum_risk,
             float(
                 decision.configuration_snapshot["management"]["profit_target_pct"]
             ),

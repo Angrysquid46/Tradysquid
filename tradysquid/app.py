@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import signal
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -72,6 +73,12 @@ class Application:
         self._stop = asyncio.Event()
         self.discord = None
         self.discord_task = None
+        self._market_clock_cache = {
+            "observed_monotonic": 0.0,
+            "open": False,
+            "state": "unknown",
+            "raw": {},
+        }
 
         services = {
             "health": self.health,
@@ -279,36 +286,152 @@ class Application:
             return self.reporting.rejected_analysis()
         raise ValueError(f"Unsupported candidate view: {name}")
 
-    def _position_quotes(self, position_id):
-        legs = self.db.query(
-            "SELECT contract_symbol,expiration FROM paper_legs WHERE position_id=?",
-            (position_id,),
+    def refresh_market_session(self):
+        try:
+            response = self.provider.market_clock()
+            clock = (
+                response.get("clock", response)
+                if isinstance(response, dict)
+                else {}
+            )
+            state = str(
+                clock.get("state")
+                or clock.get("status")
+                or clock.get("market_state")
+                or "unknown"
+            ).casefold()
+            is_open = state in {"open", "regular", "regular_hours"}
+            self._market_clock_cache = {
+                "observed_monotonic": time.monotonic(),
+                "open": is_open,
+                "state": state,
+                "raw": response,
+            }
+            self.publisher.notify("diagnostics")
+            return dict(self._market_clock_cache)
+        except Exception as exc:
+            self.diagnostics.observe(
+                "PROVIDER",
+                "market-clock",
+                f"{type(exc).__name__}: {exc}",
+                healthy=False,
+            )
+            cached = dict(
+                getattr(
+                    self,
+                    "_market_clock_cache",
+                    {
+                        "observed_monotonic": 0.0,
+                        "open": False,
+                        "state": "unknown",
+                        "raw": {},
+                    },
+                )
+            )
+            cached["status"] = "DEGRADED"
+            cached["error"] = f"{type(exc).__name__}: {exc}"
+            return cached
+
+    def market_is_open(self) -> bool:
+        cache = getattr(
+            self,
+            "_market_clock_cache",
+            {
+                "observed_monotonic": 0.0,
+                "open": False,
+                "state": "unknown",
+                "raw": {},
+            },
         )
+        self._market_clock_cache = cache
+        age = time.monotonic() - float(cache.get("observed_monotonic", 0.0))
+        if age > 45:
+            self.refresh_market_session()
+            cache = self._market_clock_cache
+        return bool(cache.get("open", False))
+
+    def _next_scan_batch(self, symbols: list[str]) -> list[str]:
+        ordered = list(dict.fromkeys(symbols))
+        if not ordered:
+            return []
+        reserve = 25
+        estimated_calls_per_symbol = 6
+        request_budget = max(int(self.manager.available) - reserve, 0)
+        batch_size = min(8, len(ordered), request_budget // estimated_calls_per_symbol)
+        if batch_size <= 0:
+            return []
+
+        rows = self.db.query(
+            "SELECT value_json FROM settings WHERE key='operations.scan-cursor'"
+        )
+        cursor = 0
+        if rows:
+            try:
+                cursor = int(json.loads(rows[0]["value_json"]).get("cursor", 0))
+            except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+                cursor = 0
+        cursor %= len(ordered)
+        batch = [ordered[(cursor + offset) % len(ordered)] for offset in range(batch_size)]
+        next_cursor = (cursor + batch_size) % len(ordered)
+        self.db.execute(
+            "INSERT OR REPLACE INTO settings(key,value_json,updated_at) VALUES (?,?,datetime('now'))",
+            (
+                "operations.scan-cursor",
+                json.dumps(
+                    {
+                        "cursor": next_cursor,
+                        "batch_size": batch_size,
+                        "universe_size": len(ordered),
+                    },
+                    sort_keys=True,
+                ),
+            ),
+        )
+        return batch
+
+    def _position_quote_map(self, position_rows: list[dict]) -> dict[str, dict]:
+        if not position_rows:
+            return {}
+        position_symbols = {
+            str(row["id"]): str(row["symbol"])
+            for row in position_rows
+        }
+        placeholders = ",".join("?" for _ in position_symbols)
+        legs = self.db.query(
+            "SELECT position_id,contract_symbol,expiration FROM paper_legs "
+            f"WHERE position_id IN ({placeholders}) ORDER BY position_id,id",
+            tuple(position_symbols),
+        )
+        grouped: dict[tuple[str, str], list[dict]] = {}
+        for leg in legs:
+            key = (position_symbols[str(leg["position_id"])], str(leg["expiration"]))
+            grouped.setdefault(key, []).append(leg)
+
+        output = {position_id: {} for position_id in position_symbols}
+        for (underlying, expiration), group in grouped.items():
+            chain = {
+                contract.symbol: contract
+                for contract in self.provider.option_chain(underlying, expiration)
+            }
+            for leg in group:
+                contract_symbol = str(leg["contract_symbol"])
+                contract = chain.get(contract_symbol)
+                if not contract:
+                    raise ValueError(f"Current quote missing for {contract_symbol}")
+                output[str(leg["position_id"])][contract_symbol] = (
+                    contract.bid,
+                    contract.ask,
+                )
+        return output
+
+    def _position_quotes(self, position_id):
         position = self.db.query(
-            "SELECT symbol FROM paper_positions WHERE id=?",
+            "SELECT id,symbol FROM paper_positions WHERE id=?",
             (position_id,),
         )
         if not position:
             raise KeyError(position_id)
-        by_expiration = {}
-        for leg in legs:
-            by_expiration.setdefault(leg["expiration"], []).append(
-                leg["contract_symbol"]
-            )
-        output = {}
-        for expiration, symbols in by_expiration.items():
-            chain = {
-                contract.symbol: contract
-                for contract in self.provider.option_chain(
-                    position[0]["symbol"], expiration
-                )
-            }
-            for symbol in symbols:
-                contract = chain.get(symbol)
-                if not contract:
-                    raise ValueError(f"Current quote missing for {symbol}")
-                output[symbol] = (contract.bid, contract.ask)
-        return output
+        return self._position_quote_map(position)[position_id]
 
     def paper_command(self, name, parts):
         if name == "paper-open":
@@ -393,6 +516,7 @@ class Application:
                 "('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING')"
             )
         }
+        discovery_allowed = self.market_is_open() or not self.universe.active()
         if configured:
             decisions = [
                 UniverseDecision(
@@ -404,23 +528,35 @@ class Application:
                 )
                 for symbol in configured
             ]
-            try:
-                discovered = self.discovery.discover(25)
-                known = {decision.symbol for decision in decisions}
-                decisions.extend(
-                    decision
-                    for decision in discovered
-                    if decision.symbol not in known
-                )
-            except Exception as exc:
-                self.diagnostics.observe(
-                    "PROVIDER",
-                    "universe-discovery",
-                    f"{type(exc).__name__}: {exc}",
-                    healthy=False,
-                )
-        else:
+            if discovery_allowed:
+                try:
+                    discovered = self.discovery.discover(25)
+                    known = {decision.symbol for decision in decisions}
+                    decisions.extend(
+                        decision
+                        for decision in discovered
+                        if decision.symbol not in known
+                    )
+                except Exception as exc:
+                    self.diagnostics.observe(
+                        "PROVIDER",
+                        "universe-discovery",
+                        f"{type(exc).__name__}: {exc}",
+                        healthy=False,
+                    )
+        elif discovery_allowed:
             decisions = self.discovery.discover(25)
+        else:
+            decisions = [
+                UniverseDecision(
+                    symbol,
+                    1.0,
+                    True,
+                    {"source": "preserved-active-universe"},
+                    [],
+                )
+                for symbol in self.universe.active()
+            ]
         active = self.universe.rotate(
             decisions,
             protected=open_symbols,
@@ -523,9 +659,7 @@ class Application:
                 "provider-budget-refresh": lambda: self.publisher.notify(
                     "diagnostics"
                 ),
-                "market-session-refresh": lambda: self.publisher.notify(
-                    "diagnostics"
-                ),
+                "market-session-refresh": self.refresh_market_session,
                 "universe-evaluation": self.initialize_universe,
                 "universe-rotation": self.initialize_universe,
                 "active-universe-quotes": lambda: self.publisher.notify(
@@ -621,14 +755,35 @@ class Application:
         return decisions
 
     def scan_all(self):
+        if not self.market_is_open():
+            return {
+                "status": "SKIPPED_MARKET_CLOSED",
+                "decisions": 0,
+                "paper_positions_opened": 0,
+                "scanned_symbols": [],
+            }
+
+        active_symbols = self.universe.active()
+        batch = self._next_scan_batch(active_symbols)
+        if not batch:
+            return {
+                "status": "SKIPPED_PROVIDER_BUDGET",
+                "decisions": 0,
+                "paper_positions_opened": 0,
+                "scanned_symbols": [],
+                "provider_available": self.manager.available,
+            }
+
         total = 0
         opened_before = self.db.query(
             "SELECT COUNT(*) AS n FROM paper_positions"
         )[0]["n"]
-        for symbol in self.universe.active():
+        failures = []
+        for symbol in batch:
             try:
                 total += len(self.scan_symbol(symbol, "scheduled", publish=False))
             except Exception as exc:
+                failures.append(symbol)
                 self.diagnostics.observe(
                     "SCANNER",
                     symbol,
@@ -639,10 +794,14 @@ class Application:
             "SELECT COUNT(*) AS n FROM paper_positions"
         )[0]["n"]
         result = {
+            "status": "PASS" if not failures else "DEGRADED",
             "decisions": total,
             "paper_positions_opened": max(
                 int(opened_after) - int(opened_before), 0
             ),
+            "scanned_symbols": batch,
+            "failed_symbols": failures,
+            "universe_size": len(active_symbols),
         }
         self.publisher.notify("scan")
         if result["paper_positions_opened"]:
@@ -650,13 +809,29 @@ class Application:
         return result
 
     def monitor_positions(self):
-        results = []
-        for row in self.db.query(
-            "SELECT id FROM paper_positions WHERE state IN "
+        if not self.market_is_open():
+            return []
+        rows = self.db.query(
+            "SELECT id,symbol FROM paper_positions WHERE state IN "
             "('OPEN','HOLD','PROFIT_PROTECTED','EXIT_PENDING')"
-        ):
+        )
+        if not rows:
+            return []
+        try:
+            quote_map = self._position_quote_map(rows)
+        except Exception as exc:
+            self.diagnostics.observe(
+                "PAPER_TRADING",
+                "position-quote-batch",
+                f"{type(exc).__name__}: {exc}",
+                healthy=False,
+            )
+            return []
+
+        results = []
+        for row in rows:
             try:
-                quotes = self._position_quotes(row["id"])
+                quotes = quote_map[row["id"]]
                 marked = self.paper.mark(row["id"], quotes)
                 if marked["state"] == "EXIT_PENDING":
                     marked = self.paper.close(
