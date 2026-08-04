@@ -1,1 +1,2 @@
 Apply the final retired-channel guard, remove temporary audit files and build metadata, and run the complete Windows gate.
+Retry after making the final patch idempotent against the already-applied candidate discovery block.
