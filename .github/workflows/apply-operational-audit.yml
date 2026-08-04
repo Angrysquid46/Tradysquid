@@ -32,7 +32,9 @@ jobs:
         shell: pwsh
         run: |
           python scripts/apply_operational_audit_repairs.py
+          python scripts/apply_operational_audit_followup.py
           Remove-Item -LiteralPath scripts/apply_operational_audit_repairs.py -Force
+          Remove-Item -LiteralPath scripts/apply_operational_audit_followup.py -Force
           Remove-Item -LiteralPath .github/workflows/apply-operational-audit.yml -Force
 
       - name: Parse PowerShell
