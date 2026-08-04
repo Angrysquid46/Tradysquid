@@ -11,7 +11,6 @@ $ExpectedArchiveCommit = 'ba75aae5f34f3889404bfe0c7c0b96663a92a657'
 $CleanBranch = 'clean-rebuild'
 $ArchiveBranch = 'archive/current-failed-implementation'
 $FinalStatus = 'FAILED'
-$FailureMessage = $null
 $Repository = $null
 $Worktree = $null
 
@@ -158,12 +157,14 @@ try {
     Write-Host 'Do not launch another installer or supervisor while this runs.' -ForegroundColor Yellow
     Write-Host ''
 
-    & powershell.exe \
-        -NoProfile \
-        -ExecutionPolicy Bypass \
-        -File $Installer \
-        -ExpectedCleanCommit $ExpectedCleanCommit \
-        -RepositoryPath $Repository
+    $InstallerArguments = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $Installer,
+        '-ExpectedCleanCommit', $ExpectedCleanCommit,
+        '-RepositoryPath', $Repository
+    )
+    & powershell.exe @InstallerArguments
     $InstallerExitCode = $LASTEXITCODE
 
     $FinalReceiptPath = Join-Path $Repository 'state\clean-rebuild-auto-handoff.json'
@@ -261,6 +262,7 @@ try {
     }
 } finally {
     Write-Host ''
-    Write-Host "Final foreground installer status: $FinalStatus" -ForegroundColor $(if ($FinalStatus -eq 'PASS') { 'Green' } else { 'Red' })
+    $StatusColor = if ($FinalStatus -eq 'PASS') { 'Green' } else { 'Red' }
+    Write-Host "Final foreground installer status: $FinalStatus" -ForegroundColor $StatusColor
     Read-Host 'Press Enter after copying or photographing this result'
 }
