@@ -14,6 +14,12 @@ import urllib3.util.connection as urllib3_connection
 
 
 class SupervisorDiscordReadinessTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Other test modules intentionally install alternate historical
+        # supervisor entrypoints. Reinstall this module's patch so the full
+        # discovery suite is deterministic, not import-order dependent.
+        resilient.install()
+
     def test_network_compat_forces_requests_to_ipv4(self) -> None:
         self.assertTrue(network_compat.status()["installed"])
         self.assertEqual(urllib3_connection.allowed_gai_family(), socket.AF_INET)
