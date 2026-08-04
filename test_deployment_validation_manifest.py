@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parent
 
 
 class DeploymentValidationManifestTests(unittest.TestCase):
+    def test_one_click_cmd_avoids_quoted_trailing_backslash_path(self):
+        launcher = Path(__file__).with_name("ONE-CLICK-TRADYSQUID.cmd").read_text(encoding="utf-8")
+        self.assertIn('-RepositoryPath "%~dp0."', launcher)
+        self.assertNotIn('-RepositoryPath "%~dp0"', launcher)
+
     def test_manifest_is_unique_and_complete(self) -> None:
         payload = manifest.validate_manifest()
         self.assertEqual(payload["compile_modules"], len(manifest.COMPILE_MODULES))

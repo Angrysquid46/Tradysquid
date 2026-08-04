@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import diagnostic_nonblocking_runtime as nonblocking
@@ -101,7 +102,7 @@ class DiagnosticNonblockingRuntimeTests(unittest.TestCase):
         self.assertIn("external diagnostic publication completed", detail)
 
     def test_module_has_no_deployment_or_restart_calls(self) -> None:
-        source = open(nonblocking.__file__, encoding="utf-8").read()
+        source = Path(nonblocking.__file__).read_text(encoding="utf-8")
         self.assertNotIn("stop_all_services", source)
         self.assertNotIn("merge --ff-only", source)
         self.assertNotIn("reset --hard", source)
