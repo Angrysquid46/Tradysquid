@@ -1,0 +1,58 @@
+name: Apply Live Receipt StrictMode Fix
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/apply_live_receipt_strictmode_fix.py'
+      - 'scripts/live_preflight_receipt.ps1'
+      - 'tests/unit/test_live_preflight_receipt_parser.py'
+      - '.github/workflows/apply-live-receipt-strictmode-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: windows-latest
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Apply exact setup patch
+        run: python scripts/apply_live_receipt_strictmode_fix.py
+      - name: Parse every PowerShell script
+        shell: powershell
+        run: |
+          $PowerShellFiles = Get-ChildItem -Recurse -Filter '*.ps1'
+          foreach ($File in $PowerShellFiles) {
+            $Tokens = $null
+            $Errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $File.FullName,
+              [ref]$Tokens,
+              [ref]$Errors
+            )
+            if ($Errors.Count -gt 0) {
+              $Errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parsing failed for $($File.FullName)"
+            }
+          }
+      - name: Run exact StrictMode regression tests
+        run: python -m pytest -q tests/unit/test_live_preflight_receipt_parser.py tests/unit/test_setup_live_preflight_reporting.py tests/unit/test_live_verification_offhours.py
+      - name: Commit tested production repair
+        shell: powershell
+        run: |
+          git config user.name 'tradysquid-validation-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/setup.ps1 scripts/live_preflight_receipt.ps1 tests/unit/test_live_preflight_receipt_parser.py
+          git rm scripts/apply_live_receipt_strictmode_fix.py .github/workflows/apply-live-receipt-strictmode-fix.yml
+          if (git diff --cached --quiet) { throw 'StrictMode repair produced no committed changes.' }
+          git commit -m 'Handle missing live receipt fields under StrictMode'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
