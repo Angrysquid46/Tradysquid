@@ -104,7 +104,10 @@ function Add-CanonicalEnvironmentAliases {
 }
 
 try {
-    $Repository = (Resolve-Path -LiteralPath $RepositoryPath -ErrorAction Stop).Path
+    # Be defensive about CMD/Start-Process quoting. In particular, a quoted
+    # Windows directory ending in a backslash can arrive with a literal quote.
+    $CleanRepositoryPath = ([string]$RepositoryPath).Trim().Trim('"')
+    $Repository = (Resolve-Path -LiteralPath $CleanRepositoryPath -ErrorAction Stop).Path
 
     if (-not (Test-IsAdministrator)) {
         Write-Host 'Requesting Administrator permission...' -ForegroundColor Yellow
