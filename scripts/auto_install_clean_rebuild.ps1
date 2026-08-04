@@ -466,6 +466,33 @@ try {
         throw "Clean branch mismatch. Expected $ExpectedCleanCommit but received $ObservedClean."
     }
 
+    $FailedStage = 'pre-switch-conflict-archive'
+    $UntrackedPaths = @(& git -C $Repository ls-files --others --exclude-standard)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not inventory untracked checkout conflicts.'
+    }
+    $UntrackedPaths | Set-Content -LiteralPath (Join-Path $BackupRoot 'untracked-paths-before-clean.txt') -Encoding UTF8
+    if ($UntrackedPaths.Count -gt 0) {
+        # Preserve the complete pre-switch installation outside the repository
+        # before removing only untracked, non-ignored paths that can block Git.
+        $PreSwitchBackup = Join-Path $BackupRoot 'pre-switch-installation'
+        $RobocopyArguments = @(
+            $Repository, $PreSwitchBackup, '/E', '/COPY:DAT', '/DCOPY:DAT',
+            '/R:1', '/W:1', '/XJ', '/XD', '.git', '.venv',
+            '.venv-tradysquid', '__pycache__', '.pytest_cache',
+            '/XF', '*.pyc', '*.pyo'
+        )
+        & robocopy @RobocopyArguments | Out-Null
+        if ($LASTEXITCODE -gt 7) {
+            throw "Pre-switch installation backup failed with robocopy exit code $LASTEXITCODE."
+        }
+        Write-InstallerProgress -Message "Archived $($UntrackedPaths.Count) untracked branch conflicts; cleaning only non-ignored paths." -Color Cyan
+        & git -C $Repository clean -fd
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Could not remove archived untracked checkout conflicts.'
+        }
+    }
+
     $FailedStage = 'clean-branch-switch'
     Write-InstallerProgress -Message 'Switching laptop checkout to clean-rebuild.' -Color Cyan
     Invoke-GitChecked `
