@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 
@@ -56,3 +57,17 @@ def test_auto_handoff_receipt_contains_no_secret_values() -> None:
     assert "secret_values_written = $false" in text
     assert "DISCORD_BOT_TOKEN=" not in text
     assert "TRADIER_ACCESS_TOKEN=" not in text
+
+
+def test_generated_egg_info_cannot_block_clean_branch_switch() -> None:
+    ignore_text = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "*.egg-info/" in ignore_text.splitlines()
+
+    tracked = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "tradysquid.egg-info"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert tracked.returncode == 0, tracked.stderr
+    assert tracked.stdout.strip() == ""
