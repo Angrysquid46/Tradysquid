@@ -53,7 +53,7 @@ def test_start_requires_discord_and_publishing_readiness() -> None:
 
 def test_ordinary_startup_is_direct_and_has_no_maintenance_side_effects() -> None:
     start = read("START-TRADYSQUID.cmd")
-    assert "-m tradysquid.app" in start
+    assert "\'-m\',\'tradysquid.app\'" in start
     forbidden = (
         "git ", "pytest", "pip install", "worktree", "rollback",
         "schtasks", "setup.ps1", "update.ps1", "robocopy",
