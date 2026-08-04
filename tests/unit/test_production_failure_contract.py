@@ -10,6 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SETUP = ROOT / "scripts" / "setup.ps1"
 INSTALLER = ROOT / "scripts" / "install_clean_rebuild.ps1"
+INSTALLER_BODY = ROOT / "scripts" / "install_clean_rebuild_body.ps1"
 STRUCTURE = ROOT / "tradysquid" / "discord" / "structure.py"
 LAYOUT = ROOT / "tradysquid" / "discord" / "layout.py"
 SCHEMA = ROOT / "config" / "discord-schema.json"
@@ -74,6 +75,18 @@ def test_optional_extended_cleanup_cannot_downgrade_core_readiness() -> None:
     bot = BOT.read_text(encoding="utf-8")
     assert '"extended_status": extended_status' in bot
     assert '"status": current.get("status", "PASS")' in bot
+
+
+def test_branch_switch_archives_then_removes_only_untracked_nonignored_conflicts() -> None:
+    installer = INSTALLER_BODY.read_text(encoding="utf-8")
+    assert "New-ExternalBackup -Root $Repository" in installer
+    assert "ls-files --others --exclude-standard" in installer
+    assert "untracked-paths-before-clean.txt" in installer
+    assert "git -C $Repository clean -fd" in installer
+    assert "git -C $Repository clean -fdx" not in installer
+    assert installer.index("New-ExternalBackup -Root $Repository") < installer.index(
+        "git -C $Repository clean -fd"
+    )
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows PowerShell only")
