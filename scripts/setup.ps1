@@ -10,7 +10,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-. (Join-Path $PSScriptRoot 'live_preflight_receipt.ps1')
 
 $Root = Split-Path -Parent $PSScriptRoot
 $ResultJson = Join-Path $Root 'SETUP-RESULT.json'
@@ -21,7 +20,6 @@ $Python = Join-Path $VenvPath 'Scripts\python.exe'
 $State = Join-Path $Root 'state'
 $StageStatePath = Join-Path $State 'setup-stage-state.json'
 $LivePreflightPath = Join-Path $State 'live-preflight.json'
-$DiscordTokenRecoveryPath = Join-Path $State 'discord-token-recovery.json'
 $StartedAt = Get-Date
 $SetupCommit = $null
 $ParentProcessId = $null
@@ -220,36 +218,6 @@ try {
         }
     }
 
-    Invoke-SetupStage -Name 'discord-token-recovery' -Action {
-        Remove-Item -LiteralPath $DiscordTokenRecoveryPath -Force -ErrorAction SilentlyContinue
-        Push-Location $Root
-        try {
-            $SearchRoot = Split-Path -Parent $Root
-            & py -3.12 -m tradysquid.operations.discord_token_recovery `
-                --root $Root `
-                --search-root $SearchRoot
-            $RecoveryExitCode = $LASTEXITCODE
-
-            if ($RecoveryExitCode -ne 0) {
-                if (Test-Path -LiteralPath $DiscordTokenRecoveryPath -PathType Leaf) {
-                    $RecoveryReceipt = Get-Content -LiteralPath $DiscordTokenRecoveryPath -Raw | ConvertFrom-Json
-                    $RequiredAction = [string](Get-LiveReceiptProperty `
-                        -InputObject $RecoveryReceipt `
-                        -Name 'required_action' `
-                        -DefaultValue 'RESET_DISCORD_BOT_TOKEN')
-                    $RecoveryError = [string](Get-LiveReceiptProperty `
-                        -InputObject $RecoveryReceipt `
-                        -Name 'error' `
-                        -DefaultValue 'No valid local Discord bot token was found.')
-                    throw "Discord token recovery failed: action=$RequiredAction; error=$RecoveryError"
-                }
-                throw "Discord token recovery returned exit code $RecoveryExitCode without a receipt."
-            }
-        } finally {
-            Pop-Location
-        }
-    }
-
     Invoke-SetupStage -Name 'canonical-credential-validation' -Action {
         Push-Location $Root
         try {
@@ -405,11 +373,13 @@ try {
             }
 
             $LiveReceipt = Get-Content -LiteralPath $LivePreflightPath -Raw | ConvertFrom-Json
-            $LiveSummary = Convert-LivePreflightReceipt -Receipt $LiveReceipt
-
-            $script:livePreflightStatus = [string]$LiveSummary.status
-            $script:livePreflightTradierStatus = [string]$LiveSummary.tradier_live_status
-            $script:livePreflightWarnings = @($LiveSummary.warnings)
+            $script:livePreflightStatus = [string]$LiveReceipt.status
+            $script:livePreflightTradierStatus = if ($LiveReceipt.tradier_live_status) {
+                [string]$LiveReceipt.tradier_live_status
+            } else {
+                'NOT REPORTED'
+            }
+            $script:livePreflightWarnings = @($LiveReceipt.warnings)
 
             Write-Host ("Live preflight status: " + $script:livePreflightStatus)
             Write-Host ("Tradier live status: " + $script:livePreflightTradierStatus)
@@ -423,13 +393,11 @@ try {
                 ) -ForegroundColor Yellow
             }
 
-            if ($LiveExitCode -ne 0 -or $LiveSummary.status -ne 'PASS') {
-                throw (
-                    "Live preflight failed: category={0}; check={1}; error={2}" -f
-                    $LiveSummary.category,
-                    $LiveSummary.failed_check,
-                    $LiveSummary.error
-                )
+            if ($LiveExitCode -ne 0 -or $LiveReceipt.status -ne 'PASS') {
+                $Category = if ($LiveReceipt.category) { [string]$LiveReceipt.category } else { 'UNKNOWN' }
+                $Check = if ($LiveReceipt.failed_check) { [string]$LiveReceipt.failed_check } else { 'unknown-check' }
+                $ErrorText = if ($LiveReceipt.error) { [string]$LiveReceipt.error } else { 'No sanitized error was reported.' }
+                throw "Live preflight failed: category=$Category; check=$Check; error=$ErrorText"
             }
         } finally {
             Pop-Location
@@ -443,7 +411,7 @@ try {
             $CommandShell = 'cmd.exe'
         }
 
-        $StartCommand = Join-Path $Root 'START.cmd'
+        $StartCommand = Join-Path $Root 'START-TRADYSQUID.cmd'
         $TaskActionParameters = @{
             Execute = $CommandShell
             Argument = '/d /c ""' + $StartCommand + '""'
@@ -520,7 +488,6 @@ try {
         tradysquid_package_path = $packagePath
         project_installation = $projectInstallation
         package_import = $packageImport
-        discord_token_recovery_receipt = $DiscordTokenRecoveryPath
         live_preflight_receipt = $LivePreflightPath
         live_preflight_status = $livePreflightStatus
         live_preflight_tradier_status = $livePreflightTradierStatus
