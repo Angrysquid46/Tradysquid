@@ -267,6 +267,27 @@ try {
     $FailureStage = 'runtime-stop'
     Stop-TradysquidPython -Root $Repository
 
+    $FailureStage = 'untracked-conflict-cleanup'
+    # Extracting a replacement archive over an older branch can leave files
+    # that are tracked by clean-rebuild but untracked by the current branch.
+    # Git correctly refuses to overwrite them. The complete installation has
+    # already been copied to the external backup, so archive the exact list and
+    # remove only untracked, non-ignored paths. Ignored private/runtime paths
+    # such as .env, data, state, logs, and virtual environments are untouched.
+    $UntrackedPaths = @(& git -C $Repository ls-files --others --exclude-standard)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not inventory untracked checkout conflicts.'
+    }
+    $UntrackedManifest = Join-Path $Backup 'untracked-paths-before-clean.txt'
+    $UntrackedPaths | Set-Content -LiteralPath $UntrackedManifest -Encoding UTF8
+    if ($UntrackedPaths.Count -gt 0) {
+        Add-Step "Archiving and removing $($UntrackedPaths.Count) untracked checkout conflicts."
+        & git -C $Repository clean -fd
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Could not remove archived untracked checkout conflicts.'
+        }
+    }
+
     $FailureStage = 'git-fetch'
     $FetchArguments = @(
         '-C'
