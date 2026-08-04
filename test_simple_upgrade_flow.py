@@ -165,7 +165,7 @@ class SimpleUpgradeFlowTests(unittest.TestCase):
         text = (ROOT / "clean_rebuild_auto_handoff.py").read_text(encoding="utf-8")
         self.assertEqual(
             handoff.EXPECTED_CLEAN_COMMIT,
-            "f71acae7f7a502bdf64feda5b87e1f26111bffe6",
+            "d99523379f230bed0a026476baa5acd3bb228add",
         )
         self.assertEqual(handoff.MAX_ATTEMPTS, 3)
         self.assertEqual(handoff.LAUNCH_GRACE_SECONDS, 45 * 60)
