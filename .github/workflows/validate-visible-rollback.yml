@@ -1,0 +1,25 @@
+name: Validate Visible Rollback
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/auto_install_clean_rebuild.ps1'
+      - 'tests/unit/test_auto_handoff_installer.py'
+      - '.github/workflows/validate-visible-rollback.yml'
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Parse installer
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/auto_install_clean_rebuild.ps1'), [ref]$tokens, [ref]$errors)
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+      - name: Run installer regression tests
+        run: python -m pytest -q tests/unit/test_auto_handoff_installer.py
