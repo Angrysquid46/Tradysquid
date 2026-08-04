@@ -15,6 +15,7 @@ COMPILE_MODULES = (
     "ngrok_process_runtime.py",
     "tradysquid_supervisor.py",
     "run_supervisor_simple.py",
+    "clean_rebuild_auto_handoff.py",
     "network_compat.py",
     "github_upgrade_bridge.py",
     "github_upgrade_bridge_runtime.py",
@@ -77,6 +78,7 @@ def validate_manifest() -> dict[str, object]:
         "single_owner_runtime.py",
         "ngrok_process_runtime.py",
         "run_supervisor_simple.py",
+        "clean_rebuild_auto_handoff.py",
         "tradysquid_supervisor.py",
         "diagnostic_upgrade_system.py",
         "diagnostic_review_runtime.py",
@@ -112,4 +114,5 @@ def validate_manifest() -> dict[str, object]:
         "runtime_contract_tested": True,
         "single_owner_guard_tested": True,
         "direct_ngrok_process_tested": True,
+        "automatic_handoff_tested": True,
     }
