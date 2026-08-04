@@ -202,6 +202,39 @@ function Stop-RepositoryPython {
         ForEach-Object {
             Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         }
+
+    # SQLite memory-mapped sidecars can remain locked briefly after the owning
+    # Python process exits.  Do not begin a snapshot or rollback mirror until
+    # every repository Python process is actually gone.
+    for ($Attempt = 1; $Attempt -le 30; $Attempt++) {
+        $Remaining = @(
+            Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+                Where-Object {
+                    $_.ProcessId -ne $PID -and
+                    $_.CommandLine -and
+                    $_.CommandLine -match $Escaped -and
+                    $_.Name -in @('python.exe', 'pythonw.exe')
+                }
+        )
+        if ($Remaining.Count -eq 0) { return }
+        foreach ($Process in $Remaining) {
+            Stop-Process -Id $Process.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Seconds 1
+    }
+    throw 'Repository Python processes did not stop within 30 seconds.'
+}
+
+function Stop-ProcessTree {
+    param([Parameter(Mandatory = $true)][int]$ProcessId)
+
+    $TaskKill = Get-Command taskkill.exe -ErrorAction SilentlyContinue
+    if ($TaskKill) {
+        & $TaskKill.Source /PID $ProcessId /T /F *> $null
+    }
+    if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
+        Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Invoke-RobocopyMirror {
@@ -214,7 +247,11 @@ function Invoke-RobocopyMirror {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     $Result = Invoke-BoundedProcess `
         -FilePath 'robocopy.exe' `
-        -Arguments @($Source, $Destination, '/MIR', '/R:1', '/W:1', '/XJ', '/NFL', '/NDL', '/NJH', '/NJS', '/NP') `
+        -Arguments @(
+            $Source, $Destination, '/MIR', '/R:1', '/W:1', '/XJ',
+            '/XF', '*.db-shm', '*.db-wal', '*.db-journal',
+            '/NFL', '/NDL', '/NJH', '/NJS', '/NP'
+        ) `
         -TimeoutSeconds $TimeoutSeconds `
         -AllowedExitCodes @(0, 1, 2, 3, 4, 5, 6, 7)
     return $Result.ExitCode
@@ -337,6 +374,7 @@ function Invoke-CleanStopBounded {
         -WorkingDirectory $Root `
         -TimeoutSeconds 90 `
         -AllowedExitCodes @(0) | Out-Null
+    Stop-RepositoryPython -Root $Root
 }
 
 function Invoke-CleanSetupVisible {
@@ -366,22 +404,41 @@ function Invoke-CleanSetupVisible {
         -RedirectStandardError $StderrPath `
         -PassThru
 
-    $Deadline = (Get-Date).AddMinutes(45)
+    # The old single 45-minute wall-clock deadline allowed a hung readiness
+    # stage to consume almost the entire installation window.  Track the stage
+    # itself and give first-run Discord reconciliation a bounded 15 minutes.
+    $StageTimeouts = @{
+        'application-start-and-readiness' = 15 * 60
+        'automated-test-suite' = 10 * 60
+        'dependency-installation' = 10 * 60
+    }
+    $DefaultStageTimeoutSeconds = 10 * 60
+    $StageStartedAt = Get-Date
     $LastStage = ''
     while (-not $Process.WaitForExit(5000)) {
-        if ((Get-Date) -gt $Deadline) {
-            try { Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue } catch {}
-            throw 'Clean setup exceeded the 45-minute hard timeout.'
-        }
-
         if (Test-Path -LiteralPath $StagePath -PathType Leaf) {
             try {
                 $Stage = Get-Content -LiteralPath $StagePath -Raw | ConvertFrom-Json
                 if ($Stage.attempt_id -eq $AttemptId -and [string]$Stage.current_stage -ne $LastStage) {
                     $LastStage = [string]$Stage.current_stage
+                    $StageStartedAt = if ($Stage.stage_started_at) {
+                        [datetime]$Stage.stage_started_at
+                    } else {
+                        Get-Date
+                    }
                     Write-InstallerProgress -Message "Setup stage: $LastStage [$($Stage.stage_status)]" -Color Yellow
                 }
             } catch {}
+        }
+
+        $StageTimeoutSeconds = if ($StageTimeouts.ContainsKey($LastStage)) {
+            [int]$StageTimeouts[$LastStage]
+        } else {
+            $DefaultStageTimeoutSeconds
+        }
+        if (((Get-Date) - $StageStartedAt).TotalSeconds -gt $StageTimeoutSeconds) {
+            Stop-ProcessTree -ProcessId $Process.Id
+            throw "Clean setup stage '$LastStage' exceeded its $StageTimeoutSeconds-second timeout."
         }
     }
     $Process.WaitForExit()
@@ -427,6 +484,13 @@ try {
     $EnvironmentPath = Join-Path $Repository '.env'
     Test-MigrationSourceCredentials -EnvPath $EnvironmentPath | Out-Null
 
+    $FailedStage = 'runtime-stop'
+    Write-InstallerProgress -Message 'Stopping legacy runtime and scheduled tasks before snapshot.' -Color Cyan
+    Stop-RepositoryPython -Root $Repository
+    Get-ScheduledTask -ErrorAction SilentlyContinue |
+        Where-Object { $_.TaskName -like '*Tradysquid*' } |
+        Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+
     $FailedStage = 'external-runtime-backup'
     $Parent = Split-Path -Parent $Repository
     $BackupRoot = Join-Path $Parent ('Tradysquid-auto-handoff-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + $AttemptId.Substring(0, 8))
@@ -443,13 +507,6 @@ try {
         complete_environment_preserved = $true
         secret_values_written = $false
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $BackupRoot 'backup-receipt.json') -Encoding UTF8
-
-    $FailedStage = 'runtime-stop'
-    Write-InstallerProgress -Message 'Stopping legacy runtime and scheduled tasks.' -Color Cyan
-    Stop-RepositoryPython -Root $Repository
-    Get-ScheduledTask -ErrorAction SilentlyContinue |
-        Where-Object { $_.TaskName -like '*Tradysquid*' } |
-        Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
 
     $FailedStage = 'clean-branch-verification'
     Write-InstallerProgress -Message 'Fetching and verifying exact clean branch.' -Color Cyan

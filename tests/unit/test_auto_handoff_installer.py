@@ -44,7 +44,8 @@ def test_auto_handoff_stops_old_runtime_and_runs_real_setup() -> None:
     assert "SETUP-RESULT.json" in text
     assert "Clean setup did not produce a current PASS receipt" in text
     assert "Setup stage:" in text
-    assert "Clean setup exceeded the 45-minute hard timeout" in text
+    assert "application-start-and-readiness' = 15 * 60" in text
+    assert "Stop-ProcessTree -ProcessId $Process.Id" in text
 
 
 def test_auto_handoff_rolls_back_and_restarts_legacy_on_failure() -> None:
@@ -77,6 +78,15 @@ def test_rollback_steps_are_bounded_and_visible() -> None:
     assert "Stopping the partial clean runtime before rollback" in text
     assert "Final installer status:" in text
     assert "Restarting legacy supervisor after final receipt" in text
+    assert "Stop-RepositoryPython -Root $Root" in text
+
+
+def test_snapshot_happens_after_runtime_stop_and_omits_sqlite_sidecars() -> None:
+    text = _text()
+    stop = text.index("Stopping legacy runtime and scheduled tasks before snapshot")
+    snapshot = text.index("Creating external backup:", stop)
+    assert stop < snapshot
+    assert "'*.db-shm', '*.db-wal', '*.db-journal'" in text
 
 
 def test_final_receipt_precedes_optional_legacy_restart() -> None:
