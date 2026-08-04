@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import github_upgrade_bridge
@@ -19,6 +20,7 @@ from test_supervisor_entrypoint_diagnostics import SupervisorEntrypointDiagnosti
 
 
 ROOT = Path(__file__).resolve().parent
+NOW = datetime(2026, 8, 4, tzinfo=timezone.utc)
 
 
 def load_simple():
@@ -35,6 +37,22 @@ def load_simple_runtime():
 
 def load_clean_handoff():
     return importlib.import_module("clean_rebuild_auto_handoff")
+
+
+def handoff_receipt(
+    status: str,
+    *,
+    minutes_ago: int = 0,
+    attempts: int = 1,
+    expected_commit: str | None = None,
+) -> dict[str, object]:
+    handoff = load_clean_handoff()
+    return {
+        "status": status,
+        "expected_clean_commit": expected_commit or handoff.EXPECTED_CLEAN_COMMIT,
+        "observed_at": (NOW - timedelta(minutes=minutes_ago)).isoformat(),
+        "attempt_count": attempts,
+    }
 
 
 class SimpleUpgradeFlowTests(unittest.TestCase):
@@ -131,21 +149,117 @@ class SimpleUpgradeFlowTests(unittest.TestCase):
         self.assertIn('/guilds/{tracker.guild_id}/channels', text)
         self.assertIn("permission_overwrites", text)
 
-    def test_clean_rebuild_handoff_is_exact_one_time_and_secret_safe(self) -> None:
+    def test_clean_rebuild_handoff_targets_exact_audited_commit(self) -> None:
         handoff = load_clean_handoff()
         text = (ROOT / "clean_rebuild_auto_handoff.py").read_text(encoding="utf-8")
         self.assertEqual(
             handoff.EXPECTED_CLEAN_COMMIT,
-            "a27b61b1198e575f66e339001b4c120e7085e0cd",
+            "f2ae73954ff2b93d4a2827abf48aa286e9e9d43a",
         )
+        self.assertEqual(handoff.MAX_ATTEMPTS, 3)
+        self.assertEqual(handoff.LAUNCH_GRACE_SECONDS, 45 * 60)
+        self.assertEqual(handoff.RETRY_BACKOFF_SECONDS, 15 * 60)
         self.assertIn("refs/remotes/origin", text)
         self.assertIn("worktree", text)
         self.assertIn("supervisor-stop.flag", text)
-        self.assertIn("TERMINAL_STATUSES", text)
+        self.assertIn("clean-rebuild-auto-handoff.json", text)
         self.assertIn("secret_values_written", text)
+        self.assertNotIn("TERMINAL_STATUSES", text)
         self.assertNotIn("DISCORD_BOT_TOKEN=", text)
         self.assertNotIn("TRADIER_ACCESS_TOKEN=", text)
         self.assertTrue(callable(handoff.launch_if_needed))
+        self.assertTrue(callable(handoff.evaluate_handoff))
+
+    def test_fresh_launched_receipt_waits_without_duplicate_process(self) -> None:
+        handoff = load_clean_handoff()
+        decision = handoff.evaluate_handoff(
+            handoff_receipt("LAUNCHED", minutes_ago=5),
+            {},
+            now=NOW,
+        )
+        self.assertEqual(decision["action"], "wait")
+        self.assertEqual(decision["attempt_count"], 1)
+
+    def test_stale_launched_receipt_retries_instead_of_blocking_forever(self) -> None:
+        handoff = load_clean_handoff()
+        decision = handoff.evaluate_handoff(
+            handoff_receipt("LAUNCHED", minutes_ago=46),
+            {},
+            now=NOW,
+        )
+        self.assertEqual(decision["action"], "launch")
+        self.assertEqual(decision["attempt_count"], 2)
+
+    def test_newer_final_pass_completes_handoff(self) -> None:
+        handoff = load_clean_handoff()
+        decision = handoff.evaluate_handoff(
+            handoff_receipt("LAUNCHED", minutes_ago=20),
+            handoff_receipt("PASS", minutes_ago=1),
+            now=NOW,
+        )
+        self.assertEqual(decision["action"], "complete")
+        self.assertEqual(decision["final_status"], "PASS")
+
+    def test_fresh_rolled_back_receipt_observes_backoff(self) -> None:
+        handoff = load_clean_handoff()
+        decision = handoff.evaluate_handoff(
+            handoff_receipt("LAUNCHED", minutes_ago=20),
+            handoff_receipt("ROLLED BACK", minutes_ago=1),
+            now=NOW,
+        )
+        self.assertEqual(decision["action"], "wait")
+        self.assertEqual(decision["final_status"], "ROLLED_BACK")
+
+    def test_old_rolled_back_receipt_retries(self) -> None:
+        handoff = load_clean_handoff()
+        decision = handoff.evaluate_handoff(
+            handoff_receipt("LAUNCHED", minutes_ago=30),
+            handoff_receipt("ROLLED BACK", minutes_ago=16),
+            now=NOW,
+        )
+        self.assertEqual(decision["action"], "launch")
+        self.assertEqual(decision["attempt_count"], 2)
+
+    def test_third_failed_attempt_blocks_automatic_loop(self) -> None:
+        handoff = load_clean_handoff()
+        decision = handoff.evaluate_handoff(
+            handoff_receipt("LAUNCHED", minutes_ago=30, attempts=3),
+            handoff_receipt("FAILED", minutes_ago=1, attempts=3),
+            now=NOW,
+        )
+        self.assertEqual(decision["action"], "blocked")
+        self.assertEqual(decision["attempt_count"], 3)
+
+    def test_old_final_failure_does_not_override_newer_active_launch(self) -> None:
+        handoff = load_clean_handoff()
+        decision = handoff.evaluate_handoff(
+            handoff_receipt("LAUNCHED", minutes_ago=1, attempts=2),
+            handoff_receipt("ROLLED BACK", minutes_ago=20, attempts=1),
+            now=NOW,
+        )
+        self.assertEqual(decision["action"], "wait")
+        self.assertEqual(decision["attempt_count"], 2)
+
+    def test_receipt_for_old_target_does_not_block_new_target(self) -> None:
+        handoff = load_clean_handoff()
+        decision = handoff.evaluate_handoff(
+            handoff_receipt(
+                "PASS",
+                minutes_ago=1,
+                attempts=3,
+                expected_commit="0" * 40,
+            ),
+            {},
+            now=NOW,
+        )
+        self.assertEqual(decision["action"], "launch")
+        self.assertEqual(decision["attempt_count"], 1)
+
+    def test_deployment_manifest_compiles_and_tests_handoff(self) -> None:
+        manifest = importlib.import_module("deployment_validation_manifest")
+        result = manifest.validate_manifest()
+        self.assertIn("clean_rebuild_auto_handoff.py", manifest.COMPILE_MODULES)
+        self.assertTrue(result["automatic_handoff_tested"])
 
 
 if __name__ == "__main__":
