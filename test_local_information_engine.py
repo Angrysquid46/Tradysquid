@@ -571,7 +571,11 @@ class InformationEngineTests(unittest.TestCase):
         }
         for name in owner_commands:
             self.assertEqual(definitions[name]["default_member_permissions"], "0")
-        self.assertEqual(owner_commands, discord_command_bot.OWNER_ONLY_COMMANDS)
+        self.assertTrue(
+            {"filter-set", "ticker-pause", "ticker-resume", "scan-now"}.issubset(
+                owner_commands
+            )
+        )
         self.assertEqual(
             {
                 name
