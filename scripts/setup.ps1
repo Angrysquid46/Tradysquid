@@ -10,6 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'live_preflight_receipt.ps1')
 
 $Root = Split-Path -Parent $PSScriptRoot
 $ResultJson = Join-Path $Root 'SETUP-RESULT.json'
@@ -373,13 +374,11 @@ try {
             }
 
             $LiveReceipt = Get-Content -LiteralPath $LivePreflightPath -Raw | ConvertFrom-Json
-            $script:livePreflightStatus = [string]$LiveReceipt.status
-            $script:livePreflightTradierStatus = if ($LiveReceipt.tradier_live_status) {
-                [string]$LiveReceipt.tradier_live_status
-            } else {
-                'NOT REPORTED'
-            }
-            $script:livePreflightWarnings = @($LiveReceipt.warnings)
+            $LiveSummary = Convert-LivePreflightReceipt -Receipt $LiveReceipt
+
+            $script:livePreflightStatus = [string]$LiveSummary.status
+            $script:livePreflightTradierStatus = [string]$LiveSummary.tradier_live_status
+            $script:livePreflightWarnings = @($LiveSummary.warnings)
 
             Write-Host ("Live preflight status: " + $script:livePreflightStatus)
             Write-Host ("Tradier live status: " + $script:livePreflightTradierStatus)
@@ -393,11 +392,13 @@ try {
                 ) -ForegroundColor Yellow
             }
 
-            if ($LiveExitCode -ne 0 -or $LiveReceipt.status -ne 'PASS') {
-                $Category = if ($LiveReceipt.category) { [string]$LiveReceipt.category } else { 'UNKNOWN' }
-                $Check = if ($LiveReceipt.failed_check) { [string]$LiveReceipt.failed_check } else { 'unknown-check' }
-                $ErrorText = if ($LiveReceipt.error) { [string]$LiveReceipt.error } else { 'No sanitized error was reported.' }
-                throw "Live preflight failed: category=$Category; check=$Check; error=$ErrorText"
+            if ($LiveExitCode -ne 0 -or $LiveSummary.status -ne 'PASS') {
+                throw (
+                    "Live preflight failed: category={0}; check={1}; error={2}" -f
+                    $LiveSummary.category,
+                    $LiveSummary.failed_check,
+                    $LiveSummary.error
+                )
             }
         } finally {
             Pop-Location
