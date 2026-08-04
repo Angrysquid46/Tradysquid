@@ -14,17 +14,33 @@ $FinalStatus = 'FAILED'
 $Repository = $null
 $Worktree = $null
 
-function Invoke-CheckedGit {
+function Invoke-GitSafe {
     param(
         [Parameter(Mandatory = $true)][string]$WorkingRepository,
         [Parameter(Mandatory = $true)][string[]]$Arguments,
         [string]$FailureMessage = 'Git command failed.'
     )
 
-    & git -C $WorkingRepository @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw $FailureMessage
+    $PreviousPreference = $ErrorActionPreference
+    $Output = @()
+    $ExitCode = 1
+    try {
+        $ErrorActionPreference = 'Continue'
+        $Output = @(& git -C $WorkingRepository @Arguments 2>&1)
+        $ExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $PreviousPreference
     }
+
+    if ($ExitCode -ne 0) {
+        $Details = ($Output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+        if ([string]::IsNullOrWhiteSpace($Details)) {
+            $Details = "git exit code $ExitCode"
+        }
+        throw "$FailureMessage $Details"
+    }
+
+    return $Output
 }
 
 function Read-JsonSafe {
@@ -69,6 +85,31 @@ function Archive-PreviousAttemptArtifacts {
     return $ArchiveRoot
 }
 
+function Remove-TemporaryWorktreeBestEffort {
+    param(
+        [string]$Root,
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Root) -or [string]::IsNullOrWhiteSpace($Path)) {
+        return
+    }
+
+    $PreviousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & git -C $Root worktree remove --force $Path *> $null
+        if (Test-Path -LiteralPath $Path) {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        & git -C $Root worktree prune *> $null
+    } catch {
+        # Cleanup must never replace the real installation result.
+    } finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+}
+
 try {
     $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $Principal = New-Object Security.Principal.WindowsPrincipal($Identity)
@@ -97,20 +138,24 @@ try {
     Write-Host ''
 
     Write-Host 'Fetching the exact audited branches...' -ForegroundColor Cyan
-    Invoke-CheckedGit -WorkingRepository $Repository -Arguments @(
+    Invoke-GitSafe -WorkingRepository $Repository -Arguments @(
         'fetch',
         'origin',
         "+refs/heads/$CleanBranch`:refs/remotes/origin/$CleanBranch",
         "+refs/heads/$ArchiveBranch`:refs/remotes/origin/$ArchiveBranch"
-    ) -FailureMessage 'Could not fetch the audited clean and archive branches.'
+    ) -FailureMessage 'Could not fetch the audited clean and archive branches.' | Out-Null
 
-    $ObservedClean = (& git -C $Repository rev-parse "refs/remotes/origin/$CleanBranch").Trim()
-    if ($LASTEXITCODE -ne 0 -or $ObservedClean -ne $ExpectedCleanCommit) {
+    $ObservedClean = ((Invoke-GitSafe -WorkingRepository $Repository -Arguments @(
+        'rev-parse', "refs/remotes/origin/$CleanBranch"
+    ) -FailureMessage 'Could not read the clean branch commit.') -join '').Trim()
+    if ($ObservedClean -ne $ExpectedCleanCommit) {
         throw "Clean branch mismatch. Expected $ExpectedCleanCommit but received $ObservedClean"
     }
 
-    $ObservedArchive = (& git -C $Repository rev-parse "refs/remotes/origin/$ArchiveBranch").Trim()
-    if ($LASTEXITCODE -ne 0 -or $ObservedArchive -ne $ExpectedArchiveCommit) {
+    $ObservedArchive = ((Invoke-GitSafe -WorkingRepository $Repository -Arguments @(
+        'rev-parse', "refs/remotes/origin/$ArchiveBranch"
+    ) -FailureMessage 'Could not read the archive branch commit.') -join '').Trim()
+    if ($ObservedArchive -ne $ExpectedArchiveCommit) {
         throw "Archive branch mismatch. Expected $ExpectedArchiveCommit but received $ObservedArchive"
     }
 
@@ -119,21 +164,20 @@ try {
 
     Remove-Item -LiteralPath (Join-Path $Repository 'state\supervisor-stop.flag') -Force -ErrorAction SilentlyContinue
 
+    Invoke-GitSafe -WorkingRepository $Repository -Arguments @('worktree', 'prune') `
+        -FailureMessage 'Could not prune stale Git worktree registrations.' | Out-Null
+
     $Parent = Split-Path -Parent $Repository
-    $Worktree = Join-Path $Parent ('Tradysquid-clean-handoff-' + $ExpectedCleanCommit.Substring(0, 12))
+    $UniqueSuffix = [guid]::NewGuid().ToString('N').Substring(0, 8)
+    $Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $WorktreeName = 'Tradysquid-clean-handoff-{0}-{1}-{2}' -f `
+        $ExpectedCleanCommit.Substring(0, 12), $Timestamp, $UniqueSuffix
+    $Worktree = Join-Path $Parent $WorktreeName
 
-    & git -C $Repository worktree remove --force $Worktree 2>$null
-    if (Test-Path -LiteralPath $Worktree) {
-        Remove-Item -LiteralPath $Worktree -Recurse -Force
-    }
-    & git -C $Repository worktree prune
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Could not prune stale Git worktrees.'
-    }
-
-    Invoke-CheckedGit -WorkingRepository $Repository -Arguments @(
+    Write-Host "Creating isolated installer worktree: $Worktree" -ForegroundColor DarkGray
+    Invoke-GitSafe -WorkingRepository $Repository -Arguments @(
         'worktree', 'add', '--detach', $Worktree, $ExpectedCleanCommit
-    ) -FailureMessage 'Could not create the exact audited clean installer worktree.'
+    ) -FailureMessage 'Could not create the exact audited clean installer worktree.' | Out-Null
 
     $Installer = Join-Path $Worktree 'scripts\auto_install_clean_rebuild.ps1'
     if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) {
@@ -160,12 +204,17 @@ try {
     $InstallerArguments = @(
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
-        '-File', $Installer,
+        '-File', ('"' + $Installer + '"'),
         '-ExpectedCleanCommit', $ExpectedCleanCommit,
-        '-RepositoryPath', $Repository
+        '-RepositoryPath', ('"' + $Repository + '"')
     )
-    & powershell.exe @InstallerArguments
-    $InstallerExitCode = $LASTEXITCODE
+    $InstallerProcess = Start-Process -FilePath 'powershell.exe' `
+        -ArgumentList $InstallerArguments `
+        -WorkingDirectory $Worktree `
+        -NoNewWindow `
+        -Wait `
+        -PassThru
+    $InstallerExitCode = [int]$InstallerProcess.ExitCode
 
     $FinalReceiptPath = Join-Path $Repository 'state\clean-rebuild-auto-handoff.json'
     $SetupReceiptPath = Join-Path $Repository 'SETUP-RESULT.json'
@@ -261,6 +310,7 @@ try {
         }
     }
 } finally {
+    Remove-TemporaryWorktreeBestEffort -Root $Repository -Path $Worktree
     Write-Host ''
     $StatusColor = if ($FinalStatus -eq 'PASS') { 'Green' } else { 'Red' }
     Write-Host "Final foreground installer status: $FinalStatus" -ForegroundColor $StatusColor
