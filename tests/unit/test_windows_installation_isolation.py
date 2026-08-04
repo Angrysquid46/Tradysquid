@@ -43,11 +43,33 @@ def test_start_and_update_use_the_same_isolated_environment() -> None:
 
 
 def test_start_requires_discord_and_publishing_readiness() -> None:
-    start = read("scripts/start.ps1")
+    start = read("START-TRADYSQUID.cmd")
     assert "discord-readiness.json" in start
     assert "discord-publishing-bootstrap.json" in start
-    assert "discord_publishing_ready" in start
     assert "slash_commands_synchronized" in start
+    assert "persistent_cards.failed" in start
+    assert "TRADYSQUID IS RUNNING" in start
+
+
+def test_ordinary_startup_is_direct_and_has_no_maintenance_side_effects() -> None:
+    start = read("START-TRADYSQUID.cmd")
+    assert "-m tradysquid.app" in start
+    forbidden = (
+        "git ", "pytest", "pip install", "worktree", "rollback",
+        "schtasks", "setup.ps1", "update.ps1", "robocopy",
+    )
+    for value in forbidden:
+        assert value not in start.lower()
+
+
+def test_ordinary_startup_handles_environment_and_process_states() -> None:
+    start = read("START-TRADYSQUID.cmd")
+    assert 'if not exist "%ROOT%.env"' in start
+    assert ".venv-tradysquid\\Scripts\\python.exe" in start
+    assert "tradysquid.pid.json" in start
+    assert "TRADYSQUID IS ALREADY RUNNING" in start
+    assert "Remove-Item -LiteralPath $p -Force" in start
+    assert "timed out after 300 seconds" in start
 
 
 def test_isolated_environment_is_not_tracked() -> None:
