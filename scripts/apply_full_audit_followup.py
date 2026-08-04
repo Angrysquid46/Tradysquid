@@ -19,6 +19,11 @@ new = '''        candidate_ids = {
             )
             or _name(item).casefold() == "shadow-candidates"
         }
+        candidate_ids.update(
+            _object_id(channel)
+            for channel in all_channels
+            if _name(channel).casefold() == "shadow-candidates"
+        )
 '''
 if source.count(old) != 1:
     raise RuntimeError("Expected audited cleanup candidate block was not found once")
