@@ -86,7 +86,6 @@ function Add-CanonicalEnvironmentAliases {
         'DISCORD_BOT_TOKEN',
         'DISCORD_GUILD_ID',
         'DISCORD_OWNER_USER_ID',
-        'OPENAI_API_KEY',
         'TRADIER_ACCESS_TOKEN',
         'TRADIER_BASE_URL',
         'TRADIER_ENVIRONMENT',
