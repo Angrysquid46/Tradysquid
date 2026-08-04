@@ -19,6 +19,7 @@ $VenvPath = Join-Path $Root '.venv-tradysquid'
 $Python = Join-Path $VenvPath 'Scripts\python.exe'
 $State = Join-Path $Root 'state'
 $StageStatePath = Join-Path $State 'setup-stage-state.json'
+$LivePreflightPath = Join-Path $State 'live-preflight.json'
 $StartedAt = Get-Date
 $SetupCommit = $null
 $ParentProcessId = $null
@@ -57,6 +58,9 @@ $backup = ''
 $projectInstallation = 'NOT STARTED'
 $packageImport = 'NOT STARTED'
 $packagePath = $null
+$livePreflightStatus = 'NOT STARTED'
+$livePreflightTradierStatus = 'NOT CHECKED'
+$livePreflightWarnings = @()
 $stageRecords = @()
 $TranscriptStarted = $false
 
@@ -358,11 +362,42 @@ try {
     }
 
     Invoke-SetupStage -Name 'live-read-only-verification' -Action {
+        Remove-Item -LiteralPath $LivePreflightPath -Force -ErrorAction SilentlyContinue
         Push-Location $Root
         try {
             & $Python -m scripts.verify_live
-            if ($LASTEXITCODE -ne 0) {
-                throw 'Live read-only verification failed.'
+            $LiveExitCode = $LASTEXITCODE
+
+            if (-not (Test-Path -LiteralPath $LivePreflightPath -PathType Leaf)) {
+                throw "Live verifier returned exit code $LiveExitCode without creating $LivePreflightPath"
+            }
+
+            $LiveReceipt = Get-Content -LiteralPath $LivePreflightPath -Raw | ConvertFrom-Json
+            $script:livePreflightStatus = [string]$LiveReceipt.status
+            $script:livePreflightTradierStatus = if ($LiveReceipt.tradier_live_status) {
+                [string]$LiveReceipt.tradier_live_status
+            } else {
+                'NOT REPORTED'
+            }
+            $script:livePreflightWarnings = @($LiveReceipt.warnings)
+
+            Write-Host ("Live preflight status: " + $script:livePreflightStatus)
+            Write-Host ("Tradier live status: " + $script:livePreflightTradierStatus)
+
+            foreach ($Warning in $script:livePreflightWarnings) {
+                Write-Host (
+                    "LIVE PREFLIGHT WARNING: category={0}; check={1}; error={2}" -f
+                    $Warning.category,
+                    $Warning.check,
+                    $Warning.error
+                ) -ForegroundColor Yellow
+            }
+
+            if ($LiveExitCode -ne 0 -or $LiveReceipt.status -ne 'PASS') {
+                $Category = if ($LiveReceipt.category) { [string]$LiveReceipt.category } else { 'UNKNOWN' }
+                $Check = if ($LiveReceipt.failed_check) { [string]$LiveReceipt.failed_check } else { 'unknown-check' }
+                $ErrorText = if ($LiveReceipt.error) { [string]$LiveReceipt.error } else { 'No sanitized error was reported.' }
+                throw "Live preflight failed: category=$Category; check=$Check; error=$ErrorText"
             }
         } finally {
             Pop-Location
@@ -453,6 +488,10 @@ try {
         tradysquid_package_path = $packagePath
         project_installation = $projectInstallation
         package_import = $packageImport
+        live_preflight_receipt = $LivePreflightPath
+        live_preflight_status = $livePreflightStatus
+        live_preflight_tradier_status = $livePreflightTradierStatus
+        live_preflight_warnings = @($livePreflightWarnings)
         startup_receipt = Join-Path $State 'startup.json'
         discord_readiness_receipt = Join-Path $State 'discord-readiness.json'
         discord_publishing_receipt = Join-Path $State 'discord-publishing-bootstrap.json'
