@@ -3,7 +3,9 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 title Tradysquid One-Click Installer
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0ONE-CLICK-TRADYSQUID.ps1" -RepositoryPath "%~dp0"
+rem Append a dot so the quoted argument does not end in a backslash. A trailing
+rem backslash before a quote can become a literal quote in PowerShell's path.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0ONE-CLICK-TRADYSQUID.ps1" -RepositoryPath "%~dp0."
 set "TRADYSQUID_EXIT=%ERRORLEVEL%"
 
 echo.
