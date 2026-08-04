@@ -1,1 +1,2 @@
 Apply the complete audited repair set to clean-rebuild and run the full Windows suite.
+Retry after restoring isolated-venv validation and explicit retired-shadow cleanup.
