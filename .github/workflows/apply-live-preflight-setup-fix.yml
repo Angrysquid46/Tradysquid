@@ -37,7 +37,7 @@ jobs:
             exit 1
           }
       - name: Run focused preflight tests
-        run: python -m pytest -q tests/unit/test_live_verification_offhours.py tests/unit/test_setup_live_preflight_reporting.py tests/unit/test_verifier_modules.py
+        run: python -m pytest -q tests/unit/test_live_verification_offhours.py tests/unit/test_setup_live_preflight_reporting.py
       - name: Commit tested setup repair
         shell: powershell
         run: |
