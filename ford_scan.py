@@ -1903,14 +1903,14 @@ def read_log() -> list[dict[str, str]]:
 
 
 def write_log(rows: list[dict[str, str]]) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
             "w",
             newline="",
             encoding="utf-8",
-            dir=STATE_DIR,
+            dir=LOG_PATH.parent,
             prefix=f"{LOG_PATH.name}.",
             suffix=".tmp",
             delete=False,
