@@ -1,2 +1,2 @@
 Apply the complete audited repair set to clean-rebuild and run the full Windows suite.
-Retry 3: direct cleanup now discovers the explicitly retired shadow-candidates channel.
+Retry 4: the retired shadow channel is both discoverable and explicitly permitted through the cleanup safety guard.
