@@ -25,6 +25,7 @@ def _run_powershell(script: str) -> subprocess.CompletedProcess[str]:
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell regression")
 def test_failed_receipt_without_optional_fields_is_safe_under_strict_mode(tmp_path: Path) -> None:
+    # This is the exact field shape produced by the live laptop failure.
     receipt_path = tmp_path / "failed-receipt.json"
     receipt_path.write_text(
         json.dumps(
