@@ -266,7 +266,8 @@ def test_rollback_restores_scheduled_tasks():
     assert "Export-TradysquidScheduledTasks" in source
     assert "Restore-TradysquidScheduledTasks" in source
     assert "Export-ScheduledTask" in source
-    assert "Register-ScheduledTask" in source
+    assert "schtasks.exe" in source
+    assert "-TimeoutSeconds 30" in source
 
 
 def test_cleanup_does_not_select_channels_by_name_alone():
