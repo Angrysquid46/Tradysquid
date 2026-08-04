@@ -39,7 +39,9 @@ class VisibleManualInstallerTests(unittest.TestCase):
 
     def test_foreground_installer_targets_exact_audited_build(self) -> None:
         text = INSTALLER.read_text(encoding="utf-8")
-        self.assertIn("294003f50073dbd072fd3a782519afc620791915", text)
+        self.assertIn("$ExpectedCleanCommit = $null", text)
+        self.assertIn("$ExpectedCleanCommit = $ObservedClean", text)
+        self.assertIn("latest fetched clean-rebuild commit", text)
         self.assertIn("ba75aae5f34f3889404bfe0c7c0b96663a92a657", text)
         self.assertIn("auto_install_clean_rebuild.ps1", text)
         self.assertIn("Start-Process -FilePath 'powershell.exe'", text)

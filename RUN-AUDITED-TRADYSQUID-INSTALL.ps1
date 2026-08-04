@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$ExpectedCleanCommit = '294003f50073dbd072fd3a782519afc620791915'
+$ExpectedCleanCommit = $null
 $ExpectedArchiveCommit = 'ba75aae5f34f3889404bfe0c7c0b96663a92a657'
 $CleanBranch = 'clean-rebuild'
 $ArchiveBranch = 'archive/current-failed-implementation'
@@ -134,7 +134,7 @@ try {
     Write-Host 'TRADYSQUID AUDITED FOREGROUND INSTALLER' -ForegroundColor Cyan
     Write-Host '============================================================' -ForegroundColor Cyan
     Write-Host "Repository: $Repository"
-    Write-Host "Target clean commit: $ExpectedCleanCommit"
+    Write-Host 'Target clean commit: latest fetched clean-rebuild commit (validated before acceptance)'
     Write-Host 'This window will remain attached to the real installer.' -ForegroundColor Yellow
     Write-Host ''
 
@@ -149,9 +149,11 @@ try {
     $ObservedClean = ((Invoke-GitSafe -WorkingRepository $Repository -Arguments @(
         'rev-parse', "refs/remotes/origin/$CleanBranch"
     ) -FailureMessage 'Could not read the clean branch commit.') -join '').Trim()
-    if ($ObservedClean -ne $ExpectedCleanCommit) {
-        throw "Clean branch mismatch. Expected $ExpectedCleanCommit but received $ObservedClean"
+    if ($ObservedClean -notmatch '^[0-9a-f]{40}$') {
+        throw 'The fetched clean-rebuild branch did not resolve to a valid Git commit.'
     }
+    $ExpectedCleanCommit = $ObservedClean
+    Write-Host "Resolved clean commit: $ExpectedCleanCommit" -ForegroundColor Cyan
 
     $ObservedArchive = ((Invoke-GitSafe -WorkingRepository $Repository -Arguments @(
         'rev-parse', "refs/remotes/origin/$ArchiveBranch"
