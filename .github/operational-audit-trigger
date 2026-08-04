@@ -1,2 +1,2 @@
 Apply market-hours, provider-budget, grouped-position-quote, and fill-risk repairs. Run the complete isolated Windows suite and production verifier.
-Retry after making missing market-clock state fail closed instead of raising during recovery and test construction.
+Retry after explicitly providing market context to the lifecycle test and handling Tradier's nested clock response.
