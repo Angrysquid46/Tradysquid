@@ -14,6 +14,8 @@ def test_setup_reports_exact_live_preflight_failure_and_preserves_warning() -> N
     assert "Get-Content -LiteralPath $LivePreflightPath -Raw | ConvertFrom-Json" in text
     assert "Live preflight failed: category=$Category; check=$Check; error=$ErrorText" in text
     assert "LIVE PREFLIGHT WARNING: category={0}; check={1}; error={2}" in text
+    assert "live_preflight_receipt = $LivePreflightPath" in text
+    assert "live_preflight_status = $livePreflightStatus" in text
     assert "live_preflight_tradier_status = $livePreflightTradierStatus" in text
     assert "live_preflight_warnings = @($livePreflightWarnings)" in text
     assert "throw 'Live read-only verification failed.'" not in text
