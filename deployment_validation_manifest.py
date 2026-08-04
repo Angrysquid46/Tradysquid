@@ -41,6 +41,7 @@ COMPILE_MODULES = (
 )
 
 FOCUSED_TEST_MODULES = (
+    "test_deployment_validation_manifest.py",
     "test_github_upgrade_bridge.py",
     "test_github_upgrade_bridge_runtime.py",
     "test_supervisor_availability.py",

@@ -15,6 +15,11 @@ ROOT = Path(__file__).resolve().parent
 class SupervisorAvailabilityTests(unittest.TestCase):
     def setUp(self) -> None:
         run_supervisor._LAST_READY_SIGNATURE = None
+        self._auto_discord_sync = supervisor.AUTO_DISCORD_SYNC
+        supervisor.AUTO_DISCORD_SYNC = True
+
+    def tearDown(self) -> None:
+        supervisor.AUTO_DISCORD_SYNC = self._auto_discord_sync
 
     def test_supervisor_log_is_safe_on_legacy_windows_console(self) -> None:
         class LegacyConsole:

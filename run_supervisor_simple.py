@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 import network_compat
+import deployment_validation_manifest as validation_manifest
 
 network_compat.install()
 
@@ -102,35 +103,9 @@ def fetch_remote_sha() -> str:
 
 def validate_checkout() -> tuple[bool, str]:
     """Run bounded checks before a new version is accepted."""
-    compile_files = [
-        "ford_scan.py",
-        "discord_command_bot_public.py",
-        "local_information_engine_bootstrap.py",
-        "local_information_engine_public.py",
-        "run_with_env.py",
-        "tradysquid_supervisor.py",
-        "run_supervisor_simple.py",
-        "clean_rebuild_auto_handoff.py",
-        "simple_upgrade_runtime.py",
-        "applied_upgrade_status_runtime.py",
-        "diagnostic_upgrade_system.py",
-        "diagnostic_runtime_integration.py",
-        "diagnostic_startup_runtime.py",
-        "diagnostic_nonblocking_runtime.py",
-        "discord_command_diagnostics.py",
-        "shared_upgrade_lifecycle.py",
-        "github_upgrade_bridge_runtime.py",
-        "upgrade_lifecycle_dashboard.py",
-        "market_calendar_runtime.py",
-        "github_upgrade_bridge.py",
-        "github_upgrade_patch.py",
-        "upgrade_batch_44.py",
-        "upgrade_batch_44_live_acceptance.py",
-        "applied_upgrades.py",
-        "network_compat.py",
-    ]
+    validation_manifest.validate_manifest()
     compile_result = supervisor.run(
-        [sys.executable, "-m", "py_compile", *compile_files],
+        [sys.executable, "-m", "py_compile", *validation_manifest.COMPILE_MODULES],
         timeout=180,
     )
     if compile_result.returncode:
@@ -142,19 +117,7 @@ def validate_checkout() -> tuple[bool, str]:
             "-m",
             "unittest",
             "-q",
-            "test_github_upgrade_bridge.py",
-            "test_github_upgrade_bridge_runtime.py",
-            "test_supervisor_availability.py",
-            "test_runtime_state_hygiene.py",
-            "test_applied_upgrades.py",
-            "test_applied_upgrade_status_runtime.py",
-            "test_simple_upgrade_flow.py",
-            "test_diagnostic_upgrade_system.py",
-            "test_diagnostic_startup_runtime.py",
-            "test_diagnostic_nonblocking_runtime.py",
-            "test_discord_command_diagnostics.py",
-            "test_upgrade_lifecycle_dashboard.py",
-            "test_market_calendar_runtime.py",
+            *validation_manifest.FOCUSED_TEST_MODULES,
         ],
         timeout=480,
     )

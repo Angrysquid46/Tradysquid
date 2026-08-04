@@ -11,6 +11,7 @@ $ExpectedArchiveCommit = 'ba75aae5f34f3889404bfe0c7c0b96663a92a657'
 $CleanBranch = 'clean-rebuild'
 $ArchiveBranch = 'archive/current-failed-implementation'
 $FinalStatus = 'FAILED'
+$FinalExitCode = 1
 $Repository = $null
 $Worktree = $null
 
@@ -252,6 +253,7 @@ try {
     }
 
     $FinalStatus = 'PASS'
+    $FinalExitCode = 0
     [ordered]@{
         status = 'PASS'
         finished_at = (Get-Date).ToString('o')
@@ -316,3 +318,5 @@ try {
     Write-Host "Final foreground installer status: $FinalStatus" -ForegroundColor $StatusColor
     Read-Host 'Press Enter after copying or photographing this result'
 }
+
+exit $FinalExitCode
