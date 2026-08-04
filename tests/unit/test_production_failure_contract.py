@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SETUP = ROOT / "scripts" / "setup.ps1"
 INSTALLER = ROOT / "scripts" / "install_clean_rebuild.ps1"
 INSTALLER_BODY = ROOT / "scripts" / "install_clean_rebuild_body.ps1"
+AUTO_INSTALLER = ROOT / "scripts" / "auto_install_clean_rebuild.ps1"
 STRUCTURE = ROOT / "tradysquid" / "discord" / "structure.py"
 LAYOUT = ROOT / "tradysquid" / "discord" / "layout.py"
 SCHEMA = ROOT / "config" / "discord-schema.json"
@@ -87,6 +88,18 @@ def test_branch_switch_archives_then_removes_only_untracked_nonignored_conflicts
     assert installer.index("New-ExternalBackup -Root $Repository") < installer.index(
         "git -C $Repository clean -fd"
     )
+
+
+def test_outer_handoff_cleans_conflicts_before_its_branch_switch() -> None:
+    installer = AUTO_INSTALLER.read_text(encoding="utf-8")
+    clean = "git -C $Repository clean -fd"
+    switch = "$FailedStage = 'clean-branch-switch'"
+    assert "ls-files --others --exclude-standard" in installer
+    assert "pre-switch-installation" in installer
+    assert "untracked-paths-before-clean.txt" in installer
+    assert clean in installer
+    assert "git -C $Repository clean -fdx" not in installer
+    assert installer.index(clean) < installer.index(switch)
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows PowerShell only")
