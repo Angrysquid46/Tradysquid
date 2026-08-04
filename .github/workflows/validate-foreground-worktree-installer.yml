@@ -1,0 +1,41 @@
+name: Validate Foreground Worktree Installer
+
+on:
+  pull_request:
+    paths:
+      - "RUN-AUDITED-TRADYSQUID-INSTALL.ps1"
+      - "test_visible_manual_installer.py"
+      - ".github/workflows/validate-foreground-worktree-installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Parse foreground installer
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD "RUN-AUDITED-TRADYSQUID-INSTALL.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+      - name: Run foreground installer tests
+        run: python -m unittest -v test_visible_manual_installer
