@@ -109,6 +109,7 @@ def test_valid_token_is_recovered_from_preserved_backup(tmp_path: Path) -> None:
 
 
 def test_all_rejected_tokens_fail_fast_without_modifying_env(tmp_path: Path) -> None:
+    # This is the exact live-laptop outcome: every local candidate receives HTTP 401.
     root = tmp_path / "app"
     env = root / ".env"
     _write_env(
