@@ -21,6 +21,7 @@ $Python = Join-Path $VenvPath 'Scripts\python.exe'
 $State = Join-Path $Root 'state'
 $StageStatePath = Join-Path $State 'setup-stage-state.json'
 $LivePreflightPath = Join-Path $State 'live-preflight.json'
+$DiscordTokenRecoveryPath = Join-Path $State 'discord-token-recovery.json'
 $StartedAt = Get-Date
 $SetupCommit = $null
 $ParentProcessId = $null
@@ -213,6 +214,36 @@ try {
             & py -3.12 -m tradysquid.operations.credential_migration --root $Root
             if ($LASTEXITCODE -ne 0) {
                 throw 'Credential migration failed.'
+            }
+        } finally {
+            Pop-Location
+        }
+    }
+
+    Invoke-SetupStage -Name 'discord-token-recovery' -Action {
+        Remove-Item -LiteralPath $DiscordTokenRecoveryPath -Force -ErrorAction SilentlyContinue
+        Push-Location $Root
+        try {
+            $SearchRoot = Split-Path -Parent $Root
+            & py -3.12 -m tradysquid.operations.discord_token_recovery `
+                --root $Root `
+                --search-root $SearchRoot
+            $RecoveryExitCode = $LASTEXITCODE
+
+            if ($RecoveryExitCode -ne 0) {
+                if (Test-Path -LiteralPath $DiscordTokenRecoveryPath -PathType Leaf) {
+                    $RecoveryReceipt = Get-Content -LiteralPath $DiscordTokenRecoveryPath -Raw | ConvertFrom-Json
+                    $RequiredAction = [string](Get-LiveReceiptProperty `
+                        -InputObject $RecoveryReceipt `
+                        -Name 'required_action' `
+                        -DefaultValue 'RESET_DISCORD_BOT_TOKEN')
+                    $RecoveryError = [string](Get-LiveReceiptProperty `
+                        -InputObject $RecoveryReceipt `
+                        -Name 'error' `
+                        -DefaultValue 'No valid local Discord bot token was found.')
+                    throw "Discord token recovery failed: action=$RequiredAction; error=$RecoveryError"
+                }
+                throw "Discord token recovery returned exit code $RecoveryExitCode without a receipt."
             }
         } finally {
             Pop-Location
@@ -489,6 +520,7 @@ try {
         tradysquid_package_path = $packagePath
         project_installation = $projectInstallation
         package_import = $packageImport
+        discord_token_recovery_receipt = $DiscordTokenRecoveryPath
         live_preflight_receipt = $LivePreflightPath
         live_preflight_status = $livePreflightStatus
         live_preflight_tradier_status = $livePreflightTradierStatus

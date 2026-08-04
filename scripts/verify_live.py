@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from tradysquid.app import Application
 from tradysquid.core.config import redact
+from tradysquid.operations.discord_token_recovery import normalize_discord_token
 
 
 REQUIRED_NAMES = (
@@ -203,8 +204,15 @@ def run_live_verification(
             )
         )
 
+    discord_token = normalize_discord_token(os.environ["DISCORD_BOT_TOKEN"])
+    if not discord_token:
+        raise LiveVerificationFailure(
+            "CONFIGURATION",
+            "discord-bot-token-normalization",
+            "DISCORD_BOT_TOKEN is empty after safe normalization",
+        )
     headers = {
-        "Authorization": "Bot " + os.environ["DISCORD_BOT_TOKEN"],
+        "Authorization": "Bot " + discord_token,
         "User-Agent": "Tradysquid/0.1",
     }
     try:
