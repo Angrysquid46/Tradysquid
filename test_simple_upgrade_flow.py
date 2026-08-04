@@ -86,6 +86,17 @@ class SimpleUpgradeFlowTests(unittest.TestCase):
         self.assertIn("run_supervisor_simple.py", launch_line)
         self.assertNotIn("run_supervisor_resilient.py", launch_line)
 
+    def test_handoff_runs_before_env_or_runtime_dependency_imports(self) -> None:
+        source = (ROOT / "run_with_env.py").read_text(encoding="utf-8")
+        main_source = source[source.index("def main() -> None:") :]
+        handoff_index = main_source.index("if launch_clean_handoff_before_runtime(target):")
+        env_index = main_source.index("load_env()")
+        runtime_index = main_source.index("install_runtime_overrides(")
+        self.assertLess(handoff_index, env_index)
+        self.assertLess(handoff_index, runtime_index)
+        self.assertIn("import clean_rebuild_auto_handoff", source)
+        self.assertIn("raise SystemExit(76)", main_source)
+
     def test_simple_supervisor_has_safe_update_contract(self) -> None:
         text = (ROOT / "run_supervisor_simple.py").read_text(encoding="utf-8")
         for marker in (
