@@ -271,6 +271,33 @@ def seed_universe(connection: sqlite3.Connection | None = None) -> int:
     )
 
 
+def _effective_score(
+    score: float, updated_at: str, expires_at: str | None, now: datetime
+) -> float:
+    """Time-limited candidates (a TradingView alert, a Robinhood scan hit) decay
+    linearly from their assigned score down to 0 as they approach expires_at,
+    instead of holding a flat score for their whole TTL. Without this, a
+    ticker that fired once and went quiet would keep blocking a slot at near
+    its original score for hours, and could only ever be displaced by the
+    hard expiry cutoff - never by something more current showing up first.
+    Permanent entries (expires_at is None - an owner or member explicitly
+    asked for this ticker) never decay; that's a deliberate human choice, not
+    a discovery hit going stale."""
+    if not expires_at:
+        return score
+    try:
+        started = datetime.fromisoformat(updated_at)
+        ends = datetime.fromisoformat(expires_at)
+    except ValueError:
+        return score
+    total_seconds = (ends - started).total_seconds()
+    if total_seconds <= 0:
+        return 0.0
+    elapsed_seconds = (now - started).total_seconds()
+    remaining_fraction = max(0.0, min(1.0, 1 - elapsed_seconds / total_seconds))
+    return score * remaining_fraction
+
+
 def active_symbols(
     connection: sqlite3.Connection | None = None, *, limit: int | None = None
 ) -> list[str]:
@@ -285,17 +312,22 @@ def active_symbols(
             int(limit or config.get("max_active_symbols") or HARD_MAX_ACTIVE_SYMBOLS),
             HARD_MAX_ACTIVE_SYMBOLS,
         )
-        now = now_iso()
+        now_dt = datetime.now().astimezone()
         rows = db.execute(
             """
-            SELECT symbol FROM universe
+            SELECT symbol, score, updated_at, expires_at FROM universe
             WHERE status='ACTIVE' AND (expires_at IS NULL OR expires_at > ?)
-            ORDER BY score DESC, symbol
-            LIMIT ?
             """,
-            (now, maximum + len(excluded)),
+            (now_iso(),),
         ).fetchall()
-        return [row["symbol"] for row in rows if row["symbol"] not in excluded][:maximum]
+        ranked = sorted(
+            (row for row in rows if row["symbol"] not in excluded),
+            key=lambda row: (
+                -_effective_score(row["score"], row["updated_at"], row["expires_at"], now_dt),
+                row["symbol"],
+            ),
+        )
+        return [row["symbol"] for row in ranked[:maximum]]
     finally:
         if owned:
             db.close()
@@ -462,9 +494,13 @@ def import_robinhood_snapshot(payload: dict[str, Any]) -> int:
 
 
 def initialize() -> list[str]:
+    """Return the current active universe without force-including the static
+    seed list. Every slot is earned by score from a real source (owner add,
+    member add, TradingView alert, liquidity/screener hit) - nothing gets a
+    permanent free pass just for being in config/universe.json. Call
+    seed_universe() explicitly if a one-time bootstrap is genuinely wanted."""
     connection = connect()
     try:
-        seed_universe(connection)
         return active_symbols(connection)
     finally:
         connection.close()

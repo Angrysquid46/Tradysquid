@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import socket
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -656,6 +656,9 @@ class InformationEngineTests(unittest.TestCase):
                 '{"seed_symbols":["VALE"],"exclude_symbols":[],"max_active_symbols":10}',
                 encoding="utf-8",
             )
+            # initialize() no longer force-seeds from config - VALE needs a
+            # real source to actually be active, same as in production.
+            dynamic_universe.seed_universe()
             self.assertEqual(discord_command_bot.command_ticker("vale"), "VALE")
             with self.assertRaises(ValueError):
                 discord_command_bot.command_ticker("XYZ")
@@ -1025,10 +1028,99 @@ class InformationEngineTests(unittest.TestCase):
                 encoding="utf-8",
             )
             dynamic_universe.CONFIG_PATH = config
+            # initialize() no longer force-seeds - explicitly seed here so this
+            # test keeps proving exclude_symbols filtering works, independent
+            # of whether anything auto-populates the universe.
+            dynamic_universe.seed_universe()
             dynamic_universe.initialize()
             self.assertEqual(set(dynamic_universe.active_symbols()), {"F", "VALE"})
         dynamic_universe.DB_PATH = original_db
         dynamic_universe.CONFIG_PATH = original_config
+
+    def test_initialize_does_not_force_include_hardcoded_seed_symbols(self) -> None:
+        original_db = dynamic_universe.DB_PATH
+        original_config = dynamic_universe.CONFIG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
+            config = Path(temp) / "universe.json"
+            config.write_text(
+                """
+                {
+                  "version": 3,
+                  "seed_symbols": ["F", "AAL", "AMD"],
+                  "exclude_symbols": [],
+                  "max_active_symbols": 25
+                }
+                """,
+                encoding="utf-8",
+            )
+            dynamic_universe.CONFIG_PATH = config
+            # Nothing has nominated F/AAL/AMD through a real source (owner add,
+            # member add, TradingView, screener) - initialize() must not
+            # resurrect them just because they're sitting in the config file.
+            dynamic_universe.initialize()
+            self.assertEqual(dynamic_universe.active_symbols(), [])
+        dynamic_universe.DB_PATH = original_db
+        dynamic_universe.CONFIG_PATH = original_config
+
+    def test_stale_time_limited_candidate_can_be_outranked_before_hard_expiry(
+        self,
+    ) -> None:
+        original_db = dynamic_universe.DB_PATH
+        original_config = dynamic_universe.CONFIG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
+            config = Path(temp) / "universe.json"
+            config.write_text(
+                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":1}',
+                encoding="utf-8",
+            )
+            dynamic_universe.CONFIG_PATH = config
+            dynamic_universe.upsert_candidates([
+                dynamic_universe.Candidate(
+                    "F", "tradingview", score=100, ttl_minutes=240
+                )
+            ])
+            # Simulate F being 75% of the way through its 4-hour window -
+            # still technically not expired, but should have decayed to
+            # roughly a quarter of its original score by now.
+            now = datetime.now().astimezone()
+            stale_updated = (now - timedelta(minutes=180)).isoformat(timespec="seconds")
+            stale_expires = (now + timedelta(minutes=60)).isoformat(timespec="seconds")
+            connection = dynamic_universe.connect()
+            connection.execute(
+                "UPDATE universe SET updated_at=?, expires_at=? WHERE symbol='F'",
+                (stale_updated, stale_expires),
+            )
+            connection.commit()
+            connection.close()
+            # A fresh hit with a much lower raw score should still win the
+            # single available slot, because F has decayed well below it.
+            dynamic_universe.upsert_candidates([
+                dynamic_universe.Candidate(
+                    "VALE", "tradingview", score=30, ttl_minutes=240
+                )
+            ])
+            self.assertEqual(dynamic_universe.active_symbols(), ["VALE"])
+        dynamic_universe.DB_PATH = original_db
+        dynamic_universe.CONFIG_PATH = original_config
+
+    def test_effective_score_decays_linearly_toward_expiry(self) -> None:
+        now = datetime.now().astimezone()
+        started = now - timedelta(minutes=180)
+        expires = now + timedelta(minutes=60)
+        decayed = dynamic_universe._effective_score(
+            100,
+            started.isoformat(timespec="seconds"),
+            expires.isoformat(timespec="seconds"),
+            now,
+        )
+        # 180 of 240 total minutes elapsed -> 25% of the score should remain.
+        self.assertAlmostEqual(decayed, 25.0, delta=1.0)
+        permanent = dynamic_universe._effective_score(
+            200, started.isoformat(timespec="seconds"), None, now
+        )
+        self.assertEqual(permanent, 200)
 
     def test_tradingview_webhook_is_authenticated_and_deduplicated(self) -> None:
         original_secret = discord_command_bot.TRADINGVIEW_WEBHOOK_SECRET
