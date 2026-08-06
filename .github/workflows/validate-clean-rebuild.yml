@@ -1,0 +1,121 @@
+name: Validate clean rebuild
+on:
+  pull_request:
+  push:
+    branches: [clean-rebuild]
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Parse every PowerShell script
+        shell: pwsh
+        run: |
+          $PowerShellFiles = Get-ChildItem -Recurse -Filter '*.ps1'
+          foreach ($File in $PowerShellFiles) {
+            $Tokens = $null
+            $Errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $File.FullName,
+              [ref]$Tokens,
+              [ref]$Errors
+            )
+            if ($Errors.Count -gt 0) {
+              foreach ($ErrorRecord in $Errors) {
+                Write-Host (
+                  "$($File.FullName):" +
+                  "$($ErrorRecord.Extent.StartLineNumber):" +
+                  "$($ErrorRecord.Extent.StartColumnNumber) " +
+                  $ErrorRecord.Message
+                )
+              }
+              throw "PowerShell parsing failed for $($File.FullName)"
+            }
+          }
+
+          $TrailingContinuation = Get-ChildItem -Recurse -Filter '*.ps1' | ForEach-Object {
+            $LineNumber = 0
+            Get-Content -LiteralPath $_.FullName | ForEach-Object {
+              $LineNumber++
+              if ($_ -match '`\s+$') {
+                "$($_.FullName):$LineNumber"
+              }
+            }
+          }
+          if ($TrailingContinuation) {
+            $TrailingContinuation | ForEach-Object { Write-Host $_ }
+            throw 'One or more PowerShell continuation backticks have trailing whitespace.'
+          }
+
+      - name: Create isolated production virtual environment
+        shell: pwsh
+        run: |
+          py -3.12 -m venv .venv-tradysquid
+          $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          if (!(Test-Path $Python)) { throw 'Isolated interpreter was not created.' }
+          & $Python --version
+          if ($LASTEXITCODE -ne 0) { throw 'Isolated interpreter failed.' }
+
+      - name: Install dependencies and editable project
+        shell: pwsh
+        run: |
+          $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $Python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'pip upgrade failed.' }
+          & $Python -m pip install -r requirements-dev.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+          & $Python -m pip install --editable .
+          if ($LASTEXITCODE -ne 0) { throw 'Editable project installation failed.' }
+          & $Python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency integrity check failed.' }
+
+      - name: Compile installed source
+        shell: pwsh
+        run: |
+          $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $Python -m compileall -q tradysquid scripts tests
+          if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
+
+      - name: Run complete test suite
+        shell: pwsh
+        run: |
+          $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
+          & $Python -m pytest
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+
+      - name: Run production installation verifier from repository root
+        shell: pwsh
+        run: |
+          $Repository = (Get-Location).Path
+          $Python = Join-Path $Repository '.venv-tradysquid\Scripts\python.exe'
+          Push-Location $Repository
+          try {
+            & $Python -m scripts.verify_installation
+            if ($LASTEXITCODE -ne 0) { throw 'Repository-root installation verification failed.' }
+          }
+          finally {
+            Pop-Location
+          }
+
+      - name: Run production verifier from an external path with spaces
+        shell: pwsh
+        run: |
+          $Repository = (Get-Location).Path
+          $Python = Join-Path $Repository '.venv-tradysquid\Scripts\python.exe'
+          $External = Join-Path $env:RUNNER_TEMP 'Tradysquid Verifier Caller'
+          New-Item -ItemType Directory -Force -Path $External | Out-Null
+          Push-Location $External
+          try {
+            & $Python -c "import pathlib, tradysquid, scripts; print(pathlib.Path(tradysquid.__file__).resolve())"
+            if ($LASTEXITCODE -ne 0) { throw 'External working-directory import failed.' }
+            & $Python -m scripts.verify_installation
+            if ($LASTEXITCODE -ne 0) { throw 'External working-directory verification failed.' }
+          }
+          finally {
+            Pop-Location
+          }

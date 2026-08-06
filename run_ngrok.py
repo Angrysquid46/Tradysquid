@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -13,7 +14,14 @@ def main() -> int:
         print("Usage: python run_ngrok.py <path-to-ngrok.exe>")
         return 1
     load_env()
-    return subprocess.call([sys.argv[1], "http", "8080"])
+    command = [sys.argv[1], "http", "8080"]
+    domain = os.environ.get("NGROK_DOMAIN", "").strip()
+    if domain:
+        # A reserved static domain keeps the public URL identical across
+        # every restart, so Discord's Interactions Endpoint URL only ever
+        # needs to be set once instead of drifting out of sync.
+        command.append(f"--domain={domain}")
+    return subprocess.call(command)
 
 
 if __name__ == "__main__":

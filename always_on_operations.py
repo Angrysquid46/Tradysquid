@@ -366,6 +366,19 @@ def activity_card(
         cursor_state = {}
     latest_off_hours = engine.latest_observation("off-hours-universe-screen")
     latest_events = engine.latest_observation("rotating-event-sweep")
+    latest_positions = engine.latest_observation("position-tracker")
+    stream_payload = (latest_positions or {}).get("payload") or {}
+    stream_state = str(stream_payload.get("stream") or "unknown")
+    stream_error = str(stream_payload.get("stream_error") or "")
+    if stream_state == "connected":
+        stream_line = "🟢 **Live position stream:** connected - positions are checked as each price tick arrives, not on a timer."
+    elif stream_state == "fallback":
+        stream_line = (
+            "🟡 **Live position stream:** not connected right now - falling back to the "
+            "1-minute safety check only." + (f" ({stream_error})" if stream_error else "")
+        )
+    else:
+        stream_line = "⚪ **Live position stream:** status not available yet."
     core_names = {
         "provider-event-queue",
         "position-tracker",
@@ -382,6 +395,7 @@ def activity_card(
     lines = [
         "## Always-On Tradysquids Activity",
         f"**Market:** {'OPEN · trade scanner enabled' if market_open_now() else 'CLOSED · research-only screening enabled'}",
+        stream_line,
         f"**Active universe:** {len(active)}/{dynamic_universe.max_active_symbols()} symbols",
         f"**Last live scanner rotation:** {', '.join(cursor_state.get('last_batch') or []) or 'not recorded yet'}",
         f"**Last off-hours research batch:** {', '.join(((latest_off_hours or {}).get('payload') or {}).get('batch') or []) or 'not recorded yet'}",

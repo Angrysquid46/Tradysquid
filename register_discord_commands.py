@@ -13,6 +13,11 @@ GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 
 OWNER_ONLY_COMMANDS = {
     "filter-set",
+    "trader-toggle",
+    "regular-set",
+    "swing-set",
+    "spread-set",
+    "reset-trading-data",
     "ticker-pause",
     "ticker-resume",
     "ticker-remove",
@@ -58,7 +63,7 @@ COMMANDS = [
         "name": "filter-set",
         "type": 1,
         "default_member_permissions": "0",
-        "description": "Owner: change one guarded scanner filter locally",
+        "description": "Owner: change a shared exit/risk setting (applies across single-leg trades)",
         "options": [
             {
                 "name": "filter",
@@ -70,8 +75,10 @@ COMMANDS = [
                     {"name": "Maximum position risk", "value": "max_position_risk_dollars"},
                     {"name": "Long profit target", "value": "single_leg_profit_target_pct"},
                     {"name": "Long stop", "value": "single_leg_stop_pct"},
-                    {"name": "Spread profit target", "value": "spread_profit_target_pct"},
-                    {"name": "Spread stop multiple", "value": "spread_stop_multiple"}
+                    {"name": "Breakeven lock trigger %", "value": "single_leg_breakeven_trigger_pct"},
+                    {"name": "Trailing stop giveback %", "value": "single_leg_trail_giveback_pct"},
+                    {"name": "Delta erosion ratio", "value": "single_leg_delta_erosion_ratio"},
+                    {"name": "IV crush ratio", "value": "single_leg_iv_crush_ratio"}
                 ]
             },
             {
@@ -81,6 +88,154 @@ COMMANDS = [
                 "required": True,
                 "min_value": 0.01,
                 "max_value": 100
+            }
+        ]
+    },
+    {
+        "name": "regular-set",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: change a regular calls/puts entry signal setting",
+        "options": [
+            {
+                "name": "filter",
+                "description": "Regular-trader setting to change",
+                "type": 3,
+                "required": True,
+                "choices": [
+                    {"name": "Intraday change threshold %", "value": "regular_intraday_change_threshold_pct"},
+                    {"name": "VWAP distance threshold %", "value": "regular_vwap_distance_threshold_pct"},
+                    {"name": "Momentum gap threshold %", "value": "regular_momentum_gap_threshold_pct"},
+                    {"name": "RSI bullish level", "value": "regular_rsi_bullish"},
+                    {"name": "RSI bearish level", "value": "regular_rsi_bearish"},
+                    {"name": "15-min slope threshold %", "value": "regular_slope_threshold_pct"},
+                    {"name": "Daily trend threshold %", "value": "regular_daily_trend_threshold_pct"},
+                    {"name": "Qualifying score threshold", "value": "regular_score_threshold"}
+                ]
+            },
+            {
+                "name": "value",
+                "description": "New decimal value",
+                "type": 10,
+                "required": True,
+                "min_value": -10,
+                "max_value": 100
+            }
+        ]
+    },
+    {
+        "name": "swing-set",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: change a swing calls/puts entry signal setting",
+        "options": [
+            {
+                "name": "filter",
+                "description": "Swing-trader setting to change",
+                "type": 3,
+                "required": True,
+                "choices": [
+                    {"name": "20-day distance threshold %", "value": "swing_sma20_distance_threshold_pct"},
+                    {"name": "Trend threshold %", "value": "swing_trend_threshold_pct"},
+                    {"name": "RSI bullish level", "value": "swing_rsi_bullish"},
+                    {"name": "RSI bearish level", "value": "swing_rsi_bearish"},
+                    {"name": "Minimum volume ratio", "value": "swing_volume_ratio_min"},
+                    {"name": "Close-vs-high bullish %", "value": "swing_close_vs_high_bullish_pct"},
+                    {"name": "Close-vs-high bearish %", "value": "swing_close_vs_high_bearish_pct"},
+                    {"name": "Qualifying score threshold", "value": "swing_score_threshold"}
+                ]
+            },
+            {
+                "name": "value",
+                "description": "New decimal value",
+                "type": 10,
+                "required": True,
+                "min_value": -10,
+                "max_value": 100
+            }
+        ]
+    },
+    {
+        "name": "spread-set",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: change a credit-spread entry, exit, or IV-history setting",
+        "options": [
+            {
+                "name": "filter",
+                "description": "Spread-trader setting to change",
+                "type": 3,
+                "required": True,
+                "choices": [
+                    {"name": "Spread profit target", "value": "spread_profit_target_pct"},
+                    {"name": "Spread stop multiple", "value": "spread_stop_multiple"},
+                    {"name": "Min IV/RV ratio", "value": "iv_rv_min_ratio"},
+                    {"name": "Max trend strength", "value": "spread_max_trend_strength"},
+                    {"name": "20-day extreme buffer %", "value": "spread_extreme_buffer_pct"},
+                    {"name": "Delta danger ratio", "value": "spread_delta_danger_ratio"},
+                    {"name": "IV expansion ratio", "value": "spread_iv_expansion_ratio"},
+                    {"name": "IV history min samples", "value": "iv_history_min_samples"},
+                    {"name": "Pooled IV min samples", "value": "pooled_iv_min_samples"},
+                    {"name": "Pooled IV lookback days", "value": "pooled_iv_lookback_days"}
+                ]
+            },
+            {
+                "name": "value",
+                "description": "New decimal value; percentages use 0.20 for 20%",
+                "type": 10,
+                "required": True,
+                "min_value": 0.001,
+                "max_value": 400
+            }
+        ]
+    },
+    {
+        "name": "trader-toggle",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: turn one of the six traders on or off locally",
+        "options": [
+            {
+                "name": "trader",
+                "description": "Which trader to enable or disable",
+                "type": 3,
+                "required": True,
+                "choices": [
+                    {"name": "Regular calls", "value": "regular_calls"},
+                    {"name": "Regular puts", "value": "regular_puts"},
+                    {"name": "Swing calls", "value": "swing_calls"},
+                    {"name": "Swing puts", "value": "swing_puts"},
+                    {"name": "Bull put spreads", "value": "bull_put_spreads"},
+                    {"name": "Bear call spreads", "value": "bear_call_spreads"}
+                ]
+            },
+            {
+                "name": "enabled",
+                "description": "Turn this trader on or off",
+                "type": 5,
+                "required": True
+            }
+        ]
+    },
+    {
+        "name": "reset-trading-data",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: wipe all paper trades and journal history to start clean",
+        "options": [
+            {
+                "name": "confirm",
+                "description": "Type RESET exactly to confirm - this cannot be undone from Discord alone",
+                "type": 3,
+                "required": True,
+                "min_length": 5,
+                "max_length": 5
+            },
+            {
+                "name": "archive",
+                "description": "Save a backup file of everything before clearing it",
+                "type": 5,
+                "required": True
             }
         ]
     },

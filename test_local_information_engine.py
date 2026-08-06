@@ -1146,6 +1146,10 @@ class InformationEngineTests(unittest.TestCase):
         self.assertTrue(payload["validOnly"])
 
     def test_streamed_quote_closes_paper_position_immediately(self) -> None:
+        # This position already ran up to a +30% peak in an earlier cycle
+        # (max_favorable_pct), so the new trailing-stop logic is what should
+        # fire here, not the old flat +20% cap - the incoming quote pulls it
+        # back to +20%, breaching the 8pt giveback allowed from that peak.
         original_log = ford_scan.LOG_PATH
         with tempfile.TemporaryDirectory() as temp:
             ford_scan.LOG_PATH = Path(temp) / "plays.csv"
@@ -1159,6 +1163,7 @@ class InformationEngineTests(unittest.TestCase):
                     "expiration": "2026-08-21",
                     "entry_price": "0.50",
                     "outcome": "OPEN",
+                    "max_favorable_pct": "30",
                 }
             )
             ford_scan.write_log([row])
@@ -1177,8 +1182,8 @@ class InformationEngineTests(unittest.TestCase):
                     {
                         "type": "quote",
                         "symbol": "VALE260821C00015000",
-                        "bid": 0.61,
-                        "ask": 0.63,
+                        "bid": 0.60,
+                        "ask": 0.62,
                     }
                 )
             closed = ford_scan.read_log()[0]

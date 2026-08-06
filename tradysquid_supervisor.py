@@ -95,7 +95,21 @@ def write_state(**updates: object) -> None:
         json.dumps(payload, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    temporary.replace(DEPLOY_STATE_PATH)
+    # Windows can transiently deny this replace if antivirus or a sync
+    # client (this project lives in a OneDrive-synced folder) has the
+    # target briefly open for its own read. That's normally gone within a
+    # fraction of a second - a short retry survives it instead of crashing
+    # the whole supervisor over a lock that was never really contested.
+    last_error: PermissionError | None = None
+    for attempt in range(5):
+        try:
+            temporary.replace(DEPLOY_STATE_PATH)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            if attempt < 4:
+                time.sleep(0.3)
+    raise last_error
 
 
 def run(
@@ -708,16 +722,99 @@ def prevent_windows_sleep() -> None:
         supervisor_log("Windows sleep prevention could not be enabled")
 
 
-def acquire_instance_lock() -> socket.socket:
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+def _log_port_kill_evidence(pid: str, command_line: str, parent_pid: str, parent_command: str) -> None:
     try:
-        listener.bind((LOCK_HOST, LOCK_PORT))
-        listener.listen(1)
-    except OSError as exc:
-        listener.close()
-        raise RuntimeError("Tradysquids Supervisor is already running") from exc
-    return listener
+        log_path = STATE_DIR / "port-kill-evidence.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        lines = [
+            f"{stamp} | AUTO-CLEARED PID {pid} [supervisor self-heal on startup]",
+            f"  CommandLine: {command_line}",
+            f"  ParentProcessId: {parent_pid}",
+            f"  ParentCommandLine: {parent_command}",
+            "",
+        ]
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+    except OSError:
+        pass
+
+
+def _clear_stale_port_holder() -> bool:
+    """A previous crashed run can leave a python.exe stuck holding the lock
+    port even though it isn't doing anything useful anymore - this has been
+    the single most common startup failure. Rather than a one-click launcher
+    that silently waits forever for a human to run a separate cleanup
+    script, find and clear whatever's actually squatting on the port, log
+    what it was, and let startup proceed on its own."""
+    script = (
+        "$c = Get-NetTCPConnection -LocalPort " + str(LOCK_PORT) +
+        " -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; "
+        "if (-not $c) { exit 0 }; "
+        "$p = Get-CimInstance Win32_Process -Filter \"ProcessId=$($c.OwningProcess)\" "
+        "-ErrorAction SilentlyContinue; "
+        "if (-not $p) { exit 0 }; "
+        "$parent = Get-CimInstance Win32_Process -Filter \"ProcessId=$($p.ParentProcessId)\" "
+        "-ErrorAction SilentlyContinue; "
+        "[PSCustomObject]@{ "
+        "ProcessId = $p.ProcessId; CommandLine = $p.CommandLine; "
+        "ParentProcessId = $p.ParentProcessId; "
+        "ParentCommandLine = $(if ($parent) { $parent.CommandLine } else { 'unknown' }) "
+        "} | ConvertTo-Json -Compress; "
+        "Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    output = (result.stdout or "").strip()
+    if not output:
+        return False
+    try:
+        info = json.loads(output)
+    except ValueError:
+        return False
+    _log_port_kill_evidence(
+        str(info.get("ProcessId", "")),
+        str(info.get("CommandLine", "")),
+        str(info.get("ParentProcessId", "")),
+        str(info.get("ParentCommandLine", "")),
+    )
+    time.sleep(1.5)
+    return True
+
+
+def acquire_instance_lock() -> socket.socket:
+    def try_bind() -> socket.socket | None:
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+        try:
+            listener.bind((LOCK_HOST, LOCK_PORT))
+            listener.listen(1)
+            return listener
+        except OSError:
+            listener.close()
+            return None
+
+    listener = try_bind()
+    if listener is not None:
+        return listener
+
+    # First attempt found the port held. Before giving up and asking a
+    # human to run a separate script, try clearing it automatically once -
+    # this is what "one click" is supposed to mean.
+    if _clear_stale_port_holder():
+        listener = try_bind()
+        if listener is not None:
+            print("Cleared a stale process holding the lock port; continuing startup.")
+            return listener
+
+    raise RuntimeError("Tradysquids Supervisor is already running")
 
 
 def main() -> int:

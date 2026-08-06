@@ -84,6 +84,13 @@ REPORT_STATE_PATH = STATE_DIR / "discord-report-state.json"
 CHART_PATH = DOCS_DIR / "ford-market-chart.svg"
 CHART_SCREENSHOT_PATH = DOCS_DIR / "ford-market-chart.png"
 TRADE_SNAPSHOT_DIR = DOCS_DIR / "trade-snapshots"
+# Tradier does not retain historical data for expired options - there is
+# no way to ever go back and ask "what did the chain look like when this
+# trade was entered" unless that moment is captured as it happens. This
+# doesn't change any entry/exit decision; it only makes future analysis
+# possible that otherwise never could be, no matter how good the
+# after-the-fact tooling gets.
+CHAIN_SNAPSHOT_DIR = DOCS_DIR / "chain-snapshots"
 INTRADAY_SNAPSHOT_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 DAILY_SNAPSHOT_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 CHART_PUBLIC_URL = os.environ.get(
@@ -108,6 +115,24 @@ SPREAD_SHORT_DELTA_MIN = float(os.environ.get("SPREAD_SHORT_DELTA_MIN", "0.10"))
 SPREAD_SHORT_DELTA_MAX = float(os.environ.get("SPREAD_SHORT_DELTA_MAX", "0.25"))
 SINGLE_LEG_DELTA_MIN = float(os.environ.get("SINGLE_LEG_DELTA_MIN", "0.20"))
 SINGLE_LEG_DELTA_MAX = float(os.environ.get("SINGLE_LEG_DELTA_MAX", "0.80"))
+# Two independent sources converged on the same conclusion: 0.20-0.80 is
+# too wide to define one coherent strategy - a 0.20-delta and a 0.80-delta
+# contract have completely different cost, theta, and probability
+# behavior. Narrower, trade-type-specific ranges replace the single shared
+# one below; the original constants stay as the fallback if these aren't
+# configured, so nothing breaks if scanner.json doesn't set them yet.
+REGULAR_LEG_DELTA_MIN = float(os.environ.get(
+    "REGULAR_LEG_DELTA_MIN", configured("regular_leg_delta_min", 0.45)
+))
+REGULAR_LEG_DELTA_MAX = float(os.environ.get(
+    "REGULAR_LEG_DELTA_MAX", configured("regular_leg_delta_max", 0.65)
+))
+SWING_LEG_DELTA_MIN = float(os.environ.get(
+    "SWING_LEG_DELTA_MIN", configured("swing_leg_delta_min", 0.55)
+))
+SWING_LEG_DELTA_MAX = float(os.environ.get(
+    "SWING_LEG_DELTA_MAX", configured("swing_leg_delta_max", 0.70)
+))
 MAX_RISK_PER_TRADE = float(os.environ.get(
     "MAX_RISK_PER_TRADE", configured("max_position_risk_dollars", 100)
 ))
@@ -121,6 +146,15 @@ MAX_DTE = int(os.environ.get("MAX_DTE", "45"))
 REGULAR_MIN_DTE = int(os.environ.get("REGULAR_MIN_DTE", "7"))
 REGULAR_MAX_DTE = int(os.environ.get("REGULAR_MAX_DTE", "20"))
 REENTRY_COOLDOWN_MINUTES = int(os.environ.get("REENTRY_COOLDOWN_MINUTES", "1440"))
+# No cap by default, per explicit direction: limiting how many positions
+# can stack on one ticker only controls concentration, it doesn't make any
+# individual trade smarter - and that's the part that actually needs
+# fixing. The mechanism (apply_ticker_exposure_cap) stays in place and
+# stays configurable in scanner.json, in case this needs revisiting later,
+# but it applies no real limit unless deliberately set lower.
+MAX_OPEN_POSITIONS_PER_TICKER = int(os.environ.get(
+    "MAX_OPEN_POSITIONS_PER_TICKER", configured("max_open_positions_per_ticker", 99)
+))
 
 # Conservative directional-regime gate
 RSI_MIN = float(os.environ.get("RSI_MIN", "45"))
@@ -135,12 +169,101 @@ SPREAD_TAKE_PROFIT_PCT = float(os.environ.get(
     "SPREAD_TAKE_PROFIT_PCT", configured("spread_profit_target_pct", 0.50)
 ))
 SPREAD_EXIT_DTE = int(os.environ.get("SPREAD_EXIT_DTE", "5"))
+SPREAD_DELTA_DANGER_RATIO = float(os.environ.get(
+    "SPREAD_DELTA_DANGER_RATIO", configured("spread_delta_danger_ratio", 2.0)
+))
+SPREAD_IV_EXPANSION_RATIO = float(os.environ.get(
+    "SPREAD_IV_EXPANSION_RATIO", configured("spread_iv_expansion_ratio", 1.30)
+))
 SINGLE_TAKE_PROFIT_PCT = float(os.environ.get(
     "SINGLE_TAKE_PROFIT_PCT", configured("single_leg_profit_target_pct", 0.20)
 ))
 SINGLE_STOP_PCT = float(os.environ.get(
     "SINGLE_STOP_PCT", configured("single_leg_stop_pct", 0.15)
 ))
+# Swing trades are meant to hold overnight for a next-day pop, not exit
+# same-session - they need real room for completely normal overnight
+# volatility that a same-day regular trade never has to survive. Using the
+# same tight stop as a regular trade meant swing positions were getting cut
+# for a loss during the entry day itself, before the setup they were
+# actually entered for ever had a chance to play out.
+SWING_STOP_PCT = float(os.environ.get(
+    "SWING_STOP_PCT", configured("swing_stop_pct", 0.25)
+))
+BREAKEVEN_TRIGGER_PCT = float(os.environ.get(
+    "BREAKEVEN_TRIGGER_PCT", configured("single_leg_breakeven_trigger_pct", 10.0)
+))
+TRAIL_GIVEBACK_PCT = float(os.environ.get(
+    "TRAIL_GIVEBACK_PCT", configured("single_leg_trail_giveback_pct", 8.0)
+))
+DELTA_EROSION_RATIO = float(os.environ.get(
+    "DELTA_EROSION_RATIO", configured("single_leg_delta_erosion_ratio", 0.5)
+))
+IV_CRUSH_RATIO = float(os.environ.get(
+    "IV_CRUSH_RATIO", configured("single_leg_iv_crush_ratio", 0.75)
+))
+IV_RV_MIN_RATIO = float(os.environ.get(
+    "IV_RV_MIN_RATIO", configured("iv_rv_min_ratio", 1.15)
+))
+SPREAD_MAX_TREND_STRENGTH = float(os.environ.get(
+    "SPREAD_MAX_TREND_STRENGTH", configured("spread_max_trend_strength", 0.02)
+))
+SPREAD_EXTREME_BUFFER_PCT = float(os.environ.get(
+    "SPREAD_EXTREME_BUFFER_PCT", configured("spread_extreme_buffer_pct", 1.0)
+))
+
+# --- Regular (7-20 DTE) entry thresholds - same-session confirmation ---
+REGULAR_INTRADAY_CHANGE_THRESHOLD_PCT = float(os.environ.get(
+    "REGULAR_INTRADAY_CHANGE_THRESHOLD_PCT", configured("regular_intraday_change_threshold_pct", 0.35)
+))
+REGULAR_VWAP_DISTANCE_THRESHOLD_PCT = float(os.environ.get(
+    "REGULAR_VWAP_DISTANCE_THRESHOLD_PCT", configured("regular_vwap_distance_threshold_pct", 0.15)
+))
+REGULAR_MOMENTUM_GAP_THRESHOLD_PCT = float(os.environ.get(
+    "REGULAR_MOMENTUM_GAP_THRESHOLD_PCT", configured("regular_momentum_gap_threshold_pct", 0.10)
+))
+REGULAR_RSI_BULLISH = float(os.environ.get(
+    "REGULAR_RSI_BULLISH", configured("regular_rsi_bullish", 60.0)
+))
+REGULAR_RSI_BEARISH = float(os.environ.get(
+    "REGULAR_RSI_BEARISH", configured("regular_rsi_bearish", 40.0)
+))
+REGULAR_SLOPE_THRESHOLD_PCT = float(os.environ.get(
+    "REGULAR_SLOPE_THRESHOLD_PCT", configured("regular_slope_threshold_pct", 0.35)
+))
+REGULAR_DAILY_TREND_THRESHOLD_PCT = float(os.environ.get(
+    "REGULAR_DAILY_TREND_THRESHOLD_PCT", configured("regular_daily_trend_threshold_pct", 0.2)
+))
+REGULAR_SCORE_THRESHOLD = float(os.environ.get(
+    "REGULAR_SCORE_THRESHOLD", configured("regular_score_threshold", 3.0)
+))
+
+# --- Swing (21-45 DTE) entry thresholds - trend + "closing strong" ---
+SWING_SMA20_DISTANCE_THRESHOLD_PCT = float(os.environ.get(
+    "SWING_SMA20_DISTANCE_THRESHOLD_PCT", configured("swing_sma20_distance_threshold_pct", 0.25)
+))
+SWING_TREND_THRESHOLD_PCT = float(os.environ.get(
+    "SWING_TREND_THRESHOLD_PCT", configured("swing_trend_threshold_pct", 0.2)
+))
+SWING_RSI_BULLISH = float(os.environ.get(
+    "SWING_RSI_BULLISH", configured("swing_rsi_bullish", 55.0)
+))
+SWING_RSI_BEARISH = float(os.environ.get(
+    "SWING_RSI_BEARISH", configured("swing_rsi_bearish", 45.0)
+))
+SWING_VOLUME_RATIO_MIN = float(os.environ.get(
+    "SWING_VOLUME_RATIO_MIN", configured("swing_volume_ratio_min", 1.1)
+))
+SWING_CLOSE_VS_HIGH_BULLISH_PCT = float(os.environ.get(
+    "SWING_CLOSE_VS_HIGH_BULLISH_PCT", configured("swing_close_vs_high_bullish_pct", -0.3)
+))
+SWING_CLOSE_VS_HIGH_BEARISH_PCT = float(os.environ.get(
+    "SWING_CLOSE_VS_HIGH_BEARISH_PCT", configured("swing_close_vs_high_bearish_pct", -3.0)
+))
+SWING_SCORE_THRESHOLD = float(os.environ.get(
+    "SWING_SCORE_THRESHOLD", configured("swing_score_threshold", 2.0)
+))
+
 SCRATCH_BAND_PCT = float(os.environ.get("SCRATCH_BAND_PCT", "5.0"))
 
 # Discord update throttling
@@ -204,6 +327,9 @@ LOG_HEADER = [
     "current_pl_pct",
     "max_favorable_pct",
     "max_adverse_pct",
+    "delta_erosion_streak",
+    "iv_crush_streak",
+    "thesis_invalid_streak",
     "last_signal",
     "last_evaluated_at",
     "discord_thread_id",
@@ -251,6 +377,7 @@ CHANNEL_NAMES = {
     "learning_results": "learning-results",
     "examples_reviews": "examples-and-reviews",
     "status": "system-health",
+    "system_activity": "system-activity",
     "errors": "provider-status",
     "workflow_log": "workflow-log",
     "admin_notes": "scanner-controls",
@@ -890,6 +1017,29 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
     closed_at = parse_iso(row.get("closed_at"))
     closed_text = portable_strftime(closed_at, "%m/%d/%y %-I:%M %p CT") if closed_at else "—"
     approx_prefix = "≈" if approx else ""
+    result_lines = [
+        f"**Realized P/L:** {approx_prefix}{fmt_money(pl_dollars)}\n"
+        f"**Return:** {fmt_pct(pl_pct)}\n"
+        f"**Close reason:** {close_reason}\n"
+        f"**MFE:** {fmt_pct(as_float(row.get('max_favorable_pct'), 0.0))}\n"
+        f"**MAE:** {fmt_pct(as_float(row.get('max_adverse_pct'), 0.0))}"
+    ]
+    # Make stop slippage visible directly on the card instead of something
+    # that has to be asked about after the fact: a stop can only react to
+    # what it last observed, so a gap between checks (or a fast-moving
+    # illiquid contract) can let the realized loss run past the configured
+    # threshold before the exit ever fires. Showing the overshoot plainly
+    # here answers "did the stop actually hold" at a glance, every time.
+    if close_reason in ("STOP OUT", "BREAKEVEN STOP") and play_type != "SPREAD":
+        configured_stop = SWING_STOP_PCT if play_type == "SWING" else SINGLE_STOP_PCT
+        target_pct = -(configured_stop * 100) if close_reason == "STOP OUT" else 0.0
+        overshoot = pl_pct - target_pct
+        if overshoot < -0.5:
+            result_lines.append(
+                f"**Stop overshoot:** target {fmt_pct(target_pct)}, actual "
+                f"{fmt_pct(pl_pct)} — slipped {abs(overshoot):.0f} points past "
+                f"the stop before this could react"
+            )
     lines = [
         f"## {icon} {ticker} #{sequence} · {outcome} · {strategy}",
         "### Position",
@@ -897,13 +1047,7 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
         "### Entry and Exit",
         f"{entry_line}\n{exit_line}",
         "### Result",
-        (
-            f"**Realized P/L:** {approx_prefix}{fmt_money(pl_dollars)}\n"
-            f"**Return:** {fmt_pct(pl_pct)}\n"
-            f"**Close reason:** {close_reason}\n"
-            f"**MFE:** {fmt_pct(as_float(row.get('max_favorable_pct'), 0.0))}\n"
-            f"**MAE:** {fmt_pct(as_float(row.get('max_adverse_pct'), 0.0))}"
-        ),
+        "\n".join(result_lines),
         "### Timing",
         f"**Closed:** {closed_text}",
     ]
@@ -1041,6 +1185,112 @@ def get_quotes(symbols: list[str], include_greeks: bool = True) -> dict[str, dic
 
 def get_quote(symbol: str) -> dict[str, Any] | None:
     return get_quotes([symbol], include_greeks=False).get(symbol)
+
+
+EARNINGS_BLACKOUT_DAYS = int(os.environ.get(
+    "EARNINGS_BLACKOUT_DAYS", configured("earnings_blackout_days", 7)
+))
+_EARNINGS_CACHE: dict[str, tuple[float, int | None]] = {}
+
+# Well-established, close to universal practice, not a strategy opinion:
+# the opening minutes carry elevated volatility and wide spreads as the
+# market digests overnight news, and the midday window sees materially
+# lower participation - both distort entries in ways that have nothing to
+# do with the trader's actual thesis. Times are minutes-from-open /
+# minutes-from-close and a CT clock window, matching how this file already
+# tracks market hours.
+OPENING_RANGE_EXCLUSION_MINUTES = int(os.environ.get(
+    "OPENING_RANGE_EXCLUSION_MINUTES", configured("opening_range_exclusion_minutes", 15)
+))
+MIDDAY_LULL_START_CT = tuple(
+    int(part) for part in os.environ.get(
+        "MIDDAY_LULL_START_CT", configured("midday_lull_start_ct", "10:30")
+    ).split(":")
+)
+MIDDAY_LULL_END_CT = tuple(
+    int(part) for part in os.environ.get(
+        "MIDDAY_LULL_END_CT", configured("midday_lull_end_ct", "12:00")
+    ).split(":")
+)
+
+
+def entry_window_blocked(now: datetime) -> str:
+    """Returns a reason string if now falls in an excluded entry window,
+    or an empty string if entries are allowed. Only gates NEW entries -
+    exits, position management, and everything else run on their own
+    schedule regardless of this. Computes market-open status directly from
+    the passed-in now rather than calling market_is_open_now(), which reads
+    the real wall clock regardless of what's passed to it - this function
+    needs to be evaluable for any given moment, not just the actual
+    current one."""
+    if now.weekday() >= 5:
+        return ""  # the normal closed-market handling already covers this
+    open_time = now.replace(hour=MARKET_OPEN[0], minute=MARKET_OPEN[1], second=0, microsecond=0)
+    close_time = now.replace(hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1], second=0, microsecond=0)
+    if not (open_time <= now <= close_time):
+        return ""
+    minutes_since_open = (now - open_time).total_seconds() / 60
+    if 0 <= minutes_since_open < OPENING_RANGE_EXCLUSION_MINUTES:
+        return (
+            f"within the first {OPENING_RANGE_EXCLUSION_MINUTES} minutes of the "
+            "session - still settling from overnight news, not a clean read yet"
+        )
+    lull_start = now.replace(hour=MIDDAY_LULL_START_CT[0], minute=MIDDAY_LULL_START_CT[1], second=0, microsecond=0)
+    lull_end = now.replace(hour=MIDDAY_LULL_END_CT[0], minute=MIDDAY_LULL_END_CT[1], second=0, microsecond=0)
+    if lull_start <= now <= lull_end:
+        return "inside the midday liquidity lull - participation is thin here"
+    return ""
+
+
+def days_until_earnings(ticker: str) -> int | None:
+    """Days until this ticker's next known earnings date, or None if that
+    can't be determined right now - a missing answer must never be treated
+    as "no earnings coming," since this uses Tradier's beta fundamentals
+    endpoint, which is less stable and less documented than the rest of
+    this file's Tradier calls. Every failure mode here fails open (returns
+    None, meaning the earnings gate below has nothing to block on) rather
+    than fail closed, so a broken or reshaped response can never silently
+    stop every trade instead of just this one safety check."""
+    ticker = ticker.strip().upper()
+    cached = _EARNINGS_CACHE.get(ticker)
+    now = time.monotonic()
+    if cached and now - cached[0] < 43200:  # 12h - a date this far out barely moves
+        return cached[1]
+    result: int | None = None
+    try:
+        beta_base = TRADIER_BASE_URL.rsplit("/", 1)[0] + "/beta"
+        response = SESSION.get(
+            f"{beta_base}/markets/fundamentals/calendars",
+            params={"symbols": ticker},
+            headers={"Authorization": f"Bearer {TRADIER_TOKEN}", "Accept": "application/json"},
+            timeout=25,
+        )
+        if response.ok:
+            payload = response.json()
+            entries = payload if isinstance(payload, list) else [payload]
+            candidate_dates: list[date] = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                results = entry.get("results") or entry.get("tables") or [entry]
+                for item in results if isinstance(results, list) else [results]:
+                    if not isinstance(item, dict):
+                        continue
+                    for key in ("estimated_next_date", "next_earnings_date", "date", "event_date"):
+                        raw = item.get(key)
+                        if not raw:
+                            continue
+                        try:
+                            candidate_dates.append(datetime.strptime(str(raw)[:10], "%Y-%m-%d").date())
+                        except ValueError:
+                            continue
+            future = [d for d in candidate_dates if d >= now_ct().date()]
+            if future:
+                result = (min(future) - now_ct().date()).days
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        result = None
+    _EARNINGS_CACHE[ticker] = (now, result)
+    return result
 
 
 def get_expirations(symbol: str) -> list[str]:
@@ -1274,6 +1524,257 @@ def directional_market_context(
         "evidence_score": score if sma20 is not None and sma50 is not None and rsi14 is not None else 0,
         "regime": regime,
         "reason": "; ".join(reasons) if reasons else "No controlled directional setup",
+        "failures": failures,
+    }
+
+
+def regular_market_context(
+    history: list[dict[str, Any]],
+    spot_price: float,
+    intraday: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Same-session confirmation required. Built for 7-20 DTE single-leg trades
+    that don't have the runway to wait out a wrong entry, so this leans almost
+    entirely on what the stock is doing *today*, not the weekly picture."""
+    closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
+    sma20 = simple_moving_average(closes, 20)
+    sma50 = simple_moving_average(closes, 50)
+
+    intraday = intraday or []
+    intraday_closes = [
+        value
+        for bar in intraday
+        if (value := as_float(bar.get("close") or bar.get("price"))) is not None
+    ]
+    intraday_volumes = [
+        as_float(bar.get("volume"), 0.0) or 0.0
+        for bar in intraday
+        if as_float(bar.get("close") or bar.get("price")) is not None
+    ]
+    intraday_open = intraday_closes[0] if intraday_closes else None
+    intraday_change_pct = (
+        ((spot_price / intraday_open) - 1) * 100
+        if intraday_open and intraday_open > 0
+        else None
+    )
+    intraday_vwap = None
+    if intraday_closes and sum(intraday_volumes) > 0:
+        intraday_vwap = sum(
+            price * volume for price, volume in zip(intraday_closes, intraday_volumes)
+        ) / sum(intraday_volumes)
+    intraday_rsi = relative_strength_index(intraday_closes, 9)
+    fast_average = simple_moving_average(intraday_closes, 5)
+    slow_average = simple_moving_average(intraday_closes, 20)
+    slope_pct = (
+        ((intraday_closes[-1] / intraday_closes[-4]) - 1) * 100
+        if len(intraday_closes) >= 4 and intraday_closes[-4] > 0
+        else None
+    )
+
+    reasons: list[str] = []
+    failures: list[str] = []
+    regime = "NO TRADE"
+    score = 0
+
+    if not intraday_closes or intraday_change_pct is None:
+        failures.append(
+            "regular trades need same-session confirmation and none is available yet"
+        )
+    else:
+        # Category-based scoring, not six raw signal points: intraday
+        # change, 5-bar momentum, and 15-minute slope all measure
+        # essentially the same underlying fact (short-term price movement)
+        # from three angles - letting each add its own point let one real
+        # move impersonate three independent confirmations. Each category
+        # below contributes at most one point to the final score,
+        # regardless of how many sub-signals inside it agree.
+        momentum_votes = 0
+
+        if intraday_change_pct >= REGULAR_INTRADAY_CHANGE_THRESHOLD_PCT:
+            momentum_votes += 1
+            reasons.append(f"intraday move is bullish ({intraday_change_pct:+.1f}%)")
+        elif intraday_change_pct <= -REGULAR_INTRADAY_CHANGE_THRESHOLD_PCT:
+            momentum_votes -= 1
+            reasons.append(f"intraday move is bearish ({intraday_change_pct:+.1f}%)")
+
+        location_score = 0
+        if intraday_vwap:
+            vwap_distance_pct = ((spot_price / intraday_vwap) - 1) * 100
+            if vwap_distance_pct >= REGULAR_VWAP_DISTANCE_THRESHOLD_PCT:
+                location_score = 1
+                reasons.append("price is holding above intraday VWAP")
+            elif vwap_distance_pct <= -REGULAR_VWAP_DISTANCE_THRESHOLD_PCT:
+                location_score = -1
+                reasons.append("price is holding below intraday VWAP")
+
+        if fast_average is not None and slow_average is not None:
+            momentum_gap_pct = ((fast_average / slow_average) - 1) * 100
+            if momentum_gap_pct >= REGULAR_MOMENTUM_GAP_THRESHOLD_PCT:
+                momentum_votes += 1
+                reasons.append("5-bar momentum is above the 20-bar trend")
+            elif momentum_gap_pct <= -REGULAR_MOMENTUM_GAP_THRESHOLD_PCT:
+                momentum_votes -= 1
+                reasons.append("5-bar momentum is below the 20-bar trend")
+
+        oscillator_score = 0
+        if intraday_rsi is not None:
+            if intraday_rsi >= REGULAR_RSI_BULLISH:
+                oscillator_score = 1
+            elif intraday_rsi <= REGULAR_RSI_BEARISH:
+                oscillator_score = -1
+
+        if slope_pct is not None:
+            if slope_pct >= REGULAR_SLOPE_THRESHOLD_PCT:
+                momentum_votes += 1
+                reasons.append("recent 15-minute price slope is rising")
+            elif slope_pct <= -REGULAR_SLOPE_THRESHOLD_PCT:
+                momentum_votes -= 1
+                reasons.append("recent 15-minute price slope is falling")
+
+        # Daily trend is a lighter don't-fight-it check here, not the driver.
+        trend_score = 0
+        if sma20 is not None and sma50 is not None:
+            sma_trend_pct = ((sma20 / sma50) - 1) * 100
+            if sma_trend_pct >= REGULAR_DAILY_TREND_THRESHOLD_PCT:
+                trend_score = 1
+            elif sma_trend_pct <= -REGULAR_DAILY_TREND_THRESHOLD_PCT:
+                trend_score = -1
+
+        momentum_score = 1 if momentum_votes > 0 else (-1 if momentum_votes < 0 else 0)
+        # Four independent categories, one point each: trend, location,
+        # momentum (regardless of how many of its three sub-signals
+        # agreed), and the oscillator. Max possible is +/-4, not +/-7.
+        score = trend_score + location_score + momentum_score + oscillator_score
+
+        if score >= REGULAR_SCORE_THRESHOLD:
+            regime = "BULLISH / CONTROLLED"
+        elif score <= -REGULAR_SCORE_THRESHOLD:
+            regime = "BEARISH / CONTROLLED"
+        else:
+            failures.append(
+                "same-session move isn't decisive enough for a regular-dated trade"
+            )
+
+    return {
+        "qualified": not failures,
+        "sma20": sma20,
+        "sma50": sma50,
+        "intraday_change_pct": intraday_change_pct,
+        "intraday_vwap": intraday_vwap,
+        "intraday_rsi": intraday_rsi,
+        "evidence_score": score,
+        "regime": regime,
+        "reason": "; ".join(reasons) if reasons else "No same-session confirmation",
+        "failures": failures,
+    }
+
+
+def swing_market_context(
+    history: list[dict[str, Any]],
+    spot_price: float,
+    intraday: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """The next-day-pop trade: closing strong near today's high on above-average
+    volume, in the direction of the underlying trend. Tolerant of a slow or ugly
+    morning, since this isn't betting on today - it's betting on tomorrow, and the
+    longer-dated contract gives it room to be right a day late."""
+    closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
+    volumes = [value for day in history if (value := as_float(day.get("volume"))) is not None]
+    sma20 = simple_moving_average(closes, 20)
+    sma50 = simple_moving_average(closes, 50)
+    rsi14 = relative_strength_index(closes)
+    average_volume20 = simple_moving_average(volumes, 20)
+    latest_volume = volumes[-1] if volumes else None
+    volume_ratio = (
+        latest_volume / average_volume20
+        if latest_volume is not None and average_volume20 and average_volume20 > 0
+        else None
+    )
+
+    intraday = intraday or []
+    intraday_closes = [
+        value
+        for bar in intraday
+        if (value := as_float(bar.get("close") or bar.get("price"))) is not None
+    ]
+    close_vs_high_pct = None
+    if intraday_closes:
+        today_high = max(intraday_closes)
+        if today_high > 0:
+            close_vs_high_pct = (spot_price / today_high - 1) * 100
+
+    reasons: list[str] = []
+    failures: list[str] = []
+    regime = "NO TRADE"
+    score = 0
+
+    if sma20 is None or sma50 is None or rsi14 is None:
+        failures.append("insufficient daily history for a swing setup")
+    else:
+        spot_vs_sma20_pct = ((spot_price / sma20) - 1) * 100
+        sma_trend_pct = ((sma20 / sma50) - 1) * 100
+
+        # Equal weight per independent signal - there was no real
+        # justification for three of these four counting double while RSI
+        # alone counted single. Same principle as regular's category cap:
+        # no signal should silently outweigh another without a clear reason.
+        if spot_vs_sma20_pct >= SWING_SMA20_DISTANCE_THRESHOLD_PCT:
+            score += 1
+            reasons.append("price is above its 20-day average")
+        elif spot_vs_sma20_pct <= -SWING_SMA20_DISTANCE_THRESHOLD_PCT:
+            score -= 1
+            reasons.append("price is below its 20-day average")
+
+        if sma_trend_pct >= SWING_TREND_THRESHOLD_PCT:
+            score += 1
+            reasons.append("20-day trend is above the 50-day trend")
+        elif sma_trend_pct <= -SWING_TREND_THRESHOLD_PCT:
+            score -= 1
+            reasons.append("20-day trend is below the 50-day trend")
+
+        if rsi14 >= SWING_RSI_BULLISH:
+            score += 1
+        elif rsi14 <= SWING_RSI_BEARISH:
+            score -= 1
+
+        # The "wants to keep going" signature: closing near today's high or low
+        # on real volume, not just a quiet drift.
+        if (
+            close_vs_high_pct is not None
+            and volume_ratio is not None
+            and volume_ratio >= SWING_VOLUME_RATIO_MIN
+        ):
+            if close_vs_high_pct >= SWING_CLOSE_VS_HIGH_BULLISH_PCT:
+                score += 1
+                reasons.append(
+                    f"closing near today's high ({close_vs_high_pct:+.1f}% off it) "
+                    f"on {volume_ratio:.1f}x average volume"
+                )
+            elif close_vs_high_pct <= SWING_CLOSE_VS_HIGH_BEARISH_PCT:
+                score -= 1
+                reasons.append(
+                    f"closing well off today's high ({close_vs_high_pct:+.1f}%) "
+                    f"on {volume_ratio:.1f}x average volume"
+                )
+
+        if score >= SWING_SCORE_THRESHOLD:
+            regime = "BULLISH / CONTROLLED"
+        elif score <= -SWING_SCORE_THRESHOLD:
+            regime = "BEARISH / CONTROLLED"
+        else:
+            regime = "NEUTRAL / RANGE"
+            reasons.append("daily and volume evidence is balanced")
+
+    return {
+        "qualified": not failures,
+        "sma20": sma20,
+        "sma50": sma50,
+        "rsi14": rsi14,
+        "volume_ratio": volume_ratio,
+        "close_vs_high_pct": close_vs_high_pct,
+        "evidence_score": score,
+        "regime": regime,
+        "reason": "; ".join(reasons) if reasons else "No swing setup confirmed",
         "failures": failures,
     }
 
@@ -1922,7 +2423,23 @@ def write_log(rows: list[dict[str, str]]) -> None:
                 writer.writerow({column: row.get(column, "") for column in LOG_HEADER})
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary_path, LOG_PATH)
+        # Windows can transiently deny this replace if antivirus or a sync
+        # client (this project lives in a OneDrive-synced folder) has the
+        # target briefly open for its own read. That's normally gone within
+        # a fraction of a second - a short retry survives it instead of
+        # crashing whatever was writing the trade log over a lock that was
+        # never really contested.
+        last_error: PermissionError | None = None
+        for attempt in range(5):
+            try:
+                os.replace(temporary_path, LOG_PATH)
+                break
+            except PermissionError as exc:
+                last_error = exc
+                if attempt < 4:
+                    time.sleep(0.3)
+        else:
+            raise last_error
     finally:
         if temporary_path and temporary_path.exists():
             temporary_path.unlink()
@@ -2062,6 +2579,23 @@ def open_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return [row for row in rows if row.get("outcome") == "OPEN"]
 
 
+def apply_ticker_exposure_cap(
+    eligible: list[dict[str, Any]], rows: list[dict[str, str]], ticker: str
+) -> list[dict[str, Any]]:
+    """Cap total concurrent open positions on one ticker across every
+    trader type combined - regular, swing, and spreads all read overlapping
+    signals off the same price data, so several can independently qualify
+    the same ticker in the same scan. Taking every one of them concentrates
+    risk into a single market view instead of spreading it across genuinely
+    different ideas. Best-scored candidates are admitted first; eligible
+    must already be sorted by score, descending, before this is called."""
+    existing_open_on_ticker = sum(
+        1 for row in rows if row.get("outcome") == "OPEN" and row.get("ticker") == ticker
+    )
+    remaining_capacity = max(0, MAX_OPEN_POSITIONS_PER_TICKER - existing_open_on_ticker)
+    return eligible[:remaining_capacity]
+
+
 def recently_tracked(rows: list[dict[str, str]], candidate: dict[str, Any], now: datetime) -> bool:
     key = (
         TICKER,
@@ -2167,6 +2701,217 @@ def iv_value(option: dict[str, Any] | None) -> float | None:
                 return value
     return None
 
+
+IV_HISTORY_PATH = STATE_DIR / "iv-history.json"
+IV_HISTORY_MIN_SAMPLES = int(os.environ.get(
+    "IV_HISTORY_MIN_SAMPLES", configured("iv_history_min_samples", 20)
+))
+IV_HISTORY_MAX_SAMPLES = 400  # roughly 1.5 years of one-reading-per-day
+POOLED_IV_MIN_SAMPLES = int(os.environ.get(
+    "POOLED_IV_MIN_SAMPLES", configured("pooled_iv_min_samples", 20)
+))
+POOLED_IV_LOOKBACK_DAYS = int(os.environ.get(
+    "POOLED_IV_LOOKBACK_DAYS", configured("pooled_iv_lookback_days", 20)
+))
+
+
+def _load_iv_history() -> dict[str, list[list[Any]]]:
+    try:
+        return json.loads(IV_HISTORY_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_iv_history(history: dict[str, list[list[Any]]]) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        IV_HISTORY_PATH.write_text(json.dumps(history), encoding="utf-8")
+    except OSError as exc:
+        print(f"Could not save IV history: {exc}", file=sys.stderr)
+
+
+def record_iv_snapshot(ticker: str, iv: float, today: str) -> None:
+    """Record at most one IV reading per ticker per day, so repeated scan
+    cycles on the same day don't distort the history with intraday noise."""
+    if iv is None or iv <= 0:
+        return
+    history = _load_iv_history()
+    entries = history.get(ticker) or []
+    if entries and entries[-1][0] == today:
+        entries[-1][1] = iv
+    else:
+        entries.append([today, iv])
+    history[ticker] = entries[-IV_HISTORY_MAX_SAMPLES:]
+    _save_iv_history(history)
+
+
+def iv_rank(ticker: str) -> float | None:
+    """Percentile (0-100) of the ticker's most recent recorded IV against its
+    own stored history. None if there isn't enough history yet to mean
+    anything - spreads should not fire on a guess."""
+    entries = _load_iv_history().get(ticker) or []
+    if len(entries) < IV_HISTORY_MIN_SAMPLES:
+        return None
+    values = [as_float(entry[1]) for entry in entries if as_float(entry[1]) is not None]
+    if len(values) < IV_HISTORY_MIN_SAMPLES:
+        return None
+    current = values[-1]
+    below_or_equal = sum(1 for value in values if value <= current)
+    return round(below_or_equal / len(values) * 100, 1)
+
+
+def pooled_iv_rank(
+    current_iv: float | None, today: str, lookback_days: int = POOLED_IV_LOOKBACK_DAYS
+) -> tuple[float | None, int]:
+    """Fallback for a ticker that doesn't have enough of its OWN IV history
+    yet (new to the rotation, or hasn't recurred often enough): where does
+    today's reading sit against every reading from every ticker across the
+    whole scanned universe in the last `lookback_days`, using the exact same
+    stored data, just pooled instead of filtered to one symbol. A new ticker
+    gets a real cross-sectional read on day one instead of nothing at all.
+    Returns (rank, sample_size) so a caller can tell a thin pool from a
+    healthy one even when a rank comes back."""
+    if current_iv is None:
+        return None, 0
+    try:
+        cutoff = (date.fromisoformat(today) - timedelta(days=lookback_days)).isoformat()
+    except ValueError:
+        return None, 0
+    history = _load_iv_history()
+    pooled_values = [
+        as_float(reading[1])
+        for entries in history.values()
+        for reading in entries
+        if isinstance(reading, list) and len(reading) == 2 and reading[0] >= cutoff
+        and as_float(reading[1]) is not None
+    ]
+    sample_size = len(pooled_values)
+    if sample_size < POOLED_IV_MIN_SAMPLES:
+        return None, sample_size
+    below_or_equal = sum(1 for value in pooled_values if value <= current_iv)
+    return round(below_or_equal / sample_size * 100, 1), sample_size
+
+
+def realized_volatility(closes: list[float], window: int = 20) -> float | None:
+    """Annualized realized volatility from daily closes (standard close-to-
+    close log-return method). Needs nothing but price history that's already
+    being pulled for every other trader, so unlike IV rank it's available
+    from day one - no weeks of accumulation required."""
+    if len(closes) < window + 1:
+        return None
+    recent = closes[-(window + 1):]
+    log_returns = [
+        math.log(recent[i] / recent[i - 1])
+        for i in range(1, len(recent))
+        if recent[i - 1] > 0 and recent[i] > 0
+    ]
+    if len(log_returns) < 2:
+        return None
+    mean = sum(log_returns) / len(log_returns)
+    variance = sum((value - mean) ** 2 for value in log_returns) / (len(log_returns) - 1)
+    return math.sqrt(variance) * math.sqrt(252)
+
+
+def spread_market_context(
+    history: list[dict[str, Any]],
+    spot_price: float,
+    current_iv: float | None,
+    iv_rank_value: float | None,
+    pooled_iv_rank_value: float | None = None,
+) -> dict[str, Any]:
+    """Not a directional bet - a 'stay away from my strike' bet. Wants rich
+    premium and calm, range-bound price action, and actively dislikes the
+    momentum the calls/puts traders are chasing, since a violent move can
+    break through a strike just as easily as away from it.
+
+    Premium richness is judged against the stock's own realized volatility -
+    the classic implied-vs-realized comparison - which needs no history
+    beyond what's already being pulled, so this can trade from day one.
+    Per-ticker IV rank and the cross-ticker pooled rank are both tracked and
+    reported as context, preferring the per-ticker read once it matures and
+    falling back to the pooled one before that - neither one gates a trade;
+    IV/RV does."""
+    closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
+    sma20 = simple_moving_average(closes, 20)
+    sma50 = simple_moving_average(closes, 50)
+    rsi14 = relative_strength_index(closes)
+    support = min(closes[-20:]) if len(closes) >= 20 else None
+    resistance = max(closes[-20:]) if len(closes) >= 20 else None
+    realized_vol = realized_volatility(closes)
+    iv_rv_ratio = (
+        current_iv / realized_vol
+        if current_iv is not None and realized_vol and realized_vol > 0
+        else None
+    )
+
+    reasons: list[str] = []
+    failures: list[str] = []
+    regime = "NO TRADE"
+    spread_direction: str | None = None
+
+    if sma20 is None or sma50 is None or rsi14 is None or support is None or resistance is None:
+        failures.append("insufficient daily history for a spread setup")
+    elif iv_rv_ratio is None:
+        failures.append("cannot compute implied-vs-realized volatility yet")
+    elif iv_rv_ratio < IV_RV_MIN_RATIO:
+        failures.append(
+            f"implied vol is only {iv_rv_ratio:.2f}x realized; premium isn't rich enough to sell"
+        )
+    else:
+        trend_strength = abs((sma20 / sma50) - 1)
+        buffer = SPREAD_EXTREME_BUFFER_PCT / 100
+        near_extreme = spot_price <= support * (1 + buffer) or spot_price >= resistance * (1 - buffer)
+        if near_extreme:
+            failures.append("price is sitting right at its 20-day extreme, not calm")
+            spread_direction = None
+        elif trend_strength >= SPREAD_MAX_TREND_STRENGTH:
+            # A strong trend doesn't block spread-selling outright anymore -
+            # it blocks only the spread betting against it. A bull put
+            # spread benefits from the same push that makes a bear call
+            # spread dangerous here, and vice versa. Real reversal risk
+            # still applies to the with-trend side too - this isn't "safe,"
+            # it's "the less-bad direction" - which is exactly why the
+            # opposing side stays blocked rather than both being allowed.
+            trending_bullish = sma20 > sma50
+            spread_direction = "bull_put_only" if trending_bullish else "bear_call_only"
+            regime = "TREND / SELL WITH MOMENTUM"
+            reasons.append(
+                f"trend is too strong for range-bound premium selling both ways, "
+                f"but {'bull put' if trending_bullish else 'bear call'} spreads "
+                f"trade with this {'bullish' if trending_bullish else 'bearish'} move, not against it"
+            )
+        else:
+            spread_direction = "both"
+            regime = "RANGE / SELL PREMIUM"
+            if iv_rank_value is not None:
+                rank_note = f", IV rank {iv_rank_value:.0f}"
+            elif pooled_iv_rank_value is not None:
+                rank_note = f", IV rank {pooled_iv_rank_value:.0f} vs. the wider universe (own history still building)"
+            else:
+                rank_note = " (IV rank still building history)"
+            reasons.append(
+                f"implied vol running {iv_rv_ratio:.2f}x realized{rank_note}, price calm "
+                f"between ${support:.2f} support and ${resistance:.2f} resistance"
+            )
+
+    return {
+        "qualified": not failures,
+        "sma20": sma20,
+        "sma50": sma50,
+        "rsi14": rsi14,
+        "realized_vol": realized_vol,
+        "iv_rv_ratio": iv_rv_ratio,
+        "iv_rank": iv_rank_value,
+        "pooled_iv_rank": pooled_iv_rank_value,
+        "spread_direction": spread_direction,
+        "support": support,
+        "resistance": resistance,
+        "regime": regime,
+        "reason": "; ".join(reasons) if reasons else "No range-bound premium setup",
+        "failures": failures,
+    }
+
+
 def scan_credit_spreads(
     chain: list[dict[str, Any]],
     kind: str,
@@ -2176,10 +2921,20 @@ def scan_credit_spreads(
     candidates: list[dict[str, Any]] = []
     liquid = {float(option["strike"]): option for option in chain if option_has_liquidity(option)}
     strikes = sorted(liquid)
+    support = as_float((market_context or {}).get("support"))
+    resistance = as_float((market_context or {}).get("resistance"))
     for index, short_strike in enumerate(strikes):
         short_option = liquid[short_strike]
         delta = abs(greek(short_option, "delta") or 0.0)
         if not SPREAD_SHORT_DELTA_MIN <= delta <= SPREAD_SHORT_DELTA_MAX:
+            continue
+        # A put spread is only a "stay above my strike" bet if the strike is
+        # actually below real support; a call spread needs real resistance
+        # above it. Without this, delta alone can put the strike right in
+        # the middle of the stock's own recent range.
+        if kind == "put" and support is not None and short_strike > support * 0.995:
+            continue
+        if kind == "call" and resistance is not None and short_strike < resistance * 1.005:
             continue
         if kind == "call":
             long_strike = strikes[index + 1] if index + 1 < len(strikes) else None
@@ -2245,6 +3000,7 @@ def scan_single_legs(
     expiration: str,
     play_type: str,
     market_context: dict[str, Any] | None = None,
+    spot_price: float | None = None,
 ) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for option in chain:
@@ -2252,7 +3008,11 @@ def scan_single_legs(
             continue
         delta_signed = greek(option, "delta") or 0.0
         delta = abs(delta_signed)
-        if not SINGLE_LEG_DELTA_MIN <= delta <= SINGLE_LEG_DELTA_MAX:
+        if play_type == "SWING":
+            delta_min, delta_max = SWING_LEG_DELTA_MIN, SWING_LEG_DELTA_MAX
+        else:
+            delta_min, delta_max = REGULAR_LEG_DELTA_MIN, REGULAR_LEG_DELTA_MAX
+        if not delta_min <= delta <= delta_max:
             continue
         ask = as_float(option.get("ask"), 0.0) or 0.0
         bid = as_float(option.get("bid"), 0.0) or 0.0
@@ -2278,6 +3038,28 @@ def scan_single_legs(
             max_profit = "UNLIMITED"
         else:
             max_profit = round(max((strike - ask) * 100, 0), 2)
+        breakeven = round(strike + ask if kind == "call" else strike - ask, 2)
+        # Expected move: the option's own IV translated into a 1-standard-
+        # deviation price range over its remaining life. Comparing that
+        # against how far away breakeven actually sits answers a real
+        # question nothing else here does - is this contract asking the
+        # underlying to move further than it typically does to become
+        # profitable at all, or is breakeven within a normal move for this
+        # name? Purely informational for now - surfaced on the thesis, not
+        # a hard filter, since there isn't yet real evidence for where a
+        # cutoff should sit.
+        breakeven_moves_note = ""
+        option_iv = iv_value(option)
+        if spot_price and spot_price > 0 and option_iv and option_iv > 0:
+            dte = max(days_to_expiry(expiration), 0)
+            expected_move = spot_price * option_iv * math.sqrt(dte / 365) if dte > 0 else 0.0
+            if expected_move > 0:
+                breakeven_distance = abs(breakeven - spot_price)
+                moves_to_breakeven = breakeven_distance / expected_move
+                breakeven_moves_note = (
+                    f"breakeven is {moves_to_breakeven:.1f}x this contract's expected move "
+                    f"to expiration ({'inside' if moves_to_breakeven <= 1.0 else 'beyond'} a typical move for {expiration})"
+                )
         candidates.append(
             {
                 "play_type": play_type,
@@ -2292,7 +3074,8 @@ def scan_single_legs(
                 "pop": round(delta * 100, 1),
                 "max_profit": max_profit,
                 "max_risk": round(ask * 100, 2),
-                "breakeven": round(strike + ask if kind == "call" else strike - ask, 2),
+                "breakeven": breakeven,
+                "breakeven_moves_note": breakeven_moves_note,
                 "open_interest": open_interest,
                 "option_volume": option_volume,
                 "bid_ask_width": round(spread_width, 2),
@@ -2303,6 +3086,52 @@ def scan_single_legs(
             }
         )
     return candidates
+
+
+def save_chain_snapshot(
+    row: dict[str, str], all_candidates: list[dict[str, Any]], timestamp: datetime
+) -> None:
+    """Records what the qualifying candidates actually looked like at the
+    moment this specific trade was entered - the chosen contract plus every
+    other one that also qualified in the same scan, so a strike or
+    expiration that would have done better isn't lost the moment this
+    contract expires. Purely a recording step: any failure here must never
+    block or alter the trade itself, only mean this one snapshot is
+    missing."""
+    try:
+        CHAIN_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "trade_id": row.get("trade_id"),
+            "recorded_at": timestamp.isoformat(),
+            "ticker": row.get("ticker"),
+            "chosen": {
+                "play_type": row.get("play_type"),
+                "call_or_put": row.get("call_or_put"),
+                "strike": row.get("strike"),
+                "expiration": row.get("expiration"),
+                "entry_price": row.get("entry_price"),
+                "delta_at_entry": row.get("delta_at_entry"),
+                "iv_at_entry": row.get("iv_at_entry"),
+                "setup_score": row.get("setup_score"),
+            },
+            "other_candidates_this_cycle": [
+                {
+                    "play_type": c.get("play_type"),
+                    "call_or_put": c.get("call_or_put"),
+                    "strike": c.get("strike"),
+                    "expiration": c.get("expiration"),
+                    "entry_price": c.get("entry_price"),
+                    "delta": c.get("delta"),
+                    "score": c.get("score"),
+                }
+                for c in all_candidates
+                if str(c.get("strike")) != row.get("strike") or c.get("expiration") != row.get("expiration")
+            ],
+        }
+        destination = CHAIN_SNAPSHOT_DIR / f"{row.get('trade_id', 'trade')}.json"
+        destination.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    except Exception as exc:
+        print(f"Could not save chain snapshot for {row.get('trade_id')}: {exc}", file=sys.stderr)
 
 
 def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], timestamp: datetime) -> dict[str, str]:
@@ -2338,6 +3167,7 @@ def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], time
             "thesis": (
                 f"{candidate['play_type'].lower()} {candidate['call_or_put'].lower()} on {TICKER}: "
                 f"{candidate.get('setup_reason') or 'controlled scanner qualification'}"
+                + (f"; {candidate['breakeven_moves_note']}" if candidate.get("breakeven_moves_note") else "")
             ),
             "entry_confirmation": str(candidate.get("setup_reason") or "Controlled scanner filters passed."),
             "invalidation": (
@@ -2432,6 +3262,273 @@ def conservative_option_exit(quote: dict[str, Any]) -> float:
     return last
 
 
+def apply_greeks_persistence_gate(
+    row: dict[str, str], signal: str, note: str
+) -> tuple[str, str]:
+    """Tradier's Greeks refresh roughly once an hour, not continuously -
+    confirmed independently, not assumed. A delta-erosion or IV-crush exit
+    firing off a single reading can really be reacting to an hour-stale
+    snapshot rather than a genuine, current shift. This requires the same
+    condition to still be true on the *next* check before actually closing
+    anything - one noisy or stale reading can no longer close a position by
+    itself, it takes two checks agreeing. Every other signal (a real price
+    stop, a genuine trailing take-profit, expiry) is unaffected - this only
+    gates the two signals that depend on Greeks specifically."""
+    is_delta_signal = "delta eroded" in note
+    is_iv_signal = "IV crushed" in note
+
+    if not is_delta_signal:
+        row["delta_erosion_streak"] = "0"
+    if not is_iv_signal:
+        row["iv_crush_streak"] = "0"
+
+    if is_delta_signal:
+        streak = int(as_float(row.get("delta_erosion_streak"), 0.0) or 0)
+        if streak < 1:
+            row["delta_erosion_streak"] = "1"
+            return "HOLD", note + " (watching for confirmation on the next check - Greeks data can be up to an hour stale)"
+        row["delta_erosion_streak"] = "0"
+        return signal, note
+
+    if is_iv_signal:
+        streak = int(as_float(row.get("iv_crush_streak"), 0.0) or 0)
+        if streak < 1:
+            row["iv_crush_streak"] = "1"
+            return "HOLD", note + " (watching for confirmation on the next check - Greeks data can be up to an hour stale)"
+        row["iv_crush_streak"] = "0"
+        return signal, note
+
+    return signal, note
+
+
+def single_leg_exit_signal(
+    pnl_pct: float,
+    peak_pct: float,
+    current_delta: float | None,
+    entry_delta: float | None,
+    current_iv: float | None,
+    entry_iv: float | None,
+    expiring_soon: bool,
+    *,
+    stop_pct: float | None = None,
+) -> tuple[str, str]:
+    """Replaces the flat +20%/-15% exit with one that actually uses what's
+    already being tracked: the trade's own peak P&L (max_favorable_pct) and
+    the Greeks captured at entry, instead of watching price in isolation.
+
+    stop_pct lets the caller pass a wider stop for trades meant to hold
+    longer (swing) than one meant to resolve same-session (regular) -
+    defaults to the regular-trade stop if the caller doesn't specify one,
+    so nothing else calling this without the new keyword silently changes
+    behavior."""
+    target_pct = SINGLE_TAKE_PROFIT_PCT * 100
+    base_stop_pct = -((stop_pct if stop_pct is not None else SINGLE_STOP_PCT) * 100)
+
+    if peak_pct >= target_pct:
+        # Already a proven winner - protect the gain instead of hard-capping
+        # it at exactly the old flat target.
+        trail_floor = peak_pct - TRAIL_GIVEBACK_PCT
+        if pnl_pct <= trail_floor:
+            return "TAKE PROFIT", (
+                f"trailing stop: {pnl_pct:.0f}% is down {peak_pct - pnl_pct:.0f} pts "
+                f"from the {peak_pct:.0f}% peak"
+            )
+    else:
+        stop_floor = base_stop_pct
+        locked_breakeven = peak_pct >= BREAKEVEN_TRIGGER_PCT
+        if locked_breakeven:
+            stop_floor = max(stop_floor, 0.0)
+        if pnl_pct <= stop_floor:
+            if locked_breakeven:
+                # Named separately from TAKE PROFIT on purpose: the floor is
+                # breakeven, not a guaranteed exit exactly there. Price can
+                # move between checks, so this can close at a genuine small
+                # loss - the label has to say so honestly rather than
+                # calling every breakeven-lock exit a win.
+                if pnl_pct < 0:
+                    return "BREAKEVEN STOP", (
+                        f"breakeven lock: peaked at {peak_pct:.0f}% but slipped to "
+                        f"{pnl_pct:.0f}% before this check caught it"
+                    )
+                return "BREAKEVEN STOP", (
+                    f"breakeven lock: gave back the gain after peaking at {peak_pct:.0f}%"
+                )
+            return "STOP OUT", f"{pnl_pct:.0f}% pnl hit the {base_stop_pct:.0f}% stop"
+
+    if (
+        pnl_pct < 0
+        and current_delta is not None
+        and entry_delta is not None
+        and entry_delta != 0
+        and abs(current_delta) <= abs(entry_delta) * DELTA_EROSION_RATIO
+    ):
+        return "STOP OUT", (
+            f"delta eroded from {entry_delta:.2f} to {current_delta:.2f}; "
+            "the thesis lost its edge before the price stop hit"
+        )
+
+    if (
+        pnl_pct > 0
+        and current_iv is not None
+        and entry_iv is not None
+        and entry_iv > 0
+        and current_iv <= entry_iv * IV_CRUSH_RATIO
+    ):
+        return "TAKE PROFIT", (
+            f"IV crushed from {entry_iv:.2f} to {current_iv:.2f} while profitable; "
+            "locking in the gain before further decay"
+        )
+
+    if expiring_soon:
+        return "EXPIRY CLOSE", "closing ahead of expiration"
+
+    return "HOLD", "no exit condition met"
+
+
+def spread_exit_signal(
+    entry_credit: float,
+    cost_to_close: float,
+    current_short_delta: float | None,
+    entry_short_delta: float | None,
+    current_iv: float | None,
+    entry_iv: float | None,
+    expiring_soon: bool,
+) -> tuple[str, str]:
+    """Credit spreads are a different shape than single-leg: profit is
+    capped at the credit received, so there's no 'let it run' trailing stop
+    to add here the way single-leg needed - locking in roughly half of max
+    profit already fits that capped shape well and stays as the baseline.
+    What's new is defending EARLY when the short strike is genuinely
+    threatened, using the same entry-time Greeks already captured, instead
+    of only reacting once price has fully blown through the stop multiple."""
+    pnl = entry_credit - cost_to_close
+
+    if cost_to_close >= entry_credit * SPREAD_STOP_MULTIPLE:
+        return "STOP OUT", f"cost to close hit {SPREAD_STOP_MULTIPLE:.1f}x the credit received"
+
+    if pnl >= entry_credit * SPREAD_TAKE_PROFIT_PCT:
+        return "TAKE PROFIT", f"captured {SPREAD_TAKE_PROFIT_PCT * 100:.0f}% of max profit"
+
+    if (
+        current_short_delta is not None
+        and entry_short_delta is not None
+        and entry_short_delta != 0
+        and abs(current_short_delta) >= abs(entry_short_delta) * SPREAD_DELTA_DANGER_RATIO
+    ):
+        return "STOP OUT", (
+            f"short strike delta grew from {entry_short_delta:.2f} to {current_short_delta:.2f}; "
+            "the strike is genuinely threatened, not just moved against on price"
+        )
+
+    if (
+        current_iv is not None
+        and entry_iv is not None
+        and entry_iv > 0
+        and current_iv >= entry_iv * SPREAD_IV_EXPANSION_RATIO
+    ):
+        return "STOP OUT", (
+            f"IV expanded from {entry_iv:.2f} to {current_iv:.2f} before the position worked; "
+            "rising vol into an untested strike is a bigger warning than price alone"
+        )
+
+    if expiring_soon:
+        return "EXPIRY CLOSE", "closing ahead of expiration"
+
+    return "HOLD", "no exit condition met"
+
+
+THETA_BURDEN_EXIT_PCT = float(os.environ.get(
+    "THETA_BURDEN_EXIT_PCT", configured("theta_burden_exit_pct", 4.0)
+))
+THETA_BURDEN_MIN_HOLD_HOURS = float(os.environ.get(
+    "THETA_BURDEN_MIN_HOLD_HOURS", configured("theta_burden_min_hold_hours", 20.0)
+))
+THETA_BURDEN_STUCK_BAND_PCT = float(os.environ.get(
+    "THETA_BURDEN_STUCK_BAND_PCT", configured("theta_burden_stuck_band_pct", 6.0)
+))
+
+
+def check_time_efficiency_exit(
+    row: dict[str, str], theta: float | None, mark: float, pnl_pct: float, timestamp: datetime
+) -> tuple[bool, str]:
+    """The third leg of the exit model, alongside price stops and thesis
+    invalidation: a position can be neither winning nor losing by any
+    price-based measure while still quietly bleeding value to time decay
+    every single day it sits there. theta_burden = abs(theta)/mid measures
+    what fraction of the position's remaining value decays daily - a
+    position losing 4% of its premium per day needs different handling
+    than one losing 0.5%, even at identical current P&L. Only fires once a
+    trade has had real time to develop (default 20h) and only when it's
+    genuinely stuck near breakeven, not simply losing slowly toward a real
+    stop - that's what the price stop is for."""
+    if theta is None or mark <= 0:
+        return False, ""
+    entered_at = parse_iso(row.get("timestamp"))
+    if not entered_at:
+        return False, ""
+    held_hours = (timestamp - entered_at).total_seconds() / 3600
+    if held_hours < THETA_BURDEN_MIN_HOLD_HOURS:
+        return False, ""
+    if abs(pnl_pct) > THETA_BURDEN_STUCK_BAND_PCT:
+        return False, ""  # clearly moving one way or the other - not "stuck"
+    theta_burden_pct = (abs(theta) / mark) * 100
+    if theta_burden_pct >= THETA_BURDEN_EXIT_PCT:
+        return True, (
+            f"stuck near breakeven ({pnl_pct:+.0f}%) after {held_hours:.0f}h while losing "
+            f"{theta_burden_pct:.1f}% of remaining value to theta every day - the wait is "
+            "now costing more than the setup is worth"
+        )
+    return False, ""
+
+
+def check_thesis_invalidation(row: dict[str, str], timestamp: datetime) -> tuple[bool, str]:
+    """Every other exit reacts to price or Greeks - nothing checks whether
+    the actual reason the trade was entered is still true. A regular call
+    entered on a bullish read can sit near breakeven while the underlying
+    setup has fully reversed to bearish, and nothing catches that until
+    price itself eventually moves. This re-reads the same regime classifier
+    used at entry, from the same cached history everything else already
+    uses, and flags a genuine reversal - not just "no longer quite
+    qualifies," which could be ordinary noise, but the regime actually
+    flipping to the opposite direction from what justified the trade."""
+    play_type = row.get("play_type")
+    if play_type not in ("REGULAR", "SWING"):
+        return False, ""  # spreads aren't a directional bet - nothing to invalidate here
+    call_or_put = str(row.get("call_or_put") or "").lower()
+    if call_or_put not in ("call", "put"):
+        return False, ""
+    ticker = row.get("ticker") or TICKER
+    try:
+        daily = trade_daily_history(ticker)
+        intraday = trade_intraday_history(ticker)
+        if not daily:
+            return False, ""
+        spot_price = as_float((intraday[-1] if intraday else daily[-1]).get("close"))
+        if spot_price is None:
+            return False, ""
+        context = (
+            regular_market_context(daily, spot_price, intraday)
+            if play_type == "REGULAR"
+            else swing_market_context(daily, spot_price, intraday)
+        )
+    except Exception as exc:
+        # Same posture as every other exit check tonight: a broken read
+        # here must never block a real exit or crash position tracking -
+        # it just means this specific signal has nothing to say right now.
+        print(f"thesis invalidation check errored for {row.get('trade_id')}: {exc}", file=sys.stderr)
+        return False, ""
+    fresh_regime = str(context.get("regime") or "")
+    entered_bullish = call_or_put == "call"
+    reversed_to_bearish = entered_bullish and "BEARISH" in fresh_regime
+    reversed_to_bullish = not entered_bullish and "BULLISH" in fresh_regime
+    if reversed_to_bearish or reversed_to_bullish:
+        return True, (
+            f"the setup that justified this {'call' if entered_bullish else 'put'} has reversed - "
+            f"now reading {fresh_regime.lower()}"
+        )
+    return False, ""
+
+
 def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], timestamp: datetime) -> dict[str, Any]:
     entry = parse_entry_price(row)
     play_type = row.get("play_type")
@@ -2454,19 +3551,40 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
         cost_to_close = max(short_ask - long_bid, 0.0)
         pnl = entry - cost_to_close
         pnl_pct = (pnl / entry * 100) if entry else 0.0
-        signal = "HOLD"
-        if cost_to_close >= entry * SPREAD_STOP_MULTIPLE:
-            signal = "STOP OUT"
-        elif pnl >= entry * SPREAD_TAKE_PROFIT_PCT:
-            signal = "TAKE PROFIT"
-        elif expiring_soon:
-            signal = "EXPIRY CLOSE"
+        current_short_delta = greek(short_quote, "delta")
+        current_iv = iv_value(short_quote)
+        entry_short_delta = as_float(row.get("delta_at_entry"))
+        entry_iv = as_float(row.get("iv_at_entry"))
+        try:
+            signal, exit_note = spread_exit_signal(
+                entry,
+                cost_to_close,
+                current_short_delta,
+                entry_short_delta,
+                current_iv,
+                entry_iv,
+                expiring_soon,
+            )
+        except Exception as exc:
+            # If the smarter exit ever misbehaves, fall back to the plain
+            # price check rather than leaving a spread unmanaged.
+            print(f"spread_exit_signal errored, using plain stop/target: {exc}", file=sys.stderr)
+            exit_note = "fallback: plain stop/target (smart exit errored)"
+            if cost_to_close >= entry * SPREAD_STOP_MULTIPLE:
+                signal = "STOP OUT"
+            elif pnl >= entry * SPREAD_TAKE_PROFIT_PCT:
+                signal = "TAKE PROFIT"
+            elif expiring_soon:
+                signal = "EXPIRY CLOSE"
+            else:
+                signal = "HOLD"
         mark = cost_to_close
         details = {
             "cost_to_close": round(cost_to_close, 4),
-            "short_delta": greek(short_quote, "delta"),
+            "short_delta": current_short_delta,
             "net_theta": -(greek(short_quote, "theta") or 0.0) + (greek(long_quote, "theta") or 0.0),
-            "iv": iv_value(short_quote),
+            "iv": current_iv,
+            "exit_note": exit_note,
         }
     else:
         quote = quotes.get(row.get("option_symbol", ""))
@@ -2481,17 +3599,75 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
         mark = conservative_option_exit(quote)
         pnl = mark - entry
         pnl_pct = (pnl / entry * 100) if entry else 0.0
-        signal = "HOLD"
-        if pnl_pct <= -(SINGLE_STOP_PCT * 100):
-            signal = "STOP OUT"
-        elif pnl_pct >= SINGLE_TAKE_PROFIT_PCT * 100:
-            signal = "TAKE PROFIT"
-        elif expiring_soon:
-            signal = "EXPIRY CLOSE"
+        current_delta = greek(quote, "delta")
+        current_iv = iv_value(quote)
+        entry_delta = as_float(row.get("delta_at_entry"))
+        entry_iv = as_float(row.get("iv_at_entry"))
+        previous_peak = as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct
+        peak_pct = max(previous_peak, pnl_pct)
+        # Swing trades are meant to hold overnight for a next-day pop and
+        # need real room for normal overnight volatility a same-session
+        # regular trade never has to survive - using the regular stop for
+        # both was cutting swing positions for a loss on the entry day
+        # itself, before the setup they were entered for had a chance to
+        # develop.
+        stop_pct = SWING_STOP_PCT if row.get("play_type") == "SWING" else SINGLE_STOP_PCT
+        try:
+            signal, exit_note = single_leg_exit_signal(
+                pnl_pct,
+                peak_pct,
+                current_delta,
+                entry_delta,
+                current_iv,
+                entry_iv,
+                expiring_soon,
+                stop_pct=stop_pct,
+            )
+        except Exception as exc:
+            # If the smarter exit ever misbehaves, fall back to the plain
+            # price check rather than leaving a position unmanaged.
+            print(f"single_leg_exit_signal errored, using plain stop/target: {exc}", file=sys.stderr)
+            exit_note = "fallback: plain stop/target (smart exit errored)"
+            if pnl_pct <= -(stop_pct * 100):
+                signal = "STOP OUT"
+            elif pnl_pct >= SINGLE_TAKE_PROFIT_PCT * 100:
+                signal = "TAKE PROFIT"
+            elif expiring_soon:
+                signal = "EXPIRY CLOSE"
+            else:
+                signal = "HOLD"
+        signal, exit_note = apply_greeks_persistence_gate(row, signal, exit_note)
+        # Thesis invalidation only gets a say when nothing else already
+        # wants to exit - it's an additional way to catch a trade that's
+        # gone stale, never a reason to override a genuine price stop or
+        # take-profit that's already firing.
+        if signal == "HOLD":
+            invalidated, invalidation_note = check_thesis_invalidation(row, timestamp)
+            streak = int(as_float(row.get("thesis_invalid_streak"), 0.0) or 0)
+            if invalidated:
+                if streak < 1:
+                    row["thesis_invalid_streak"] = "1"
+                    exit_note = invalidation_note + " (watching for confirmation on the next check)"
+                else:
+                    row["thesis_invalid_streak"] = "0"
+                    signal = "THESIS INVALIDATED"
+                    exit_note = invalidation_note
+            else:
+                row["thesis_invalid_streak"] = "0"
+        # Time-efficiency exit: the third leg of the model, checked last
+        # and only if nothing above already wants out - a position can be
+        # neither winning, losing, nor thesis-broken while still quietly
+        # bleeding value to theta every day it sits stuck.
+        if signal == "HOLD":
+            theta_stuck, theta_note = check_time_efficiency_exit(row, greek(quote, "theta"), mark, pnl_pct, timestamp)
+            if theta_stuck:
+                signal = "TIME DECAY EXIT"
+                exit_note = theta_note
         details = {
-            "delta": greek(quote, "delta"),
+            "delta": current_delta,
             "theta": greek(quote, "theta"),
-            "iv": iv_value(quote),
+            "iv": current_iv,
+            "exit_note": exit_note,
         }
 
     result = {
@@ -2522,7 +3698,6 @@ def apply_evaluation_to_row(row: dict[str, str], evaluation: dict[str, Any], tim
 
 
 def close_row(row: dict[str, str], evaluation: dict[str, Any], timestamp: datetime) -> str:
-    signal = evaluation.get("signal")
     tracked_exit = as_float(evaluation.get("mark"))
     tracked_exit = None if tracked_exit is None else round(tracked_exit, 2)
     entry = parse_entry_price(row)
@@ -2535,14 +3710,12 @@ def close_row(row: dict[str, str], evaluation: dict[str, Any], timestamp: dateti
         realized = round((tracked_exit - entry) * 100)
 
     pnl_pct = (realized / (entry * 100) * 100) if entry else 0.0
-    if signal == "TAKE PROFIT":
-        outcome = "WIN"
-    elif signal == "STOP OUT":
-        outcome = "LOSS"
-    else:
-        # New lifecycle is intentionally binary: a closed paper trade either
-        # made money or did not. Legacy SCRATCH rows remain readable.
-        outcome = "WIN" if pnl_pct > 0 else "LOSS"
+    # Outcome always reflects the actual realized result, never the signal
+    # name alone. A signal describes which rule fired the exit, not whether
+    # money was actually made - trusting the name let a real loss get
+    # recorded as a WIN when price moved between checks. This must stay
+    # unconditional so no future signal name can reintroduce that gap.
+    outcome = "WIN" if pnl_pct > 0 else "LOSS"
 
     row["outcome"] = outcome
     row["pct_gain_loss"] = round_or_blank(pnl_pct, 0)
@@ -2984,6 +4157,7 @@ class DiscordTracker:
         channel_id: str,
         content: str,
         search_token: str,
+        components: list[dict[str, Any]] | None = None,
     ) -> tuple[str, int]:
         """Keep exactly one bot-authored card for a stable title in a channel."""
         if not channel_id or not search_token:
@@ -2993,6 +4167,8 @@ class DiscordTracker:
             "embeds": [discord_card(content[:6000])],
             "allowed_mentions": {"parse": []},
         }
+        if components:
+            payload["components"] = components
         recent = self._request("GET", f"/channels/{channel_id}/messages?limit=100")
         if not isinstance(recent, list):
             recent = []
@@ -3041,6 +4217,125 @@ class DiscordTracker:
         content: str,
     ) -> None:
         self.upsert_trade_message(logical_name, state, "result", trade_id, content)
+
+    def wipe_channel_messages(self, logical_name: str) -> int:
+        """Delete every bot-authored message in a channel directly, without
+        depending on the local log or trade-id tracking to know what's
+        there. Built specifically for reset: trade-id-driven deletion only
+        knows about trades still present in the current log, so anything
+        orphaned by an earlier, less complete reset attempt is invisible to
+        it. This asks Discord what's actually in the channel instead.
+        Never touches a message a real person posted - only ones Discord
+        itself marks as bot- or webhook-authored.
+
+        Runs as several passes, not one: a single list-then-delete pass can
+        come up short if a burst of deletes hits a rate limit partway
+        through. Repeating until a pass finds genuinely nothing left is
+        more reliable than trusting any single pass was complete - and one
+        message failing to delete no longer aborts the rest of that pass,
+        it just gets picked up on the next one."""
+        channel_id = self.channels.get(logical_name)
+        if not self.ready or not channel_id:
+            return 0
+        removed = 0
+        for _ in range(5):
+            deleted_this_pass = 0
+            before = ""
+            for _ in range(50):
+                suffix = f"&before={before}" if before else ""
+                page = self._request("GET", f"/channels/{channel_id}/messages?limit=100{suffix}")
+                if not isinstance(page, list) or not page:
+                    break
+                for message in page:
+                    author = message.get("author") or {}
+                    if not (author.get("bot") or message.get("webhook_id")):
+                        continue
+                    message_id = str(message.get("id") or "")
+                    if not message_id:
+                        continue
+                    try:
+                        self._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
+                        removed += 1
+                        deleted_this_pass += 1
+                    except DiscordError as exc:
+                        if "HTTP 404" not in str(exc):
+                            print(f"Could not delete message {message_id} in {logical_name}: {exc}", file=sys.stderr)
+                before = str(page[-1].get("id") or "")
+                if len(page) < 100 or not before:
+                    break
+            self._channel_message_cache.pop(channel_id, None)
+            if deleted_this_pass == 0:
+                break
+        return removed
+
+    def wipe_channel_threads(self, logical_name: str) -> int:
+        """Delete every thread in a forum channel outright - active and
+        archived both - same reasoning as wipe_channel_messages: this asks
+        Discord directly instead of relying on which trade-journal threads
+        the current log still remembers creating.
+
+        Runs as several passes, not one: a single list-then-delete pass can
+        come up short if a burst of deletes hits a rate limit partway
+        through, or a thread gets created in the moment between listing and
+        deleting. Repeating until a pass finds genuinely nothing left is
+        more reliable than trusting any single pass was complete."""
+        removed = 0
+        for _ in range(5):
+            found = self._list_channel_threads(logical_name)
+            if not found:
+                break
+            for thread_id in found:
+                try:
+                    self._request("DELETE", f"/channels/{thread_id}")
+                    removed += 1
+                except DiscordError as exc:
+                    if "HTTP 404" not in str(exc):
+                        print(f"Could not delete thread {thread_id}: {exc}", file=sys.stderr)
+        return removed
+
+    def _list_channel_threads(self, logical_name: str) -> set[str]:
+        channel_id = self.channels.get(logical_name)
+        if not self.ready or not channel_id:
+            return set()
+        thread_ids: set[str] = set()
+        try:
+            # This must be a guild-level call, not a channel-level one -
+            # Discord's own API confirms /channels/{id}/threads/active
+            # returns a 404, it was never a valid endpoint. The guild-wide
+            # list has to be filtered down to just this channel's threads
+            # afterward.
+            active = self._request("GET", f"/guilds/{self.guild_id}/threads/active")
+            for thread in (active or {}).get("threads", []) if isinstance(active, dict) else []:
+                if str(thread.get("parent_id") or "") != str(channel_id):
+                    continue
+                thread_id = str(thread.get("id") or "")
+                if thread_id:
+                    thread_ids.add(thread_id)
+        except DiscordError as exc:
+            print(f"Could not list active threads in {logical_name}: {exc}", file=sys.stderr)
+        before = ""
+        for _ in range(50):
+            suffix = f"?before={before}" if before else ""
+            try:
+                archived = self._request(
+                    "GET", f"/channels/{channel_id}/threads/archived/public{suffix}"
+                )
+            except DiscordError as exc:
+                print(f"Could not list archived threads in {logical_name}: {exc}", file=sys.stderr)
+                break
+            page = (archived or {}).get("threads", []) if isinstance(archived, dict) else []
+            if not page:
+                break
+            for thread in page:
+                thread_id = str(thread.get("id") or "")
+                if thread_id:
+                    thread_ids.add(thread_id)
+            if not (archived or {}).get("has_more"):
+                break
+            before = str(page[-1].get("thread_metadata", {}).get("archive_timestamp") or "")
+            if not before:
+                break
+        return thread_ids
 
     def delete_trade_message(
         self,
@@ -3351,6 +4646,176 @@ def sync_existing_open_threads(
     return created
 
 
+def refresh_all_summary_dashboards(
+    discord: DiscordTracker, report_state: dict[str, Any], rows: list[dict[str, str]]
+) -> None:
+    """Rebuild every summary dashboard - performance, strategy breakdowns,
+    ticker results, per-play-style, wins/losses/scratches - directly against
+    Discord, using the same low-level upsert primitive throughout rather
+    than delegating to update_performance_pages. That function gets
+    replaced with a no-op by a separate reconciliation system once it
+    installs itself in the real running system, on purpose, to stop two
+    systems fighting over the same cards - which makes it unsafe for
+    anything else to depend on by reference. This function never depends on
+    what that other system has done to update_performance_pages, so every
+    caller here stays correct regardless of install order or which system
+    is currently active."""
+    summary_channels = [
+        ("performance_stats", "performance-stats", format_performance_stats, "Performance Dashboard"),
+        ("strategy_breakdown", "strategy-breakdown", format_strategy_breakdown, "Strategy Breakdown"),
+        ("ticker_results", "ticker-results", format_ticker_results, "Ticker Results"),
+    ]
+    for logical_name, token, formatter, search_text in summary_channels:
+        try:
+            discord.upsert_channel_message(
+                logical_name, report_state, token, formatter(rows), search_token=search_text
+            )
+        except DiscordError as exc:
+            print(f"Could not refresh {logical_name}: {exc}", file=sys.stderr)
+
+    for style in PLAY_STYLE_CHANNELS:
+        logical_name = "strategy_" + style.replace("-", "_")
+        try:
+            discord.upsert_channel_message(
+                logical_name,
+                report_state,
+                f"play-style-performance:{style}",
+                format_play_style_performance(rows, style),
+                search_token=f"{style.replace('-', ' ').title()} Performance",
+            )
+        except DiscordError as exc:
+            print(f"Could not refresh {logical_name}: {exc}", file=sys.stderr)
+
+    for logical_name, token, outcome_label, search_text in (
+        ("wins", "wins-summary", "WIN", "Wins Summary"),
+        ("losses", "losses-summary", "LOSS", "Losses Summary"),
+        ("scratches", "scratches-summary", "SCRATCH", "Scratches Summary"),
+    ):
+        try:
+            discord.upsert_channel_message(
+                logical_name,
+                report_state,
+                token,
+                format_result_channel_summary(rows, outcome_label),
+                search_token=search_text,
+            )
+        except DiscordError as exc:
+            print(f"Could not refresh {logical_name}: {exc}", file=sys.stderr)
+
+
+def reset_all_trade_data(discord: DiscordTracker, *, archive: bool) -> dict[str, Any]:
+    """Owner-triggered wipe of every tracked trade: paper data only, never
+    touches a real account, but this is the one genuinely destructive action
+    in the whole system, so it earns real care.
+
+    Deliberately channel-driven, not log-driven: earlier versions of this
+    function found what to delete by walking the current log's rows and
+    trade IDs, which only works for trades the log still remembers. A trade
+    already cleared by an earlier, less complete reset attempt - or removed
+    from the log for any other reason - was invisible to that approach,
+    leaving its Discord messages orphaned forever. This version asks
+    Discord directly what's sitting in each live-trading-desk channel and
+    clears that, so "reset means zero" holds regardless of what the log
+    currently contains.
+
+    Every trade-journal thread is deleted outright - not archived. An
+    archived thread can still surface in Discord's own UI depending on how
+    it's filtered, and "reset means zero, no scrollbar" means genuinely
+    gone. Data safety for a reset is handled separately: if archive=True,
+    the full pre-reset log is saved to a timestamped file first, so nothing
+    is lost even though every visible trace in Discord goes back to zero."""
+    rows = read_log()
+    backup_path: str | None = None
+    if archive and rows:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        backup_dir = STATE_DIR / "archive"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = now_ct().strftime("%Y%m%d-%H%M%S")
+        backup_file = backup_dir / f"plays-log-{stamp}.csv"
+        with backup_file.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=LOG_HEADER, extrasaction="ignore")
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({column: row.get(column, "") for column in LOG_HEADER})
+        backup_path = str(backup_file)
+
+    deleted_threads = 0
+    try:
+        deleted_threads = discord.wipe_channel_threads("forum")
+    except DiscordError as exc:
+        print(f"Could not wipe trade-journal threads: {exc}", file=sys.stderr)
+
+    report_state = read_report_state()
+    cleared_cards = 0
+    for logical_name in ("qualified", "entry", "updates", "wins", "losses", "scratches", "expired"):
+        try:
+            cleared_cards += discord.wipe_channel_messages(logical_name)
+        except DiscordError as exc:
+            print(f"Could not wipe {logical_name}: {exc}", file=sys.stderr)
+
+    # Zero out every summary dashboard through the same reliable, shared
+    # helper every caller uses now - see refresh_all_summary_dashboards for
+    # why this can never depend on update_performance_pages directly.
+    refresh_all_summary_dashboards(discord, report_state, [])
+    # Fresh state means genuinely fresh - nothing left marked "already
+    # routed" from before the reset.
+    report_state["routed_closed_trade_ids"] = []
+    write_report_state(report_state)
+
+    write_log([])
+    # Guard against the one real race here: a different process (the scanner
+    # or the position tracker, each in their own process, so no in-process
+    # lock reaches them) could be mid read-modify-write on this same file
+    # right now and overwrite the empty log with stale data a moment later.
+    # Re-checking once and clearing again is a cheap, honest mitigation, not
+    # a guarantee - this command is meant to be run when things are quiet.
+    time.sleep(0.5)
+    if read_log():
+        write_log([])
+
+    return {
+        "cleared_trades": len(rows),
+        "deleted_threads": deleted_threads,
+        "cleared_cards": cleared_cards,
+        "backup_path": backup_path,
+    }
+
+
+def archive_trade_for_comparison(trade_id: str) -> str:
+    """Save one specific closed trade to a standing comparison file, kept
+    separate from the live log and from reset-time backups, so results from
+    different generations of trading logic can be compared later. Idempotent
+    - archiving the same trade twice (e.g. a double-click) is a harmless
+    no-op rather than a duplicate row."""
+    trade_id = str(trade_id or "").strip()
+    if not trade_id:
+        return "no trade id provided"
+    rows = read_log()
+    match = next(
+        (row for row in rows if str(row.get("trade_id") or "") == trade_id), None
+    )
+    if not match:
+        return "trade not found - it may have already been cleared by a reset"
+
+    archive_path = STATE_DIR / "archive" / "comparison-trades.csv"
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_ids: set[str] = set()
+    if archive_path.exists():
+        with archive_path.open("r", newline="", encoding="utf-8") as handle:
+            for existing_row in csv.DictReader(handle):
+                existing_ids.add(str(existing_row.get("trade_id") or ""))
+    if trade_id in existing_ids:
+        return "already archived"
+
+    write_header = not archive_path.exists()
+    with archive_path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=LOG_HEADER, extrasaction="ignore")
+        if write_header:
+            writer.writeheader()
+        writer.writerow({column: match.get(column, "") for column in LOG_HEADER})
+    return "archived"
+
+
 def sync_all_trade_journals(
     rows: list[dict[str, str]],
     discord: DiscordTracker,
@@ -3406,6 +4871,19 @@ def sync_all_trade_journals(
                 thread_id,
                 close_alert_text(row, stored_close_evaluation(row)),
                 token,
+                components=[
+                    {
+                        "type": 1,
+                        "components": [
+                            {
+                                "type": 2,
+                                "style": 2,
+                                "label": "📦 Archive for comparison",
+                                "custom_id": f"archive-trade:{trade_id}",
+                            }
+                        ],
+                    }
+                ],
             )
             discord.set_thread_status(thread_id, outcome, archive=True)
             row["discord_status"] = outcome
@@ -3437,9 +4915,10 @@ def post_material_update(row: dict[str, str], evaluation: dict[str, Any], discor
         return
     content = position_update_text(row, evaluation)
     status = "HOLDING"
-    if evaluation.get("signal") == "TAKE PROFIT":
+    signal = evaluation.get("signal")
+    if signal == "TAKE PROFIT":
         status = "TARGET HIT"
-    elif evaluation.get("signal") == "STOP OUT":
+    elif signal in {"STOP OUT", "BREAKEVEN STOP", "THESIS INVALIDATED"}:
         status = "STOP WARNING"
     try:
         discord.send_thread(row["discord_thread_id"], content)
@@ -4281,17 +5760,29 @@ def format_scanner_feed(
         for item in expirations
     ) or "None available"
     by_strategy = stats.get("candidate_counts") or {}
-    context = stats.get("market_context") or {}
-    failures = context.get("failures") or []
+    regular_ctx = stats.get("regular_market_context") or {}
+    swing_ctx = stats.get("swing_market_context") or stats.get("market_context") or {}
+    spread_ctx = stats.get("spread_market_context") or {}
     trend_text = (
-        f"**Regime:** {context.get('regime', 'Unavailable')}\n"
-        f"**SMA20 / SMA50:** {fmt_option_price(as_float(context.get('sma20')))} / "
-        f"{fmt_option_price(as_float(context.get('sma50')))}\n"
-        f"**RSI(14):** {round_or_blank(as_float(context.get('rsi14')), 1) or '—'}\n"
-        f"**Gate:** {'Passed' if context.get('qualified') else 'Blocked'}"
+        f"**REGULAR regime:** {regular_ctx.get('regime', 'Unavailable')} "
+        f"({'Passed' if regular_ctx.get('qualified') else 'Blocked'})\n"
+        f"**SWING regime:** {swing_ctx.get('regime', 'Unavailable')} "
+        f"({'Passed' if swing_ctx.get('qualified') else 'Blocked'})\n"
+        f"**SPREAD regime:** {spread_ctx.get('regime', 'Unavailable')} "
+        f"({'Passed' if spread_ctx.get('qualified') else 'Blocked'}) "
+        f"· IV/RV {round_or_blank(as_float(spread_ctx.get('iv_rv_ratio')), 2) or '—'} "
+        f"· IV rank {spread_ctx.get('iv_rank') if spread_ctx.get('iv_rank') is not None else 'building'}\n"
+        f"**SMA20 / SMA50:** {fmt_option_price(as_float(swing_ctx.get('sma20')))} / "
+        f"{fmt_option_price(as_float(swing_ctx.get('sma50')))}\n"
+        f"**RSI(14):** {round_or_blank(as_float(swing_ctx.get('rsi14')), 1) or '—'}"
     )
-    if failures:
-        trend_text += "\n**Blocked by:** " + "; ".join(failures)
+    blocked_by = (
+        list(regular_ctx.get("failures") or [])
+        + list(swing_ctx.get("failures") or [])
+        + list(spread_ctx.get("failures") or [])
+    )
+    if blocked_by:
+        trend_text += "\n**Blocked by:** " + "; ".join(blocked_by)
     strategy_text = "\n".join(
         f"• **{label}:** {count}" for label, count in by_strategy.items() if count
     ) or "None"
@@ -4596,6 +6087,35 @@ def initialize_discord() -> DiscordTracker:
     return tracker
 
 
+DEFAULT_TRADE_TYPES_ENABLED = {
+    "regular_calls": True,
+    "regular_puts": True,
+    "swing_calls": True,
+    "swing_puts": True,
+    "bull_put_spreads": True,
+    "bear_call_spreads": True,
+}
+
+
+def trade_types_enabled() -> dict[str, bool]:
+    configured_value = configured("trade_types_enabled", {})
+    merged = dict(DEFAULT_TRADE_TYPES_ENABLED)
+    if isinstance(configured_value, dict):
+        for key in merged:
+            if key in configured_value:
+                merged[key] = bool(configured_value[key])
+    return merged
+
+
+def _unavailable_context(reason: str) -> dict[str, Any]:
+    return {
+        "qualified": False,
+        "regime": "NO TRADE",
+        "reason": reason,
+        "failures": [reason],
+    }
+
+
 def scan_candidates(
     spot_price: float,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
@@ -4605,11 +6125,22 @@ def scan_candidates(
         intraday_history = get_intraday_history(TICKER)
     except (TradierError, requests.RequestException):
         intraday_history = []
-    market_context = directional_market_context(
-        get_daily_history(TICKER),
-        spot_price,
-        intraday_history,
-    )
+    daily_history = get_daily_history(TICKER)
+
+    enabled = trade_types_enabled()
+
+    try:
+        regular_context = regular_market_context(daily_history, spot_price, intraday_history)
+    except Exception as exc:  # A bad regular-trader read should not block swing.
+        regular_context = _unavailable_context(f"regular trader errored: {exc}")
+
+    try:
+        swing_context = swing_market_context(daily_history, spot_price, intraday_history)
+    except Exception as exc:  # A bad swing-trader read should not block regular.
+        swing_context = _unavailable_context(f"swing trader errored: {exc}")
+
+    spread_context = _unavailable_context("spread trader has not run yet")
+
     candidate_expirations: list[tuple[str, str]] = []
     if near_expirations:
         candidate_expirations.append((near_expirations[0], "REGULAR"))
@@ -4624,13 +6155,14 @@ def scan_candidates(
         "puts": 0,
         "qualified_candidates": 0,
         "candidate_counts": {},
-        "market_context": market_context,
+        "regular_market_context": regular_context,
+        "swing_market_context": swing_context,
+        "spread_market_context": spread_context,
+        # Kept for any older reader that still expects a single combined view.
+        "market_context": swing_context,
     }
     candidates: list[dict[str, Any]] = []
     quote_map: dict[str, dict[str, Any]] = {}
-
-    if not market_context["qualified"]:
-        return candidates, quote_map, stats
 
     def add_candidates(label: str, found: list[dict[str, Any]]) -> None:
         candidates.extend(found)
@@ -4638,39 +6170,99 @@ def scan_candidates(
 
     for expiration, bucket in candidate_expirations:
         stats["expirations"].append({"expiration": expiration, "bucket": bucket})
-        allowed_strikes = set(filter_strikes(get_strikes(TICKER, expiration), spot_price))
-        raw_chain = get_chain(TICKER, expiration)
-        stats["raw_contracts"] += len(raw_chain)
-        chain = [
-            option for option in raw_chain
-            if float(option.get("strike", -1)) in allowed_strikes
-        ]
-        stats["band_contracts"] += len(chain)
-        for option in chain:
-            if option.get("symbol"):
-                quote_map[option["symbol"]] = option
-        calls = [option for option in chain if option.get("option_type") == "call"]
-        puts = [option for option in chain if option.get("option_type") == "put"]
-        stats["calls"] += len(calls)
-        stats["puts"] += len(puts)
-        regime = market_context["regime"]
-        if regime == "BULLISH / CONTROLLED":
-            add_candidates(
-                f"{bucket} long calls",
-                scan_single_legs(calls, "call", expiration, bucket, market_context),
-            )
-            if bucket == "SWING":
-                add_candidates("Bull put spreads", scan_credit_spreads(puts, "put", expiration, market_context))
-        elif regime == "BEARISH / CONTROLLED":
-            add_candidates(
-                f"{bucket} long puts",
-                scan_single_legs(puts, "put", expiration, bucket, market_context),
-            )
-            if bucket == "SWING":
-                add_candidates("Bear call spreads", scan_credit_spreads(calls, "call", expiration, market_context))
-        elif regime == "NEUTRAL / RANGE" and bucket == "SWING":
-            add_candidates("Call credit spreads", scan_credit_spreads(calls, "call", expiration, market_context))
-            add_candidates("Put credit spreads", scan_credit_spreads(puts, "put", expiration, market_context))
+        try:
+            allowed_strikes = set(filter_strikes(get_strikes(TICKER, expiration), spot_price))
+            raw_chain = get_chain(TICKER, expiration)
+            stats["raw_contracts"] += len(raw_chain)
+            chain = [
+                option for option in raw_chain
+                if float(option.get("strike", -1)) in allowed_strikes
+            ]
+            stats["band_contracts"] += len(chain)
+            for option in chain:
+                if option.get("symbol"):
+                    quote_map[option["symbol"]] = option
+            calls = [option for option in chain if option.get("option_type") == "call"]
+            puts = [option for option in chain if option.get("option_type") == "put"]
+            stats["calls"] += len(calls)
+            stats["puts"] += len(puts)
+
+            if bucket == "REGULAR":
+                if not regular_context.get("qualified"):
+                    continue
+                regime = regular_context["regime"]
+                if regime == "BULLISH / CONTROLLED" and enabled["regular_calls"]:
+                    add_candidates(
+                        "REGULAR long calls",
+                        scan_single_legs(calls, "call", expiration, bucket, regular_context, spot_price),
+                    )
+                elif regime == "BEARISH / CONTROLLED" and enabled["regular_puts"]:
+                    add_candidates(
+                        "REGULAR long puts",
+                        scan_single_legs(puts, "put", expiration, bucket, regular_context, spot_price),
+                    )
+            elif bucket == "SWING":
+                # One IV reading per ticker per day, from whichever contract
+                # sits closest to the money in this chain, feeds tomorrow's
+                # (and eventually today's) IV rank calculation. The spread
+                # trader's own gate (implied vs realized volatility) uses
+                # this same reading immediately - it doesn't wait on history.
+                atm_iv = None
+                try:
+                    priced = [option for option in (calls or puts) if as_float(option.get("strike")) is not None]
+                    if priced:
+                        atm = min(priced, key=lambda option: abs(as_float(option["strike"]) - spot_price))
+                        atm_iv = iv_value(atm)
+                        if atm_iv is not None:
+                            record_iv_snapshot(TICKER, atm_iv, now_ct().date().isoformat())
+                except Exception as exc:
+                    print(f"{TICKER} IV snapshot failed: {exc}", file=sys.stderr)
+
+                try:
+                    today_str = now_ct().date().isoformat()
+                    ticker_rank = iv_rank(TICKER)
+                    pooled_rank, pooled_samples = pooled_iv_rank(atm_iv, today_str)
+                    spread_context = spread_market_context(
+                        daily_history, spot_price, atm_iv, ticker_rank, pooled_rank
+                    )
+                    spread_context["pooled_iv_sample_size"] = pooled_samples
+                except Exception as exc:  # A bad spread read should not block calls/puts.
+                    spread_context = _unavailable_context(f"spread trader errored: {exc}")
+                stats["spread_market_context"] = spread_context
+
+                if swing_context.get("qualified"):
+                    regime = swing_context["regime"]
+                    if regime == "BULLISH / CONTROLLED" and enabled["swing_calls"]:
+                        add_candidates(
+                            "SWING long calls",
+                            scan_single_legs(calls, "call", expiration, bucket, swing_context, spot_price),
+                        )
+                    elif regime == "BEARISH / CONTROLLED" and enabled["swing_puts"]:
+                        add_candidates(
+                            "SWING long puts",
+                            scan_single_legs(puts, "put", expiration, bucket, swing_context, spot_price),
+                        )
+
+                # Spreads run on their own dedicated, non-directional read -
+                # a premium-selling bet, not a call on which way price goes -
+                # so this is deliberately independent of the regime above.
+                if spread_context.get("qualified") and spread_context.get("spread_direction") in ("both", "bull_put_only"):
+                    if enabled["bull_put_spreads"]:
+                        add_candidates(
+                            "Bull put spreads",
+                            scan_credit_spreads(puts, "put", expiration, spread_context),
+                        )
+                if spread_context.get("qualified") and spread_context.get("spread_direction") in ("both", "bear_call_only"):
+                    if enabled["bear_call_spreads"]:
+                        add_candidates(
+                            "Bear call spreads",
+                            scan_credit_spreads(calls, "call", expiration, spread_context),
+                        )
+        except Exception as exc:
+            # One expiration/bucket failing should not take down the other,
+            # and must never take down the scan process itself.
+            print(f"{TICKER} {bucket} scan step failed: {exc}", file=sys.stderr)
+            continue
     stats["qualified_candidates"] = len(candidates)
     return candidates, quote_map, stats
 
@@ -4772,7 +6364,7 @@ def main(*, publish_shared: bool = True) -> int:
         )
         safe_discord_call(
             "performance pages",
-            lambda: update_performance_pages(discord, report_state, rows),
+            lambda: refresh_all_summary_dashboards(discord, report_state, rows),
         )
 
     closed_results_backfilled = 0
@@ -4814,50 +6406,51 @@ def main(*, publish_shared: bool = True) -> int:
             f"Market closed · maintenance sync complete · "
             f"{len(open_rows(rows))} open trade(s)"
         )
-        safe_discord_call(
-            "closed status",
-            lambda: update_scanner_status(
-                discord,
-                report_state,
-                market_open=False,
-                summary=closed_summary,
-                rows=rows,
-                timestamp=timestamp,
-            ),
-        )
-        safe_discord_call(
-            "performance pages",
-            lambda: update_performance_pages(discord, report_state, rows),
-        )
-        safe_discord_call(
-            "report sync",
-            lambda: sync_reports(
-                discord,
-                report_state,
-                rows,
-                timestamp,
-                market_open=False,
-            ),
-        )
-        safe_discord_call(
-            "closed scanner feed",
-            lambda: discord.upsert_channel_message(
-                "scanner_feed",
-                report_state,
-                f"scanner-closed:{timestamp.date().isoformat()}",
-                format_closed_scanner_feed(rows, timestamp),
-                search_token="Market closed. No option-chain scan was performed.",
-            ),
-        )
-        safe_discord_call(
-            "workflow log",
-            lambda: post_workflow_log(
-                discord,
-                timestamp=timestamp,
-                result=f"OK · market closed · {len(open_rows(rows))} open",
-            ),
-        )
-        render_dashboard(None, rows, f"Market closed at {portable_strftime(timestamp, '%-I:%M %p %Z')}; maintenance sync only.")
+        if publish_shared:
+            safe_discord_call(
+                "closed status",
+                lambda: update_scanner_status(
+                    discord,
+                    report_state,
+                    market_open=False,
+                    summary=closed_summary,
+                    rows=rows,
+                    timestamp=timestamp,
+                ),
+            )
+            safe_discord_call(
+                "performance pages",
+                lambda: refresh_all_summary_dashboards(discord, report_state, rows),
+            )
+            safe_discord_call(
+                "report sync",
+                lambda: sync_reports(
+                    discord,
+                    report_state,
+                    rows,
+                    timestamp,
+                    market_open=False,
+                ),
+            )
+            safe_discord_call(
+                "closed scanner feed",
+                lambda: discord.upsert_channel_message(
+                    "scanner_feed",
+                    report_state,
+                    f"scanner-closed:{timestamp.date().isoformat()}",
+                    format_closed_scanner_feed(rows, timestamp),
+                    search_token="Market closed. No option-chain scan was performed.",
+                ),
+            )
+            safe_discord_call(
+                "workflow log",
+                lambda: post_workflow_log(
+                    discord,
+                    timestamp=timestamp,
+                    result=f"OK · market closed · {len(open_rows(rows))} open",
+                ),
+            )
+            render_dashboard(None, rows, f"Market closed at {portable_strftime(timestamp, '%-I:%M %p %Z')}; maintenance sync only.")
         write_log(rows)
         write_report_state(report_state)
         print(f"Market closed ({timestamp.isoformat()}); maintenance sync complete.")
@@ -4913,7 +6506,7 @@ def main(*, publish_shared: bool = True) -> int:
                 )
                 continue
             signal = evaluation.get("signal")
-            if signal in {"STOP OUT", "TAKE PROFIT", "EXPIRY CLOSE"}:
+            if signal in {"STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT"}:
                 close_row(row, evaluation, timestamp)
                 safe_discord_call("close routing", lambda r=row, e=evaluation: post_close(r, e, discord, report_state))
                 closed_count += 1
@@ -4931,14 +6524,31 @@ def main(*, publish_shared: bool = True) -> int:
         # Scan for new candidates and choose the highest-quality unique set.
         candidates, candidate_quote_map, scan_stats = scan_candidates(spot_price)
         eligible = [candidate for candidate in candidates if not recently_tracked(rows, candidate, timestamp)]
+        # Time-of-day exclusion: the opening minutes and the midday lull
+        # both distort entries for reasons that have nothing to do with
+        # the actual thesis - this only blocks new entries, never touches
+        # exits or position management already in flight.
+        if eligible and entry_window_blocked(timestamp):
+            eligible = []
+        # Earnings blackout: long options bought close to an earnings date
+        # can lose value from IV crush alone, independent of whether the
+        # stock even moves the predicted direction. days_until_earnings
+        # fails open (returns None) on any lookup problem, so a broken or
+        # reshaped response from this beta endpoint can never block every
+        # trade - only a genuinely confirmed nearby earnings date does.
+        if eligible:
+            earnings_gap = days_until_earnings(TICKER)
+            if earnings_gap is not None and earnings_gap <= EARNINGS_BLACKOUT_DAYS:
+                eligible = []
         eligible.sort(key=lambda candidate: candidate.get("score", 0), reverse=True)
-        selected = eligible
+        selected = apply_ticker_exposure_cap(eligible, rows, TICKER)
 
         new_rows: list[dict[str, str]] = []
         for candidate in selected:
             row = candidate_to_row(candidate, rows, timestamp)
             rows.append(row)
             new_rows.append(row)
+            save_chain_snapshot(row, candidates, timestamp)
             safe_discord_call("new trade post", lambda r=row: post_new_trade(r, discord, report_state))
 
         # Give newly opened rows their initial zero-P&L values and preserve all state.
@@ -4976,7 +6586,7 @@ def main(*, publish_shared: bool = True) -> int:
             )
             safe_discord_call(
                 "performance pages",
-                lambda: update_performance_pages(discord, report_state, rows),
+                lambda: refresh_all_summary_dashboards(discord, report_state, rows),
             )
             safe_discord_call(
                 "report sync",
