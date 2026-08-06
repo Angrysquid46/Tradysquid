@@ -31,10 +31,10 @@ docs/trade-snapshots/
 docs/tickers/
 docs/chain-snapshots/
 .venv-tradysquid/
-state/
-data/
-logs/
-archive/
-backups/
+/state/
+/data/
+/logs/
+/archive/
+/backups/
 SETUP-RESULT.json
 SETUP-RESULT.txt
