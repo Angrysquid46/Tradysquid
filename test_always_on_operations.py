@@ -84,6 +84,47 @@ class AlwaysOnOperationsTests(unittest.TestCase):
         self.assertEqual(rows["overdue"]["status"], "OVERDUE")
         self.assertEqual(rows["market-only"]["status"], "PAUSED")
 
+    def test_system_activity_channel_key_is_actually_mapped(self) -> None:
+        # system_activity_job has been posting to this logical channel name
+        # since before tonight - if it isn't a real, mapped entry, every
+        # post it ever made was a silent no-op, landing nowhere.
+        self.assertEqual(engine.ford_scan.CHANNEL_NAMES["system_activity"], "system-activity")
+
+    def test_activity_card_shows_live_stream_status_from_position_tracker(self) -> None:
+        directory, db_path, heartbeat = self.temporary_database()
+        self.addCleanup(directory.cleanup)
+        with patch.object(engine, "DB_PATH", db_path):
+            connection = engine.connect_db()
+            try:
+                engine.store_observation(
+                    connection,
+                    "position-tracker",
+                    {"open": 2, "closed": 0, "refreshed": 2, "stream": "connected", "stream_error": ""},
+                )
+                connected_card = operations.activity_card(connection, [])
+            finally:
+                connection.close()
+        self.assertIn("Live position stream:** connected", connected_card)
+
+        directory2, db_path2, heartbeat2 = self.temporary_database()
+        self.addCleanup(directory2.cleanup)
+        with patch.object(engine, "DB_PATH", db_path2):
+            connection = engine.connect_db()
+            try:
+                engine.store_observation(
+                    connection,
+                    "position-tracker",
+                    {
+                        "open": 2, "closed": 0, "refreshed": 2,
+                        "stream": "fallback", "stream_error": "ConnectionError: reset",
+                    },
+                )
+                fallback_card = operations.activity_card(connection, [])
+            finally:
+                connection.close()
+        self.assertIn("Live position stream:** not connected", fallback_card)
+        self.assertIn("ConnectionError: reset", fallback_card)
+
     def test_self_repair_restarts_failed_job_and_records_action(self) -> None:
         directory, db_path, heartbeat = self.temporary_database()
         self.addCleanup(directory.cleanup)

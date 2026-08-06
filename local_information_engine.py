@@ -43,7 +43,12 @@ FILINGS_REFRESH_MINUTES = int(os.environ.get("LOCAL_FILINGS_REFRESH_MINUTES", "3
 STATUS_REFRESH_MINUTES = int(os.environ.get("LOCAL_STATUS_REFRESH_MINUTES", "15"))
 FULL_SCAN_ENABLED = os.environ.get("LOCAL_FULL_SCAN_ENABLED", "true").lower() == "true"
 POSITION_SAFETY_POLL_SECONDS = int(
-    os.environ.get("POSITION_SAFETY_POLL_SECONDS", "300")
+    # 60s, not 300s: the stream is meant to be the fast path, but this is
+    # the floor every position actually gets guaranteed regardless of
+    # whether that connects - five minutes was too long for anything
+    # already in a real trade. Still overridable via .env if this needs
+    # tuning further either direction.
+    os.environ.get("POSITION_SAFETY_POLL_SECONDS", "60")
 )
 FORD_NEWS_URL = "https://shareholder.ford.com/news/default.aspx"
 FORD_NEWS_FEED_URL = (
@@ -1562,7 +1567,11 @@ def _route_stream_close(
     report_state = ford_scan.read_report_state()
     ford_scan.post_close(row, evaluation, tracker, report_state)
     rows = ford_scan.read_log()
-    ford_scan.update_performance_pages(tracker, report_state, rows)
+    # refresh_all_summary_dashboards, not update_performance_pages directly
+    # - the latter gets replaced with a no-op by a separate reconciliation
+    # system once it installs, and a stream-triggered close needs to stay
+    # correct regardless of whether that's happened yet.
+    ford_scan.refresh_all_summary_dashboards(tracker, report_state, rows)
     ford_scan.sync_reports(
         tracker,
         report_state,
@@ -1600,7 +1609,7 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
             if evaluation.get("pl_pct") is None:
                 continue
             signal = evaluation.get("signal")
-            if signal in {"STOP OUT", "TAKE PROFIT", "EXPIRY CLOSE"}:
+            if signal in {"STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT"}:
                 ford_scan.close_row(row, evaluation, timestamp)
                 closed_events.append((row, evaluation))
                 changed = True
@@ -1638,7 +1647,7 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
             if evaluation.get("pl_pct") is None:
                 continue
             if evaluation.get("signal") in {
-                "STOP OUT", "TAKE PROFIT", "EXPIRY CLOSE"
+                "STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT"
             }:
                 ford_scan.close_row(row, evaluation, timestamp)
                 _route_stream_close(row, evaluation)
@@ -1653,13 +1662,19 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
             refreshed += 1
         if refreshed:
             ford_scan.write_log(rows)
+    stream_connected = bool(POSITION_STREAM and POSITION_STREAM.connected)
+    stream_state = "connected" if stream_connected else "fallback"
+    stream_error = (POSITION_STREAM.last_error if POSITION_STREAM else "") or ""
     store_observation(
         connection,
         "position-tracker",
-        {"open": len(opened) - closed, "closed": closed, "refreshed": refreshed},
-    )
-    stream_state = (
-        "connected" if POSITION_STREAM and POSITION_STREAM.connected else "fallback"
+        {
+            "open": len(opened) - closed,
+            "closed": closed,
+            "refreshed": refreshed,
+            "stream": stream_state,
+            "stream_error": stream_error,
+        },
     )
     return f"{refreshed} refreshed · {closed} closed · stream {stream_state}"
 
@@ -1799,7 +1814,7 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
     )
     changed = trade_intelligence.pending_rows(closed_rows, consumers)
     if changed:
-        ford_scan.update_performance_pages(tracker, report_state, rows)
+        ford_scan.refresh_all_summary_dashboards(tracker, report_state, rows)
     ford_scan.sync_reports(
         tracker,
         report_state,
@@ -2330,7 +2345,7 @@ def main() -> int:
     ).start()
     print(
         "Open paper positions use one live Tradier quote stream; "
-        "REST checks are a five-minute safety fallback."
+        "REST checks are a one-minute safety fallback."
     )
     connection = connect_db()
     try:

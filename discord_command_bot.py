@@ -32,6 +32,11 @@ ALLOWED_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 ALLOWED_USER_ID = os.environ.get("DISCORD_ALLOWED_USER_ID", "").strip()
 OWNER_ONLY_COMMANDS = {
     "filter-set",
+    "trader-toggle",
+    "regular-set",
+    "swing-set",
+    "spread-set",
+    "reset-trading-data",
     "ticker-pause",
     "ticker-resume",
     "ticker-remove",
@@ -354,48 +359,156 @@ def require_ticker_admin(interaction: dict[str, Any]) -> None:
         )
 
 
-EDITABLE_FILTERS = {
+CORE_EDITABLE_FILTERS = {
     "max_contract_ask": (0.01, 1.00),
     "max_position_risk_dollars": (1.0, 100.0),
     "single_leg_profit_target_pct": (0.01, 2.0),
     "single_leg_stop_pct": (0.01, 1.0),
+    "single_leg_breakeven_trigger_pct": (0.0, 100.0),
+    "single_leg_trail_giveback_pct": (0.0, 100.0),
+    "single_leg_delta_erosion_ratio": (0.0, 1.0),
+    "single_leg_iv_crush_ratio": (0.0, 1.0),
+}
+REGULAR_EDITABLE_FILTERS = {
+    "regular_intraday_change_threshold_pct": (0.01, 5.0),
+    "regular_vwap_distance_threshold_pct": (0.01, 5.0),
+    "regular_momentum_gap_threshold_pct": (0.01, 5.0),
+    "regular_rsi_bullish": (50.0, 90.0),
+    "regular_rsi_bearish": (10.0, 50.0),
+    "regular_slope_threshold_pct": (0.01, 5.0),
+    "regular_daily_trend_threshold_pct": (0.01, 5.0),
+    "regular_score_threshold": (1.0, 8.0),
+}
+SWING_EDITABLE_FILTERS = {
+    "swing_sma20_distance_threshold_pct": (0.01, 5.0),
+    "swing_trend_threshold_pct": (0.01, 5.0),
+    "swing_rsi_bullish": (50.0, 90.0),
+    "swing_rsi_bearish": (10.0, 50.0),
+    "swing_volume_ratio_min": (0.5, 5.0),
+    "swing_close_vs_high_bullish_pct": (-5.0, 0.0),
+    "swing_close_vs_high_bearish_pct": (-10.0, 0.0),
+    "swing_score_threshold": (1.0, 8.0),
+}
+SPREAD_EDITABLE_FILTERS = {
     "spread_profit_target_pct": (0.01, 1.0),
     "spread_stop_multiple": (1.0, 5.0),
+    "iv_rv_min_ratio": (0.5, 5.0),
+    "spread_max_trend_strength": (0.001, 1.0),
+    "spread_extreme_buffer_pct": (0.0, 10.0),
+    "spread_delta_danger_ratio": (1.0, 10.0),
+    "spread_iv_expansion_ratio": (1.0, 5.0),
+    "iv_history_min_samples": (1, 400),
+    "pooled_iv_min_samples": (1, 400),
+    "pooled_iv_lookback_days": (1, 365),
+}
+EDITABLE_FILTERS = {
+    **CORE_EDITABLE_FILTERS,
+    **REGULAR_EDITABLE_FILTERS,
+    **SWING_EDITABLE_FILTERS,
+    **SPREAD_EDITABLE_FILTERS,
 }
 RUNTIME_FILTER_ATTRIBUTES = {
     "max_contract_ask": "MAX_CONTRACT_ASK",
     "max_position_risk_dollars": "MAX_RISK_PER_TRADE",
     "single_leg_profit_target_pct": "SINGLE_TAKE_PROFIT_PCT",
     "single_leg_stop_pct": "SINGLE_STOP_PCT",
+    "single_leg_breakeven_trigger_pct": "BREAKEVEN_TRIGGER_PCT",
+    "single_leg_trail_giveback_pct": "TRAIL_GIVEBACK_PCT",
+    "single_leg_delta_erosion_ratio": "DELTA_EROSION_RATIO",
+    "single_leg_iv_crush_ratio": "IV_CRUSH_RATIO",
     "spread_profit_target_pct": "SPREAD_TAKE_PROFIT_PCT",
     "spread_stop_multiple": "SPREAD_STOP_MULTIPLE",
+    "iv_rv_min_ratio": "IV_RV_MIN_RATIO",
+    "spread_max_trend_strength": "SPREAD_MAX_TREND_STRENGTH",
+    "spread_extreme_buffer_pct": "SPREAD_EXTREME_BUFFER_PCT",
+    "spread_delta_danger_ratio": "SPREAD_DELTA_DANGER_RATIO",
+    "spread_iv_expansion_ratio": "SPREAD_IV_EXPANSION_RATIO",
+    "iv_history_min_samples": "IV_HISTORY_MIN_SAMPLES",
+    "pooled_iv_min_samples": "POOLED_IV_MIN_SAMPLES",
+    "pooled_iv_lookback_days": "POOLED_IV_LOOKBACK_DAYS",
+    "regular_intraday_change_threshold_pct": "REGULAR_INTRADAY_CHANGE_THRESHOLD_PCT",
+    "regular_vwap_distance_threshold_pct": "REGULAR_VWAP_DISTANCE_THRESHOLD_PCT",
+    "regular_momentum_gap_threshold_pct": "REGULAR_MOMENTUM_GAP_THRESHOLD_PCT",
+    "regular_rsi_bullish": "REGULAR_RSI_BULLISH",
+    "regular_rsi_bearish": "REGULAR_RSI_BEARISH",
+    "regular_slope_threshold_pct": "REGULAR_SLOPE_THRESHOLD_PCT",
+    "regular_daily_trend_threshold_pct": "REGULAR_DAILY_TREND_THRESHOLD_PCT",
+    "regular_score_threshold": "REGULAR_SCORE_THRESHOLD",
+    "swing_sma20_distance_threshold_pct": "SWING_SMA20_DISTANCE_THRESHOLD_PCT",
+    "swing_trend_threshold_pct": "SWING_TREND_THRESHOLD_PCT",
+    "swing_rsi_bullish": "SWING_RSI_BULLISH",
+    "swing_rsi_bearish": "SWING_RSI_BEARISH",
+    "swing_volume_ratio_min": "SWING_VOLUME_RATIO_MIN",
+    "swing_close_vs_high_bullish_pct": "SWING_CLOSE_VS_HIGH_BULLISH_PCT",
+    "swing_close_vs_high_bearish_pct": "SWING_CLOSE_VS_HIGH_BEARISH_PCT",
+    "swing_score_threshold": "SWING_SCORE_THRESHOLD",
 }
+TRADER_NAMES = (
+    "regular_calls",
+    "regular_puts",
+    "swing_calls",
+    "swing_puts",
+    "bull_put_spreads",
+    "bear_call_spreads",
+)
 
 
 def filters_reply() -> str:
     config = dynamic_universe.scanner_config()
     liquidity = config.get("liquidity") or {}
     delta = config.get("single_leg_delta") or {}
+    traders = config.get("trade_types_enabled") or {}
+
+    def status(name: str) -> str:
+        return "on" if traders.get(name, True) else "off"
+
+    def num(key: str, default: float) -> float:
+        return float(config.get(key, default))
+
     return "\n".join([
-        "🎛️ **Active scanner controls**",
-        f"Maximum contract ask: **${float(config['max_contract_ask']):.2f}**",
-        f"Maximum position risk: **${float(config['max_position_risk_dollars']):.0f}**",
-        f"Long option target/stop: **+{float(config['single_leg_profit_target_pct']) * 100:.0f}% / -{float(config['single_leg_stop_pct']) * 100:.0f}%**",
-        f"Spread target/stop: **{float(config['spread_profit_target_pct']) * 100:.0f}% / {float(config['spread_stop_multiple']):.1f}× credit**",
+        "🎛️ **Active scanner controls, by play style**",
+        "",
+        f"**Regular calls** ({status('regular_calls')}) **/ puts** ({status('regular_puts')})",
+        f"Intraday change / VWAP distance / momentum gap: **{num('regular_intraday_change_threshold_pct', 0.35):.2f}% / {num('regular_vwap_distance_threshold_pct', 0.15):.2f}% / {num('regular_momentum_gap_threshold_pct', 0.10):.2f}%**",
+        f"RSI bullish / bearish: **{num('regular_rsi_bullish', 60):.0f} / {num('regular_rsi_bearish', 40):.0f}**",
+        f"15-min slope / daily trend threshold: **{num('regular_slope_threshold_pct', 0.35):.2f}% / {num('regular_daily_trend_threshold_pct', 0.2):.2f}%**",
+        f"Qualifying score: **±{num('regular_score_threshold', 3):.0f}**",
+        "",
+        f"**Swing calls** ({status('swing_calls')}) **/ puts** ({status('swing_puts')})",
+        f"20-day distance / trend threshold: **{num('swing_sma20_distance_threshold_pct', 0.25):.2f}% / {num('swing_trend_threshold_pct', 0.2):.2f}%**",
+        f"RSI bullish / bearish: **{num('swing_rsi_bullish', 55):.0f} / {num('swing_rsi_bearish', 45):.0f}**",
+        f"Minimum volume ratio: **{num('swing_volume_ratio_min', 1.1):.2f}x**",
+        f"Close-vs-high bullish / bearish: **{num('swing_close_vs_high_bullish_pct', -0.3):+.2f}% / {num('swing_close_vs_high_bearish_pct', -3.0):+.2f}%**",
+        f"Qualifying score: **±{num('swing_score_threshold', 2):.0f}**",
+        "",
+        f"**Bull put spreads** ({status('bull_put_spreads')}) **/ bear call spreads** ({status('bear_call_spreads')})",
+        f"Min IV/RV ratio / max trend strength: **{num('iv_rv_min_ratio', 1.15):.2f} / {num('spread_max_trend_strength', 0.02):.3f}**",
+        f"20-day extreme buffer: **{num('spread_extreme_buffer_pct', 1.0):.2f}%**",
+        f"Delta danger / IV expansion ratio: **{num('spread_delta_danger_ratio', 2.0):.2f} / {num('spread_iv_expansion_ratio', 1.30):.2f}**",
+        f"Profit target / stop multiple: **{num('spread_profit_target_pct', 0.5) * 100:.0f}% / {num('spread_stop_multiple', 2.0):.1f}× credit**",
+        f"IV history samples (own / pooled / lookback days): **{num('iv_history_min_samples', 20):.0f} / {num('pooled_iv_min_samples', 20):.0f} / {num('pooled_iv_lookback_days', 20):.0f}**",
+        "",
+        "**Shared exit/risk (all single-leg trades)**",
+        f"Maximum contract ask / position risk: **${num('max_contract_ask', 1.0):.2f} / ${num('max_position_risk_dollars', 100):.0f}**",
+        f"Long profit target / stop: **+{num('single_leg_profit_target_pct', 0.2) * 100:.0f}% / -{num('single_leg_stop_pct', 0.15) * 100:.0f}%**",
+        f"Breakeven trigger / trail giveback: **{num('single_leg_breakeven_trigger_pct', 10):.0f}% / {num('single_leg_trail_giveback_pct', 8):.0f}pt**",
+        f"Delta erosion / IV crush ratio: **{num('single_leg_delta_erosion_ratio', 0.5):.2f} / {num('single_leg_iv_crush_ratio', 0.75):.2f}**",
         f"Delta range: **{delta.get('min')}–{delta.get('max')}**",
         f"Minimum OI/volume: **{liquidity.get('min_option_open_interest')} / {liquidity.get('min_option_volume')}**",
         f"Maximum bid/ask width: **{float(liquidity.get('max_bid_ask_pct', 0)) * 100:.0f}%**",
+        "",
         "Paper trading only. Filters never place brokerage orders.",
+        "Change these with /regular-set, /swing-set, /spread-set, /filter-set, or /trader-toggle.",
     ])
 
 
-def filter_set_reply(interaction: dict[str, Any]) -> str:
+def _apply_filter_set(interaction: dict[str, Any], allowed: dict[str, tuple[float, float]]) -> str:
     require_ticker_admin(interaction)
     name = str(option_value(interaction, "filter", "")).strip()
     value = float(option_value(interaction, "value", 0))
-    bounds = EDITABLE_FILTERS.get(name)
+    bounds = allowed.get(name)
     if not bounds:
-        raise ValueError("That filter is not editable from Discord.")
+        raise ValueError("That setting is not editable from this command.")
     if not bounds[0] <= value <= bounds[1]:
         raise ValueError(f"{name} must be between {bounds[0]} and {bounds[1]}.")
     config = dynamic_universe.scanner_config()
@@ -409,6 +522,76 @@ def filter_set_reply(interaction: dict[str, Any]) -> str:
         f"✅ **{name}** changed locally from **{old}** to **{value}**.\n"
         "The next local scan reads the reviewed value. No GitHub run or trade was triggered."
     )
+
+
+def filter_set_reply(interaction: dict[str, Any]) -> str:
+    """Shared risk/exit settings that apply across every single-leg trade,
+    not one specific play style - see /regular-set, /swing-set, /spread-set
+    for the settings that belong to one trader only."""
+    return _apply_filter_set(interaction, CORE_EDITABLE_FILTERS)
+
+
+def regular_set_reply(interaction: dict[str, Any]) -> str:
+    return _apply_filter_set(interaction, REGULAR_EDITABLE_FILTERS)
+
+
+def swing_set_reply(interaction: dict[str, Any]) -> str:
+    return _apply_filter_set(interaction, SWING_EDITABLE_FILTERS)
+
+
+def spread_set_reply(interaction: dict[str, Any]) -> str:
+    return _apply_filter_set(interaction, SPREAD_EDITABLE_FILTERS)
+
+
+def trader_toggle_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    trader = str(option_value(interaction, "trader", "")).strip()
+    enabled = bool(option_value(interaction, "enabled", True))
+    if trader not in TRADER_NAMES:
+        raise ValueError("That trader is not recognized.")
+    config = dynamic_universe.scanner_config()
+    toggles = dict(config.get("trade_types_enabled") or {})
+    old = toggles.get(trader, True)
+    toggles[trader] = enabled
+    config["trade_types_enabled"] = toggles
+    dynamic_universe.SCANNER_CONFIG_PATH.write_text(
+        json.dumps(config, indent=2) + "\n", encoding="utf-8"
+    )
+    # trade_types_enabled() re-reads the file on every scan, so there's no
+    # in-memory constant to sync the way the flat filters need - the write
+    # above is already enough for the next cycle to pick it up.
+    state = "enabled" if enabled else "disabled"
+    return (
+        f"✅ **{trader}** {state} (was {'enabled' if old else 'disabled'}).\n"
+        "The next local scan reads the reviewed value. No GitHub run or trade was triggered."
+    )
+
+
+def reset_trading_data_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    confirm = str(option_value(interaction, "confirm", "")).strip()
+    archive = bool(option_value(interaction, "archive", False))
+    if confirm != "RESET":
+        raise ValueError('Type "RESET" exactly (all caps) in the confirm field to proceed.')
+    tracker = ford_scan.initialize_discord()
+    result = ford_scan.reset_all_trade_data(tracker, archive=archive)
+    lines = [
+        "✅ **Trading data reset complete**",
+        f"Cleared **{result['cleared_trades']}** tracked trade(s).",
+        f"Deleted **{result['deleted_threads']}** trade-journal thread(s) - gone, not just archived.",
+        f"Cleared **{result['cleared_cards']}** per-trade card(s) - held-positions, new-positions, and individual win/loss/scratch results - and zeroed out every summary dashboard immediately.",
+    ]
+    if archive and result["backup_path"]:
+        lines.append(f"Backup saved locally: `{result['backup_path']}`")
+    elif archive:
+        lines.append("No backup file needed - there was nothing to save.")
+    else:
+        lines.append("No backup was saved, as requested.")
+    lines.append(
+        "Held positions, wins, losses, and performance dashboards will show empty "
+        "on their next refresh - they render from the live log, not a separate store."
+    )
+    return "\n".join(lines)
 
 
 def publish_ticker_configuration() -> str:
@@ -988,6 +1171,26 @@ def process_command(interaction: dict[str, Any]) -> None:
             patch_original(
                 application_id, token, content=filter_set_reply(interaction)
             )
+        elif name == "trader-toggle":
+            patch_original(
+                application_id, token, content=trader_toggle_reply(interaction)
+            )
+        elif name == "reset-trading-data":
+            patch_original(
+                application_id, token, content=reset_trading_data_reply(interaction)
+            )
+        elif name == "regular-set":
+            patch_original(
+                application_id, token, content=regular_set_reply(interaction)
+            )
+        elif name == "swing-set":
+            patch_original(
+                application_id, token, content=swing_set_reply(interaction)
+            )
+        elif name == "spread-set":
+            patch_original(
+                application_id, token, content=spread_set_reply(interaction)
+            )
         elif name == "ticker-add":
             patch_original(application_id, token, content=universe_add_reply(interaction))
         elif name == "ticker-pause":
@@ -1168,12 +1371,52 @@ def tradingview_webhook() -> Response:
     return jsonify({"ok": True, "queued": inserted, "symbol": symbol}), 202
 
 
+def handle_message_component(interaction: dict[str, Any]) -> Response:
+    custom_id = str((interaction.get("data") or {}).get("custom_id") or "")
+    if not custom_id.startswith("archive-trade:"):
+        return jsonify({"type": 6})
+    trade_id = custom_id.split(":", 1)[1]
+    try:
+        require_ticker_admin(interaction)
+    except PermissionError as exc:
+        return jsonify({
+            "type": 4,
+            "data": {"content": str(exc), "flags": 64},
+        })
+    result = ford_scan.archive_trade_for_comparison(trade_id)
+    label = {
+        "archived": "✅ Archived for comparison",
+        "already archived": "✅ Already archived",
+    }.get(result, f"⚠️ {result}")
+    return jsonify({
+        "type": 7,
+        "data": {
+            "components": [
+                {
+                    "type": 1,
+                    "components": [
+                        {
+                            "type": 2,
+                            "style": 2,
+                            "label": label,
+                            "custom_id": "archive-trade:done",
+                            "disabled": True,
+                        }
+                    ],
+                }
+            ]
+        },
+    })
+
+
 @APP.post("/interactions")
 def interactions() -> Response:
     verify_discord_request()
     interaction = request.get_json(force=True)
     if interaction.get("type") == 1:
         return jsonify({"type": 1})
+    if interaction.get("type") == 3:
+        return handle_message_component(interaction)
     if interaction.get("type") != 2:
         return jsonify({
             "type": 4,

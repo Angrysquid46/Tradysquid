@@ -1,0 +1,175 @@
+{
+  "schema_version": 2,
+  "lesson_defaults": {
+    "version": "2.0.0",
+    "purpose_template": "Use {title} as timestamped evidence in paper-trading decisions.",
+    "concept_template": "{title} should be evaluated from facts available at the decision time, not from hindsight.",
+    "decision_framework": [
+      "facts",
+      "interpretation",
+      "opposition",
+      "invalidation",
+      "decision"
+    ],
+    "evidence_checklist": [
+      "timestamp",
+      "freshness",
+      "liquidity",
+      "risk",
+      "missing data"
+    ],
+    "failure_modes": [
+      "stale evidence",
+      "outcome leakage",
+      "unsupported certainty"
+    ],
+    "journal_fields": [
+      "facts",
+      "thesis",
+      "invalidation",
+      "limitations"
+    ],
+    "scanner_application_template": "Attach {title} evidence to qualification, ranking, rejection, or post-trade review.",
+    "risk_considerations": "Never override the $100 paper-risk ceiling or treat educational material as a profit guarantee.",
+    "limitations": "Evidence supports review and learning; it does not guarantee profit.",
+    "practice_drill_template": "Review one candidate or closed paper trade using only its recorded {title} evidence.",
+    "related_lessons": []
+  },
+  "lessons": [
+    {
+      "lesson_id": "01-stock-market-foundations",
+      "channel_name": "01-stock-market-foundations",
+      "title": "Stock and Market Foundations"
+    },
+    {
+      "lesson_id": "02-company-fundamentals",
+      "channel_name": "02-company-fundamentals",
+      "title": "Company Fundamentals and Business Quality"
+    },
+    {
+      "lesson_id": "03-financial-statements",
+      "channel_name": "03-financial-statements",
+      "title": "Financial Statements and Accounting"
+    },
+    {
+      "lesson_id": "04-valuation-and-quality",
+      "channel_name": "04-valuation-and-quality",
+      "title": "Valuation, Growth, and Quality"
+    },
+    {
+      "lesson_id": "05-market-mechanics-orders",
+      "channel_name": "05-market-mechanics-orders",
+      "title": "Market Mechanics and Order Execution"
+    },
+    {
+      "lesson_id": "06-charts-price-action",
+      "channel_name": "06-charts-price-action",
+      "title": "Charts, Candles, and Price Action"
+    },
+    {
+      "lesson_id": "07-technical-analysis",
+      "channel_name": "07-technical-analysis",
+      "title": "Technical Analysis and Indicators"
+    },
+    {
+      "lesson_id": "08-volume-breadth-internals",
+      "channel_name": "08-volume-breadth-internals",
+      "title": "Volume, Breadth, and Market Internals"
+    },
+    {
+      "lesson_id": "09-macro-sectors-catalysts",
+      "channel_name": "09-macro-sectors-catalysts",
+      "title": "Macroeconomics, Sectors, and Catalysts"
+    },
+    {
+      "lesson_id": "10-stock-trading-strategies",
+      "channel_name": "10-stock-trading-strategies",
+      "title": "Stock Trading Styles and Strategies"
+    },
+    {
+      "lesson_id": "11-short-selling-margin",
+      "channel_name": "11-short-selling-margin",
+      "title": "Short Selling, Leverage, and Margin"
+    },
+    {
+      "lesson_id": "12-portfolio-risk",
+      "channel_name": "12-portfolio-risk",
+      "title": "Portfolio Construction and Risk Management"
+    },
+    {
+      "lesson_id": "13-options-basics",
+      "channel_name": "13-options-basics",
+      "title": "Options Foundations"
+    },
+    {
+      "lesson_id": "14-option-chain-liquidity",
+      "channel_name": "14-option-chain-liquidity",
+      "title": "Option Chains, Symbols, and Liquidity"
+    },
+    {
+      "lesson_id": "15-option-pricing-greeks",
+      "channel_name": "15-option-pricing-greeks",
+      "title": "Option Pricing and the Greeks"
+    },
+    {
+      "lesson_id": "16-volatility",
+      "channel_name": "16-volatility",
+      "title": "Volatility, IV, Skew, and Expected Move"
+    },
+    {
+      "lesson_id": "17-directional-options",
+      "channel_name": "17-directional-options",
+      "title": "Directional Options Strategies"
+    },
+    {
+      "lesson_id": "18-income-and-hedging",
+      "channel_name": "18-income-and-hedging",
+      "title": "Income, Yield, and Hedging Strategies"
+    },
+    {
+      "lesson_id": "19-spreads-multi-leg",
+      "channel_name": "19-spreads-multi-leg",
+      "title": "Spreads and Multi-Leg Strategies"
+    },
+    {
+      "lesson_id": "20-trade-planning-execution",
+      "channel_name": "20-trade-planning-execution",
+      "title": "Trade Planning, Execution, and Management"
+    },
+    {
+      "lesson_id": "21-expiration-assignment",
+      "channel_name": "21-expiration-assignment",
+      "title": "Expiration, Exercise, Assignment, and Settlement"
+    },
+    {
+      "lesson_id": "22-events-corporate-actions",
+      "channel_name": "22-events-corporate-actions",
+      "title": "Events, Earnings, and Corporate Actions"
+    },
+    {
+      "lesson_id": "23-psychology-journaling",
+      "channel_name": "23-psychology-journaling",
+      "title": "Trading Psychology and Journaling"
+    },
+    {
+      "lesson_id": "24-backtesting-statistics",
+      "channel_name": "24-backtesting-statistics",
+      "title": "Backtesting, Statistics, and System Development"
+    },
+    {
+      "lesson_id": "25-brokers-accounts-taxes",
+      "channel_name": "25-brokers-accounts-taxes",
+      "title": "Brokers, Accounts, Taxes, and Rules"
+    },
+    {
+      "lesson_id": "26-research-data-tools",
+      "channel_name": "26-research-data-tools",
+      "title": "Research, Data, Tools, and News Verification"
+    },
+    {
+      "lesson_id": "27-scams-security-myths",
+      "channel_name": "27-scams-security-myths",
+      "title": "Scams, Security, and Trading Myths"
+    }
+  ]
+}

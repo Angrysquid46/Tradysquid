@@ -117,7 +117,7 @@ class TradierPositionStream:
         if not self.available:
             self.last_error = (
                 "Streaming unavailable; install websocket-client. "
-                "The five-minute REST safety poll remains active."
+                "The one-minute REST safety poll remains active."
             )
             return
         delay = 2

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradysquid"
+version = "0.1.0"
+description = "Single-computer paper-options research and tracking system"
+requires-python = ">=3.12"
+dependencies = [
+  "APScheduler==3.10.4",
+  "discord.py==2.4.0",
+  "python-dotenv==1.0.1",
+  "requests==2.32.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.4", "pytest-cov==6.0.0"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["tradysquid*", "scripts*"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import diagnostic_startup_runtime as startup
@@ -159,7 +160,7 @@ class DiscordCommandDiagnosticsTests(unittest.TestCase):
             command_diagnostics._INSTALLED = False
 
     def test_source_contains_no_command_registration_mutation(self) -> None:
-        source = open(command_diagnostics.__file__, encoding="utf-8").read()
+        source = Path(command_diagnostics.__file__).read_text(encoding="utf-8")
         self.assertNotIn("requests.put", source)
         self.assertNotIn("requests.post", source)
         self.assertNotIn("requests.delete", source)

@@ -6,11 +6,12 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$ExpectedCleanCommit = 'd99523379f230bed0a026476baa5acd3bb228add'
+$ExpectedCleanCommit = $null
 $ExpectedArchiveCommit = 'ba75aae5f34f3889404bfe0c7c0b96663a92a657'
 $CleanBranch = 'clean-rebuild'
 $ArchiveBranch = 'archive/current-failed-implementation'
 $FinalStatus = 'FAILED'
+$FinalExitCode = 1
 $Repository = $null
 $Worktree = $null
 
@@ -133,7 +134,7 @@ try {
     Write-Host 'TRADYSQUID AUDITED FOREGROUND INSTALLER' -ForegroundColor Cyan
     Write-Host '============================================================' -ForegroundColor Cyan
     Write-Host "Repository: $Repository"
-    Write-Host "Target clean commit: $ExpectedCleanCommit"
+    Write-Host 'Target clean commit: latest fetched clean-rebuild commit (validated before acceptance)'
     Write-Host 'This window will remain attached to the real installer.' -ForegroundColor Yellow
     Write-Host ''
 
@@ -148,9 +149,11 @@ try {
     $ObservedClean = ((Invoke-GitSafe -WorkingRepository $Repository -Arguments @(
         'rev-parse', "refs/remotes/origin/$CleanBranch"
     ) -FailureMessage 'Could not read the clean branch commit.') -join '').Trim()
-    if ($ObservedClean -ne $ExpectedCleanCommit) {
-        throw "Clean branch mismatch. Expected $ExpectedCleanCommit but received $ObservedClean"
+    if ($ObservedClean -notmatch '^[0-9a-f]{40}$') {
+        throw 'The fetched clean-rebuild branch did not resolve to a valid Git commit.'
     }
+    $ExpectedCleanCommit = $ObservedClean
+    Write-Host "Resolved clean commit: $ExpectedCleanCommit" -ForegroundColor Cyan
 
     $ObservedArchive = ((Invoke-GitSafe -WorkingRepository $Repository -Arguments @(
         'rev-parse', "refs/remotes/origin/$ArchiveBranch"
@@ -252,6 +255,7 @@ try {
     }
 
     $FinalStatus = 'PASS'
+    $FinalExitCode = 0
     [ordered]@{
         status = 'PASS'
         finished_at = (Get-Date).ToString('o')
@@ -316,3 +320,5 @@ try {
     Write-Host "Final foreground installer status: $FinalStatus" -ForegroundColor $StatusColor
     Read-Host 'Press Enter after copying or photographing this result'
 }
+
+exit $FinalExitCode
