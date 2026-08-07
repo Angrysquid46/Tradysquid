@@ -1364,7 +1364,7 @@ def manual_intelligence_job(connection: sqlite3.Connection) -> str:
     universe_lines.append(
         f"Updated {observed_at}. Discovery ranking is informational only."
     )
-    tracker.send_channel("universe_watch", content="\n".join(universe_lines))
+    upsert_dashboard(connection, "universe_watch", "manual-universe-discovery", "\n".join(universe_lines))
 
     benchmark_lines = [
         "## Manual Market-Regime Snapshot",
@@ -1386,11 +1386,13 @@ def manual_intelligence_job(connection: sqlite3.Connection) -> str:
     benchmark_lines.append(
         f"Updated {observed_at}. Conditions are not an automatic trade entry."
     )
-    tracker.send_channel("intelligence", content="\n".join(benchmark_lines))
+    upsert_dashboard(connection, "intelligence", "manual-market-regime", "\n".join(benchmark_lines))
 
-    tracker.send_channel(
+    upsert_dashboard(
+        connection,
         "premarket",
-        content="\n".join([
+        "manual-session-briefing",
+        "\n".join([
             "## Manual Session Briefing",
             f"**{session}**",
             f"Universe refreshed: **{len(symbols)} symbols**.",
@@ -1410,9 +1412,11 @@ def manual_intelligence_job(connection: sqlite3.Connection) -> str:
                 )
         except Exception:
             continue
-    tracker.send_channel(
+    upsert_dashboard(
+        connection,
         "news_events",
-        content="\n".join([
+        "manual-news-digest",
+        "\n".join([
             "## Manual News and Events Digest",
             *(headlines or ["No current headlines were returned by the public feed."]),
             f"Checked {observed_at}. Verify original sources before acting.",
@@ -1813,8 +1817,16 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
         "play-style-results", "learning-results",
     )
     changed = trade_intelligence.pending_rows(closed_rows, consumers)
-    if changed:
+    # pending_rows() only ever reports rows it hasn't acknowledged yet, so a
+    # trade-data reset (closed count drops, e.g. to zero) never shows up as
+    # "changed" - there is nothing new to acknowledge - and the dashboards
+    # would otherwise keep showing whatever totals were live before the
+    # reset forever. Track the last-seen closed count so a drop still forces
+    # a real refresh even when nothing is "pending" in the sync-ack sense.
+    reset_detected = len(closed_rows) != int(report_state.get("last_closed_total", -1))
+    if changed or reset_detected:
         ford_scan.refresh_all_summary_dashboards(tracker, report_state, rows)
+    report_state["last_closed_total"] = len(closed_rows)
     ford_scan.sync_reports(
         tracker,
         report_state,
