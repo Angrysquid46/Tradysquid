@@ -486,7 +486,13 @@ def import_robinhood_snapshot(payload: dict[str, Any]) -> int:
                 last_price=row.get("last_price"),
                 average_volume=row.get("average_volume"),
                 options_available=bool(row.get("options_available")),
-                reason="read-only discovery",
+                # A specific reason ("Robinhood HIGH_OPTIONS_VOLUME_IV scan")
+                # is real, checkable evidence a member can act on; the old
+                # flat "read-only discovery" for every row told you nothing
+                # about why this name showed up over any other. Falls back
+                # to the old text so a caller that never sends "reason"
+                # still gets something rather than an empty string.
+                reason=str(row.get("reason") or "read-only discovery")[:200],
                 ttl_minutes=1440,
             )
         )
