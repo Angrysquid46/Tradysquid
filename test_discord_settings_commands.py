@@ -138,6 +138,32 @@ def test_filters_reply_is_organized_by_play_style_and_does_not_crash():
         assert "Breakeven trigger" in reply
 
 
+def test_filters_reply_shows_the_real_delta_ranges_not_the_dead_config_block():
+    # filters_reply() used to read config["single_leg_delta"] (0.2-0.8) -
+    # a legacy, superseded block nothing else in the system reads. The real,
+    # currently-enforced ranges are split per strategy and much narrower.
+    # BASE_CONFIG deliberately has no "single_leg_delta" key at all, so this
+    # would fail loudly (empty values) if the old dead-config path were
+    # still in use instead of the real ford_scan constants.
+    with _with_temp_scanner_config(BASE_CONFIG):
+        reply = bot.filters_reply()
+        regular_line = f"Delta range: **{ford_scan.REGULAR_LEG_DELTA_MIN:.2f}–{ford_scan.REGULAR_LEG_DELTA_MAX:.2f}**"
+        swing_line = f"Delta range: **{ford_scan.SWING_LEG_DELTA_MIN:.2f}–{ford_scan.SWING_LEG_DELTA_MAX:.2f}**"
+        assert regular_line in reply
+        assert swing_line in reply
+        assert regular_line != swing_line
+
+
+def test_filters_reply_shows_the_real_liquidity_thresholds_not_the_dead_config_block():
+    # Same issue for "liquidity" - min OI/volume and max bid/ask width used
+    # to read a config block nothing else reads. BASE_CONFIG has no
+    # "liquidity" key, so this proves the real ford_scan constants are used.
+    with _with_temp_scanner_config(BASE_CONFIG):
+        reply = bot.filters_reply()
+        assert f"Minimum OI/volume: **{ford_scan.MIN_OPEN_INTEREST} / {ford_scan.MIN_OPTION_VOLUME}**" in reply
+        assert f"Maximum bid/ask width: **{ford_scan.MAX_BID_ASK_PCT * 100:.0f}%**" in reply
+
+
 def test_regular_set_changes_a_regular_only_setting():
     original = ford_scan.REGULAR_SCORE_THRESHOLD
     try:

@@ -1,6 +1,5 @@
 {
   "version": 3,
-  "mode": "dynamic",
   "seed_symbols": [
     "AAL",
     "AMD",
@@ -17,19 +16,5 @@
     "VALE"
   ],
   "exclude_symbols": [],
-  "max_active_symbols": 25,
-  "max_scan_batch": 12,
-  "member_management": {
-    "any_member_can_add": true,
-    "any_member_can_remove": true,
-    "requires_optionable_verification": true,
-    "preserve_open_positions_on_remove": true
-  },
-  "sources": [
-    "seed",
-    "discord_member",
-    "tradingview",
-    "robinhood_read_only",
-    "tradier_liquidity"
-  ]
+  "max_active_symbols": 25
 }
