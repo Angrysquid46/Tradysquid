@@ -10,7 +10,7 @@ import ford_scan
 def _option(delta: float, **overrides) -> dict:
     option = {
         "bid": 0.45, "ask": 0.50, "strike": 100.0,
-        "open_interest": 500, "volume": 50,
+        "open_interest": 500, "volume": 200,
         "greeks": {"delta": delta},
     }
     option.update(overrides)
