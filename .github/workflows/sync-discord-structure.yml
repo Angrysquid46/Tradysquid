@@ -1,0 +1,50 @@
+name: Sync Discord Structure
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Apply the live Discord channel/category structure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Validate sync script
+        run: python -m py_compile sync_discord_structure.py sync_discord_structure_reports.py
+
+      - name: Write minimal runtime .env
+        run: |
+          cat > .env <<EOF
+          DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+          DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+          EOF
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+
+      - name: Apply Discord channel structure
+        # Goes through run_with_env.py, same as the local supervisor's
+        # run_discord_configuration() - it loads .env before importing
+        # ford_scan (sync_discord_structure.py imports ford_scan at module
+        # level, before its own main() ever calls load_env(), so running it
+        # directly would always see empty DISCORD_BOT_TOKEN/GUILD_ID). This
+        # also picks up the same SCRIPT_OVERRIDES redirect to
+        # sync_discord_structure_reports.py that production uses.
+        run: python run_with_env.py sync_discord_structure.py --apply
