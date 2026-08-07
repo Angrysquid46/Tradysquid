@@ -404,6 +404,8 @@ Divergence occurs when price and an indicator move differently. It can warn of w
 ## Confluence
 Useful confluence combines different information types: price structure, volume, volatility, catalyst, and risk location. Stacking correlated indicators inflates confidence without adding evidence.
 
+A signal that barely crosses its own threshold is not the same strength of evidence as one that clears it comfortably, even though a simple pass/fail vote count treats them identically. A 0.7% intraday move against a 0.35% threshold and a position sitting a hair above VWAP are each individually weak, easily-reversed reads - real conviction should mean multiple genuinely independent signals agreeing with real margin, not several thin, barely-qualifying signals that happen to add up to a passing score. When an entry goes immediately against the trade with zero favorable movement first, that is worth checking against how marginal each contributing signal actually was, not just whether the vote total cleared the bar. This is also why a trade's recorded thesis should show every signal that actually contributed to the score, with its real value - "RSI 61" is checkable evidence; "RSI is bullish" as a bare label is not, and a system that silently drops a contributing signal from its own stated reasoning cannot be properly reviewed after the fact.
+
 ## Parameter sensitivity
 A strategy that works only at one precise length may be overfit. Test neighboring parameters, multiple assets, regimes, and periods. Understand why the lookback matches the intended holding horizon.
 
@@ -1057,6 +1059,8 @@ Specify level, order type, acceptable spread, maximum slippage, confirmation, an
 
 ## Stops
 Possible methods include price structure, volatility, option premium, time, and thesis-based stops. Option stops can trigger on spread noise or fail during gaps. Record both the mechanical exit trigger and the root cause.
+
+A cheap, high-volatility contract can look stopped out the instant it's bought, before the underlying has moved at all. A realistic fill assumes you buy at the ask and would sell back at the bid - the gap between them is a real, fixed cost paid at entry, not the market moving against the position. On a $0.39 contract with a $0.06 spread, that gap alone is roughly 15% of the entry price - close to a typical stop width - so a stop measured naively from the entry price can fire on spread-crossing noise within seconds of the fill, with zero real price movement involved. Two ways to avoid this: widen the stop by the spread paid at entry so it only fires on genuine adverse movement beyond that known cost, or measure movement from what could have been recouped immediately after entry (bid-to-bid) rather than from the price actually paid (ask-to-bid). Either way, don't fix this by simply refusing to trade wide-spread contracts - cheap, volatile names carry wider percentage spreads than expensive ones as a structural fact of their price tier, not a liquidity red flag on its own; screening them out at entry fights the kind of setup this strategy is built to trade instead of accounting for it. See Option Chains, Symbols, and Liquidity for how spread width scales with contract price.
 
 ## Targets
 Targets can use levels, measured moves, volatility, R-multiples, option value, or time. Partial exits reduce exposure but change expectancy. Define rules before seeing profit.

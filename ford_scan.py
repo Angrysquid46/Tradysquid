@@ -1602,34 +1602,39 @@ def regular_market_context(
             vwap_distance_pct = ((spot_price / intraday_vwap) - 1) * 100
             if vwap_distance_pct >= REGULAR_VWAP_DISTANCE_THRESHOLD_PCT:
                 location_score = 1
-                reasons.append("price is holding above intraday VWAP")
+                reasons.append(f"price is holding above intraday VWAP ({vwap_distance_pct:+.1f}%)")
             elif vwap_distance_pct <= -REGULAR_VWAP_DISTANCE_THRESHOLD_PCT:
                 location_score = -1
-                reasons.append("price is holding below intraday VWAP")
+                reasons.append(f"price is holding below intraday VWAP ({vwap_distance_pct:+.1f}%)")
 
         if fast_average is not None and slow_average is not None:
             momentum_gap_pct = ((fast_average / slow_average) - 1) * 100
             if momentum_gap_pct >= REGULAR_MOMENTUM_GAP_THRESHOLD_PCT:
                 momentum_votes += 1
-                reasons.append("5-bar momentum is above the 20-bar trend")
+                reasons.append(f"5-bar momentum is above the 20-bar trend ({momentum_gap_pct:+.1f}%)")
             elif momentum_gap_pct <= -REGULAR_MOMENTUM_GAP_THRESHOLD_PCT:
                 momentum_votes -= 1
-                reasons.append("5-bar momentum is below the 20-bar trend")
+                reasons.append(f"5-bar momentum is below the 20-bar trend ({momentum_gap_pct:+.1f}%)")
 
+        # RSI and the daily trend both feed the score below but, until now,
+        # never appeared in the displayed reason - the thesis a trade shows
+        # was silently missing up to half of what actually justified it.
         oscillator_score = 0
         if intraday_rsi is not None:
             if intraday_rsi >= REGULAR_RSI_BULLISH:
                 oscillator_score = 1
+                reasons.append(f"intraday RSI is bullish ({intraday_rsi:.0f})")
             elif intraday_rsi <= REGULAR_RSI_BEARISH:
                 oscillator_score = -1
+                reasons.append(f"intraday RSI is bearish ({intraday_rsi:.0f})")
 
         if slope_pct is not None:
             if slope_pct >= REGULAR_SLOPE_THRESHOLD_PCT:
                 momentum_votes += 1
-                reasons.append("recent 15-minute price slope is rising")
+                reasons.append(f"recent 15-minute price slope is rising ({slope_pct:+.1f}%)")
             elif slope_pct <= -REGULAR_SLOPE_THRESHOLD_PCT:
                 momentum_votes -= 1
-                reasons.append("recent 15-minute price slope is falling")
+                reasons.append(f"recent 15-minute price slope is falling ({slope_pct:+.1f}%)")
 
         # Daily trend is a lighter don't-fight-it check here, not the driver.
         trend_score = 0
@@ -1637,8 +1642,10 @@ def regular_market_context(
             sma_trend_pct = ((sma20 / sma50) - 1) * 100
             if sma_trend_pct >= REGULAR_DAILY_TREND_THRESHOLD_PCT:
                 trend_score = 1
+                reasons.append(f"20-day trend is above the 50-day trend ({sma_trend_pct:+.1f}%)")
             elif sma_trend_pct <= -REGULAR_DAILY_TREND_THRESHOLD_PCT:
                 trend_score = -1
+                reasons.append(f"20-day trend is below the 50-day trend ({sma_trend_pct:+.1f}%)")
 
         momentum_score = 1 if momentum_votes > 0 else (-1 if momentum_votes < 0 else 0)
         # Four independent categories, one point each: trend, location,
@@ -1720,22 +1727,26 @@ def swing_market_context(
         # no signal should silently outweigh another without a clear reason.
         if spot_vs_sma20_pct >= SWING_SMA20_DISTANCE_THRESHOLD_PCT:
             score += 1
-            reasons.append("price is above its 20-day average")
+            reasons.append(f"price is above its 20-day average ({spot_vs_sma20_pct:+.1f}%)")
         elif spot_vs_sma20_pct <= -SWING_SMA20_DISTANCE_THRESHOLD_PCT:
             score -= 1
-            reasons.append("price is below its 20-day average")
+            reasons.append(f"price is below its 20-day average ({spot_vs_sma20_pct:+.1f}%)")
 
         if sma_trend_pct >= SWING_TREND_THRESHOLD_PCT:
             score += 1
-            reasons.append("20-day trend is above the 50-day trend")
+            reasons.append(f"20-day trend is above the 50-day trend ({sma_trend_pct:+.1f}%)")
         elif sma_trend_pct <= -SWING_TREND_THRESHOLD_PCT:
             score -= 1
-            reasons.append("20-day trend is below the 50-day trend")
+            reasons.append(f"20-day trend is below the 50-day trend ({sma_trend_pct:+.1f}%)")
 
+        # RSI feeds the score below but, until now, never appeared in the
+        # displayed reason - see the matching note in regular_market_context.
         if rsi14 >= SWING_RSI_BULLISH:
             score += 1
+            reasons.append(f"RSI is bullish ({rsi14:.0f})")
         elif rsi14 <= SWING_RSI_BEARISH:
             score -= 1
+            reasons.append(f"RSI is bearish ({rsi14:.0f})")
 
         # The "wants to keep going" signature: closing near today's high or low
         # on real volume, not just a quiet drift.

@@ -71,6 +71,27 @@ def test_regular_goes_bearish_on_strong_intraday_breakdown():
     assert context["regime"] == "BEARISH / CONTROLLED"
 
 
+def test_regular_reason_text_includes_rsi_and_daily_trend_when_they_score():
+    # RSI and the daily trend both feed evidence_score but used to never
+    # appear in "reason" - the displayed thesis was silently missing up to
+    # half of what actually justified the trade. A clean, strong uptrend
+    # with a strong intraday grind up should score on every category,
+    # including these two, and now say so.
+    closes = _uptrend_closes()
+    spot = closes[-1]
+    intraday_prices = [spot * (1 + 0.006 * i / 12) for i in range(13)]
+    context = ford_scan.regular_market_context(
+        _daily_history(closes), intraday_prices[-1], intraday=_intraday_bars(intraday_prices)
+    )
+    assert context["qualified"] is True, context["failures"]
+    assert "RSI" in context["reason"]
+    assert "20-day trend" in context["reason"]
+    # Numeric magnitude, not just a static boolean phrase - this is what
+    # makes two genuinely different observations produce different text
+    # even when the same conditions qualify both times.
+    assert "%" in context["reason"]
+
+
 def test_regular_does_not_qualify_on_a_flat_choppy_intraday_tape():
     closes = _flat_closes()
     spot = closes[-1]
@@ -93,6 +114,16 @@ def test_swing_reads_bearish_on_a_clean_downtrend():
     context = ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     assert context["qualified"] is True, context["failures"]
     assert context["regime"] == "BEARISH / CONTROLLED"
+
+
+def test_swing_reason_text_includes_rsi_when_it_scores():
+    # RSI feeds evidence_score here too but used to never appear in
+    # "reason" - same gap as regular_market_context, fixed the same way.
+    closes = _uptrend_closes()
+    context = ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+    assert context["qualified"] is True, context["failures"]
+    assert "RSI" in context["reason"]
+    assert "%" in context["reason"]
 
 
 def test_swing_reads_neutral_on_a_flat_tape():
