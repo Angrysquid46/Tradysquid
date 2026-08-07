@@ -75,7 +75,7 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
         if item.name == "universe-watch" and not inserted_activity:
             rebuilt.append(
                 sync.ChannelSpec(
-                    "MARKET INTELLIGENCE",
+                    "SYSTEM",
                     "system-activity",
                     "Always-on interval receipts, rotating-universe batches, off-hours research, event sweeps, and data freshness.",
                 )
@@ -84,7 +84,7 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
         if item.name == "scanner-controls" and not inserted_diagnostics:
             rebuilt.append(
                 sync.ChannelSpec(
-                    "OWNER CONTROL",
+                    "SYSTEM",
                     "automation-diagnostics",
                     "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures.",
                 )
@@ -95,7 +95,7 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
     if not inserted_activity:
         rebuilt.append(
             sync.ChannelSpec(
-                "MARKET INTELLIGENCE",
+                "SYSTEM",
                 "system-activity",
                 "Always-on interval receipts, rotating-universe batches, off-hours research, event sweeps, and data freshness.",
             )
@@ -103,7 +103,7 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
     if not inserted_diagnostics:
         rebuilt.append(
             sync.ChannelSpec(
-                "OWNER CONTROL",
+                "SYSTEM",
                 "automation-diagnostics",
                 "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures.",
             )
