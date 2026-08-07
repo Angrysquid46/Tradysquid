@@ -62,7 +62,7 @@
     "min_average_stock_volume": 1000000,
     "min_option_open_interest": 100,
     "min_option_volume": 1,
-    "max_bid_ask_pct": 0.25
+    "max_bid_ask_pct": 0.10
   },
   "schedules": {
     "position_stream": true,

@@ -109,7 +109,7 @@ MARKET_CLOSE = (15, 0)
 # Candidate screening
 MIN_OPEN_INTEREST = int(os.environ.get("MIN_OPEN_INTEREST", "100"))
 MIN_OPTION_VOLUME = int(os.environ.get("MIN_OPTION_VOLUME", "1"))
-MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.25"))
+MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.10"))
 # Retained only so legacy credit-spread rows/functions remain readable; new scans do not use them.
 SPREAD_SHORT_DELTA_MIN = float(os.environ.get("SPREAD_SHORT_DELTA_MIN", "0.10"))
 SPREAD_SHORT_DELTA_MAX = float(os.environ.get("SPREAD_SHORT_DELTA_MAX", "0.25"))
@@ -3670,11 +3670,23 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
             "exit_note": exit_note,
         }
 
+    # Derive the reported dollars/percent from the same rounded mark that
+    # gets stored and later re-derived from in close_row, rather than from
+    # the raw unrounded mark - conservative_option_exit can return a
+    # sub-cent midpoint (e.g. 0.015 when bid=0), and rounding that before
+    # vs after the *100 contract multiplier can land on a different dollar
+    # figure. Without this, the P&L Discord announces at close time (which
+    # prefers this live evaluation) can disagree with the number actually
+    # stored and summed into performance totals for the same trade.
+    rounded_mark = round(mark, 2)
+    rounded_pnl = (entry - rounded_mark) if play_type == "SPREAD" else (rounded_mark - entry)
+    rounded_pnl_pct = (rounded_pnl / entry * 100) if entry else 0.0
+
     result = {
         "signal": signal,
-        "mark": round(mark, 2),
-        "pl_dollars": round(pnl * 100),
-        "pl_pct": round(pnl_pct),
+        "mark": rounded_mark,
+        "pl_dollars": round(rounded_pnl * 100),
+        "pl_pct": round(rounded_pnl_pct),
         **details,
     }
     apply_evaluation_to_row(row, result, timestamp)

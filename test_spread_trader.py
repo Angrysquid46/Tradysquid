@@ -209,7 +209,7 @@ def test_bull_put_spread_strike_must_sit_below_real_support():
     chain = [
         {
             "strike": 89.0, "option_type": "put", "symbol": "P89",
-            "bid": 0.15, "ask": 0.17, "greeks": {"delta": -0.10},
+            "bid": 0.16, "ask": 0.17, "greeks": {"delta": -0.10},
             "open_interest": 500, "volume": 50,
         },
         {
@@ -219,7 +219,7 @@ def test_bull_put_spread_strike_must_sit_below_real_support():
         },
         {
             "strike": 97.0, "option_type": "put", "symbol": "P97",
-            "bid": 0.15, "ask": 0.17, "greeks": {"delta": -0.10},
+            "bid": 0.16, "ask": 0.17, "greeks": {"delta": -0.10},
             "open_interest": 500, "volume": 50,
         },
         {
