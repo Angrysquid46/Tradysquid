@@ -456,8 +456,6 @@ TRADER_NAMES = (
 
 def filters_reply() -> str:
     config = dynamic_universe.scanner_config()
-    liquidity = config.get("liquidity") or {}
-    delta = config.get("single_leg_delta") or {}
     traders = config.get("trade_types_enabled") or {}
 
     def status(name: str) -> str:
@@ -474,6 +472,7 @@ def filters_reply() -> str:
         f"RSI bullish / bearish: **{num('regular_rsi_bullish', 60):.0f} / {num('regular_rsi_bearish', 40):.0f}**",
         f"15-min slope / daily trend threshold: **{num('regular_slope_threshold_pct', 0.35):.2f}% / {num('regular_daily_trend_threshold_pct', 0.2):.2f}%**",
         f"Qualifying score: **±{num('regular_score_threshold', 3):.0f}**",
+        f"Delta range: **{ford_scan.REGULAR_LEG_DELTA_MIN:.2f}–{ford_scan.REGULAR_LEG_DELTA_MAX:.2f}**",
         "",
         f"**Swing calls** ({status('swing_calls')}) **/ puts** ({status('swing_puts')})",
         f"20-day distance / trend threshold: **{num('swing_sma20_distance_threshold_pct', 0.25):.2f}% / {num('swing_trend_threshold_pct', 0.2):.2f}%**",
@@ -481,6 +480,7 @@ def filters_reply() -> str:
         f"Minimum volume ratio: **{num('swing_volume_ratio_min', 1.1):.2f}x**",
         f"Close-vs-high bullish / bearish: **{num('swing_close_vs_high_bullish_pct', -0.3):+.2f}% / {num('swing_close_vs_high_bearish_pct', -3.0):+.2f}%**",
         f"Qualifying score: **±{num('swing_score_threshold', 2):.0f}**",
+        f"Delta range: **{ford_scan.SWING_LEG_DELTA_MIN:.2f}–{ford_scan.SWING_LEG_DELTA_MAX:.2f}**",
         "",
         f"**Bull put spreads** ({status('bull_put_spreads')}) **/ bear call spreads** ({status('bear_call_spreads')})",
         f"Min IV/RV ratio / max trend strength: **{num('iv_rv_min_ratio', 1.15):.2f} / {num('spread_max_trend_strength', 0.02):.3f}**",
@@ -494,9 +494,8 @@ def filters_reply() -> str:
         f"Long profit target / stop: **+{num('single_leg_profit_target_pct', 0.2) * 100:.0f}% / -{num('single_leg_stop_pct', 0.15) * 100:.0f}%**",
         f"Breakeven trigger / trail giveback: **{num('single_leg_breakeven_trigger_pct', 10):.0f}% / {num('single_leg_trail_giveback_pct', 8):.0f}pt**",
         f"Delta erosion / IV crush ratio: **{num('single_leg_delta_erosion_ratio', 0.5):.2f} / {num('single_leg_iv_crush_ratio', 0.75):.2f}**",
-        f"Delta range: **{delta.get('min')}–{delta.get('max')}**",
-        f"Minimum OI/volume: **{liquidity.get('min_option_open_interest')} / {liquidity.get('min_option_volume')}**",
-        f"Maximum bid/ask width: **{float(liquidity.get('max_bid_ask_pct', 0)) * 100:.0f}%**",
+        f"Minimum OI/volume: **{ford_scan.MIN_OPEN_INTEREST} / {ford_scan.MIN_OPTION_VOLUME}**",
+        f"Maximum bid/ask width: **{ford_scan.MAX_BID_ASK_PCT * 100:.0f}%**",
         "",
         "Paper trading only. Filters never place brokerage orders.",
         "Change these with /regular-set, /swing-set, /spread-set, /filter-set, or /trader-toggle.",
