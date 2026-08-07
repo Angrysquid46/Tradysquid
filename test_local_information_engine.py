@@ -401,14 +401,14 @@ class InformationEngineTests(unittest.TestCase):
 
     def test_reporting_job_refreshes_all_closed_trade_views(self) -> None:
         rows = [{"trade_id": "F-1", "ticker": "F", "outcome": "WIN"}]
-        state: dict = {}
+        state: dict = {"last_closed_total": 1}
         tracker = object()
         connection = object()
         with (
             patch.object(engine.ford_scan, "read_log", return_value=rows),
             patch.object(engine, "discord_tracker", return_value=tracker),
             patch.object(engine.ford_scan, "read_report_state", return_value=state),
-            patch.object(engine.ford_scan, "update_performance_pages") as pages,
+            patch.object(engine.ford_scan, "refresh_all_summary_dashboards") as refresh,
             patch.object(engine.ford_scan, "sync_reports") as reports,
             patch.object(engine.ford_scan, "write_report_state") as write_state,
             patch.object(engine, "outcome_learning_job") as learning,
@@ -417,7 +417,7 @@ class InformationEngineTests(unittest.TestCase):
             patch.object(engine.trade_intelligence, "acknowledge_many", return_value=6),
         ):
             result = engine.discord_reporting_job(connection)
-        pages.assert_called_once_with(tracker, state, rows)
+        refresh.assert_called_once_with(tracker, state, rows)
         reports.assert_called_once()
         write_state.assert_called_once_with(state)
         learning.assert_called_once_with(connection)
@@ -428,8 +428,8 @@ class InformationEngineTests(unittest.TestCase):
         with (
             patch.object(engine.ford_scan, "read_log", return_value=rows),
             patch.object(engine, "discord_tracker", return_value=object()),
-            patch.object(engine.ford_scan, "read_report_state", return_value={}),
-            patch.object(engine.ford_scan, "update_performance_pages") as pages,
+            patch.object(engine.ford_scan, "read_report_state", return_value={"last_closed_total": 1}),
+            patch.object(engine.ford_scan, "refresh_all_summary_dashboards") as refresh,
             patch.object(engine.ford_scan, "sync_reports") as reports,
             patch.object(engine.ford_scan, "write_report_state"),
             patch.object(engine, "outcome_learning_job") as learning,
@@ -437,10 +437,32 @@ class InformationEngineTests(unittest.TestCase):
             patch.object(engine.trade_intelligence, "pending_rows", return_value=[]),
         ):
             result = engine.discord_reporting_job(object())
-        pages.assert_not_called()
+        refresh.assert_not_called()
         learning.assert_not_called()
         reports.assert_called_once()
         self.assertIn("0 changed", result)
+
+    def test_reporting_job_forces_refresh_after_a_trade_data_reset(self) -> None:
+        """A reset that drops closed trades to zero has nothing "pending" to
+        acknowledge, so pending_rows() alone would never trigger a refresh and
+        the aggregate cards would keep showing stale pre-reset totals forever."""
+        state: dict = {"last_closed_total": 5}
+        tracker = object()
+        with (
+            patch.object(engine.ford_scan, "read_log", return_value=[]),
+            patch.object(engine, "discord_tracker", return_value=tracker),
+            patch.object(engine.ford_scan, "read_report_state", return_value=state),
+            patch.object(engine.ford_scan, "refresh_all_summary_dashboards") as refresh,
+            patch.object(engine.ford_scan, "sync_reports"),
+            patch.object(engine.ford_scan, "write_report_state"),
+            patch.object(engine, "outcome_learning_job") as learning,
+            patch.object(engine, "store_observation"),
+            patch.object(engine.trade_intelligence, "pending_rows", return_value=[]),
+        ):
+            result = engine.discord_reporting_job(object())
+        refresh.assert_called_once_with(tracker, state, [])
+        self.assertEqual(state["last_closed_total"], 0)
+        self.assertIn("0 closed indexed; 0 changed", result)
 
     def test_ticker_results_use_all_closed_trades(self) -> None:
         rows = [
