@@ -37,6 +37,7 @@ OWNER_ONLY_COMMANDS = {
     "swing-set",
     "spread-set",
     "reset-trading-data",
+    "clear-chat-history",
     "ticker-pause",
     "ticker-resume",
     "ticker-remove",
@@ -592,6 +593,22 @@ def reset_trading_data_reply(interaction: dict[str, Any]) -> str:
         "on their next refresh - they render from the live log, not a separate store."
     )
     return "\n".join(lines)
+
+
+def clear_chat_history_reply(interaction: dict[str, Any]) -> str:
+    require_ticker_admin(interaction)
+    confirm = str(option_value(interaction, "confirm", "")).strip()
+    if confirm != "CLEAR":
+        raise ValueError('Type "CLEAR" exactly (all caps) in the confirm field to proceed.')
+    tracker = ford_scan.initialize_discord()
+    removed = tracker.wipe_channel_messages("general_chat", preserve_pinned=True)
+    return (
+        "✅ **Chat history cleared**\n"
+        f"Deleted **{removed}** bot-authored message(s) from #general-chat.\n"
+        "Pinned messages were left untouched. Messages a real person posted "
+        "were never touched either way - this only ever removes command "
+        "replies and other bot-authored messages."
+    )
 
 
 def publish_ticker_configuration() -> str:
@@ -1178,6 +1195,10 @@ def process_command(interaction: dict[str, Any]) -> None:
         elif name == "reset-trading-data":
             patch_original(
                 application_id, token, content=reset_trading_data_reply(interaction)
+            )
+        elif name == "clear-chat-history":
+            patch_original(
+                application_id, token, content=clear_chat_history_reply(interaction)
             )
         elif name == "regular-set":
             patch_original(

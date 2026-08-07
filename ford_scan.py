@@ -382,6 +382,7 @@ CHANNEL_NAMES = {
     "workflow_log": "workflow-log",
     "admin_notes": "scanner-controls",
     "welcome": "welcome",
+    "general_chat": "general-chat",
     "strategy_rules": "rules-and-risk",
     "risk_management": "rules-and-risk",
     "server_guide": "how-to-use-tradebot",
@@ -4262,7 +4263,7 @@ class DiscordTracker:
     ) -> None:
         self.upsert_trade_message(logical_name, state, "result", trade_id, content)
 
-    def wipe_channel_messages(self, logical_name: str) -> int:
+    def wipe_channel_messages(self, logical_name: str, *, preserve_pinned: bool = False) -> int:
         """Delete every bot-authored message in a channel directly, without
         depending on the local log or trade-id tracking to know what's
         there. Built specifically for reset: trade-id-driven deletion only
@@ -4271,6 +4272,13 @@ class DiscordTracker:
         it. This asks Discord what's actually in the channel instead.
         Never touches a message a real person posted - only ones Discord
         itself marks as bot- or webhook-authored.
+
+        preserve_pinned skips any message Discord's own pins list for this
+        channel currently includes - built for a channel that's mostly
+        command-reply clutter but has one deliberately pinned card (a
+        welcome message, a rules summary) that clearing history shouldn't
+        touch. Pins are re-read once per call, not cached, so an unpin
+        between calls is never accidentally respected.
 
         Runs as several passes, not one: a single list-then-delete pass can
         come up short if a burst of deletes hits a rate limit partway
@@ -4281,6 +4289,16 @@ class DiscordTracker:
         channel_id = self.channels.get(logical_name)
         if not self.ready or not channel_id:
             return 0
+        pinned_ids: set[str] = set()
+        if preserve_pinned:
+            try:
+                pins = self._request("GET", f"/channels/{channel_id}/pins")
+                pinned_ids = {
+                    str(item.get("id") or "")
+                    for item in (pins if isinstance(pins, list) else [])
+                }
+            except DiscordError as exc:
+                print(f"Could not read pinned messages in {logical_name}: {exc}", file=sys.stderr)
         removed = 0
         for _ in range(5):
             deleted_this_pass = 0
@@ -4295,7 +4313,7 @@ class DiscordTracker:
                     if not (author.get("bot") or message.get("webhook_id")):
                         continue
                     message_id = str(message.get("id") or "")
-                    if not message_id:
+                    if not message_id or message_id in pinned_ids:
                         continue
                     try:
                         self._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")

@@ -18,6 +18,7 @@ OWNER_ONLY_COMMANDS = {
     "swing-set",
     "spread-set",
     "reset-trading-data",
+    "clear-chat-history",
     "ticker-pause",
     "ticker-resume",
     "ticker-remove",
@@ -236,6 +237,22 @@ COMMANDS = [
                 "description": "Save a backup file of everything before clearing it",
                 "type": 5,
                 "required": True
+            }
+        ]
+    },
+    {
+        "name": "clear-chat-history",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: delete all bot command-reply clutter from #general-chat, keeping pinned messages",
+        "options": [
+            {
+                "name": "confirm",
+                "description": "Type CLEAR exactly to confirm - this cannot be undone from Discord alone",
+                "type": 3,
+                "required": True,
+                "min_length": 5,
+                "max_length": 5
             }
         ]
     },
