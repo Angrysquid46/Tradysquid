@@ -108,7 +108,14 @@ MARKET_CLOSE = (15, 0)
 
 # Candidate screening
 MIN_OPEN_INTEREST = int(os.environ.get("MIN_OPEN_INTEREST", "100"))
-MIN_OPTION_VOLUME = int(os.environ.get("MIN_OPTION_VOLUME", "1"))
+# Open interest alone doesn't prove a contract is tradeable today - it can sit
+# unchanged for weeks. A floor of 1 let contracts with essentially no same-day
+# trading (2, 5 contracts) through, and those are exactly the fills that turn
+# into unreliable marks: an entry against a quote nobody is really trading
+# against, then a mark-to-market swing that isn't a real price move. Traced
+# from live paper trades where every position with single-digit entry-day
+# option volume showed zero favorable excursion before stopping out.
+MIN_OPTION_VOLUME = int(os.environ.get("MIN_OPTION_VOLUME", "50"))
 MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.25"))
 # Retained only so legacy credit-spread rows/functions remain readable; new scans do not use them.
 SPREAD_SHORT_DELTA_MIN = float(os.environ.get("SPREAD_SHORT_DELTA_MIN", "0.10"))
