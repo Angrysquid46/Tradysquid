@@ -1152,6 +1152,94 @@ class InformationEngineTests(unittest.TestCase):
         dynamic_universe.DB_PATH = original_db
         dynamic_universe.CONFIG_PATH = original_config
 
+    def test_robinhood_scan_webhook_is_authenticated_and_scores_by_scan(self) -> None:
+        original_secret = discord_command_bot.ROBINHOOD_SCAN_WEBHOOK_SECRET
+        original_db = dynamic_universe.DB_PATH
+        original_config = dynamic_universe.CONFIG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            discord_command_bot.ROBINHOOD_SCAN_WEBHOOK_SECRET = "test-secret"
+            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
+            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
+            dynamic_universe.CONFIG_PATH.write_text(
+                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":10}',
+                encoding="utf-8",
+            )
+            client = discord_command_bot.APP.test_client()
+            denied = client.post(
+                "/robinhood-scan",
+                json={"scan": "HIGH_OPTIONS_VOLUME_IV", "symbols": ["AMD"]},
+            )
+            self.assertEqual(denied.status_code, 401)
+
+            bad_scan = client.post(
+                "/robinhood-scan?secret=test-secret",
+                json={"scan": "NOT_A_REAL_PRESET", "symbols": ["AMD"]},
+            )
+            self.assertEqual(bad_scan.status_code, 400)
+
+            response = client.post(
+                "/robinhood-scan?secret=test-secret",
+                json={"scan": "high_options_volume_iv", "symbols": ["amd", "nio"]},
+            )
+            self.assertEqual(response.status_code, 202)
+            body = response.get_json()
+            self.assertEqual(body["queued"], 2)
+            self.assertEqual(sorted(body["symbols"]), ["AMD", "NIO"])
+
+            connection = dynamic_universe.connect()
+            try:
+                row = connection.execute(
+                    "SELECT source, score, reason FROM universe WHERE symbol='AMD'"
+                ).fetchone()
+                self.assertEqual(row["source"], "robinhood_mcp")
+                self.assertEqual(row["score"], 60.0)
+                self.assertEqual(row["reason"], "Robinhood HIGH_OPTIONS_VOLUME_IV scan")
+            finally:
+                connection.close()
+        discord_command_bot.ROBINHOOD_SCAN_WEBHOOK_SECRET = original_secret
+        dynamic_universe.DB_PATH = original_db
+        dynamic_universe.CONFIG_PATH = original_config
+
+    def test_import_robinhood_snapshot_uses_a_custom_reason_when_given(self) -> None:
+        original_db = dynamic_universe.DB_PATH
+        original_config = dynamic_universe.CONFIG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
+            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
+            dynamic_universe.CONFIG_PATH.write_text(
+                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":10}',
+                encoding="utf-8",
+            )
+            dynamic_universe.import_robinhood_snapshot({
+                "source": "robinhood_mcp",
+                "symbols": [{"symbol": "T", "score": 60, "reason": "Robinhood DAILY_GAINERS scan"}],
+            })
+            connection = dynamic_universe.connect()
+            try:
+                row = connection.execute(
+                    "SELECT reason FROM universe WHERE symbol='T'"
+                ).fetchone()
+                self.assertEqual(row["reason"], "Robinhood DAILY_GAINERS scan")
+            finally:
+                connection.close()
+            # A plain string row (no dict, no reason) still falls back to the
+            # original text - existing callers like robinhood_readonly_bridge
+            # that only pass symbol strings must keep working unchanged.
+            dynamic_universe.import_robinhood_snapshot({
+                "source": "robinhood_mcp",
+                "symbols": ["VALE"],
+            })
+            connection = dynamic_universe.connect()
+            try:
+                row = connection.execute(
+                    "SELECT reason FROM universe WHERE symbol='VALE'"
+                ).fetchone()
+                self.assertEqual(row["reason"], "read-only discovery")
+            finally:
+                connection.close()
+        dynamic_universe.DB_PATH = original_db
+        dynamic_universe.CONFIG_PATH = original_config
+
     def test_robinhood_adapter_rejects_order_shaped_payloads(self) -> None:
         with self.assertRaises(ValueError):
             dynamic_universe.import_robinhood_snapshot({

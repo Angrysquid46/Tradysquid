@@ -44,6 +44,12 @@ OWNER_ONLY_COMMANDS = {
     "scan-now",
 }
 TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
+ROBINHOOD_SCAN_WEBHOOK_SECRET = os.environ.get("ROBINHOOD_SCAN_WEBHOOK_SECRET", "").strip()
+ROBINHOOD_SCAN_PRESETS = {
+    "HIGH_OPTIONS_VOLUME_IV",
+    "DAILY_GAINERS",
+    "DAILY_LOSERS",
+}
 
 APP = Flask(__name__)
 CHART_LOCK = threading.Lock()
@@ -1344,6 +1350,7 @@ def health() -> Response:
         "ok": True,
         "service": "Tradysquids local command and signal gateway",
         "tradingview_ready": bool(TRADINGVIEW_WEBHOOK_SECRET),
+        "robinhood_scan_ready": bool(ROBINHOOD_SCAN_WEBHOOK_SECRET),
         "paper_trading_only": True,
     })
 
@@ -1389,6 +1396,53 @@ def tradingview_webhook() -> Response:
         )
     ])
     return jsonify({"ok": True, "queued": inserted, "symbol": symbol}), 202
+
+
+@APP.post("/robinhood-scan")
+def robinhood_scan_webhook() -> Response:
+    """Accept a batch of tickers a Robinhood MCP scan surfaced (run by a
+    scheduled Claude routine, since the scan tools only work through an
+    active session - not something this always-on local process can call
+    itself). Read-only discovery only: import_robinhood_snapshot rejects
+    any order/trade/transfer-shaped field structurally, so this can never
+    become a trading pathway no matter what a caller sends."""
+    if not ROBINHOOD_SCAN_WEBHOOK_SECRET:
+        abort(503, "ROBINHOOD_SCAN_WEBHOOK_SECRET is not configured")
+    supplied = (
+        request.headers.get("X-Tradysquids-Secret", "")
+        or request.args.get("secret", "")
+    )
+    if supplied != ROBINHOOD_SCAN_WEBHOOK_SECRET:
+        abort(401, "invalid webhook secret")
+    if request.content_length and request.content_length > 32_768:
+        abort(413, "payload too large")
+    payload = request.get_json(force=True)
+    scan = str(payload.get("scan") or "").strip().upper()
+    if scan not in ROBINHOOD_SCAN_PRESETS:
+        abort(400, f"scan must be one of {sorted(ROBINHOOD_SCAN_PRESETS)}")
+    raw_symbols = payload.get("symbols") or []
+    if not isinstance(raw_symbols, list):
+        abort(400, "symbols must be a list")
+    symbols: list[str] = []
+    for value in raw_symbols[:100]:
+        try:
+            symbols.append(dynamic_universe.normalize_symbol(str(value)))
+        except ValueError:
+            continue
+    inserted = dynamic_universe.import_robinhood_snapshot({
+        "source": "robinhood_mcp",
+        "generated_at": ford_scan.now_ct().isoformat(),
+        "symbols": [
+            {
+                "symbol": symbol,
+                "score": 60,
+                "options_available": True,
+                "reason": f"Robinhood {scan} scan",
+            }
+            for symbol in symbols
+        ],
+    })
+    return jsonify({"ok": True, "queued": inserted, "scan": scan, "symbols": symbols}), 202
 
 
 def handle_message_component(interaction: dict[str, Any]) -> Response:
