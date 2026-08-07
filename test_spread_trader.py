@@ -210,22 +210,22 @@ def test_bull_put_spread_strike_must_sit_below_real_support():
         {
             "strike": 89.0, "option_type": "put", "symbol": "P89",
             "bid": 0.15, "ask": 0.17, "greeks": {"delta": -0.10},
-            "open_interest": 500, "volume": 50,
+            "open_interest": 500, "volume": 200,
         },
         {
             "strike": 90.0, "option_type": "put", "symbol": "P90",
             "bid": 0.35, "ask": 0.38, "greeks": {"delta": -0.20},
-            "open_interest": 500, "volume": 50,
+            "open_interest": 500, "volume": 200,
         },
         {
             "strike": 97.0, "option_type": "put", "symbol": "P97",
             "bid": 0.15, "ask": 0.17, "greeks": {"delta": -0.10},
-            "open_interest": 500, "volume": 50,
+            "open_interest": 500, "volume": 200,
         },
         {
             "strike": 98.0, "option_type": "put", "symbol": "P98",
             "bid": 0.35, "ask": 0.38, "greeks": {"delta": -0.20},
-            "open_interest": 500, "volume": 50,
+            "open_interest": 500, "volume": 200,
         },
     ]
     # Support at 97 - the 98/97 pair has its short strike (98) ABOVE support
