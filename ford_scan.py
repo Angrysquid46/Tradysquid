@@ -3311,6 +3311,7 @@ def single_leg_exit_signal(
     expiring_soon: bool,
     *,
     stop_pct: float | None = None,
+    entry_spread_pct: float = 0.0,
 ) -> tuple[str, str]:
     """Replaces the flat +20%/-15% exit with one that actually uses what's
     already being tracked: the trade's own peak P&L (max_favorable_pct) and
@@ -3320,9 +3321,23 @@ def single_leg_exit_signal(
     longer (swing) than one meant to resolve same-session (regular) -
     defaults to the regular-trade stop if the caller doesn't specify one,
     so nothing else calling this without the new keyword silently changes
-    behavior."""
+    behavior.
+
+    entry_spread_pct is the bid-ask spread paid at entry, as a percent of
+    the entry price - a known, fixed cost the instant you buy, not the
+    market moving against you. This strategy deliberately trades cheap,
+    high-volatility contracts under $100, which naturally carry wider
+    percentage spreads than expensive ones; screening those out at entry
+    would fight the strategy instead of accounting for it. Widening the
+    base stop by this amount means a position only stops out from genuine
+    adverse price movement beyond the round-trip cost already known at
+    entry, not from the spread alone. Only the base stop gets this
+    allowance - the breakeven-lock floor and the take-profit trailing stop
+    are protecting a proven gain, not absorbing an entry cost, so they stay
+    as-is."""
     target_pct = SINGLE_TAKE_PROFIT_PCT * 100
     base_stop_pct = -((stop_pct if stop_pct is not None else SINGLE_STOP_PCT) * 100)
+    base_stop_pct_with_spread_room = base_stop_pct - abs(entry_spread_pct)
 
     if peak_pct >= target_pct:
         # Already a proven winner - protect the gain instead of hard-capping
@@ -3334,7 +3349,7 @@ def single_leg_exit_signal(
                 f"from the {peak_pct:.0f}% peak"
             )
     else:
-        stop_floor = base_stop_pct
+        stop_floor = base_stop_pct_with_spread_room
         locked_breakeven = peak_pct >= BREAKEVEN_TRIGGER_PCT
         if locked_breakeven:
             stop_floor = max(stop_floor, 0.0)
@@ -3353,7 +3368,10 @@ def single_leg_exit_signal(
                 return "BREAKEVEN STOP", (
                     f"breakeven lock: gave back the gain after peaking at {peak_pct:.0f}%"
                 )
-            return "STOP OUT", f"{pnl_pct:.0f}% pnl hit the {base_stop_pct:.0f}% stop"
+            return "STOP OUT", (
+                f"{pnl_pct:.0f}% pnl hit the {base_stop_pct_with_spread_room:.0f}% stop "
+                f"({base_stop_pct:.0f}% base, {abs(entry_spread_pct):.0f}pt spread allowance)"
+            )
 
     if (
         pnl_pct < 0
@@ -3612,6 +3630,8 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
         # itself, before the setup they were entered for had a chance to
         # develop.
         stop_pct = SWING_STOP_PCT if row.get("play_type") == "SWING" else SINGLE_STOP_PCT
+        spread_at_entry = as_float(row.get("bid_ask_width_at_entry"))
+        entry_spread_pct = (spread_at_entry / entry * 100) if spread_at_entry and entry else 0.0
         try:
             signal, exit_note = single_leg_exit_signal(
                 pnl_pct,
@@ -3622,13 +3642,14 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
                 entry_iv,
                 expiring_soon,
                 stop_pct=stop_pct,
+                entry_spread_pct=entry_spread_pct,
             )
         except Exception as exc:
             # If the smarter exit ever misbehaves, fall back to the plain
             # price check rather than leaving a position unmanaged.
             print(f"single_leg_exit_signal errored, using plain stop/target: {exc}", file=sys.stderr)
             exit_note = "fallback: plain stop/target (smart exit errored)"
-            if pnl_pct <= -(stop_pct * 100):
+            if pnl_pct <= -(stop_pct * 100) - entry_spread_pct:
                 signal = "STOP OUT"
             elif pnl_pct >= SINGLE_TAKE_PROFIT_PCT * 100:
                 signal = "TAKE PROFIT"
@@ -3670,11 +3691,23 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
             "exit_note": exit_note,
         }
 
+    # Derive the reported dollars/percent from the same rounded mark that
+    # gets stored and later re-derived from in close_row, rather than from
+    # the raw unrounded mark - conservative_option_exit can return a
+    # sub-cent midpoint (e.g. 0.015 when bid=0), and rounding that before
+    # vs after the *100 contract multiplier can land on a different dollar
+    # figure. Without this, the P&L Discord announces at close time (which
+    # prefers this live evaluation) can disagree with the number actually
+    # stored and summed into performance totals for the same trade.
+    rounded_mark = round(mark, 2)
+    rounded_pnl = (entry - rounded_mark) if play_type == "SPREAD" else (rounded_mark - entry)
+    rounded_pnl_pct = (rounded_pnl / entry * 100) if entry else 0.0
+
     result = {
         "signal": signal,
-        "mark": round(mark, 2),
-        "pl_dollars": round(pnl * 100),
-        "pl_pct": round(pnl_pct),
+        "mark": rounded_mark,
+        "pl_dollars": round(rounded_pnl * 100),
+        "pl_pct": round(rounded_pnl_pct),
         **details,
     }
     apply_evaluation_to_row(row, result, timestamp)
