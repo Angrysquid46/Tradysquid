@@ -35,10 +35,10 @@
   "swing_close_vs_high_bearish_pct": -3.0,
   "swing_score_threshold": 2.0,
   "trade_types_enabled": {
-    "regular_calls": true,
-    "regular_puts": true,
-    "swing_calls": true,
-    "swing_puts": true,
+    "regular_calls": false,
+    "regular_puts": false,
+    "swing_calls": false,
+    "swing_puts": false,
     "bull_put_spreads": true,
     "bear_call_spreads": true
   },
