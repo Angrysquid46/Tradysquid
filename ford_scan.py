@@ -1719,119 +1719,105 @@ def regular_market_context(
     }
 
 
+# Backtested the old trend-following/"closing strong on volume" swing
+# model against real history (no lookahead): 161 historical signals came
+# back WORSE than a coin flip - an adverse move was more likely than a
+# favorable one at every real magnitude tested (1%/2%/3%/5%). A
+# pullback-in-trend variant was tried next and also failed (29% win
+# rate, worse than the original). What actually held up - buying a real
+# RSI oversold-to-recovering bounce, or fading an overbought-to-rolling-
+# over move, instead of chasing strength - was swept across 45 liquid,
+# volatile tickers and validated against TWO genuinely independent
+# ~225-day halves of history, not just the same recent stretch split in
+# two. Only these two tickers showed real, magnitude-real edge (55%+ win
+# rate at a 2%+ move, win rate at least 1.4x the loss rate) in BOTH
+# halves independently. Every other ticker's apparent edge evaporated or
+# reversed once tested against data it wasn't found on. This is
+# deliberately narrow, not a new universal formula - forcing one signal
+# onto every ticker is exactly what failed before.
+MEAN_REVERSION_VALIDATED_TICKERS = {"SHOP", "META"}
+MEAN_REVERSION_RSI_REVERSAL_PTS = float(os.environ.get(
+    "MEAN_REVERSION_RSI_REVERSAL_PTS", configured("mean_reversion_rsi_reversal_pts", 3.0)
+))
+
+
 def swing_market_context(
     history: list[dict[str, Any]],
     spot_price: float,
     intraday: list[dict[str, Any]] | None = None,
+    *,
+    ticker: str | None = None,
 ) -> dict[str, Any]:
-    """The next-day-pop trade: closing strong near today's high on above-average
-    volume, in the direction of the underlying trend. Tolerant of a slow or ugly
-    morning, since this isn't betting on today - it's betting on tomorrow, and the
-    longer-dated contract gives it room to be right a day late."""
+    """See MEAN_REVERSION_VALIDATED_TICKERS above for why this only trades
+    two names and why it looks nothing like a trend-following model.
+
+    ticker defaults to the module-level TICKER (correct for scan_candidates,
+    which is always evaluating the ticker the current scan cycle is set to)
+    but must be passed explicitly by any caller evaluating an existing open
+    row - position tracking iterates rows across many different tickers in
+    one pass, and the ambient TICKER global reflects whatever the last scan
+    cycle happened to set it to, not the row actually being evaluated."""
+    resolved_ticker = ticker if ticker is not None else TICKER
     closes = [value for day in history if (value := as_float(day.get("close"))) is not None]
-    volumes = [value for day in history if (value := as_float(day.get("volume"))) is not None]
     sma20 = simple_moving_average(closes, 20)
     sma50 = simple_moving_average(closes, 50)
-    rsi14 = relative_strength_index(closes)
-    average_volume20 = simple_moving_average(volumes, 20)
-    latest_volume = volumes[-1] if volumes else None
-    volume_ratio = (
-        latest_volume / average_volume20
-        if latest_volume is not None and average_volume20 and average_volume20 > 0
-        else None
-    )
 
-    intraday = intraday or []
-    intraday_closes = [
-        value
-        for bar in intraday
-        if (value := as_float(bar.get("close") or bar.get("price"))) is not None
-    ]
-    close_vs_high_pct = None
-    if intraday_closes:
-        today_high = max(intraday_closes)
-        if today_high > 0:
-            close_vs_high_pct = (spot_price / today_high - 1) * 100
+    if resolved_ticker not in MEAN_REVERSION_VALIDATED_TICKERS:
+        return {
+            "qualified": False,
+            "sma20": sma20,
+            "sma50": sma50,
+            "rsi14": relative_strength_index(closes),
+            "regime": "NO TRADE",
+            "reason": (
+                f"{resolved_ticker} has no backtest-validated swing entry model yet - "
+                "swing only trades tickers where a real signal has been proven "
+                "against independent historical data, not just this one"
+            ),
+            "failures": [f"{resolved_ticker} is not in the validated swing ticker set"],
+        }
+
+    if len(closes) < 20:
+        return {
+            "qualified": False,
+            "sma20": sma20,
+            "sma50": sma50,
+            "rsi14": None,
+            "regime": "NO TRADE",
+            "reason": "insufficient daily history for a swing setup",
+            "failures": ["insufficient daily history for a swing setup"],
+        }
+
+    rsi14 = relative_strength_index(closes)
+    rsi_prior = relative_strength_index(closes[:-3]) if len(closes) > 17 else None
 
     reasons: list[str] = []
     failures: list[str] = []
     regime = "NO TRADE"
-    score = 0
 
-    if sma20 is None or sma50 is None or rsi14 is None:
+    if rsi14 is None or rsi_prior is None:
         failures.append("insufficient daily history for a swing setup")
+    elif rsi_prior <= 30 and rsi14 > rsi_prior + MEAN_REVERSION_RSI_REVERSAL_PTS:
+        regime = "BULLISH / CONTROLLED"
+        reasons.append(
+            f"RSI was oversold ({rsi_prior:.0f}) and is turning back up "
+            f"({rsi14:.0f}) - a confirmed bounce, not a fresh breakout"
+        )
+    elif rsi_prior >= 70 and rsi14 < rsi_prior - MEAN_REVERSION_RSI_REVERSAL_PTS:
+        regime = "BEARISH / CONTROLLED"
+        reasons.append(
+            f"RSI was overbought ({rsi_prior:.0f}) and is rolling over "
+            f"({rsi14:.0f}) - a confirmed fade, not a fresh breakdown"
+        )
     else:
-        spot_vs_sma20_pct = ((spot_price / sma20) - 1) * 100
-        sma_trend_pct = ((sma20 / sma50) - 1) * 100
-
-        # Equal weight per independent signal - there was no real
-        # justification for three of these four counting double while RSI
-        # alone counted single. Same principle as regular's category cap:
-        # no signal should silently outweigh another without a clear reason.
-        if spot_vs_sma20_pct >= SWING_SMA20_DISTANCE_THRESHOLD_PCT:
-            score += 1
-            reasons.append(f"price is above its 20-day average ({spot_vs_sma20_pct:+.1f}%)")
-        elif spot_vs_sma20_pct <= -SWING_SMA20_DISTANCE_THRESHOLD_PCT:
-            score -= 1
-            reasons.append(f"price is below its 20-day average ({spot_vs_sma20_pct:+.1f}%)")
-
-        if sma_trend_pct >= SWING_TREND_THRESHOLD_PCT:
-            score += 1
-            reasons.append(f"20-day trend is above the 50-day trend ({sma_trend_pct:+.1f}%)")
-        elif sma_trend_pct <= -SWING_TREND_THRESHOLD_PCT:
-            score -= 1
-            reasons.append(f"20-day trend is below the 50-day trend ({sma_trend_pct:+.1f}%)")
-
-        # RSI feeds the score below but, until now, never appeared in the
-        # displayed reason - see the matching note in regular_market_context.
-        if SWING_RSI_BULLISH <= rsi14 < SWING_RSI_EXHAUSTION_HIGH:
-            score += 1
-            reasons.append(f"RSI is bullish ({rsi14:.0f})")
-        elif SWING_RSI_EXHAUSTION_LOW < rsi14 <= SWING_RSI_BEARISH:
-            score -= 1
-            reasons.append(f"RSI is bearish ({rsi14:.0f})")
-        elif rsi14 >= SWING_RSI_EXHAUSTION_HIGH or rsi14 <= SWING_RSI_EXHAUSTION_LOW:
-            reasons.append(
-                f"RSI is already extended ({rsi14:.0f}) - excluded from "
-                "scoring, not counted as fresh confirmation"
-            )
-
-        # The "wants to keep going" signature: closing near today's high or low
-        # on real volume, not just a quiet drift.
-        if (
-            close_vs_high_pct is not None
-            and volume_ratio is not None
-            and volume_ratio >= SWING_VOLUME_RATIO_MIN
-        ):
-            if close_vs_high_pct >= SWING_CLOSE_VS_HIGH_BULLISH_PCT:
-                score += 1
-                reasons.append(
-                    f"closing near today's high ({close_vs_high_pct:+.1f}% off it) "
-                    f"on {volume_ratio:.1f}x average volume"
-                )
-            elif close_vs_high_pct <= SWING_CLOSE_VS_HIGH_BEARISH_PCT:
-                score -= 1
-                reasons.append(
-                    f"closing well off today's high ({close_vs_high_pct:+.1f}%) "
-                    f"on {volume_ratio:.1f}x average volume"
-                )
-
-        if score >= SWING_SCORE_THRESHOLD:
-            regime = "BULLISH / CONTROLLED"
-        elif score <= -SWING_SCORE_THRESHOLD:
-            regime = "BEARISH / CONTROLLED"
-        else:
-            regime = "NEUTRAL / RANGE"
-            reasons.append("daily and volume evidence is balanced")
+        failures.append("no confirmed RSI reversal from an oversold/overbought extreme")
 
     return {
         "qualified": not failures,
         "sma20": sma20,
         "sma50": sma50,
         "rsi14": rsi14,
-        "volume_ratio": volume_ratio,
-        "close_vs_high_pct": close_vs_high_pct,
-        "evidence_score": score,
+        "rsi_prior": rsi_prior,
         "regime": regime,
         "reason": "; ".join(reasons) if reasons else "No swing setup confirmed",
         "failures": failures,
@@ -3619,7 +3605,7 @@ def check_thesis_invalidation(row: dict[str, str], timestamp: datetime) -> tuple
         context = (
             regular_market_context(daily, spot_price, intraday)
             if play_type == "REGULAR"
-            else swing_market_context(daily, spot_price, intraday)
+            else swing_market_context(daily, spot_price, intraday, ticker=ticker)
         )
     except Exception as exc:
         # Same posture as every other exit check tonight: a broken read
@@ -6282,7 +6268,7 @@ def scan_candidates(
         regular_context = _unavailable_context(f"regular trader errored: {exc}")
 
     try:
-        swing_context = swing_market_context(daily_history, spot_price, intraday_history)
+        swing_context = swing_market_context(daily_history, spot_price, intraday_history, ticker=TICKER)
     except Exception as exc:  # A bad swing-trader read should not block regular.
         swing_context = _unavailable_context(f"swing trader errored: {exc}")
 
