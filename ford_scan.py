@@ -6285,7 +6285,19 @@ def scan_candidates(
     candidate_expirations: list[tuple[str, str]] = []
     if near_expirations:
         candidate_expirations.append((near_expirations[0], "REGULAR"))
-    if swing_expirations:
+    if TICKER in MEAN_REVERSION_VALIDATED_TICKERS:
+        # The validated mean-reversion signal was backtested on a ~10-
+        # trading-day (~2 week) hold - that matches the near-dated
+        # expiration bucket, not the 21-45 day swing window everything
+        # else in this file uses. Trading it against a contract three-plus
+        # weeks further out than what was actually validated isn't the
+        # same trade, and empirically that far out is exactly where
+        # liquidity disappears for these specific tickers (confirmed live:
+        # AMC's ~2-week contract had 43,000+ open interest; its 30+ day
+        # one had 1).
+        if near_expirations:
+            candidate_expirations.append((near_expirations[0], "SWING"))
+    elif swing_expirations:
         candidate_expirations.append((swing_expirations[0], "SWING"))
 
     stats: dict[str, Any] = {
