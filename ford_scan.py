@@ -140,7 +140,11 @@ REGULAR_LEG_DELTA_MAX = float(os.environ.get(
     "REGULAR_LEG_DELTA_MAX", configured("regular_leg_delta_max", 0.65)
 ))
 SWING_LEG_DELTA_MIN = float(os.environ.get(
-    "SWING_LEG_DELTA_MIN", configured("swing_leg_delta_min", 0.55)
+    # Was 0.55 - real per-ticker delta needed to keep SOFI/HL's contracts
+    # under MAX_CONTRACT_ASK at their live chain price is 0.51-0.62, and
+    # every ticker that only worked below 0.35 also failed the real-$
+    # simulation (AES, DOC), so 0.35 is a validated floor, not a stretch.
+    "SWING_LEG_DELTA_MIN", configured("swing_leg_delta_min", 0.35)
 ))
 SWING_LEG_DELTA_MAX = float(os.environ.get(
     "SWING_LEG_DELTA_MAX", configured("swing_leg_delta_max", 0.70)
@@ -1719,34 +1723,27 @@ def regular_market_context(
     }
 
 
-# Backtested the old trend-following/"closing strong on volume" swing
-# model against real history (no lookahead): 161 historical signals came
-# back WORSE than a coin flip. A pullback-in-trend variant also failed.
-# What held up - a confirmed RSI oversold-bounce/overbought-fade - was
-# swept across 132 tickers total (45 liquid/volatile, then 87 cheap/
-# optionable) and validated against two genuinely independent history
-# halves: SHOP, META, AMC, HIMS all initially passed the stock-direction
-# bar (55%+ win rate at a 2%+ move in BOTH halves).
+# An earlier version of this model traded confirmed RSI oversold-bounce/
+# overbought-fade reversals (SHOP/META/AMC/HIMS, later just AMC) - a
+# contrarian entry that buys before the stock has resumed its prior
+# direction. Replaced with a pure trend-following model: only enter with
+# the direction the stock is already moving, on a pullback that doesn't
+# break the trend, never against it.
 #
-# That wasn't the full picture. A follow-up end-to-end simulation - real
-# entry cost from today's actual chain structure, the literal
-# single_leg_exit_signal stop/target/breakeven rules, real $ P&L, equal
-# $100 risked per trade (not raw dollars, which let META's much higher
-# stock price make its per-contract swings look like better performance
-# when it was just bigger notional) - showed SHOP and HIMS are net
-# NEGATIVE per trade (-3.2%, -4.9% avg) despite passing the direction-
-# only test. META is net positive (+11.8% avg) but physically cannot
-# trade under this strategy's $100-per-trade cap - its contracts run
-# $2,200-3,700 each at the target delta, a fact about a $592 stock, not
-# a bug. AMC is the only one that is both genuinely positive (+10.6%
-# avg) AND fits under the cap. Kept alone until something else earns
-# its way in the same way - passing the direction backtest is necessary
-# but not sufficient; it has to survive being run through the real exit
-# rules in real dollars too.
-MEAN_REVERSION_VALIDATED_TICKERS = {"AMC"}
-MEAN_REVERSION_RSI_REVERSAL_PTS = float(os.environ.get(
-    "MEAN_REVERSION_RSI_REVERSAL_PTS", configured("mean_reversion_rsi_reversal_pts", 3.0)
-))
+# Swept 6 signal shapes (RSI reversal, trend continuation, 20-day
+# breakout, 10/30 SMA crossover, gap-and-go, pullback-to-rising-average)
+# across 250+ liquid optionable tickers, validated on two independent
+# history halves, then run through the real single_leg_exit_signal
+# stop/target/breakeven rules with real $ P&L at the actual live chain
+# price - not just direction. Pullback-to-rising-average was the only
+# trend-following shape that survived: SOFI (+18.0% avg/trade, 62% win)
+# and HL (+12.9-20.9% avg/trade, 47-73% win) both held up in both
+# independent halves and are actually affordable at their real delta
+# right now. AMC (the old reversal model's only survivor) was re-tested
+# under this trend-following model and dropped - it narrowly misses the
+# win-rate bar (54.5%, needs 55%) and its real-$ result is fragile (33%
+# win rate carried by a couple of large trades, n=12).
+MEAN_REVERSION_VALIDATED_TICKERS = {"SOFI", "HL"}
 
 
 def swing_market_context(
@@ -1757,7 +1754,9 @@ def swing_market_context(
     ticker: str | None = None,
 ) -> dict[str, Any]:
     """See MEAN_REVERSION_VALIDATED_TICKERS above for why this only trades
-    two names and why it looks nothing like a trend-following model.
+    two names and how it decides direction: buy calls only while the
+    stock is already in a confirmed uptrend, buy puts only while it's
+    already in a confirmed downtrend - never against the prevailing move.
 
     ticker defaults to the module-level TICKER (correct for scan_candidates,
     which is always evaluating the ticker the current scan cycle is set to)
@@ -1785,7 +1784,7 @@ def swing_market_context(
             "failures": [f"{resolved_ticker} is not in the validated swing ticker set"],
         }
 
-    if len(closes) < 20:
+    if len(closes) < 35:
         return {
             "qualified": False,
             "sma20": sma20,
@@ -1796,36 +1795,43 @@ def swing_market_context(
             "failures": ["insufficient daily history for a swing setup"],
         }
 
-    rsi14 = relative_strength_index(closes)
-    rsi_prior = relative_strength_index(closes[:-3]) if len(closes) > 17 else None
+    sma10 = simple_moving_average(closes, 10)
+    sma30 = simple_moving_average(closes, 30)
+    sma30_prior = simple_moving_average(closes[:-5], 30)
+    last_close = closes[-1]
 
     reasons: list[str] = []
     failures: list[str] = []
     regime = "NO TRADE"
 
-    if rsi14 is None or rsi_prior is None:
+    if sma10 is None or sma30 is None or sma30_prior is None:
         failures.append("insufficient daily history for a swing setup")
-    elif rsi_prior <= 30 and rsi14 > rsi_prior + MEAN_REVERSION_RSI_REVERSAL_PTS:
-        regime = "BULLISH / CONTROLLED"
-        reasons.append(
-            f"RSI was oversold ({rsi_prior:.0f}) and is turning back up "
-            f"({rsi14:.0f}) - a confirmed bounce, not a fresh breakout"
-        )
-    elif rsi_prior >= 70 and rsi14 < rsi_prior - MEAN_REVERSION_RSI_REVERSAL_PTS:
-        regime = "BEARISH / CONTROLLED"
-        reasons.append(
-            f"RSI was overbought ({rsi_prior:.0f}) and is rolling over "
-            f"({rsi14:.0f}) - a confirmed fade, not a fresh breakdown"
-        )
     else:
-        failures.append("no confirmed RSI reversal from an oversold/overbought extreme")
+        rising_trend = sma30 > sma30_prior * 1.01
+        falling_trend = sma30 < sma30_prior * 0.99
+        near_sma10 = abs(last_close / sma10 - 1) < 0.015
+        if rising_trend and last_close > sma30 and near_sma10:
+            regime = "BULLISH / CONTROLLED"
+            reasons.append(
+                "confirmed uptrend (30-day average rising) pulling back to touch "
+                "its 10-day average without breaking it - buying the dip in the "
+                "trend, not fighting it"
+            )
+        elif falling_trend and last_close < sma30 and near_sma10:
+            regime = "BEARISH / CONTROLLED"
+            reasons.append(
+                "confirmed downtrend (30-day average falling) bouncing up to its "
+                "10-day average without breaking it - fading the bounce in the "
+                "trend, not fighting it"
+            )
+        else:
+            failures.append("no confirmed pullback-to-trend setup")
 
     return {
         "qualified": not failures,
         "sma20": sma20,
         "sma50": sma50,
-        "rsi14": rsi14,
-        "rsi_prior": rsi_prior,
+        "rsi14": relative_strength_index(closes),
         "regime": regime,
         "reason": "; ".join(reasons) if reasons else "No swing setup confirmed",
         "failures": failures,

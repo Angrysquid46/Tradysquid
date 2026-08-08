@@ -37,12 +37,16 @@ def test_swing_accepts_a_delta_inside_its_own_range():
     assert len(candidates) == 1
 
 
-def test_swing_rejects_a_delta_that_regular_would_have_accepted():
-    # 0.50 is inside regular's 0.45-0.65 but below swing's 0.55 floor -
-    # confirms the two ranges are genuinely independent, not just a label.
-    chain = [_option(0.50)]
-    candidates = ford_scan.scan_single_legs(chain, "call", "2026-08-14", "SWING")
-    assert candidates == []
+def test_swing_accepts_a_lower_delta_that_regular_would_reject():
+    # Swing's floor widened to 0.35 (see SWING_LEG_DELTA_MIN in ford_scan.py -
+    # SOFI/HL's real validated edge lives at 0.31-0.51 delta, below
+    # regular's 0.45 floor) so swing's range is now a superset of
+    # regular's, not a separate narrower one. 0.38 is below regular's
+    # 0.45 floor but inside swing's 0.35 floor - confirms swing genuinely
+    # reaches lower delta than regular does.
+    chain = [_option(0.38)]
+    assert ford_scan.scan_single_legs(chain, "call", "2026-08-14", "REGULAR") == []
+    assert len(ford_scan.scan_single_legs(chain, "call", "2026-08-14", "SWING")) == 1
 
 
 def test_the_old_shared_constants_still_exist_for_backward_compatibility():

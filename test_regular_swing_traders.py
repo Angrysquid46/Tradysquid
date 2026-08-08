@@ -121,21 +121,25 @@ def test_regular_does_not_qualify_on_a_flat_choppy_intraday_tape():
     assert context["qualified"] is False
 
 
-def _oversold_bounce_closes() -> list[float]:
+def _pullback_in_uptrend_closes() -> list[float]:
+    # Steady climb for 35 days (rising 30-day average), then a shallow
+    # 3-day pullback that touches the 10-day average without breaking
+    # the larger uptrend - the confirmed-trend-pullback shape swing's
+    # BULLISH regime needs.
     closes = [100.0]
-    for _ in range(39):
-        closes.append(round(closes[-1] * 0.985, 2))  # steady decline -> RSI pinned low
+    for _ in range(34):
+        closes.append(round(closes[-1] * 1.01, 2))
     for _ in range(3):
-        closes.append(round(closes[-1] * 1.03, 2))  # 3-day bounce
+        closes.append(round(closes[-1] * 0.995, 2))
     return closes
 
 
-def _overbought_fade_closes() -> list[float]:
+def _pullback_in_downtrend_closes() -> list[float]:
     closes = [100.0]
-    for _ in range(39):
-        closes.append(round(closes[-1] * 1.015, 2))  # steady climb -> RSI pinned high
+    for _ in range(34):
+        closes.append(round(closes[-1] * 0.99, 2))
     for _ in range(3):
-        closes.append(round(closes[-1] * 0.97, 2))  # 3-day fade
+        closes.append(round(closes[-1] * 1.005, 2))
     return closes
 
 
@@ -149,11 +153,11 @@ def _with_ticker(ticker, fn):
 
 
 def test_swing_only_trades_the_backtest_validated_ticker_set():
-    # F is not in MEAN_REVERSION_VALIDATED_TICKERS - a real oversold-bounce
+    # F is not in MEAN_REVERSION_VALIDATED_TICKERS - a real trend-pullback
     # shape must still be blocked, because the edge is only proven for the
     # tickers that survived both the direction backtest AND the real-$
     # exit-rule simulation - not universally.
-    closes = _oversold_bounce_closes()
+    closes = _pullback_in_uptrend_closes()
     context = _with_ticker(
         "F", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     )
@@ -161,45 +165,46 @@ def test_swing_only_trades_the_backtest_validated_ticker_set():
     assert "not in the validated swing ticker set" in context["failures"][0]
 
 
-def test_swing_reads_bullish_on_a_confirmed_oversold_bounce():
-    closes = _oversold_bounce_closes()
+def test_swing_reads_bullish_on_a_confirmed_trend_pullback():
+    closes = _pullback_in_uptrend_closes()
     context = _with_ticker(
-        "AMC", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+        "SOFI", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     )
     assert context["qualified"] is True, context["failures"]
     assert context["regime"] == "BULLISH / CONTROLLED"
-    assert "oversold" in context["reason"]
+    assert "uptrend" in context["reason"]
 
 
-def test_swing_reads_bearish_on_a_confirmed_overbought_fade():
-    closes = _overbought_fade_closes()
+def test_swing_reads_bearish_on_a_confirmed_downtrend_bounce():
+    closes = _pullback_in_downtrend_closes()
     context = _with_ticker(
-        "AMC", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+        "HL", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     )
     assert context["qualified"] is True, context["failures"]
     assert context["regime"] == "BEARISH / CONTROLLED"
-    assert "overbought" in context["reason"]
+    assert "downtrend" in context["reason"]
 
 
-def test_swing_does_not_qualify_without_a_confirmed_reversal():
-    # A validated ticker, but a plain uptrend with no oversold/overbought
-    # extreme to bounce from - there's nothing to confirm.
+def test_swing_does_not_qualify_without_a_confirmed_pullback():
+    # A validated ticker, but a smooth monotonic climb with no pullback
+    # to the 10-day average to buy - there's nothing to confirm.
     closes = _uptrend_closes()
     context = _with_ticker(
-        "AMC", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+        "SOFI", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     )
     assert context["qualified"] is False
-    assert "no confirmed RSI reversal" in context["failures"][0]
+    assert "no confirmed pullback-to-trend setup" in context["failures"][0]
 
 
 def test_swing_drops_tickers_that_failed_the_real_dollar_pnl_simulation():
-    # SHOP, META, and HIMS all passed the stock-direction-only backtest but
+    # SHOP, META, HIMS, and the RSI-reversal model's AMC all passed some
+    # earlier stage (direction backtest, or the old reversal model) but
     # were dropped after an end-to-end $ P&L simulation (real exit rules,
-    # equal risk per trade) showed SHOP/HIMS net negative and META
-    # physically incompatible with the $100-per-trade cap. Passing the
-    # direction test alone must never be enough on its own.
-    closes = _oversold_bounce_closes()
-    for ticker in ("SHOP", "META", "HIMS"):
+    # equal risk per trade) showed them net negative, fragile, or
+    # physically incompatible with the per-trade cap. Passing an earlier
+    # stage alone must never be enough on its own.
+    closes = _pullback_in_uptrend_closes()
+    for ticker in ("SHOP", "META", "HIMS", "AMC"):
         context = _with_ticker(
             ticker, lambda t=ticker: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
         )
