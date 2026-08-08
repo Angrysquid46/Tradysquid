@@ -1726,16 +1726,18 @@ def regular_market_context(
 # pullback-in-trend variant was tried next and also failed (29% win
 # rate, worse than the original). What actually held up - buying a real
 # RSI oversold-to-recovering bounce, or fading an overbought-to-rolling-
-# over move, instead of chasing strength - was swept across 45 liquid,
-# volatile tickers and validated against TWO genuinely independent
-# ~225-day halves of history, not just the same recent stretch split in
-# two. Only these two tickers showed real, magnitude-real edge (55%+ win
-# rate at a 2%+ move, win rate at least 1.4x the loss rate) in BOTH
-# halves independently. Every other ticker's apparent edge evaporated or
-# reversed once tested against data it wasn't found on. This is
-# deliberately narrow, not a new universal formula - forcing one signal
-# onto every ticker is exactly what failed before.
-MEAN_REVERSION_VALIDATED_TICKERS = {"SHOP", "META"}
+# over move, instead of chasing strength - was validated against TWO
+# genuinely independent ~225-day halves of history, not just the same
+# recent stretch split in two, requiring 55%+ win rate at a 2%+ move and
+# win rate at least 1.4x the loss rate in BOTH halves independently.
+# First swept 45 liquid/volatile tickers (SHOP, META passed). A second,
+# wider sweep of 87 cheap/liquid optionable tickers (under ~$40, this
+# strategy's actual price range) found AMC and HIMS pass the identical
+# bar. Every other ticker tested across both sweeps failed - this stays
+# a short, earned list, not a new universal formula. Forcing one signal
+# onto every ticker is exactly what failed before; the fix is testing
+# more tickers for real edge, not lowering the bar to fit more in.
+MEAN_REVERSION_VALIDATED_TICKERS = {"SHOP", "META", "AMC", "HIMS"}
 MEAN_REVERSION_RSI_REVERSAL_PTS = float(os.environ.get(
     "MEAN_REVERSION_RSI_REVERSAL_PTS", configured("mean_reversion_rsi_reversal_pts", 3.0)
 ))
