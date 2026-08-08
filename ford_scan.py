@@ -240,6 +240,19 @@ REGULAR_RSI_BULLISH = float(os.environ.get(
 REGULAR_RSI_BEARISH = float(os.environ.get(
     "REGULAR_RSI_BEARISH", configured("regular_rsi_bearish", 40.0)
 ))
+# Traced two live losing trades directly to this gap: a call entered at RSI
+# 85 and a put entered at RSI 17 both counted as full momentum confirmation
+# and both lost immediately. An unbounded RSI vote treats "still building"
+# and "already exhausted" as the same signal - past these levels the stock
+# is in classic overbought/oversold territory, where the statistical edge
+# favors a snapback, not continuation. Withhold the vote instead of adding
+# an exhausted move as if it were fresh confirmation.
+REGULAR_RSI_EXHAUSTION_HIGH = float(os.environ.get(
+    "REGULAR_RSI_EXHAUSTION_HIGH", configured("regular_rsi_exhaustion_high", 75.0)
+))
+REGULAR_RSI_EXHAUSTION_LOW = float(os.environ.get(
+    "REGULAR_RSI_EXHAUSTION_LOW", configured("regular_rsi_exhaustion_low", 25.0)
+))
 REGULAR_SLOPE_THRESHOLD_PCT = float(os.environ.get(
     "REGULAR_SLOPE_THRESHOLD_PCT", configured("regular_slope_threshold_pct", 0.35)
 ))
@@ -262,6 +275,13 @@ SWING_RSI_BULLISH = float(os.environ.get(
 ))
 SWING_RSI_BEARISH = float(os.environ.get(
     "SWING_RSI_BEARISH", configured("swing_rsi_bearish", 45.0)
+))
+# Same exhaustion gap as the regular RSI vote - see that constant's comment.
+SWING_RSI_EXHAUSTION_HIGH = float(os.environ.get(
+    "SWING_RSI_EXHAUSTION_HIGH", configured("swing_rsi_exhaustion_high", 75.0)
+))
+SWING_RSI_EXHAUSTION_LOW = float(os.environ.get(
+    "SWING_RSI_EXHAUSTION_LOW", configured("swing_rsi_exhaustion_low", 25.0)
 ))
 SWING_VOLUME_RATIO_MIN = float(os.environ.get(
     "SWING_VOLUME_RATIO_MIN", configured("swing_volume_ratio_min", 1.1)
@@ -1634,12 +1654,22 @@ def regular_market_context(
         # was silently missing up to half of what actually justified it.
         oscillator_score = 0
         if intraday_rsi is not None:
-            if intraday_rsi >= REGULAR_RSI_BULLISH:
+            if REGULAR_RSI_BULLISH <= intraday_rsi < REGULAR_RSI_EXHAUSTION_HIGH:
                 oscillator_score = 1
                 reasons.append(f"intraday RSI is bullish ({intraday_rsi:.0f})")
-            elif intraday_rsi <= REGULAR_RSI_BEARISH:
+            elif REGULAR_RSI_EXHAUSTION_LOW < intraday_rsi <= REGULAR_RSI_BEARISH:
                 oscillator_score = -1
                 reasons.append(f"intraday RSI is bearish ({intraday_rsi:.0f})")
+            elif intraday_rsi >= REGULAR_RSI_EXHAUSTION_HIGH:
+                reasons.append(
+                    f"intraday RSI is already extended ({intraday_rsi:.0f}) - "
+                    "excluded from scoring, not counted as fresh confirmation"
+                )
+            elif intraday_rsi <= REGULAR_RSI_EXHAUSTION_LOW:
+                reasons.append(
+                    f"intraday RSI is already extended ({intraday_rsi:.0f}) - "
+                    "excluded from scoring, not counted as fresh confirmation"
+                )
 
         if slope_pct is not None:
             if slope_pct >= REGULAR_SLOPE_THRESHOLD_PCT:
@@ -1754,12 +1784,17 @@ def swing_market_context(
 
         # RSI feeds the score below but, until now, never appeared in the
         # displayed reason - see the matching note in regular_market_context.
-        if rsi14 >= SWING_RSI_BULLISH:
+        if SWING_RSI_BULLISH <= rsi14 < SWING_RSI_EXHAUSTION_HIGH:
             score += 1
             reasons.append(f"RSI is bullish ({rsi14:.0f})")
-        elif rsi14 <= SWING_RSI_BEARISH:
+        elif SWING_RSI_EXHAUSTION_LOW < rsi14 <= SWING_RSI_BEARISH:
             score -= 1
             reasons.append(f"RSI is bearish ({rsi14:.0f})")
+        elif rsi14 >= SWING_RSI_EXHAUSTION_HIGH or rsi14 <= SWING_RSI_EXHAUSTION_LOW:
+            reasons.append(
+                f"RSI is already extended ({rsi14:.0f}) - excluded from "
+                "scoring, not counted as fresh confirmation"
+            )
 
         # The "wants to keep going" signature: closing near today's high or low
         # on real volume, not just a quiet drift.
