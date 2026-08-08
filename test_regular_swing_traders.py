@@ -75,21 +75,40 @@ def test_regular_reason_text_includes_rsi_and_daily_trend_when_they_score():
     # RSI and the daily trend both feed evidence_score but used to never
     # appear in "reason" - the displayed thesis was silently missing up to
     # half of what actually justified the trade. A clean, strong uptrend
-    # with a strong intraday grind up should score on every category,
+    # with an intraday grind up that pulls back periodically (real RSI in
+    # the confirming 60-75 band, not pinned at the 100 ceiling a perfectly
+    # monotonic tape would produce) should score on every category,
     # including these two, and now say so.
+    closes = _uptrend_closes()
+    intraday_prices = [100.0 * 0.97]
+    for i in range(1, 16):
+        intraday_prices.append(
+            intraday_prices[-1] * (0.994 if i % 4 == 0 else 1.004)
+        )
+    context = ford_scan.regular_market_context(
+        _daily_history(closes), intraday_prices[-1], intraday=_intraday_bars(intraday_prices)
+    )
+    assert context["qualified"] is True, context["failures"]
+    assert "RSI is bullish" in context["reason"]
+    assert "20-day trend" in context["reason"]
+    # Numeric magnitude, not just a static boolean phrase - this is what
+    # makes two genuinely different observations produce different text
+    # even when the same conditions qualify both times.
+    assert "%" in context["reason"]
+
+
+def test_regular_extreme_rsi_is_excluded_not_counted_as_fresh_confirmation():
+    # A perfectly monotonic intraday grind pins RSI at the 100 ceiling -
+    # already-exhausted territory, not "still building." It must not be
+    # counted as confirmation just because it crossed the bullish threshold.
     closes = _uptrend_closes()
     spot = closes[-1]
     intraday_prices = [spot * (1 + 0.006 * i / 12) for i in range(13)]
     context = ford_scan.regular_market_context(
         _daily_history(closes), intraday_prices[-1], intraday=_intraday_bars(intraday_prices)
     )
-    assert context["qualified"] is True, context["failures"]
-    assert "RSI" in context["reason"]
-    assert "20-day trend" in context["reason"]
-    # Numeric magnitude, not just a static boolean phrase - this is what
-    # makes two genuinely different observations produce different text
-    # even when the same conditions qualify both times.
-    assert "%" in context["reason"]
+    assert "RSI is bullish" not in context["reason"]
+    assert "already extended" in context["reason"]
 
 
 def test_regular_does_not_qualify_on_a_flat_choppy_intraday_tape():
@@ -119,11 +138,26 @@ def test_swing_reads_bearish_on_a_clean_downtrend():
 def test_swing_reason_text_includes_rsi_when_it_scores():
     # RSI feeds evidence_score here too but used to never appear in
     # "reason" - same gap as regular_market_context, fixed the same way.
-    closes = _uptrend_closes()
+    # A pullback every 4th day keeps daily RSI in the confirming 55-75
+    # band instead of pinned at the 100 ceiling a perfectly monotonic
+    # uptrend would produce.
+    closes = [100.0]
+    for i in range(1, 60):
+        closes.append(round(closes[-1] * (0.988 if i % 4 == 0 else 1.006), 2))
     context = ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     assert context["qualified"] is True, context["failures"]
-    assert "RSI" in context["reason"]
+    assert "RSI is bullish" in context["reason"]
     assert "%" in context["reason"]
+
+
+def test_swing_extreme_rsi_is_excluded_not_counted_as_fresh_confirmation():
+    # A perfectly monotonic daily uptrend pins RSI at the 100 ceiling -
+    # already-exhausted territory. It must not be counted as confirmation
+    # just because it crossed the bullish threshold.
+    closes = _uptrend_closes()
+    context = ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+    assert "RSI is bullish" not in context["reason"]
+    assert "already extended" in context["reason"]
 
 
 def test_swing_reads_neutral_on_a_flat_tape():
