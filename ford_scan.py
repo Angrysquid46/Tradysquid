@@ -3084,11 +3084,20 @@ def scan_single_legs(
         option_volume = option_volume_value(option)
         spread_width = max(ask - bid, 0)
         spread_pct = spread_width / ((ask + bid) / 2)
+        # Liquidity used to be a minor tiebreaker here (log1p(OI)*2,
+        # log1p(volume)*1) - too weak to matter next to delta fit alone, so
+        # a strike that barely cleared the entry floor could easily
+        # outscore one with 10x its real depth. A contract trading 200
+        # shares today and one trading 5,000 are not equivalent just
+        # because both cleared the same minimum - real depth should win
+        # the ranking, not just the pass/fail gate. Both terms weighted up
+        # 4x so genuine liquidity meaningfully outweighs a marginal delta
+        # difference instead of being swamped by it.
         score = (
             40
             + delta * 30
-            + math.log1p(open_interest) * 2
-            + math.log1p(option_volume)
+            + math.log1p(open_interest) * 8
+            + math.log1p(option_volume) * 4
             - spread_pct * 50
             - (ask * 100 / max(MAX_RISK_PER_TRADE, 1)) * 5
         )
