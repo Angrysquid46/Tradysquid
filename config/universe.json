@@ -1,19 +1,7 @@
 {
   "version": 3,
   "seed_symbols": [
-    "AAL",
-    "AMD",
-    "BAC",
-    "CCL",
-    "F",
-    "INTC",
-    "NIO",
-    "NU",
-    "PLTR",
-    "RIVN",
-    "SOFI",
-    "T",
-    "VALE"
+    "SPY"
   ],
   "exclude_symbols": [],
   "max_active_symbols": 25

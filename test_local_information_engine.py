@@ -1035,6 +1035,7 @@ class InformationEngineTests(unittest.TestCase):
     def test_dynamic_universe_rotates_provider_safe_batches(self) -> None:
         original_db = dynamic_universe.DB_PATH
         original_config = dynamic_universe.CONFIG_PATH
+        original_member_state = dynamic_universe.MEMBER_STATE_PATH
         with tempfile.TemporaryDirectory() as temp:
             dynamic_universe.DB_PATH = Path(temp) / "universe.db"
             config = Path(temp) / "universe.json"
@@ -1050,6 +1051,10 @@ class InformationEngineTests(unittest.TestCase):
                 encoding="utf-8",
             )
             dynamic_universe.CONFIG_PATH = config
+            # Real, permanent member additions (e.g. SPY) live in a fixed
+            # state file outside this test's temp dir - isolate it too, or a
+            # real production addition leaks into every test that seeds here.
+            dynamic_universe.MEMBER_STATE_PATH = Path(temp) / "member-universe.json"
             # initialize() no longer force-seeds - explicitly seed here so this
             # test keeps proving exclude_symbols filtering works, independent
             # of whether anything auto-populates the universe.
@@ -1058,6 +1063,7 @@ class InformationEngineTests(unittest.TestCase):
             self.assertEqual(set(dynamic_universe.active_symbols()), {"F", "VALE"})
         dynamic_universe.DB_PATH = original_db
         dynamic_universe.CONFIG_PATH = original_config
+        dynamic_universe.MEMBER_STATE_PATH = original_member_state
 
     def test_initialize_does_not_force_include_hardcoded_seed_symbols(self) -> None:
         original_db = dynamic_universe.DB_PATH
@@ -1275,6 +1281,7 @@ class InformationEngineTests(unittest.TestCase):
     def test_robinhood_bridge_accepts_symbols_without_trade_capability(self) -> None:
         original_db = dynamic_universe.DB_PATH
         original_config = dynamic_universe.CONFIG_PATH
+        original_member_state = dynamic_universe.MEMBER_STATE_PATH
         with tempfile.TemporaryDirectory() as temp:
             dynamic_universe.DB_PATH = Path(temp) / "universe.db"
             dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
@@ -1282,6 +1289,10 @@ class InformationEngineTests(unittest.TestCase):
                 '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":10}',
                 encoding="utf-8",
             )
+            # Real, permanent member additions (e.g. SPY) live in a fixed
+            # state file outside this test's temp dir - isolate it too, or a
+            # real production addition leaks into every test that seeds here.
+            dynamic_universe.MEMBER_STATE_PATH = Path(temp) / "member-universe.json"
             self.assertEqual(
                 robinhood_readonly_bridge.ingest_symbols(["f", "F"]), 1
             )
@@ -1297,6 +1308,7 @@ class InformationEngineTests(unittest.TestCase):
                 connection.close()
         dynamic_universe.DB_PATH = original_db
         dynamic_universe.CONFIG_PATH = original_config
+        dynamic_universe.MEMBER_STATE_PATH = original_member_state
 
     def test_new_closed_trades_are_binary_not_scratch(self) -> None:
         row = {"play_type": "LONG", "entry_price": "0.50"}
