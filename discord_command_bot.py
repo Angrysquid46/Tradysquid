@@ -465,6 +465,7 @@ TRADER_NAMES = (
     "swing_puts",
     "bull_put_spreads",
     "bear_call_spreads",
+    "spy_0dte",
 )
 
 
@@ -510,6 +511,12 @@ def filters_reply() -> str:
         f"Delta erosion / IV crush ratio: **{num('single_leg_delta_erosion_ratio', 0.5):.2f} / {num('single_leg_iv_crush_ratio', 0.75):.2f}**",
         f"Minimum OI/volume: **{ford_scan.MIN_OPEN_INTEREST} / {ford_scan.MIN_OPTION_VOLUME}**",
         f"Maximum bid/ask width: **{ford_scan.MAX_BID_ASK_PCT * 100:.0f}%**",
+        "",
+        f"**SPY 0DTE** ({status('spy_0dte')}) - standalone plan, shares nothing above",
+        f"Opening range window: **{ford_scan.SPY_0DTE_OPENING_RANGE_MINUTES}min**",
+        f"Delta range: **{ford_scan.SPY_0DTE_DELTA_MIN:.2f}–{ford_scan.SPY_0DTE_DELTA_MAX:.2f}**",
+        f"Stop / target: **-{ford_scan.SPY_0DTE_STOP_PCT * 100:.0f}% / +{ford_scan.SPY_0DTE_TARGET_PCT * 100:.0f}%**",
+        f"Max contract ask / position risk: **${ford_scan.SPY_0DTE_MAX_CONTRACT_ASK:.2f} / ${ford_scan.SPY_0DTE_MAX_RISK_PER_TRADE:.0f}**",
         "",
         "Paper trading only. Filters never place brokerage orders.",
         "Change these with /regular-set, /swing-set, /spread-set, /filter-set, or /trader-toggle.",

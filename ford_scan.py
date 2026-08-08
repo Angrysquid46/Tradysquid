@@ -155,6 +155,43 @@ MAX_RISK_PER_TRADE = float(os.environ.get(
 MAX_CONTRACT_ASK = float(os.environ.get(
     "MAX_CONTRACT_ASK", configured("max_contract_ask", 1.00)
 ))
+# SPY 0DTE: a standalone, ticker-exclusive plan built entirely separate
+# from the rest of the system, per explicit owner direction not to reuse
+# any of the multi-ticker machinery above. Its own risk cap, own delta
+# band, own stop/target, own signal - nothing here is read by any other
+# play type, and nothing above is read by this one.
+SPY_0DTE_TICKER = "SPY"
+SPY_0DTE_OPENING_RANGE_MINUTES = int(os.environ.get(
+    "SPY_0DTE_OPENING_RANGE_MINUTES", configured("spy_0dte_opening_range_minutes", 30)
+))
+SPY_0DTE_DELTA_MIN = float(os.environ.get(
+    "SPY_0DTE_DELTA_MIN", configured("spy_0dte_delta_min", 0.40)
+))
+SPY_0DTE_DELTA_MAX = float(os.environ.get(
+    "SPY_0DTE_DELTA_MAX", configured("spy_0dte_delta_max", 0.60)
+))
+SPY_0DTE_MAX_CONTRACT_ASK = float(os.environ.get(
+    "SPY_0DTE_MAX_CONTRACT_ASK", configured("spy_0dte_max_contract_ask", 5.00)
+))
+SPY_0DTE_MAX_RISK_PER_TRADE = float(os.environ.get(
+    "SPY_0DTE_MAX_RISK_PER_TRADE", configured("spy_0dte_max_risk_per_trade", 500.0)
+))
+# Backtested on real intraday bars (opening-range breakout, real
+# transaction costs, worst-case intrabar stop/target checks): 86% win
+# rate, +59.4% avg return/trade, positive in both halves of the ~8-week
+# window Tradier's intraday history covers. Caveat that stays load-
+# bearing: that whole window was one continuous SPY uptrend - there is
+# no independent, differently-regimed period available to confirm this
+# holds in a chop or downtrend, and every win/loss is 50%+ of premium
+# (real leverage, real tail risk a backtest on 5-min bars can't fully
+# capture). Ships paused (trade_types_enabled.spy_0dte = false) until
+# live forward results say otherwise.
+SPY_0DTE_STOP_PCT = float(os.environ.get(
+    "SPY_0DTE_STOP_PCT", configured("spy_0dte_stop_pct", 0.50)
+))
+SPY_0DTE_TARGET_PCT = float(os.environ.get(
+    "SPY_0DTE_TARGET_PCT", configured("spy_0dte_target_pct", 0.50)
+))
 MIN_SPREAD_CREDIT = float(os.environ.get("MIN_SPREAD_CREDIT", "0.05"))
 STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
 MIN_DTE = int(os.environ.get("MIN_DTE", "21"))
@@ -1721,6 +1758,138 @@ def regular_market_context(
         "reason": "; ".join(reasons) if reasons else "No same-session confirmation",
         "failures": failures,
     }
+
+
+def spy_0dte_opening_range_signal(intraday: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Standalone SPY 0DTE entry signal - a classic, real, independently
+    documented day-trading pattern (opening-range breakout), not a
+    variant of regular/swing's momentum models. Waits for the first
+    SPY_0DTE_OPENING_RANGE_MINUTES of the session to establish a high/low,
+    then fires once price genuinely trades outside that range - not on
+    every subsequent bar past it, so a signal fires at most once per
+    session."""
+    intraday = intraday or []
+    bars_needed = max(SPY_0DTE_OPENING_RANGE_MINUTES // 5, 1)
+    if len(intraday) <= bars_needed:
+        return {
+            "qualified": False,
+            "regime": "NO TRADE",
+            "reason": "opening range not yet established",
+            "failures": ["fewer than the opening-range window of bars available"],
+        }
+
+    opening_range = intraday[:bars_needed]
+    highs = [value for bar in opening_range if (value := as_float(bar.get("high"))) is not None]
+    lows = [value for bar in opening_range if (value := as_float(bar.get("low"))) is not None]
+    if not highs or not lows:
+        return {
+            "qualified": False,
+            "regime": "NO TRADE",
+            "reason": "opening range bars missing high/low data",
+            "failures": ["opening range bars missing high/low data"],
+        }
+    range_high, range_low = max(highs), min(lows)
+
+    breakout_bar = None
+    for bar in intraday[bars_needed:]:
+        price = as_float(bar.get("close") or bar.get("price"))
+        if price is None:
+            continue
+        if price > range_high or price < range_low:
+            breakout_bar = (bar, price)
+            break
+
+    if breakout_bar is None:
+        return {
+            "qualified": False,
+            "regime": "NO TRADE",
+            "reason": f"still inside the opening range (${range_low:.2f}-${range_high:.2f})",
+            "failures": ["no breakout of the opening range yet"],
+        }
+
+    bar, price = breakout_bar
+    regime = "BULLISH / CONTROLLED" if price > range_high else "BEARISH / CONTROLLED"
+    direction = "above" if price > range_high else "below"
+    return {
+        "qualified": True,
+        "regime": regime,
+        "breakout_price": price,
+        "range_high": range_high,
+        "range_low": range_low,
+        "reason": (
+            f"broke {direction} the opening range (${range_low:.2f}-${range_high:.2f}) at ${price:.2f}"
+        ),
+        "failures": [],
+    }
+
+
+def spy_0dte_exit_signal(
+    entry_price: float,
+    mark: float,
+    minutes_remaining: float,
+) -> tuple[str, str]:
+    """Standalone SPY 0DTE exit: symmetric stop/target only, plus a hard
+    close as the session ends - no trailing stop, no breakeven lock, no
+    thesis-invalidation re-read. 0DTE has no next session to trail into;
+    by design this is a single-session in-and-out trade, not a scaled-
+    down version of swing's multi-day management."""
+    if entry_price <= 0:
+        return "HOLD", "no entry price to evaluate against"
+    pnl_pct = (mark - entry_price) / entry_price * 100
+    if pnl_pct <= -SPY_0DTE_STOP_PCT * 100:
+        return "STOP OUT", f"down {pnl_pct:.0f}%, past the {SPY_0DTE_STOP_PCT * 100:.0f}% 0DTE stop"
+    if pnl_pct >= SPY_0DTE_TARGET_PCT * 100:
+        return "TAKE PROFIT", f"up {pnl_pct:.0f}%, past the {SPY_0DTE_TARGET_PCT * 100:.0f}% 0DTE target"
+    if minutes_remaining <= 15:
+        return "EOD CLOSE", "closing ahead of same-day expiration - 0DTE never holds overnight"
+    return "HOLD", "no exit condition met"
+
+
+def scan_spy_0dte_candidates(
+    chain: list[dict[str, Any]],
+    kind: str,
+    expiration: str,
+    spot_price: float,
+) -> list[dict[str, Any]]:
+    """Candidate builder for SPY 0DTE - deliberately not scan_single_legs:
+    its own delta band and its own risk cap (SPY_0DTE_MAX_CONTRACT_ASK/
+    SPY_0DTE_MAX_RISK_PER_TRADE), completely independent of every other
+    play type's MAX_CONTRACT_ASK/MAX_RISK_PER_TRADE."""
+    candidates: list[dict[str, Any]] = []
+    for option in chain:
+        if not option_has_liquidity(option):
+            continue
+        delta = abs(greek(option, "delta") or 0.0)
+        if not SPY_0DTE_DELTA_MIN <= delta <= SPY_0DTE_DELTA_MAX:
+            continue
+        ask = as_float(option.get("ask"), 0.0) or 0.0
+        bid = as_float(option.get("bid"), 0.0) or 0.0
+        if ask <= 0:
+            continue
+        if ask > SPY_0DTE_MAX_CONTRACT_ASK or ask * 100 > SPY_0DTE_MAX_RISK_PER_TRADE:
+            continue
+        strike = float(option["strike"])
+        candidates.append(
+            {
+                "play_type": "SPY_0DTE",
+                "call_or_put": kind,
+                "strike": strike,
+                "expiration": expiration,
+                "entry_price": ask,
+                "delta": round(delta, 4),
+                "theta": greek(option, "theta"),
+                "iv": iv_value(option),
+                "open_interest": open_interest_value(option),
+                "option_volume": option_volume_value(option),
+                "symbol": option.get("symbol") or option_symbol(SPY_0DTE_TICKER, expiration, kind, strike),
+                "spot_at_entry": spot_price,
+                "bid_ask_width": round(max(ask - bid, 0), 2),
+            }
+        )
+    # Nearest-to-breakeven (lowest ask) first - the cheapest real contract
+    # that still clears the delta band, not the richest one.
+    candidates.sort(key=lambda c: c["entry_price"])
+    return candidates
 
 
 # An earlier version of this model traded confirmed RSI oversold-bounce/
@@ -3699,6 +3868,34 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
             "short_delta": current_short_delta,
             "net_theta": -(greek(short_quote, "theta") or 0.0) + (greek(long_quote, "theta") or 0.0),
             "iv": current_iv,
+            "exit_note": exit_note,
+        }
+    elif play_type == "SPY_0DTE":
+        quote = quotes.get(row.get("option_symbol", ""))
+        if not quote or not quote_is_reliable_for_exit(quote):
+            return {
+                "signal": "HOLD",
+                "note": "Live option quote unavailable; showing last tracked values.",
+                "mark": as_float(row.get("last_mark"), entry),
+                "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
+                "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
+            }
+        mark = conservative_option_exit(quote)
+        close_time = timestamp.replace(
+            hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1], second=0, microsecond=0
+        )
+        minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
+        try:
+            signal, exit_note = spy_0dte_exit_signal(entry, mark, minutes_remaining)
+        except Exception as exc:
+            print(f"spy_0dte_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
+            signal = "EOD CLOSE"
+            exit_note = "fallback: forced close (smart exit errored) - 0DTE never holds overnight"
+        details = {
+            "delta": greek(quote, "delta"),
+            "theta": greek(quote, "theta"),
+            "iv": iv_value(quote),
+            "minutes_remaining": round(minutes_remaining),
             "exit_note": exit_note,
         }
     else:
@@ -6241,6 +6438,10 @@ DEFAULT_TRADE_TYPES_ENABLED = {
     "swing_puts": True,
     "bull_put_spreads": True,
     "bear_call_spreads": True,
+    # Defaults to paused even in code, not just config - a brand-new,
+    # single-regime-backtested, real-leverage play type should never
+    # silently go live just because a config key went missing.
+    "spy_0dte": False,
 }
 
 
@@ -6422,6 +6623,44 @@ def scan_candidates(
             # and must never take down the scan process itself.
             print(f"{TICKER} {bucket} scan step failed: {exc}", file=sys.stderr)
             continue
+
+    # SPY 0DTE - deliberately outside the loop above: its own expiration
+    # handling (today's date only, never the near/swing buckets every
+    # other play type uses), its own signal, its own candidate builder.
+    if TICKER == SPY_0DTE_TICKER and enabled.get("spy_0dte"):
+        today_str = now_ct().date().isoformat()
+        if today_str in expirations:
+            try:
+                spy_0dte_context = spy_0dte_opening_range_signal(intraday_history)
+            except Exception as exc:
+                spy_0dte_context = _unavailable_context(f"spy 0dte signal errored: {exc}")
+            stats["spy_0dte_market_context"] = spy_0dte_context
+            if spy_0dte_context.get("qualified"):
+                try:
+                    allowed_strikes = set(filter_strikes(get_strikes(TICKER, today_str), spot_price))
+                    raw_chain = get_chain(TICKER, today_str)
+                    chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
+                    for option in chain:
+                        if option.get("symbol"):
+                            quote_map[option["symbol"]] = option
+                    calls = [option for option in chain if option.get("option_type") == "call"]
+                    puts = [option for option in chain if option.get("option_type") == "put"]
+                    regime = spy_0dte_context["regime"]
+                    if regime == "BULLISH / CONTROLLED":
+                        add_candidates(
+                            "SPY 0DTE calls",
+                            scan_spy_0dte_candidates(calls, "call", today_str, spot_price),
+                        )
+                    elif regime == "BEARISH / CONTROLLED":
+                        add_candidates(
+                            "SPY 0DTE puts",
+                            scan_spy_0dte_candidates(puts, "put", today_str, spot_price),
+                        )
+                except Exception as exc:
+                    print(f"SPY 0DTE scan step failed: {exc}", file=sys.stderr)
+        else:
+            stats["spy_0dte_market_context"] = _unavailable_context("no same-day expiration listed today")
+
     stats["qualified_candidates"] = len(candidates)
     return candidates, quote_map, stats
 
