@@ -121,70 +121,92 @@ def test_regular_does_not_qualify_on_a_flat_choppy_intraday_tape():
     assert context["qualified"] is False
 
 
-def test_swing_works_from_daily_data_alone_with_no_intraday():
-    closes = _uptrend_closes()
-    context = ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+def _oversold_bounce_closes() -> list[float]:
+    closes = [100.0]
+    for _ in range(39):
+        closes.append(round(closes[-1] * 0.985, 2))  # steady decline -> RSI pinned low
+    for _ in range(3):
+        closes.append(round(closes[-1] * 1.03, 2))  # 3-day bounce
+    return closes
+
+
+def _overbought_fade_closes() -> list[float]:
+    closes = [100.0]
+    for _ in range(39):
+        closes.append(round(closes[-1] * 1.015, 2))  # steady climb -> RSI pinned high
+    for _ in range(3):
+        closes.append(round(closes[-1] * 0.97, 2))  # 3-day fade
+    return closes
+
+
+def _with_ticker(ticker, fn):
+    original = ford_scan.TICKER
+    ford_scan.TICKER = ticker
+    try:
+        return fn()
+    finally:
+        ford_scan.TICKER = original
+
+
+def test_swing_only_trades_the_backtest_validated_ticker_set():
+    # F is not in MEAN_REVERSION_VALIDATED_TICKERS - a real oversold-bounce
+    # shape must still be blocked, because the edge was only ever proven
+    # for SHOP and META, not universally.
+    closes = _oversold_bounce_closes()
+    context = _with_ticker(
+        "F", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+    )
+    assert context["qualified"] is False
+    assert "not in the validated swing ticker set" in context["failures"][0]
+
+
+def test_swing_reads_bullish_on_a_confirmed_oversold_bounce():
+    closes = _oversold_bounce_closes()
+    context = _with_ticker(
+        "SHOP", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+    )
     assert context["qualified"] is True, context["failures"]
     assert context["regime"] == "BULLISH / CONTROLLED"
+    assert "oversold" in context["reason"]
 
 
-def test_swing_reads_bearish_on_a_clean_downtrend():
-    closes = _downtrend_closes()
-    context = ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+def test_swing_reads_bearish_on_a_confirmed_overbought_fade():
+    closes = _overbought_fade_closes()
+    context = _with_ticker(
+        "META", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+    )
     assert context["qualified"] is True, context["failures"]
     assert context["regime"] == "BEARISH / CONTROLLED"
+    assert "overbought" in context["reason"]
 
 
-def test_swing_reason_text_includes_rsi_when_it_scores():
-    # RSI feeds evidence_score here too but used to never appear in
-    # "reason" - same gap as regular_market_context, fixed the same way.
-    # A pullback every 4th day keeps daily RSI in the confirming 55-75
-    # band instead of pinned at the 100 ceiling a perfectly monotonic
-    # uptrend would produce.
-    closes = [100.0]
-    for i in range(1, 60):
-        closes.append(round(closes[-1] * (0.988 if i % 4 == 0 else 1.006), 2))
-    context = ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
-    assert context["qualified"] is True, context["failures"]
-    assert "RSI is bullish" in context["reason"]
-    assert "%" in context["reason"]
-
-
-def test_swing_extreme_rsi_is_excluded_not_counted_as_fresh_confirmation():
-    # A perfectly monotonic daily uptrend pins RSI at the 100 ceiling -
-    # already-exhausted territory. It must not be counted as confirmation
-    # just because it crossed the bullish threshold.
+def test_swing_does_not_qualify_without_a_confirmed_reversal():
+    # A validated ticker, but a plain uptrend with no oversold/overbought
+    # extreme to bounce from - there's nothing to confirm.
     closes = _uptrend_closes()
-    context = ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
-    assert "RSI is bullish" not in context["reason"]
-    assert "already extended" in context["reason"]
-
-
-def test_swing_reads_neutral_on_a_flat_tape():
-    closes = _flat_closes()
-    context = ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
-    assert context["qualified"] is True, context["failures"]
-    assert context["regime"] == "NEUTRAL / RANGE"
-
-
-def test_swing_rewards_closing_near_the_high_on_elevated_volume():
-    # Mild uptrend, borderline on trend alone - the "closing strong on volume"
-    # signature should be what pushes this over into BULLISH.
-    closes = _uptrend_closes(daily_gain=0.05)
-    volumes = [1_000_000] * (len(closes) - 1) + [2_000_000]  # today: 2x average
-    spot = closes[-1]
-    intraday_prices = [spot * 0.995, spot * 0.997, spot]  # grinds up, closes at today's high
-    with_volume_pop = ford_scan.swing_market_context(
-        _daily_history(closes, volumes), spot, intraday=_intraday_bars(intraday_prices)
+    context = _with_ticker(
+        "SHOP", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     )
-    assert with_volume_pop["regime"] == "BULLISH / CONTROLLED"
-    assert "closing near today's high" in with_volume_pop["reason"]
+    assert context["qualified"] is False
+    assert "no confirmed RSI reversal" in context["failures"][0]
 
 
 def test_trade_types_enabled_defaults_true_when_config_missing_key():
-    enabled = ford_scan.trade_types_enabled()
-    assert enabled["regular_calls"] is True
-    assert enabled["swing_puts"] is True
+    # Isolated from the real config/scanner.json - that file reflects live
+    # trading decisions (e.g. everything paused pending backtest
+    # validation) which is not what this test is checking. This checks
+    # trade_types_enabled()'s own default behavior when a key is absent.
+    original_path = ford_scan.SCANNER_CONFIG_PATH
+    with tempfile.TemporaryDirectory() as tmp:
+        temp_config = Path(tmp) / "scanner.json"
+        temp_config.write_text(json.dumps({}), encoding="utf-8")
+        ford_scan.SCANNER_CONFIG_PATH = temp_config
+        try:
+            enabled = ford_scan.trade_types_enabled()
+            assert enabled["regular_calls"] is True
+            assert enabled["swing_puts"] is True
+        finally:
+            ford_scan.SCANNER_CONFIG_PATH = original_path
 
 
 def test_trade_types_enabled_honors_a_disabled_flag():
@@ -223,19 +245,5 @@ def test_regular_category_scoring_caps_the_maximum_possible_score():
     intraday_prices = [spot * (1 + 0.006 * i / 12) for i in range(13)]
     context = ford_scan.regular_market_context(
         _daily_history(closes), intraday_prices[-1], intraday=_intraday_bars(intraday_prices)
-    )
-    assert abs(context["evidence_score"]) <= 4
-
-
-def test_swing_score_ceiling_is_now_four_not_seven():
-    # Before equal weighting, three of the four signals counted double
-    # (2+2+1+2=7 max). Now every signal is worth at most 1, so the true
-    # ceiling is 4 - directly verifiable regardless of which signals a
-    # given scenario happens to trigger.
-    closes = _uptrend_closes()
-    spot = closes[-1]
-    intraday_prices = _intraday_bars([spot * 0.995, spot * 0.998, spot])
-    context = ford_scan.swing_market_context(
-        _daily_history(closes, volumes=[2_000_000] * 60), spot, intraday=intraday_prices
     )
     assert abs(context["evidence_score"]) <= 4

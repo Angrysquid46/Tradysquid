@@ -37,8 +37,8 @@
   "trade_types_enabled": {
     "regular_calls": false,
     "regular_puts": false,
-    "swing_calls": false,
-    "swing_puts": false,
+    "swing_calls": true,
+    "swing_puts": true,
     "bull_put_spreads": false,
     "bear_call_spreads": false
   },
