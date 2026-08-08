@@ -3310,6 +3310,30 @@ def symbols_for_rows(rows: list[dict[str, str]]) -> list[str]:
     return list(dict.fromkeys(symbol for symbol in symbols if symbol))
 
 
+EXIT_MAX_BID_ASK_PCT = float(os.environ.get(
+    "EXIT_MAX_BID_ASK_PCT", configured("exit_max_bid_ask_pct", 0.60)
+))
+
+
+def quote_is_reliable_for_exit(quote: dict[str, Any]) -> bool:
+    """Entry has a liquidity/spread gate (option_has_liquidity); nothing
+    re-checked that once a position was open. A contract that was liquid at
+    entry can go dead by the time it's marked to close, and
+    conservative_option_exit blindly trusted whatever bid came back no
+    matter how wide the spread around it - which is exactly how a real
+    -10% underlying-implied loss got marked and closed as -77% (CLF) and
+    -98% (NIO): a thin, essentially un-traded bid quote taken at face value
+    instead of being recognized as unreliable. Wider than normal at exit is
+    expected and fine - full-blown implausible is not."""
+    bid = as_float(quote.get("bid"), 0.0) or 0.0
+    ask = as_float(quote.get("ask"), 0.0) or 0.0
+    if bid <= 0 or ask <= 0:
+        return True
+    midpoint = (bid + ask) / 2
+    spread_pct = ((ask - bid) / midpoint) if midpoint > 0 else float("inf")
+    return spread_pct <= EXIT_MAX_BID_ASK_PCT
+
+
 def conservative_option_exit(quote: dict[str, Any]) -> float:
     bid = as_float(quote.get("bid"), 0.0) or 0.0
     ask = as_float(quote.get("ask"), 0.0) or 0.0
@@ -3615,7 +3639,12 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
     if play_type == "SPREAD":
         short_quote = quotes.get(row.get("short_symbol", ""))
         long_quote = quotes.get(row.get("long_symbol", ""))
-        if not short_quote or not long_quote:
+        if (
+            not short_quote
+            or not long_quote
+            or not quote_is_reliable_for_exit(short_quote)
+            or not quote_is_reliable_for_exit(long_quote)
+        ):
             return {
                 "signal": "HOLD",
                 "note": "Live leg quote unavailable; showing last tracked values.",
@@ -3665,7 +3694,7 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
         }
     else:
         quote = quotes.get(row.get("option_symbol", ""))
-        if not quote:
+        if not quote or not quote_is_reliable_for_exit(quote):
             return {
                 "signal": "HOLD",
                 "note": "Live option quote unavailable; showing last tracked values.",
