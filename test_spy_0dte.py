@@ -125,9 +125,12 @@ def test_candidate_builder_rejects_a_contract_over_its_own_risk_cap():
     assert ford_scan.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0) == []
 
 
-def test_spy_0dte_ships_paused_by_default():
-    enabled = ford_scan.trade_types_enabled()
-    assert enabled["spy_0dte"] is False
+def test_spy_0dte_defaults_paused_when_config_is_silent():
+    # The code-level fallback (not the live config, which this session
+    # intentionally flips on) must still default to paused - a missing
+    # config key must never silently enable a leveraged, single-regime-
+    # backtested play type.
+    assert ford_scan.DEFAULT_TRADE_TYPES_ENABLED["spy_0dte"] is False
 
 
 def _row(**overrides) -> dict[str, str]:

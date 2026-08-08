@@ -37,11 +37,11 @@
   "trade_types_enabled": {
     "regular_calls": false,
     "regular_puts": false,
-    "swing_calls": true,
-    "swing_puts": true,
+    "swing_calls": false,
+    "swing_puts": false,
     "bull_put_spreads": false,
     "bear_call_spreads": false,
-    "spy_0dte": false
+    "spy_0dte": true
   },
   "providers": {
     "tradier": {
