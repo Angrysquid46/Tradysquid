@@ -92,6 +92,16 @@ class UpgradeBatch44Tests(unittest.TestCase):
             journal_contract.REQUIRED_ENTRY_MARKERS,
         )
 
+    def test_universe_rotation_is_a_noop_while_the_universe_is_manually_curated(self) -> None:
+        # Owner directive: the active universe is manually curated while
+        # SPY trades exclusively - this job's whole purpose is promoting
+        # OTHER tickers into that universe, which must stay off by
+        # default and must not touch dynamic_universe at all when it is.
+        self.assertFalse(batch.UNIVERSE_ROTATION_ENABLED)
+        result = batch.universe_rotation_job(None)
+        self.assertIn("disabled", result)
+        self.assertIn("manually curated", result)
+
     def test_engine_install_registers_batch_jobs_once(self) -> None:
         batch.install_engine()
         names = [job.name for job in batch._engine().JOBS]

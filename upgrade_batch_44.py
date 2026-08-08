@@ -37,6 +37,16 @@ CHART_BATCH_SIZE = max(3, min(12, int(os.environ.get("INTRADAY_CHART_BATCH_SIZE"
 ROTATION_BATCH_SIZE = max(4, min(16, int(os.environ.get("UNIVERSE_CANDIDATE_BATCH_SIZE", "10"))))
 ROTATION_COOLDOWN_HOURS = max(6, int(os.environ.get("UNIVERSE_ROTATION_COOLDOWN_HOURS", "24")))
 ROTATION_LIMIT = max(1, min(4, int(os.environ.get("UNIVERSE_ROTATION_LIMIT", "2"))))
+# Owner directive: the active universe is manually curated (owner-added
+# tickers only) while the system trades SPY exclusively - this job's own
+# purpose is to auto-promote OTHER tickers into that universe, which is
+# exactly what's paused here. ROTATION_LIMIT floors at 1 and can't reach
+# zero on its own, so this is a real, separate off-switch, not a repeat
+# of that setting. Defaults False; UNIVERSE_ROTATION_ENABLED=true (env)
+# or scanner.json's universe_rotation_enabled restores the old behavior.
+UNIVERSE_ROTATION_ENABLED = str(os.environ.get(
+    "UNIVERSE_ROTATION_ENABLED", ford_scan.configured("universe_rotation_enabled", False)
+)).strip().lower() not in ("false", "0", "no", "")
 
 LIQUID_CANDIDATES = (
     "AAPL", "MSFT", "NVDA", "AMZN", "META", "TSLA", "GOOGL", "NFLX",
@@ -952,6 +962,8 @@ def _candidate_score(symbol: str, quote: dict[str, Any], performance: dict[str, 
 
 
 def universe_rotation_job(connection: Any) -> str:
+    if not UNIVERSE_ROTATION_ENABLED:
+        return "disabled - active universe is manually curated (UNIVERSE_ROTATION_ENABLED=false)"
     state = _rotation_state()
     state.setdefault("rotated_out", {})
     now = _now()
