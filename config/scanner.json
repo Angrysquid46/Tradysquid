@@ -40,7 +40,8 @@
     "swing_calls": true,
     "swing_puts": true,
     "bull_put_spreads": false,
-    "bear_call_spreads": false
+    "bear_call_spreads": false,
+    "spy_0dte": false
   },
   "providers": {
     "tradier": {
