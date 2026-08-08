@@ -1721,23 +1721,29 @@ def regular_market_context(
 
 # Backtested the old trend-following/"closing strong on volume" swing
 # model against real history (no lookahead): 161 historical signals came
-# back WORSE than a coin flip - an adverse move was more likely than a
-# favorable one at every real magnitude tested (1%/2%/3%/5%). A
-# pullback-in-trend variant was tried next and also failed (29% win
-# rate, worse than the original). What actually held up - buying a real
-# RSI oversold-to-recovering bounce, or fading an overbought-to-rolling-
-# over move, instead of chasing strength - was validated against TWO
-# genuinely independent ~225-day halves of history, not just the same
-# recent stretch split in two, requiring 55%+ win rate at a 2%+ move and
-# win rate at least 1.4x the loss rate in BOTH halves independently.
-# First swept 45 liquid/volatile tickers (SHOP, META passed). A second,
-# wider sweep of 87 cheap/liquid optionable tickers (under ~$40, this
-# strategy's actual price range) found AMC and HIMS pass the identical
-# bar. Every other ticker tested across both sweeps failed - this stays
-# a short, earned list, not a new universal formula. Forcing one signal
-# onto every ticker is exactly what failed before; the fix is testing
-# more tickers for real edge, not lowering the bar to fit more in.
-MEAN_REVERSION_VALIDATED_TICKERS = {"SHOP", "META", "AMC", "HIMS"}
+# back WORSE than a coin flip. A pullback-in-trend variant also failed.
+# What held up - a confirmed RSI oversold-bounce/overbought-fade - was
+# swept across 132 tickers total (45 liquid/volatile, then 87 cheap/
+# optionable) and validated against two genuinely independent history
+# halves: SHOP, META, AMC, HIMS all initially passed the stock-direction
+# bar (55%+ win rate at a 2%+ move in BOTH halves).
+#
+# That wasn't the full picture. A follow-up end-to-end simulation - real
+# entry cost from today's actual chain structure, the literal
+# single_leg_exit_signal stop/target/breakeven rules, real $ P&L, equal
+# $100 risked per trade (not raw dollars, which let META's much higher
+# stock price make its per-contract swings look like better performance
+# when it was just bigger notional) - showed SHOP and HIMS are net
+# NEGATIVE per trade (-3.2%, -4.9% avg) despite passing the direction-
+# only test. META is net positive (+11.8% avg) but physically cannot
+# trade under this strategy's $100-per-trade cap - its contracts run
+# $2,200-3,700 each at the target delta, a fact about a $592 stock, not
+# a bug. AMC is the only one that is both genuinely positive (+10.6%
+# avg) AND fits under the cap. Kept alone until something else earns
+# its way in the same way - passing the direction backtest is necessary
+# but not sufficient; it has to survive being run through the real exit
+# rules in real dollars too.
+MEAN_REVERSION_VALIDATED_TICKERS = {"AMC"}
 MEAN_REVERSION_RSI_REVERSAL_PTS = float(os.environ.get(
     "MEAN_REVERSION_RSI_REVERSAL_PTS", configured("mean_reversion_rsi_reversal_pts", 3.0)
 ))

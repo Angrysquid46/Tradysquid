@@ -5,8 +5,8 @@ classifier used at entry and flags a genuine reversal, requiring two
 consecutive confirmations (same persistence principle as the Greeks
 gate) so a single noisy regime re-read can't close a position alone.
 
-Swing's classifier only trades SHOP/META (see MEAN_REVERSION_VALIDATED_
-TICKERS in ford_scan.py) and reacts to a confirmed RSI oversold-bounce/
+Swing's classifier only trades AMC (see MEAN_REVERSION_VALIDATED_TICKERS
+in ford_scan.py) and reacts to a confirmed RSI oversold-bounce/
 overbought-fade, not a plain trend - fixtures here build that shape
 directly instead of a generic up/downtrend.
 """
@@ -41,7 +41,7 @@ def _overbought_fade_closes() -> list[float]:
 
 def _row(**overrides) -> dict[str, str]:
     row = {field: "" for field in ford_scan.LOG_HEADER}
-    row.update({"trade_id": "T-1", "ticker": "SHOP", "outcome": "OPEN"})
+    row.update({"trade_id": "T-1", "ticker": "AMC", "outcome": "OPEN"})
     row.update(overrides)
     return row
 
@@ -51,7 +51,7 @@ class _PrimedCache:
     of a `with` block, then removes exactly what it added - so nothing
     leaks into unrelated tests that happen to also use the same ticker."""
 
-    def __init__(self, closes: list[float], ticker: str = "SHOP"):
+    def __init__(self, closes: list[float], ticker: str = "AMC"):
         self.closes = closes
         self.ticker = ticker
 
@@ -96,14 +96,14 @@ def test_a_call_still_matching_a_bullish_regime_is_not_flagged():
 
 def test_a_first_invalidation_reading_only_watches_does_not_close():
     quote = {
-        "SHOP260821C00100000": {
-            "symbol": "SHOP260821C00100000", "bid": 0.95, "ask": 1.00,
+        "AMC260821C00100000": {
+            "symbol": "AMC260821C00100000", "bid": 0.95, "ask": 1.00,
             "greeks": {"delta": 0.30, "mid_iv": 0.40},
         }
     }
     row = _row(
         play_type="SWING", call_or_put="call", entry_price="1.00",
-        option_symbol="SHOP260821C00100000",
+        option_symbol="AMC260821C00100000",
         delta_at_entry="0.32", iv_at_entry="0.41",
         expiration=(ford_scan.now_ct().date() + ford_scan.timedelta(days=30)).isoformat(),
         max_favorable_pct="0", thesis_invalid_streak="0",
@@ -116,14 +116,14 @@ def test_a_first_invalidation_reading_only_watches_does_not_close():
 
 def test_a_second_consecutive_invalidation_reading_actually_closes():
     quote = {
-        "SHOP260821C00100000": {
-            "symbol": "SHOP260821C00100000", "bid": 0.95, "ask": 1.00,
+        "AMC260821C00100000": {
+            "symbol": "AMC260821C00100000", "bid": 0.95, "ask": 1.00,
             "greeks": {"delta": 0.30, "mid_iv": 0.40},
         }
     }
     row = _row(
         play_type="SWING", call_or_put="call", entry_price="1.00",
-        option_symbol="SHOP260821C00100000",
+        option_symbol="AMC260821C00100000",
         delta_at_entry="0.32", iv_at_entry="0.41",
         expiration=(ford_scan.now_ct().date() + ford_scan.timedelta(days=30)).isoformat(),
         max_favorable_pct="0", thesis_invalid_streak="1",  # already seen once
@@ -137,14 +137,14 @@ def test_thesis_invalidation_never_overrides_a_real_price_stop_already_firing():
     # A genuine stop-out must win even if the regime also happens to have
     # reversed - this is a lower-priority signal, not a competing one.
     quote = {
-        "SHOP260821C00100000": {
-            "symbol": "SHOP260821C00100000", "bid": 0.60, "ask": 0.65,
+        "AMC260821C00100000": {
+            "symbol": "AMC260821C00100000", "bid": 0.60, "ask": 0.65,
             "greeks": {"delta": 0.20, "mid_iv": 0.35},
         }
     }
     row = _row(
         play_type="SWING", call_or_put="call", entry_price="1.00",
-        option_symbol="SHOP260821C00100000",
+        option_symbol="AMC260821C00100000",
         delta_at_entry="0.32", iv_at_entry="0.41",
         expiration=(ford_scan.now_ct().date() + ford_scan.timedelta(days=30)).isoformat(),
         max_favorable_pct="0", thesis_invalid_streak="1",
@@ -167,6 +167,6 @@ def test_terminal_signal_sets_include_thesis_invalidated():
 def test_cache_priming_does_not_leak_between_tests():
     # Directly verifies the cleanup contract this whole file depends on.
     with _PrimedCache(_uptrend_closes()):
-        assert "SHOP" in ford_scan.DAILY_SNAPSHOT_CACHE
-    assert "SHOP" not in ford_scan.DAILY_SNAPSHOT_CACHE
-    assert "SHOP" not in ford_scan.INTRADAY_SNAPSHOT_CACHE
+        assert "AMC" in ford_scan.DAILY_SNAPSHOT_CACHE
+    assert "AMC" not in ford_scan.DAILY_SNAPSHOT_CACHE
+    assert "AMC" not in ford_scan.INTRADAY_SNAPSHOT_CACHE
