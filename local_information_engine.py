@@ -1412,14 +1412,42 @@ def universe_refresh_job(connection: sqlite3.Connection) -> str:
     return f"{updated}/{len(symbols)} universe quotes refreshed"
 
 
+def _current_commit_sha() -> str:
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
 def discord_structure_sync_job(connection: sqlite3.Connection) -> str:
     """Keep the live Discord server's channels, categories, and guide text
     in sync with what the code actually defines. The deploy path deliberately
     never runs this (Discord is a runtime responsibility, not a deployment
-    gate - see run_supervisor_simple.py), so this periodic job is what
-    actually makes "the code changed" eventually mean "Discord changed"."""
+    gate - see run_supervisor_simple.py), so this is what actually makes
+    "the code changed" eventually mean "Discord changed" - checked on a
+    short interval so a same-day code change (this trades 0DTE; a stale
+    scanner description or a channel that should be gone sitting there for
+    hours is not acceptable) shows up within minutes, not hours. Cheap to
+    check every cycle: only the actual Discord API sync - the expensive
+    part - is skipped when the code has not moved since the last time it
+    ran, so this does not hammer the Discord API when nothing changed."""
     if not (spy_scanner.DISCORD_BOT_TOKEN and spy_scanner.DISCORD_GUILD_ID):
         return "Discord bot token/guild not configured; skipped"
+    current_sha = _current_commit_sha()
+    last = latest_observation("discord-structure-sync")
+    last_sha = str((last or {}).get("payload", {}).get("sha") or "")
+    if current_sha and current_sha == last_sha:
+        return f"already synced at {current_sha[:12]}; no code change since"
+
     import sys
 
     import sync_discord_structure_reports  # noqa: F401  (runs the patch chain on import)
@@ -1433,8 +1461,8 @@ def discord_structure_sync_job(connection: sqlite3.Connection) -> str:
         sys.argv = original_argv
     if result:
         raise RuntimeError(f"Discord structure sync exited with code {result}")
-    store_observation(connection, "discord-structure-sync", {"at": iso_now()})
-    return "Discord channels, categories, and guides synchronized"
+    store_observation(connection, "discord-structure-sync", {"at": iso_now(), "sha": current_sha})
+    return f"Discord channels, categories, and guides synchronized at {current_sha[:12] or 'unknown'}"
 
 
 def _route_stream_close(
@@ -1860,11 +1888,11 @@ JOBS = [
     ),
     Job(
         "discord-structure-sync",
-        timedelta(hours=2),
+        timedelta(minutes=3),
         discord_structure_sync_job,
         background=True,
         provider_heavy=True,
-        retry_interval=timedelta(minutes=15),
+        retry_interval=timedelta(minutes=2),
     ),
     Job(
         "managed-ticker-news",
