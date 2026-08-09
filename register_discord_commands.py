@@ -234,7 +234,7 @@ COMMANDS = [
             },
             {
                 "name": "archive",
-                "description": "Legacy option, now ignored - a backup is always saved before clearing",
+                "description": "Save a backup file of everything before clearing it",
                 "type": 5,
                 "required": True
             }
