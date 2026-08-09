@@ -82,13 +82,7 @@ CHANNELS = [
     ChannelSpec("MARKET INTELLIGENCE", "market-regime", "Broad-market context, trend, and volatility conditions."),
     ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "Active symbols, discovery source, rank, and exclusions."),
     ChannelSpec("PERFORMANCE", "performance-dashboard", "Lifecycle totals and recorded paper performance."),
-    ChannelSpec("PERFORMANCE", "strategy-results", "Results by strategy, DTE, delta, and regime."),
-    ChannelSpec("PERFORMANCE", "regular-calls", "Regular long-call results, P/L, expectancy, excursions, and journal links."),
-    ChannelSpec("PERFORMANCE", "regular-puts", "Regular long-put results, P/L, expectancy, excursions, and journal links."),
-    ChannelSpec("PERFORMANCE", "swing-calls", "Swing long-call results, P/L, expectancy, excursions, and journal links."),
-    ChannelSpec("PERFORMANCE", "swing-puts", "Swing long-put results, P/L, expectancy, excursions, and journal links."),
-    ChannelSpec("PERFORMANCE", "bull-put-spreads", "Bull put-spread results, P/L, expectancy, excursions, and journal links."),
-    ChannelSpec("PERFORMANCE", "bear-call-spreads", "Bear call-spread results, P/L, expectancy, excursions, and journal links."),
+    ChannelSpec("PERFORMANCE", "strategy-results", "SPY 0DTE results by DTE, delta, and regime - the only live strategy."),
     ChannelSpec("PERFORMANCE", "ticker-results", "Results by underlying without ticker-specific desks."),
     ChannelSpec("PERFORMANCE", "learning-results", "Evidence summaries that never change filters automatically."),
     ChannelSpec("LEARNING CENTER", "learning-index", "Complete organized curriculum and recommended learning path."),
@@ -116,7 +110,7 @@ CHANNELS = [
     ChannelSpec("SYSTEM", "system-health", "Local service health, freshness, queue depth, and restarts."),
     ChannelSpec("SYSTEM", "update-status", "Deploy checks, current commit, and auto-update outcomes."),
     ChannelSpec("SYSTEM", "provider-status", "Tradier, TradingView, Discord, and read-only MCP status."),
-    ChannelSpec("STRATEGY CONTROL", "strategy-control", "Current status and quick controls for all six strategies."),
+    ChannelSpec("STRATEGY CONTROL", "strategy-control", "Current status and quick controls for the live SPY 0DTE strategy."),
     ChannelSpec("STRATEGY CONTROL", "strategy-settings", "Active filters and thresholds per strategy."),
     ChannelSpec("STRATEGY CONTROL", "strategy-versions", "Version history and configuration hashes per strategy."),
     ChannelSpec("STRATEGY CONTROL", "trade-overrides", "Owner-issued manual overrides to an in-progress trade."),
@@ -133,6 +127,8 @@ DELETE_CHANNELS = {
     "f-dashboard", "f-options-setups", "f-charts", "f-news-events",
     "f-research-performance", "vale-dashboard", "vale-options-setups",
     "vale-charts", "vale-news-events", "vale-research-performance",
+    "regular-calls", "regular-puts", "swing-calls", "swing-puts",
+    "bull-put-spreads", "bear-call-spreads",
 }
 
 DELETE_CATEGORIES = {"ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE"}
@@ -151,12 +147,6 @@ CHANNEL_STARTERS = {
     "universe-watch": "Updated when the rotating scanner universe is refreshed.",
     "performance-dashboard": "Updated as paper trades open and close.",
     "strategy-results": "Updated from recorded paper-trade outcomes.",
-    "regular-calls": "One canonical performance dashboard for regular call paper trades.",
-    "regular-puts": "One canonical performance dashboard for regular put paper trades.",
-    "swing-calls": "One canonical performance dashboard for swing call paper trades.",
-    "swing-puts": "One canonical performance dashboard for swing put paper trades.",
-    "bull-put-spreads": "One canonical performance dashboard for bull put-spread paper trades.",
-    "bear-call-spreads": "One canonical performance dashboard for bear call-spread paper trades.",
     "ticker-results": "Updated from recorded outcomes grouped by underlying.",
     "learning-results": "Updated by the local learning review.",
     "ask-tradebot": "Use `/ask` or `/explain`; general conversation belongs in #general-chat.",
@@ -166,7 +156,7 @@ CHANNEL_STARTERS = {
     "system-health": "Updated by the local supervisor and engine.",
     "update-status": "Updated on every automatic deploy check.",
     "provider-status": "Shows the current data-provider and webhook status.",
-    "strategy-control": "Owner-only; reflects the six live strategy toggles.",
+    "strategy-control": "Owner-only; reflects the live SPY 0DTE strategy toggle.",
     "strategy-settings": "Mirrors the filters each strategy is currently using.",
     "strategy-versions": "Updated when a strategy's configuration hash changes.",
     "trade-overrides": "Owner-only; a manual override always overrides automatic management.",
@@ -196,7 +186,7 @@ your trades. Paper results and historical performance do not guarantee profit.""
 Type `/`, choose a command, complete its fields, and send it.
 • `/quote`, `/trend`, `/levels`, `/chart` — current market context.
 • `/chain`, `/option`, `/setup`, `/risk` — options research and risk examples.
-• `/events`, `/filings`, `/calendar` — timestamped research links.
+• `/events`, `/calendar` — timestamped research links.
 • `/performance`, `/why`, `/status`, `/dataage`, `/lastscan` — tracking.
 • `/ask`, `/explain` — educational answers.
 • `/filters`, `/ticker-list`, `/ticker-status` — configuration status.
@@ -205,39 +195,26 @@ The hidden supervisor starts services, checks GitHub for approved releases,
 restarts failures, synchronizes Discord, and reports deployments. The system is
 paper-trading only and cannot place brokerage orders.""",
     "how-trades-are-found": """# How TradeBot Finds Paper Trades
-Nothing is selected randomly. Every position must pass the same recorded process.
+Nothing is selected randomly. SPY 0DTE is the only live strategy - every
+position must pass the same recorded process.
 
-**1. Build the universe**
-The bot combines baseline symbols, verified member additions, hourly Tradier
-liquidity data, read-only provider discoveries, and prioritized TradingView
-events. It can hold 25 active symbols and rotates through 12 per scan. Provider
-events can move a symbol forward in the queue.
+**1. Establish the opening range**
+The bot watches SPY's first 30 minutes of trading and records the high/low of
+that range. Nothing opens before the range is established.
 
-**2. Read the chart**
-Daily SMA20/SMA50 and RSI14 are combined with intraday change, VWAP, 5-versus-20
-bar momentum, intraday RSI, and recent slope. Evidence labels the ticker
-BULLISH / CONTROLLED, BEARISH / CONTROLLED, NEUTRAL / RANGE, or NO TRADE.
-Missing required history blocks the ticker. The recorded setup score ranks
-candidates; it is not a probability of winning.
+**2. Wait for a real breakout**
+The first bar to close outside the opening range fires the signal - above for
+bullish, below for bearish. A signal fires once per session, at the first
+breach, not on every bar that stays outside the range.
 
-**3. Choose eligible contracts**
-Regular plays use 7–20 DTE; swing and credit-spread plays use 21–45 DTE. Strikes
-must be within 12% of spot. Each leg needs a real bid, ask at or above bid, at
-least 100 open interest, at least 1 daily contract of volume, and a bid/ask
-spread no wider than 25% of midpoint.
+**3. Choose an eligible contract**
+Same-day (0DTE) expiration only. Absolute delta must be 0.40–0.60 and the
+contract must cost $5.00 or less per share ($500 or less per contract).
 
-**4. Match the play to the evidence**
-Bullish: long calls and swing bull-put credit spreads. Bearish: long puts and
-swing bear-call credit spreads. Neutral/range: swing call-credit and put-credit
-spreads. Long-option absolute delta must be 0.20–0.80 and cost $100 or less.
-Spread short-leg absolute delta must be 0.10–0.25, credit at least $5, and
-modeled maximum risk $100 or less.
-
-**5. Prevent duplicates and track exits**
-The same ticker, structure, direction, strike, and expiration cannot reopen while
-held or within the 24-hour cooldown. Long options use +20% target / -15% stop.
-Credit spreads use 50% credit capture, a 2x-credit stop, and close-by-5-DTE
-protection. Every result is paper tracked; no brokerage order is sent.
+**4. Manage the position**
+Target +50% / stop -50%. Once a trade peaks past +30% profit, the stop raises
+ONCE to -15% and holds there - it does not keep trailing behind every tick.
+Every position force-closes at end of day; 0DTE never holds overnight.
 
 Quotes, assignment, exercise, slippage, and total-loss risk still require
 individual review. Educational only—not financial advice.""",

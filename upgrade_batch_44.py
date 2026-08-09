@@ -1314,24 +1314,6 @@ def enhanced_outcome_learning_job(connection: Any) -> str:
             learning_results_text(summary),
             search_token="Learning Results · Evidence Dashboard",
         )
-        channel_map = {
-            "REGULAR-CALL": ("strategy_regular_call", "Regular Call"),
-            "REGULAR-PUT": ("strategy_regular_put", "Regular Put"),
-            "SWING-CALL": ("strategy_swing_call", "Swing Call"),
-            "SWING-PUT": ("strategy_swing_put", "Swing Put"),
-            "SPREAD-PUT": ("strategy_bull_put_spread", "Bull Put Spread"),
-            "SPREAD-CALL": ("strategy_bear_call_spread", "Bear Call Spread"),
-        }
-        for style, (logical, title) in channel_map.items():
-            group = _style_group(summary, style)
-            suggestion = _suggestion(summary, style)
-            tracker.upsert_channel_message(
-                logical,
-                report_state,
-                f"evidence-improvement:{style.lower()}",
-                style_evidence_text(title, group, suggestion, int(summary["minimum_sample"])),
-                search_token=f"{title} Evidence & Improvement",
-            )
         spy_scanner.write_report_state(report_state)
     return (
         f"{summary['closed_trades']} closed trades; "

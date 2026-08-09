@@ -145,31 +145,6 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn("#06-charts-price-action", card)
         self.assertIn("not reconstructed", card)
 
-    def test_play_style_performance_includes_quality_and_journal_link(self) -> None:
-        rows = [
-            {
-                "trade_id": "F-1",
-                "ticker": "F",
-                "play_type": "REGULAR",
-                "call_or_put": "call",
-                "strike": "15",
-                "outcome": "WIN",
-                "realized_pl_dollars": "20",
-                "pct_gain_loss": "20",
-                "max_favorable_pct": "25",
-                "max_adverse_pct": "-5",
-                "timestamp": "2026-07-31T10:00:00-05:00",
-                "closed_at": "2026-07-31T12:00:00-05:00",
-                "discord_thread_id": "thread-1",
-            }
-        ]
-        with patch.object(spy_scanner, "DISCORD_GUILD_ID", "guild-1"):
-            card = spy_scanner.format_play_style_performance(rows, "regular-call")
-        self.assertIn("Regular Call Performance", card)
-        self.assertIn("Profit factor", card)
-        self.assertIn("avg hold **2.0h**", card)
-        self.assertIn("journal", card)
-
     def test_trade_snapshot_renders_four_actionable_timeframes(self) -> None:
         intraday = [
             {"time": f"2026-08-01 10:{index:02d}:00", "close": 15 + index * 0.01}
@@ -320,9 +295,8 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn("how-trades-are-found", names)
         methodology = sync_discord_structure.GUIDES["how-trades-are-found"]
         self.assertLessEqual(len(methodology), 2000)
-        self.assertIn("7–20 DTE", methodology)
-        self.assertIn("$100 or less", methodology)
-        self.assertIn("not a probability of winning", methodology)
+        self.assertIn("SPY 0DTE", methodology)
+        self.assertIn("0.40–0.60", methodology)
         self.assertNotIn("ARCHIVE - LEGACY", sync_discord_structure.CATEGORY_ORDER)
         self.assertIn("TICKER • F", sync_discord_structure.DELETE_CATEGORIES)
         self.assertIn("TICKER • VALE", sync_discord_structure.DELETE_CATEGORIES)

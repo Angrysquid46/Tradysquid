@@ -173,7 +173,7 @@ Type `/`, choose a command, complete its fields, and send it.
 
 • `/quote`, `/trend`, `/levels`, `/chart` — current market context.
 • `/chain`, `/option`, `/setup`, `/risk` — options research and risk examples.
-• `/events`, `/filings`, `/calendar` — timestamped research links.
+• `/events`, `/calendar` — timestamped research links.
 • `/performance`, `/why`, `/status`, `/dataage`, `/lastscan` — tracking.
 • `/ask`, `/explain` — detailed answers grounded in Learning Center lessons.
 • Ask `/ask` to **apply** a lesson to `$TICKER` for a read-only walkthrough.
