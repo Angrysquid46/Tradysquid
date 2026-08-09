@@ -36,6 +36,18 @@ def _entry_spread_pct(row: dict) -> float:
 
 
 def _widened_stop_floor(row: dict) -> float:
+    """REGULAR/SWING/SPREAD all share single_leg_exit_signal's fixed stop,
+    widened by the entry spread. SPY_0DTE uses a completely different
+    model (spy_0dte_exit_signal): a -50% stop that raises ONCE to -15%
+    after the trade peaks past 30% profit, with no spread-based
+    widening at all. Applying the single-leg math to a SPY_0DTE row
+    produced false "EXECUTION ANOMALY" flags on ordinary, correct 0DTE
+    losses that happened before the floor engaged."""
+    if row.get("play_type") == "SPY_0DTE":
+        peak = ford_scan.as_float(row.get("max_favorable_pct")) or 0.0
+        if peak >= ford_scan.SPY_0DTE_FLOOR_TRIGGER_PCT:
+            return ford_scan.SPY_0DTE_FLOOR_PCT
+        return -ford_scan.SPY_0DTE_STOP_PCT * 100
     base = -SINGLE_STOP_PCT_HINT * 100
     return base - abs(_entry_spread_pct(row))
 
@@ -108,11 +120,21 @@ def autopsy(row: dict) -> str:
 
     lines.append("  --- Risk floor ---")
     widened = _widened_stop_floor(row)
-    lines.append(
-        f"  base stop={-SINGLE_STOP_PCT_HINT * 100:.0f}%"
-        f"  spread allowance={-abs(spread_pct):.1f}pt"
-        f"  widened stop floor={widened:.1f}%"
-    )
+    if row.get("play_type") == "SPY_0DTE":
+        peak = ford_scan.as_float(row.get("max_favorable_pct")) or 0.0
+        raised = peak >= ford_scan.SPY_0DTE_FLOOR_TRIGGER_PCT
+        lines.append(
+            f"  0DTE stop={-ford_scan.SPY_0DTE_STOP_PCT * 100:.0f}%"
+            f"  floor trigger={ford_scan.SPY_0DTE_FLOOR_TRIGGER_PCT:.0f}% peak"
+            f"  peak reached={peak:.0f}%"
+            f"  {'floor RAISED to' if raised else 'floor not yet raised, still at'} {widened:.0f}%"
+        )
+    else:
+        lines.append(
+            f"  base stop={-SINGLE_STOP_PCT_HINT * 100:.0f}%"
+            f"  spread allowance={-abs(spread_pct):.1f}pt"
+            f"  widened stop floor={widened:.1f}%"
+        )
 
     lines.append("  --- Excursion ---")
     max_fav = ford_scan.as_float(row.get("max_favorable_pct"))
