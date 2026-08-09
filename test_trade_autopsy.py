@@ -78,6 +78,50 @@ def test_flags_a_trade_entered_below_the_current_liquidity_floor():
     assert "predates the current filter" in report
 
 
+def test_spy_0dte_loss_within_its_real_stop_is_not_a_false_anomaly():
+    # SPY_0DTE's real stop is -50%, not the 15% single-leg stop this file
+    # used to apply to every play_type - a -40% loss on a trade that
+    # never crossed the 30% floor trigger is completely normal and must
+    # not be flagged, even though it would blow through the old
+    # (wrong) single-leg-derived floor.
+    row = _row(
+        play_type="SPY_0DTE", ticker="SPY",
+        outcome="LOSS", exit_price="0.72", pct_gain_loss="-40.0",
+        max_favorable_pct="10.0", closed_at="2026-08-10T10:15:00-05:00",
+        last_signal="STOP OUT",
+    )
+    report = trade_autopsy.autopsy(row)
+    assert "EXECUTION ANOMALY" not in report
+    assert "0DTE stop=-50%" in report
+
+
+def test_spy_0dte_floor_locked_loss_is_not_a_false_anomaly():
+    # Peaked past the 30% trigger, closed at the real -15% raised floor -
+    # exactly the intended, correct outcome, must not be flagged.
+    row = _row(
+        play_type="SPY_0DTE", ticker="SPY",
+        outcome="LOSS", exit_price="1.06", pct_gain_loss="-15.0",
+        max_favorable_pct="35.0", closed_at="2026-08-10T10:15:00-05:00",
+        last_signal="BREAKEVEN STOP",
+    )
+    report = trade_autopsy.autopsy(row)
+    assert "EXECUTION ANOMALY" not in report
+    assert "floor RAISED to -15%" in report
+
+
+def test_spy_0dte_still_flags_a_real_anomaly_past_its_own_floor():
+    # A loss well past even the correct -15% raised floor is still a real
+    # anomaly worth flagging for a trade that had crossed the trigger.
+    row = _row(
+        play_type="SPY_0DTE", ticker="SPY",
+        outcome="LOSS", exit_price="0.40", pct_gain_loss="-68.0",
+        max_favorable_pct="35.0", closed_at="2026-08-10T10:15:00-05:00",
+        last_signal="STOP OUT",
+    )
+    report = trade_autopsy.autopsy(row)
+    assert "EXECUTION ANOMALY" in report
+
+
 def test_summary_counts_wins_losses_and_anomalies():
     clean_win = _row(trade_id="A", outcome="WIN", pct_gain_loss="20.0", max_favorable_pct="25.0")
     anomaly_loss = _row(

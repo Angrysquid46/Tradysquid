@@ -161,6 +161,32 @@ def test_candidate_builder_rejects_a_contract_over_its_own_risk_cap():
     assert ford_scan.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0) == []
 
 
+def test_candidate_survives_candidate_to_row_without_a_keyerror():
+    # candidate_to_row reads cost_or_credit/pop/max_profit/max_risk/
+    # breakeven/option_symbol directly off every candidate regardless of
+    # play_type - a real bug let scan_spy_0dte_candidates ship without
+    # several of them, which would only surface as a crash the moment a
+    # real SPY 0DTE trade actually tried to open, not in any report.
+    chain = [_option(delta=0.50, ask=1.20, strike=600.0)]
+    candidates = ford_scan.scan_spy_0dte_candidates(
+        chain, "call", "2026-08-10", 600.0,
+        market_context={"reason": "broke above the opening range at $601.50", "regime": "BULLISH / CONTROLLED"},
+    )
+    assert len(candidates) == 1
+    original_ticker = ford_scan.TICKER
+    ford_scan.TICKER = "SPY"
+    try:
+        row = ford_scan.candidate_to_row(candidates[0], [], ford_scan.now_ct())
+    finally:
+        ford_scan.TICKER = original_ticker
+    assert row["play_type"] == "SPY_0DTE"
+    assert row["ticker"] == "SPY"
+    assert row["cost_or_credit"] == "1.2"
+    assert row["max_risk"] == "120.0"
+    assert "opening range" in row["setup_reason"]
+    assert "BULLISH" in row["market_regime"]
+
+
 def test_spy_0dte_defaults_paused_when_config_is_silent():
     # The code-level fallback (not the live config, which this session
     # intentionally flips on) must still default to paused - a missing

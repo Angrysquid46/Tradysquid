@@ -1886,11 +1886,18 @@ def scan_spy_0dte_candidates(
     kind: str,
     expiration: str,
     spot_price: float,
+    market_context: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Candidate builder for SPY 0DTE - deliberately not scan_single_legs:
     its own delta band and its own risk cap (SPY_0DTE_MAX_CONTRACT_ASK/
     SPY_0DTE_MAX_RISK_PER_TRADE), completely independent of every other
-    play type's MAX_CONTRACT_ASK/MAX_RISK_PER_TRADE."""
+    play type's MAX_CONTRACT_ASK/MAX_RISK_PER_TRADE.
+
+    Returns the same field shape scan_single_legs does - candidate_to_row
+    reads cost_or_credit/pop/max_profit/max_risk/breakeven/option_symbol
+    directly off every candidate regardless of play_type, so a SPY_0DTE
+    candidate missing any of them would KeyError the moment a real trade
+    tried to open, not just look incomplete in a report."""
     candidates: list[dict[str, Any]] = []
     for option in chain:
         if not option_has_liquidity(option):
@@ -1905,21 +1912,33 @@ def scan_spy_0dte_candidates(
         if ask > SPY_0DTE_MAX_CONTRACT_ASK or ask * 100 > SPY_0DTE_MAX_RISK_PER_TRADE:
             continue
         strike = float(option["strike"])
+        max_profit: str | float = "UNLIMITED" if kind == "call" else round(max((strike - ask) * 100, 0), 2)
+        breakeven = round(strike + ask if kind == "call" else strike - ask, 2)
         candidates.append(
             {
                 "play_type": "SPY_0DTE",
                 "call_or_put": kind,
-                "strike": strike,
+                "strike": fmt_strike(strike),
                 "expiration": expiration,
-                "entry_price": ask,
+                "entry_price": round(ask, 2),
+                "cost_or_credit": str(round(ask, 2)),
                 "delta": round(delta, 4),
-                "theta": greek(option, "theta"),
-                "iv": iv_value(option),
+                "theta": round(greek(option, "theta") or 0.0, 4),
+                "iv": round(iv_value(option), 4) if iv_value(option) is not None else "",
+                "pop": round(delta * 100, 1),
+                "max_profit": max_profit,
+                "max_risk": round(ask * 100, 2),
+                "breakeven": breakeven,
                 "open_interest": open_interest_value(option),
                 "option_volume": option_volume_value(option),
-                "symbol": option.get("symbol") or option_symbol(SPY_0DTE_TICKER, expiration, kind, strike),
-                "spot_at_entry": spot_price,
                 "bid_ask_width": round(max(ask - bid, 0), 2),
+                "option_symbol": option.get("symbol") or option_symbol(SPY_0DTE_TICKER, expiration, kind, strike),
+                "spot_at_entry": spot_price,
+                "score": round(delta * 100, 1),
+                "setup_reason": (market_context or {}).get(
+                    "reason", "Opening-range breakout confirmed"
+                ),
+                "market_regime": (market_context or {}).get("regime", "CONTROLLED"),
             }
         )
     # Nearest-to-breakeven (lowest ask) first - the cheapest real contract
@@ -6694,12 +6713,12 @@ def scan_candidates(
                     if regime == "BULLISH / CONTROLLED":
                         add_candidates(
                             "SPY 0DTE calls",
-                            scan_spy_0dte_candidates(calls, "call", today_str, spot_price),
+                            scan_spy_0dte_candidates(calls, "call", today_str, spot_price, spy_0dte_context),
                         )
                     elif regime == "BEARISH / CONTROLLED":
                         add_candidates(
                             "SPY 0DTE puts",
-                            scan_spy_0dte_candidates(puts, "put", today_str, spot_price),
+                            scan_spy_0dte_candidates(puts, "put", today_str, spot_price, spy_0dte_context),
                         )
                 except Exception as exc:
                     print(f"SPY 0DTE scan step failed: {exc}", file=sys.stderr)
