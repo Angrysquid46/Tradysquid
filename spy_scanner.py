@@ -308,12 +308,6 @@ CHANNEL_NAMES = {
     "weekly_report": "performance-dashboard",
     "performance_stats": "performance-dashboard",
     "strategy_breakdown": "strategy-results",
-    "strategy_regular_call": "regular-calls",
-    "strategy_regular_put": "regular-puts",
-    "strategy_swing_call": "swing-calls",
-    "strategy_swing_put": "swing-puts",
-    "strategy_bull_put_spread": "bull-put-spreads",
-    "strategy_bear_call_spread": "bear-call-spreads",
     "ticker_results": "ticker-results",
     "learning_results": "learning-results",
     "examples_reviews": "examples-and-reviews",
@@ -368,12 +362,6 @@ AUTOMATED_CHANNEL_KEYS = [
     "weekly_report",
     "performance_stats",
     "strategy_breakdown",
-    "strategy_regular_call",
-    "strategy_regular_put",
-    "strategy_swing_call",
-    "strategy_swing_put",
-    "strategy_bull_put_spread",
-    "strategy_bear_call_spread",
     "ticker_results",
     "learning_results",
     "examples_reviews",
@@ -661,15 +649,6 @@ def trade_title(row: dict[str, str]) -> str:
     strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
     return f"{ticker} #{sequence} | BUY {strike} {kind} | {expiration}"
 
-
-PLAY_STYLE_CHANNELS = {
-    "regular-call": "regular-calls",
-    "regular-put": "regular-puts",
-    "swing-call": "swing-calls",
-    "swing-put": "swing-puts",
-    "bull-put-spread": "bull-put-spreads",
-    "bear-call-spread": "bear-call-spreads",
-}
 
 
 def play_style_key(row: dict[str, str]) -> str:
@@ -3587,19 +3566,6 @@ def refresh_all_summary_dashboards(
         except DiscordError as exc:
             print(f"Could not refresh {logical_name}: {exc}", file=sys.stderr)
 
-    for style in PLAY_STYLE_CHANNELS:
-        logical_name = "strategy_" + style.replace("-", "_")
-        try:
-            discord.upsert_channel_message(
-                logical_name,
-                report_state,
-                f"play-style-performance:{style}",
-                format_play_style_performance(rows, style),
-                search_token=f"{style.replace('-', ' ').title()} Performance",
-            )
-        except DiscordError as exc:
-            print(f"Could not refresh {logical_name}: {exc}", file=sys.stderr)
-
     for logical_name, token, outcome_label, search_text in (
         ("wins", "wins-summary", "WIN", "Wins Summary"),
         ("losses", "losses-summary", "LOSS", "Losses Summary"),
@@ -4321,52 +4287,6 @@ def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
-def format_play_style_performance(
-    rows: list[dict[str, str]], style: str
-) -> str:
-    selected = [row for row in closed_rows(rows) if play_style_key(row) == style]
-    metrics = result_metrics(selected)
-    title = style.replace("-", " ").title()
-    profit_factor = metrics["profit_factor"]
-    factor_text = "∞" if math.isinf(profit_factor) else f"{profit_factor:.2f}"
-    lines = [
-        f"## {title} Performance",
-        "This dashboard reports the existing screener classification; it does not change scanner rules.",
-        "### Record and P/L",
-        (
-            f"**{int(metrics['wins'])}W / {int(metrics['losses'])}L / {int(metrics['scratches'])}S** · "
-            f"win rate **{metrics['win_rate']:.1f}%** · net **{fmt_metric_money(metrics, 'total_pnl')}**"
-        ),
-        "### Quality",
-        (
-            f"Profit factor **{factor_text}** · expectancy **{metrics['expectancy_pct']:+.1f}%** · "
-            f"avg win **{metrics['average_win_pct']:+.1f}%** · avg loss **{metrics['average_loss_pct']:+.1f}%**"
-        ),
-        "### Excursion and Holding Time",
-        (
-            f"Avg MFE **{metrics['average_mfe_pct']:+.1f}%** · avg MAE **{metrics['average_mae_pct']:+.1f}%** · "
-            f"avg hold **{metrics['average_holding_hours']:.1f}h**"
-        ),
-        "### Completed Trades",
-    ]
-    if not selected:
-        lines.append("No completed trades in this play style yet.")
-    else:
-        for row in selected[-12:]:
-            summary = compact_result_line(row)
-            link = thread_link(row.get("discord_thread_id", ""))
-            lines.append(f"{summary}{f' · [journal]({link})' if link else ''}")
-    lines.extend(
-        [
-            "### Evidence Limits",
-            (
-                f"Sample size **{len(selected)}**. Missing historical indicators remain unavailable; "
-                "results are descriptive and do not prove future performance."
-            ),
-            f"Updated **{portable_strftime(now_ct(), '%m/%d/%y %-I:%M %p CT')}**",
-        ]
-    )
-    return "\n".join(lines)[:5900]
 
 def format_ticker_results(rows: list[dict[str, str]]) -> str:
     groups: dict[str, list[dict[str, str]]] = {}
@@ -4760,15 +4680,6 @@ def update_performance_pages(
         format_strategy_breakdown(rows),
         search_token="Strategy Breakdown",
     )
-    for style, channel_name in PLAY_STYLE_CHANNELS.items():
-        logical_name = "strategy_" + style.replace("-", "_")
-        discord.upsert_channel_message(
-            logical_name,
-            state,
-            f"play-style-performance:{style}",
-            format_play_style_performance(rows, style),
-            search_token=f"{style.replace('-', ' ').title()} Performance",
-        )
     discord.upsert_channel_message(
         "ticker_results",
         state,

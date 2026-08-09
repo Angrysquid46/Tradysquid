@@ -1412,6 +1412,31 @@ def universe_refresh_job(connection: sqlite3.Connection) -> str:
     return f"{updated}/{len(symbols)} universe quotes refreshed"
 
 
+def discord_structure_sync_job(connection: sqlite3.Connection) -> str:
+    """Keep the live Discord server's channels, categories, and guide text
+    in sync with what the code actually defines. The deploy path deliberately
+    never runs this (Discord is a runtime responsibility, not a deployment
+    gate - see run_supervisor_simple.py), so this periodic job is what
+    actually makes "the code changed" eventually mean "Discord changed"."""
+    if not (spy_scanner.DISCORD_BOT_TOKEN and spy_scanner.DISCORD_GUILD_ID):
+        return "Discord bot token/guild not configured; skipped"
+    import sys
+
+    import sync_discord_structure_reports  # noqa: F401  (runs the patch chain on import)
+    import sync_discord_structure_public as public
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ["sync_discord_structure_public.py", "--apply"]
+        result = public.main()
+    finally:
+        sys.argv = original_argv
+    if result:
+        raise RuntimeError(f"Discord structure sync exited with code {result}")
+    store_observation(connection, "discord-structure-sync", {"at": iso_now()})
+    return "Discord channels, categories, and guides synchronized"
+
+
 def _route_stream_close(
     row: dict[str, str], evaluation: dict[str, Any]
 ) -> None:
@@ -1615,37 +1640,6 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
             "learning-results",
             "\n".join(lines)[:2000],
         )
-        channel_map = {
-            "regular-call": "strategy_regular_call",
-            "regular-put": "strategy_regular_put",
-            "swing-call": "strategy_swing_call",
-            "swing-put": "strategy_swing_put",
-            "spread-put": "strategy_bull_put_spread",
-            "spread-call": "strategy_bear_call_spread",
-        }
-        suggestions = {
-            str(item["play_style"]).lower(): item
-            for item in summary["play_style_suggestions"]
-        }
-        for style, logical in channel_map.items():
-            suggestion = suggestions.get(style) or {
-                "samples": 0,
-                "confidence": "COLLECTING",
-                "observation": "No completed trades of this exact play style are available yet.",
-                "expected_tradeoff": "Wait for evidence before proposing any change.",
-            }
-            tracker.upsert_channel_message(
-                logical, report_state, f"recommendation:{style}",
-                "\n".join([
-                    f"## {style.replace('-', ' ').title()} Improvement Summary",
-                    f"**Sample:** {suggestion['samples']} · **Confidence:** {suggestion['confidence']}",
-                    f"**Current evidence:** {suggestion['observation']}",
-                    f"**Tradeoff:** {suggestion['expected_tradeoff']}",
-                    "**Status:** Review-only suggestion; scanner and risk rules are unchanged.",
-                    "Detailed evidence remains in Learning Results and individual journals.",
-                ])[:2000],
-                search_token=f"{style.replace('-', ' ').title()} Improvement Summary",
-            )
         spy_scanner.write_report_state(report_state)
     return (
         f"{summary['closed_trades']} closed trades; "
@@ -1664,7 +1658,7 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
     closed_rows = spy_scanner.closed_rows(rows)
     consumers = (
         "performance-dashboard", "ticker-results", "strategy-results", "wins-losses",
-        "play-style-results", "learning-results",
+        "learning-results",
     )
     changed = trade_intelligence.pending_rows(closed_rows, consumers)
     # pending_rows() only ever reports rows it hasn't acknowledged yet, so a
@@ -1860,6 +1854,14 @@ JOBS = [
         timedelta(minutes=60),
         managed_ticker_information_job,
         after_hours_interval=timedelta(hours=4),
+        background=True,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=15),
+    ),
+    Job(
+        "discord-structure-sync",
+        timedelta(hours=2),
+        discord_structure_sync_job,
         background=True,
         provider_heavy=True,
         retry_interval=timedelta(minutes=15),

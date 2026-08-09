@@ -43,12 +43,6 @@ REQUIRED_CHANNELS = {
     "ticker-results": "Ticker Results",
     "wins": "Wins Summary",
     "losses": "Losses Summary",
-    "regular-calls": "Regular Call Performance",
-    "regular-puts": "Regular Put Performance",
-    "swing-calls": "Swing Call Performance",
-    "swing-puts": "Swing Put Performance",
-    "bull-put-spreads": "Bull Put Spread Performance",
-    "bear-call-spreads": "Bear Call Spread Performance",
 }
 CARD_STATE_KEYS = {
     "performance-dashboard": "performance-stats",
@@ -56,12 +50,6 @@ CARD_STATE_KEYS = {
     "ticker-results": "ticker-results",
     "wins": "wins-summary",
     "losses": "losses-summary",
-    "regular-calls": "play-style-performance:regular-call",
-    "regular-puts": "play-style-performance:regular-put",
-    "swing-calls": "play-style-performance:swing-call",
-    "swing-puts": "play-style-performance:swing-put",
-    "bull-put-spreads": "play-style-performance:bull-put-spread",
-    "bear-call-spreads": "play-style-performance:bear-call-spread",
 }
 
 
@@ -166,15 +154,6 @@ def discord_channels_and_cards() -> dict[str, Any]:
         raise OperationsAcceptanceFailure("#ticker-results trade counts do not reconcile to the canonical ledger.")
     if summed_records(card_text["strategy-results"]) != expected_closed:
         raise OperationsAcceptanceFailure("#strategy-results trade counts do not reconcile to the canonical ledger.")
-    style_total = sum(
-        summed_records(card_text[name])
-        for name in (
-            "regular-calls", "regular-puts", "swing-calls", "swing-puts",
-            "bull-put-spreads", "bear-call-spreads",
-        )
-    )
-    if style_total != expected_closed:
-        raise OperationsAcceptanceFailure("Play-style dashboard counts do not reconcile to the canonical ledger.")
     if not re.search(rf"Trades\D+{expected_wins}\b", card_text["wins"]):
         raise OperationsAcceptanceFailure("#wins summary does not reconcile to the canonical ledger.")
     if not re.search(rf"Trades\D+{expected_losses}\b", card_text["losses"]):
@@ -188,7 +167,7 @@ def discord_channels_and_cards() -> dict[str, Any]:
     }
     synchronized_consumers = (
         "journal", "result-channel", "performance-dashboard", "ticker-results",
-        "strategy-results", "wins-losses", "play-style-results", "learning-results",
+        "strategy-results", "wins-losses", "learning-results",
     )
     pending = trade_intelligence.pending_rows(
         spy_scanner.closed_rows(rows), synchronized_consumers
