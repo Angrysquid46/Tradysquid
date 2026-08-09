@@ -342,12 +342,6 @@ COMMANDS = [
         "options": [dict(TICKER_ARGUMENT)],
     },
     {
-        "name": "filings",
-        "type": 1,
-        "description": "Show ticker filing links and recent news",
-        "options": [dict(TICKER_ARGUMENT)],
-    },
-    {
         "name": "calendar",
         "type": 1,
         "description": "Show ticker event, news, and filing links",

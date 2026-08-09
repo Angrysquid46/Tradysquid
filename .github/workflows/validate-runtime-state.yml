@@ -5,7 +5,7 @@ on:
     paths:
       - ".gitignore"
       - "state/discord-report-state.json"
-      - "state/ford-plays-log.csv"
+      - "state/spy-plays-log.csv"
       - "test_runtime_state_hygiene.py"
       - ".github/workflows/validate-runtime-state.yml"
   workflow_dispatch:

@@ -51,7 +51,7 @@ class Application:
         active_configs = self.db.active_strategy_configs(self.config.strategies)
         self.legacy_import = import_legacy_closed_trades(
             self.db,
-            root / "state" / "ford-plays-log.csv",
+            root / "state" / "spy-plays-log.csv",
             active_configs,
         )
         self.manager = RequestManager(self.db)

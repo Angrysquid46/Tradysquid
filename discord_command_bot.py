@@ -246,35 +246,15 @@ def levels_reply(ticker: str) -> str:
 
 
 def events_reply(ticker: str) -> str:
-    if ticker != "F":
-        items = info_engine.fetch_ticker_news(ticker)
-        lines = [
-            f"**{ticker} news and events**",
-            f"[SEC company search](https://www.sec.gov/edgar/search/#/q={ticker})",
-        ]
-        lines.extend(
-            f"• [{item['title']}]({item['url']})" for item in items[:8]
-        )
-        lines.append("Verify the original publisher before acting on a headline.")
-        return "\n".join(lines)
-    filings = spy_scanner.fetch_recent_ford_filings()
+    items = info_engine.fetch_ticker_news(ticker)
     lines = [
-        "🗓️ **Ford events and filings**",
-        f"[Ford investor events]({spy_scanner.FORD_IR_EVENTS_URL})",
-        "[Ford investor news](https://shareholder.ford.com/news/default.aspx)",
-        "[Ford SEC filings](https://www.sec.gov/edgar/browse/?CIK=37996)",
+        f"**{ticker} news and events**",
+        f"[SEC company search](https://www.sec.gov/edgar/search/#/q={ticker})",
     ]
-    if filings:
-        lines.append("\n**Recent material filings**")
-        for filing in filings[:5]:
-            lines.append(
-                f"• {filing['date']} · {filing['form']} · [Open]({filing['url']})"
-            )
-    elif not spy_scanner.SEC_USER_AGENT:
-        lines.append(
-            "\nSEC detail is disabled until SEC_USER_AGENT is configured; "
-            "official links remain available."
-        )
+    lines.extend(
+        f"• [{item['title']}]({item['url']})" for item in items[:8]
+    )
+    lines.append("Verify the original publisher before acting on a headline.")
     return "\n".join(lines)
 
 
@@ -555,7 +535,7 @@ def ticker_pause_reply(interaction: dict[str, Any]) -> str:
     return (
         f"⏸️ **{item['ticker']} paused.** No new positions will be generated."
         f"{resume} Existing positions continue to be tracked. {sync_status}"
-    ).replace("Ford", ticker)
+    )
 
 
 def ticker_resume_reply(interaction: dict[str, Any]) -> str:
@@ -599,7 +579,7 @@ def ticker_list_reply() -> str:
         values = groups.get(status) or []
         lines.append(f"**{status.title()}:** {', '.join(values) if values else 'None'}")
     lines.append(
-        "Ford is protected. Pausing or archiving never stops existing-position tracking."
+        "SPY is protected. Pausing or archiving never stops existing-position tracking."
     )
     return "\n".join(lines)
 
@@ -837,7 +817,7 @@ def status_reply(ticker: str) -> str:
             )
             + "**"
         ),
-        f"SEC filing detail: **{'ON' if spy_scanner.SEC_USER_AGENT else 'WAITING FOR SEC_USER_AGENT'}**",
+        f"News-feed identification: **{'ON' if spy_scanner.SEC_USER_AGENT else 'WAITING FOR SEC_USER_AGENT'}**",
         (
             "Latest local market observation: **"
             + info_engine.data_age_text(
@@ -864,11 +844,7 @@ def schedule_reply(ticker: str) -> str:
 
 def dataage_reply(ticker: str) -> str:
     rows = []
-    kinds = (
-        ("market", "filings", "status")
-        if ticker == "F"
-        else (f"ticker-market:{ticker}", f"ticker-news:{ticker}")
-    )
+    kinds = (f"ticker-market:{ticker}", f"ticker-news:{ticker}")
     for kind in kinds:
         item = info_engine.latest_observation(kind)
         label = kind.split(":")[0].replace("ticker-", "").title()
@@ -895,13 +871,6 @@ def lastscan_reply(ticker: str) -> str:
     rows = [
         row for row in rows
         if ticker in str(row["detail"]).upper()
-        or (
-            ticker == "F"
-            and row["job_name"] in {
-                "market-monitor", "options-dashboard", "official-ford-news",
-                "filings-monitor",
-            }
-        )
     ][:6]
     if not rows:
         return f"No recent {ticker} scheduled jobs have completed yet."
@@ -958,24 +927,6 @@ def ask_reply(question: str) -> str:
         "`/chain`, or `/events`. You can also ask in #general-chat.\n\n"
         "I will not invent an answer or provide personalized financial advice."
     )
-
-
-def filings_reply(ticker: str) -> str:
-    if ticker != "F":
-        return events_reply(ticker)
-    filings = spy_scanner.fetch_recent_ford_filings()
-    if not filings:
-        return (
-            "No detailed SEC filing feed is available yet. Add a truthful "
-            "`SEC_USER_AGENT` locally; official Ford filings remain available at "
-            "https://www.sec.gov/edgar/browse/?CIK=37996"
-        )
-    lines = ["📄 **Recent Ford SEC filings**"]
-    for filing in filings[:8]:
-        lines.append(
-            f"• {filing['date']} · **{filing['form']}** · [Open]({filing['url']})"
-        )
-    return "\n".join(lines)
 
 
 def process_command(interaction: dict[str, Any]) -> None:
@@ -1103,9 +1054,6 @@ def process_command(interaction: dict[str, Any]) -> None:
         elif name == "lastscan":
             ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=lastscan_reply(ticker))
-        elif name == "filings":
-            ticker = interaction_ticker(interaction)
-            patch_original(application_id, token, content=filings_reply(ticker))
         elif name == "calendar":
             ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=events_reply(ticker))

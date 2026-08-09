@@ -5,7 +5,7 @@ Replace these repository files with the files in this package:
   spy_scanner.py
   requirements.txt
   .github/workflows/spy-scan.yml
-  state/ford-plays-log.csv
+  state/spy-plays-log.csv
   docs/index.html
 
 Required GitHub Actions repository secrets:
@@ -42,9 +42,8 @@ TradeBot permissions needed in the server/forum:
 Behavior:
 
   - No brokerage orders are placed.
-  - New scans support long calls, long puts, bull put-credit spreads, and
-    bear call-credit spreads. The current Ford trend determines which
-    direction is eligible.
+  - New scans support SPY 0DTE long calls and puts. The current SPY
+    opening-range breakout determines which direction is eligible.
   - Entries require a controlled daily market regime, 21-45 DTE, open
     interest of at least 100, option volume of at least 10, and a bid/ask
     spread no wider than 20% of midpoint.
@@ -55,10 +54,10 @@ Behavior:
   - New scanner plays get one forum post and permanent trade ID.
   - Open plays are repriced every scheduled run.
   - Discord receives material updates, not repetitive quote spam.
-  - The local information engine monitors Ford without GitHub Actions,
+  - The local information engine monitors SPY without GitHub Actions,
     suppresses unchanged alerts, and stores recent observations in SQLite.
   - Slash commands provide quotes, technicals, charts, option-chain rankings,
-    contract inspection, risk calculations, filings, education, performance,
+    contract inspection, risk calculations, education, performance,
     schedules, and health information.
   - Closed plays are tagged and routed to wins/losses/scratches.
   - The CSV is migrated automatically without deleting old rows.

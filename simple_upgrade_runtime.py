@@ -199,7 +199,7 @@ def simple_infra_records(
             attached = _source_has(
                 ".gitignore",
                 "state/discord-report-state.json",
-                "state/ford-plays-log.csv",
+                "state/spy-plays-log.csv",
             ) and _source_has(
                 "tradysquid_supervisor.py",
                 "backup_runtime_changes",

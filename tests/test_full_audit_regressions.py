@@ -140,7 +140,7 @@ def test_legacy_closed_trade_import_is_idempotent(tmp_path):
     database = Database(tmp_path / "legacy.db")
     database.initialize()
     database.register_strategies(config.strategies)
-    source = tmp_path / "ford-plays-log.csv"
+    source = tmp_path / "spy-plays-log.csv"
     with source.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
