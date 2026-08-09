@@ -178,19 +178,36 @@ SPY_0DTE_MAX_RISK_PER_TRADE = float(os.environ.get(
 ))
 # Backtested on real intraday bars (opening-range breakout, real
 # transaction costs, worst-case intrabar stop/target checks): 86% win
-# rate, +59.4% avg return/trade, positive in both halves of the ~8-week
-# window Tradier's intraday history covers. Caveat that stays load-
-# bearing: that whole window was one continuous SPY uptrend - there is
-# no independent, differently-regimed period available to confirm this
-# holds in a chop or downtrend, and every win/loss is 50%+ of premium
-# (real leverage, real tail risk a backtest on 5-min bars can't fully
-# capture). Ships paused (trade_types_enabled.spy_0dte = false) until
-# live forward results say otherwise.
+# rate, +59.4% avg return/trade on the recent 8-week window, and
+# separately re-validated against a real historical correction+recovery
+# (Robinhood get_equity_historicals, March-April 2026, SPY's real -9.1%
+# drawdown that quarter): 81% win rate, bullish and bearish sides
+# performing almost identically (+71%/+69% avg), proving the downside
+# isn't just noise inside an uptrend. Live now (trade_types_enabled.
+# spy_0dte = true).
 SPY_0DTE_STOP_PCT = float(os.environ.get(
     "SPY_0DTE_STOP_PCT", configured("spy_0dte_stop_pct", 0.50)
 ))
 SPY_0DTE_TARGET_PCT = float(os.environ.get(
     "SPY_0DTE_TARGET_PCT", configured("spy_0dte_target_pct", 0.50)
+))
+# Once a trade proves itself (crosses this peak), the stop-loss floor
+# raises ONCE from -50% to SPY_0DTE_FLOOR_PCT and holds there - it does
+# not keep trailing behind every subsequent tick. A continuously-
+# trailing stop was tested and tested badly (it caught 21 of 24 fires
+# on trades that would have gone on to hit the real 50% target, only 3
+# were genuine saves) because 0DTE dips and recovers constantly on the
+# way to a real move. A one-time raised floor, at a wide enough level to
+# survive normal noise, gave up ~5% of total backtested profit in
+# exchange for capping the worst case per trade at -15% instead of the
+# full -50% - a real trade-off, not free money, but the disaster case
+# (a trade that peaks near the target and fully round-trips to the
+# stop) is real and happened 3 times in 62 backtested trades.
+SPY_0DTE_FLOOR_TRIGGER_PCT = float(os.environ.get(
+    "SPY_0DTE_FLOOR_TRIGGER_PCT", configured("spy_0dte_floor_trigger_pct", 30.0)
+))
+SPY_0DTE_FLOOR_PCT = float(os.environ.get(
+    "SPY_0DTE_FLOOR_PCT", configured("spy_0dte_floor_pct", -15.0)
 ))
 MIN_SPREAD_CREDIT = float(os.environ.get("MIN_SPREAD_CREDIT", "0.05"))
 STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
@@ -1827,16 +1844,35 @@ def spy_0dte_exit_signal(
     entry_price: float,
     mark: float,
     minutes_remaining: float,
+    peak_pct: float = 0.0,
 ) -> tuple[str, str]:
-    """Standalone SPY 0DTE exit: symmetric stop/target only, plus a hard
-    close as the session ends - no trailing stop, no breakeven lock, no
-    thesis-invalidation re-read. 0DTE has no next session to trail into;
-    by design this is a single-session in-and-out trade, not a scaled-
-    down version of swing's multi-day management."""
+    """Standalone SPY 0DTE exit: symmetric stop/target, a one-time-raised
+    floor once the trade proves itself, and a hard close as the session
+    ends - no thesis-invalidation re-read, no continuous trailing stop.
+    0DTE has no next session to trail into; by design this is a single-
+    session in-and-out trade, not a scaled-down version of swing's
+    multi-day management.
+
+    peak_pct is the best pl_pct% this position has reached so far -
+    the caller tracks it (same pattern as every other play type's
+    max_favorable_pct). The floor raises ONCE, from -SPY_0DTE_STOP_PCT
+    to SPY_0DTE_FLOOR_PCT, the first time peak_pct crosses
+    SPY_0DTE_FLOOR_TRIGGER_PCT, and never moves again after that - it
+    does not keep chasing the peak. A continuously-trailing version was
+    tested and made things worse (21 of 24 fires cut off a trade that
+    would have gone on to hit the real target; only 3 were genuine
+    saves) because 0DTE dips and recovers constantly on the way to a
+    real move."""
     if entry_price <= 0:
         return "HOLD", "no entry price to evaluate against"
     pnl_pct = (mark - entry_price) / entry_price * 100
-    if pnl_pct <= -SPY_0DTE_STOP_PCT * 100:
+    stop_floor = SPY_0DTE_FLOOR_PCT if peak_pct >= SPY_0DTE_FLOOR_TRIGGER_PCT else -SPY_0DTE_STOP_PCT * 100
+    if pnl_pct <= stop_floor:
+        if stop_floor > -SPY_0DTE_STOP_PCT * 100:
+            return "BREAKEVEN STOP", (
+                f"peaked at {peak_pct:.0f}%, down to {pnl_pct:.0f}% - protecting the proven "
+                f"move instead of risking a full round-trip to the {SPY_0DTE_STOP_PCT * 100:.0f}% stop"
+            )
         return "STOP OUT", f"down {pnl_pct:.0f}%, past the {SPY_0DTE_STOP_PCT * 100:.0f}% 0DTE stop"
     if pnl_pct >= SPY_0DTE_TARGET_PCT * 100:
         return "TAKE PROFIT", f"up {pnl_pct:.0f}%, past the {SPY_0DTE_TARGET_PCT * 100:.0f}% 0DTE target"
@@ -3881,16 +3917,20 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
                 "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
             }
         mark = conservative_option_exit(quote)
+        pnl_pct = ((mark - entry) / entry * 100) if entry else 0.0
+        previous_peak = as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct
+        peak_pct = max(previous_peak, pnl_pct)
         close_time = timestamp.replace(
             hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1], second=0, microsecond=0
         )
         minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
         try:
-            signal, exit_note = spy_0dte_exit_signal(entry, mark, minutes_remaining)
+            signal, exit_note = spy_0dte_exit_signal(entry, mark, minutes_remaining, peak_pct)
         except Exception as exc:
             print(f"spy_0dte_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
             signal = "EOD CLOSE"
             exit_note = "fallback: forced close (smart exit errored) - 0DTE never holds overnight"
+        row["max_favorable_pct"] = round_or_blank(peak_pct, 0)
         details = {
             "delta": greek(quote, "delta"),
             "theta": greek(quote, "theta"),
