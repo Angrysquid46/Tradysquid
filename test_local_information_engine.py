@@ -260,6 +260,49 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(result["open_interest"], 1000)
         self.assertGreater(result["quality_score"], 50)
 
+    def test_tradingview_signal_posts_a_visible_card_and_logs_research_evidence(self) -> None:
+        # A raw webhook payload logged to a queue nobody reads is not "having
+        # buy/sell signals and reasons" - this proves an incoming TradingView
+        # alert actually becomes a visible Discord card in #breaking-alerts
+        # and durable, ticker-tagged research evidence, not just a row.
+        event = {
+            "symbol": "SPY",
+            "event_key": "SPY-bull-09082026",
+            "id": 42,
+            "payload": {
+                "action": "buy",
+                "reason": "First close above the 30-minute opening range high (601.20)",
+                "price": "601.45",
+            },
+        }
+        posted: list[tuple[str, str, str]] = []
+
+        class FakeTracker:
+            def upsert_channel_message(self, logical_name, state, state_key, content, search_token=""):
+                posted.append((logical_name, state_key, content))
+                return "msg-1", 0
+
+        with (
+            patch.object(engine, "discord_tracker", return_value=FakeTracker()),
+            patch.object(spy_scanner, "read_report_state", return_value={}),
+            patch.object(spy_scanner, "write_report_state"),
+            patch.object(engine.trade_intelligence, "store_research_source") as store,
+        ):
+            engine.publish_tradingview_signal(None, event)
+
+        self.assertEqual(len(posted), 1)
+        logical_name, state_key, content = posted[0]
+        self.assertEqual(logical_name, "breaking_alerts")
+        self.assertEqual(state_key, "tradingview:SPY-bull-09082026")
+        self.assertIn("SPY", content)
+        self.assertIn("BUY", content)
+        self.assertIn("opening range high", content)
+        store.assert_called_once()
+        research_call = store.call_args.args[0]
+        self.assertEqual(research_call["source_name"], "TradingView")
+        self.assertEqual(research_call["ticker"], "SPY")
+        self.assertIn("opening range high", research_call["claim"])
+
     def test_status_job_dashboard_text_matches_its_own_status_dict_keys(self) -> None:
         # The dashboard-text f-strings index status[...] directly, built as
         # part of the upsert_dashboard() call arguments - so a stale key
