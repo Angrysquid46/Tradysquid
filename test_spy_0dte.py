@@ -97,6 +97,42 @@ def test_exit_signal_holds_between_stop_and_target_with_time_left():
     assert signal == "HOLD"
 
 
+def test_exit_signal_full_stop_still_applies_before_the_trade_has_proven_itself():
+    # peak_pct never crossed the floor trigger - the full -50% stop is
+    # still what governs, not the raised floor.
+    entry = 2.00
+    stop_mark = entry * (1 - ford_scan.SPY_0DTE_STOP_PCT) - 0.01
+    signal, note = ford_scan.spy_0dte_exit_signal(entry, stop_mark, minutes_remaining=200, peak_pct=10.0)
+    assert signal == "STOP OUT"
+
+
+def test_exit_signal_raises_the_floor_once_a_trade_has_proven_itself():
+    # Peaked well past the trigger, then pulled back to the floor level -
+    # protects the proven move instead of risking the full round-trip.
+    entry = 2.00
+    peak = ford_scan.SPY_0DTE_FLOOR_TRIGGER_PCT + 10
+    floor_mark = entry * (1 + ford_scan.SPY_0DTE_FLOOR_PCT / 100) - 0.01
+    signal, note = ford_scan.spy_0dte_exit_signal(entry, floor_mark, minutes_remaining=200, peak_pct=peak)
+    assert signal == "BREAKEVEN STOP"
+    assert "peaked" in note
+
+
+def test_exit_signal_does_not_fire_the_floor_on_a_pullback_that_stays_above_it():
+    # Proven trade, dipped some, but still well above the raised floor -
+    # must hold, not exit on ordinary noise.
+    entry = 2.00
+    peak = ford_scan.SPY_0DTE_FLOOR_TRIGGER_PCT + 10
+    mark_above_floor = entry * (1 + (ford_scan.SPY_0DTE_FLOOR_PCT + 5) / 100)
+    signal, note = ford_scan.spy_0dte_exit_signal(entry, mark_above_floor, minutes_remaining=200, peak_pct=peak)
+    assert signal == "HOLD"
+
+
+def test_exit_signal_floor_never_raises_below_its_own_default_stop():
+    # Sanity check on the constants themselves: the floor is meant to be
+    # a smaller loss than the full stop, not a wider one.
+    assert ford_scan.SPY_0DTE_FLOOR_PCT > -ford_scan.SPY_0DTE_STOP_PCT * 100
+
+
 def test_exit_signal_forces_a_close_as_the_session_ends_even_at_flat_pnl():
     # 0DTE never holds overnight - there is no next session to trail into.
     signal, note = ford_scan.spy_0dte_exit_signal(2.00, 2.02, minutes_remaining=10)
@@ -166,3 +202,19 @@ def test_evaluate_open_row_closes_a_spy_0dte_position_near_session_end():
     close_ish = ford_scan.now_ct().replace(hour=14, minute=50, second=0, microsecond=0)
     evaluation = ford_scan.evaluate_open_row(_row(), quote, close_ish)
     assert evaluation["signal"] == "EOD CLOSE"
+
+
+def test_evaluate_open_row_raises_the_floor_after_a_spy_0dte_position_has_proven_itself():
+    # Already peaked well past the floor trigger (tracked in
+    # max_favorable_pct, same field every other play type uses), now
+    # pulled back to the floor level - must protect the proven move
+    # instead of riding it all the way to the full -50% stop.
+    quote = {
+        "SPY260810C00600000": {
+            "symbol": "SPY260810C00600000", "bid": 1.60, "ask": 1.65,
+            "greeks": {"delta": 0.55, "mid_iv": 0.20, "theta": -0.4},
+        }
+    }
+    row = _row(max_favorable_pct=str(ford_scan.SPY_0DTE_FLOOR_TRIGGER_PCT + 10))
+    evaluation = ford_scan.evaluate_open_row(row, quote, ford_scan.now_ct())
+    assert evaluation["signal"] == "BREAKEVEN STOP"
