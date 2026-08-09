@@ -16,12 +16,12 @@ import spy_scanner
 def _row(**overrides):
     row = {field: "" for field in spy_scanner.LOG_HEADER}
     row.update({
-        "trade_id": "T-QUOTE-1", "ticker": "F", "play_type": "REGULAR",
+        "trade_id": "T-QUOTE-1", "ticker": "SPY", "play_type": "SPY_0DTE",
         "call_or_put": "put", "entry_price": "0.65",
-        "option_symbol": "F260821P00100000",
+        "option_symbol": "SPY260821P00100000",
         "delta_at_entry": "-0.57", "iv_at_entry": "1.21",
         "timestamp": spy_scanner.now_ct().isoformat(),
-        "expiration": (spy_scanner.now_ct().date() + spy_scanner.timedelta(days=10)).isoformat(),
+        "expiration": spy_scanner.now_ct().date().isoformat(),
         "max_favorable_pct": "0",
         "last_mark": "0.60",
         "current_pl_pct": "-8.0",
@@ -45,7 +45,7 @@ def test_a_normal_spread_quote_is_reliable():
 
 def test_an_unreliable_quote_never_forces_a_stop_out():
     row = _row()
-    quotes = {"F260821P00100000": {"bid": 0.15, "ask": 0.65, "greeks": {"delta": -0.57}}}
+    quotes = {"SPY260821P00100000": {"bid": 0.15, "ask": 0.65, "greeks": {"delta": -0.57}}}
     evaluation = spy_scanner.evaluate_open_row(row, quotes, spy_scanner.now_ct())
     assert evaluation["signal"] == "HOLD"
     assert evaluation["note"] == "Live option quote unavailable; showing last tracked values."
@@ -57,7 +57,7 @@ def test_an_unreliable_quote_never_forces_a_stop_out():
 
 def test_a_reliable_quote_still_evaluates_normally():
     row = _row()
-    quotes = {"F260821P00100000": {"bid": 0.58, "ask": 0.65, "greeks": {"delta": -0.57}}}
+    quotes = {"SPY260821P00100000": {"bid": 0.58, "ask": 0.65, "greeks": {"delta": -0.57}}}
     evaluation = spy_scanner.evaluate_open_row(row, quotes, spy_scanner.now_ct())
     assert evaluation["signal"] != "HOLD" or "quote unavailable" not in evaluation.get("note", "")
 

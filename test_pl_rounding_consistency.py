@@ -15,17 +15,17 @@ def test_live_evaluation_pl_matches_what_close_row_would_derive_from_it():
     # decimal digit past what entry_price/exit_price are ever stored at.
     row = {field: "" for field in spy_scanner.LOG_HEADER}
     row.update({
-        "trade_id": "T-ROUND-1", "ticker": "F", "play_type": "REGULAR",
+        "trade_id": "T-ROUND-1", "ticker": "SPY", "play_type": "SPY_0DTE",
         "call_or_put": "call", "entry_price": "1.00",
-        "option_symbol": "F260821C00100000",
+        "option_symbol": "SPY260821C00100000",
         "delta_at_entry": "0.30", "iv_at_entry": "0.40",
         "timestamp": spy_scanner.now_ct().isoformat(),
-        "expiration": (spy_scanner.now_ct().date() + spy_scanner.timedelta(days=10)).isoformat(),
+        "expiration": spy_scanner.now_ct().date().isoformat(),
         "max_favorable_pct": "0",
     })
     quotes = {
-        "F260821C00100000": {
-            "symbol": "F260821C00100000", "bid": 0.00, "ask": 0.03,
+        "SPY260821C00100000": {
+            "symbol": "SPY260821C00100000", "bid": 0.00, "ask": 0.03,
             "greeks": {"delta": 0.05, "theta": -0.01, "mid_iv": 0.40},
         }
     }
