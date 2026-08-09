@@ -260,6 +260,24 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(result["open_interest"], 1000)
         self.assertGreater(result["quality_score"], 50)
 
+    def test_status_job_dashboard_text_matches_its_own_status_dict_keys(self) -> None:
+        # The dashboard-text f-strings index status[...] directly, built as
+        # part of the upsert_dashboard() call arguments - so a stale key
+        # reference there raises immediately, before Discord is ever
+        # checked. Caught a real live regression: a key was renamed in the
+        # dict but not in the very next lines that render it.
+        original = engine.DB_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            engine.DB_PATH = Path(temp) / "status.db"
+            connection = engine.connect_db()
+            try:
+                result = engine.status_job(connection)
+            finally:
+                connection.close()
+        engine.DB_PATH = original
+        payload = json.loads(result)
+        self.assertIn("news_feed_identified", payload)
+
     def test_sqlite_state_and_observation_round_trip(self) -> None:
         original = engine.DB_PATH
         with tempfile.TemporaryDirectory() as temp:

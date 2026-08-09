@@ -1010,7 +1010,7 @@ def status_job(connection: sqlite3.Connection) -> str:
             f"**Market data age:** {status['market_data_age']}",
             f"**Tradier:** {'configured' if status['tradier_configured'] else 'missing'}",
             f"**Discord scheduling:** {'configured' if status['discord_scheduled_posts'] else 'missing'}",
-            f"**SEC monitor:** {'configured' if status['sec_monitor'] else 'missing'}",
+            f"**News feed ID:** {'configured' if status['news_feed_identified'] else 'missing'}",
             f"Updated {status['updated_at']}. This private card updates in place.",
         ]),
     )
