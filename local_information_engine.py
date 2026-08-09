@@ -379,11 +379,10 @@ def ranked_option_chain(
     spot_quote = spy_scanner.get_quote(symbol) or {}
     spot = spy_scanner.as_float(spot_quote.get("last"))
     if spot is None:
-        raise spy_scanner.TradierError("Ford spot price is unavailable")
+        raise spy_scanner.TradierError(f"{symbol} spot price is unavailable")
     expirations = spy_scanner.get_expirations(symbol)
     if expiration is None:
-        _, swing = spy_scanner.pick_expirations(expirations, spy_scanner.now_ct().date())
-        expiration = swing[0] if swing else next(iter(expirations), None)
+        expiration = next(iter(expirations), None)
     if not expiration:
         return []
     chain = spy_scanner.get_chain(symbol, expiration)
@@ -1882,126 +1881,6 @@ def intelligence_retention_job(connection: sqlite3.Connection) -> str:
     return f"{result['temporary_files_removed']} temporary files and {result['missing_pointers_removed']} stale pointers removed; canonical evidence preserved"
 
 
-PLAYBOOK_SPECS = [
-    ("regular-call", "Regular Long Call", "REGULAR", "call"),
-    ("regular-put", "Regular Long Put", "REGULAR", "put"),
-    ("swing-call", "Swing Long Call", "SWING", "call"),
-    ("swing-put", "Swing Long Put", "SWING", "put"),
-    ("bull-put-spread", "Bull Put Credit Spread", "SPREAD", "put"),
-    ("bear-call-spread", "Bear Call Credit Spread", "SPREAD", "call"),
-]
-
-
-def playbook_card_text(
-    title: str,
-    play_type: str,
-    direction: str,
-    rows: list[dict[str, str]],
-    rotation_day: date,
-) -> str:
-    matches = [
-        row for row in rows
-        if str(row.get("play_type") or "").upper() == play_type
-        and str(row.get("call_or_put") or "").lower() == direction
-    ]
-    matches.sort(key=lambda row: row.get("closed_at") or row.get("timestamp") or "")
-    example = matches[rotation_day.toordinal() % len(matches)] if matches else None
-    bullish = direction == "call" if play_type != "SPREAD" else direction == "put"
-    thesis = (
-        "bullish evidence: price/trend confirmation and a controlled upside setup"
-        if bullish
-        else "bearish evidence: downside confirmation and a controlled decline setup"
-    )
-    if play_type == "SPREAD":
-        dte = f"{spy_scanner.MIN_DTE}–{spy_scanner.MAX_DTE} DTE"
-        entry = "SELL TO OPEN the short leg and BUY TO OPEN the protective long leg for one net credit."
-        risk = (
-            f"Target: BUY TO CLOSE near {spy_scanner.SPREAD_TAKE_PROFIT_PCT:.0%} credit capture. "
-            f"Stop: BUY TO CLOSE if cost reaches {spy_scanner.SPREAD_STOP_MULTIPLE:g}× entry credit. "
-            f"Close no later than {spy_scanner.SPREAD_EXIT_DTE} DTE."
-        )
-        stat_reason = (
-            f"Short-leg |delta| {spy_scanner.SPREAD_SHORT_DELTA_MIN:.2f}–"
-            f"{spy_scanner.SPREAD_SHORT_DELTA_MAX:.2f}; liquid adjacent protection; "
-            "credit and maximum loss must pass the risk cap."
-        )
-    else:
-        dte = (
-            f"{spy_scanner.REGULAR_MIN_DTE}–{spy_scanner.REGULAR_MAX_DTE} DTE"
-            if play_type == "REGULAR"
-            else f"{spy_scanner.MIN_DTE}–{spy_scanner.MAX_DTE} DTE"
-        )
-        entry = "BUY TO OPEN one contract near the recorded ask after every scanner gate passes."
-        risk = (
-            f"Target: SELL TO CLOSE at approximately +{spy_scanner.SINGLE_TAKE_PROFIT_PCT:.0%}. "
-            f"Stop: SELL TO CLOSE at approximately -{spy_scanner.SINGLE_STOP_PCT:.0%}; "
-            "also close near expiration."
-        )
-        stat_reason = (
-            f"|Delta| {spy_scanner.SINGLE_LEG_DELTA_MIN:.2f}–{spy_scanner.SINGLE_LEG_DELTA_MAX:.2f}; "
-            f"premium at most {spy_scanner.fmt_money(spy_scanner.MAX_RISK_PER_TRADE)}; "
-            "open interest, volume, and bid/ask spread must pass liquidity gates."
-        )
-    lines = [
-        f"## {title}",
-        f"**Structure:** {dte} · paper trading · one-contract examples",
-        "### Why this play is selected",
-        f"The scanner requires {thesis}. {stat_reason}",
-        "Delta estimates directional sensitivity; IV affects option pricing; theta is time decay; "
-        "open interest, volume, and spread indicate whether entry and exit are practical.",
-        "### Entry",
-        entry,
-        "### Stop, target, and close",
-        risk,
-    ]
-    if example:
-        metrics = spy_scanner.result_metrics([example])
-        reason = example.get("setup_reason") or example.get("market_regime") or thesis
-        lines.extend([
-            "### Rotating recorded example",
-            f"**{example.get('trade_id', 'Tracked trade')}** · {example.get('ticker', '—')} · "
-            f"{example.get('strike', '—')} · exp {example.get('expiration', '—')}",
-            f"Selected because: {reason}",
-            f"Entry {example.get('entry_price') or '—'} · exit {example.get('exit_price') or '—'} · "
-            f"{example.get('outcome', 'CLOSED')} · net {spy_scanner.fmt_metric_money(metrics, 'total_pnl')}",
-        ])
-    else:
-        lines.extend([
-            "### Rotating recorded example",
-            "No completed example of this exact play type is recorded yet; this card will fill automatically.",
-        ])
-    lines.extend([
-        "### Review prompt",
-        "Was the direction correct? Did liquidity, delta, IV, and DTE support the entry? "
-        "Was the planned exit followed instead of improvised?",
-        "Educational paper-trade walkthrough; not financial advice.",
-    ])
-    return "\n".join(lines)[:2000]
-
-
-def examples_reviews_job(connection: sqlite3.Connection) -> str:
-    with POSITION_FILE_LOCK:
-        rows = spy_scanner.read_log()
-    tracker = discord_tracker()
-    if not tracker:
-        raise RuntimeError("Discord tracker is unavailable")
-    report_state = spy_scanner.read_report_state()
-    today = spy_scanner.now_ct().date()
-    for key, title, play_type, direction in PLAYBOOK_SPECS:
-        tracker.upsert_channel_message(
-            "examples_reviews",
-            report_state,
-            f"playbook:{key}",
-            playbook_card_text(title, play_type, direction, rows, today),
-            search_token=title,
-        )
-    spy_scanner.write_report_state(report_state)
-    store_observation(
-        connection,
-        "examples-reviews",
-        {"cards": len(PLAYBOOK_SPECS), "closed_examples": len(spy_scanner.closed_rows(rows))},
-    )
-    return f"{len(PLAYBOOK_SPECS)} strategy playbook cards refreshed"
 
 
 def discord_card_migration_job(connection: sqlite3.Connection) -> str:
@@ -2118,12 +1997,6 @@ JOBS = [
         timedelta(hours=24),
         intelligence_retention_job,
         retry_interval=timedelta(minutes=15),
-    ),
-    Job(
-        "examples-and-reviews",
-        timedelta(hours=12),
-        examples_reviews_job,
-        retry_interval=timedelta(minutes=5),
     ),
     Job(
         "dynamic-universe-refresh",

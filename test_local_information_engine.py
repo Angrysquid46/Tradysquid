@@ -246,14 +246,6 @@ class InformationEngineTests(unittest.TestCase):
         self.assertFalse(context["qualified"])
         self.assertEqual(context["regime"], "NO TRADE")
 
-    def test_regular_and_swing_expirations_are_both_considered(self) -> None:
-        regular, swing = spy_scanner.pick_expirations(
-            ["2026-08-07", "2026-08-21", "2026-09-11"],
-            date(2026, 7, 30),
-        )
-        self.assertEqual(regular, ["2026-08-07"])
-        self.assertEqual(swing, ["2026-08-21", "2026-09-11"])
-
     def test_exponential_moving_average(self) -> None:
         values = [float(value) for value in range(1, 31)]
         ema = engine.exponential_moving_average(values, 12)
@@ -347,7 +339,6 @@ class InformationEngineTests(unittest.TestCase):
             "position-tracker",
             "closed-position-cleanup",
             "discord-reporting",
-            "examples-and-reviews",
             "dynamic-universe-refresh",
             "managed-ticker-information",
             "managed-ticker-news",
@@ -357,38 +348,7 @@ class InformationEngineTests(unittest.TestCase):
             "discord-card-migration",
         }.issubset(job_names))
 
-    def test_playbook_covers_every_scanner_play_type(self) -> None:
-        keys = {item[0] for item in engine.PLAYBOOK_SPECS}
-        self.assertEqual(
-            keys,
-            {
-                "regular-call",
-                "regular-put",
-                "swing-call",
-                "swing-put",
-                "bull-put-spread",
-                "bear-call-spread",
-            },
-        )
-        card = engine.playbook_card_text(
-            "Regular Long Call",
-            "REGULAR",
-            "call",
-            [{
-                "trade_id": "F-1",
-                "ticker": "F",
-                "play_type": "REGULAR",
-                "call_or_put": "call",
-                "outcome": "WIN",
-                "realized_pl_dollars": "12",
-            }],
-            date(2026, 7, 31),
-        )
-        self.assertIn("Why this play is selected", card)
-        self.assertIn("BUY TO OPEN", card)
-        self.assertIn("SELL TO CLOSE", card)
-        self.assertIn("Delta estimates", card)
-        self.assertIn("F-1", card)
+    def test_certain_information_jobs_run_in_the_background(self) -> None:
         background = {job.name for job in engine.JOBS if job.background}
         self.assertTrue({
             "full-options-scan",
@@ -594,7 +554,7 @@ class InformationEngineTests(unittest.TestCase):
         for name in owner_commands:
             self.assertEqual(definitions[name]["default_member_permissions"], "0")
         self.assertTrue(
-            {"filter-set", "ticker-pause", "ticker-resume", "scan-now"}.issubset(
+            {"ticker-pause", "ticker-resume", "scan-now"}.issubset(
                 owner_commands
             )
         )
@@ -702,8 +662,8 @@ class InformationEngineTests(unittest.TestCase):
             discord_command_bot.interaction_ticker(interaction),
             discord_command_bot.command_ticker(None),
         )
-        interaction["data"]["options"] = [{"name": "ticker", "value": "F"}]
-        self.assertEqual(discord_command_bot.interaction_ticker(interaction), "F")
+        interaction["data"]["options"] = [{"name": "ticker", "value": "SPY"}]
+        self.assertEqual(discord_command_bot.interaction_ticker(interaction), "SPY")
 
     def test_performance_snapshot_filters_each_ticker(self) -> None:
         rows = [
@@ -1320,10 +1280,6 @@ class InformationEngineTests(unittest.TestCase):
             )
         self.assertEqual(row["outcome"], "LOSS")
 
-    def test_contract_price_guard_is_one_dollar(self) -> None:
-        self.assertEqual(spy_scanner.MAX_CONTRACT_ASK, 1.0)
-        self.assertEqual(spy_scanner.MAX_RISK_PER_TRADE, 100.0)
-
     def test_open_position_symbols_are_dynamic_and_deduplicated(self) -> None:
         rows = [
             {
@@ -1360,24 +1316,25 @@ class InformationEngineTests(unittest.TestCase):
         self.assertTrue(payload["validOnly"])
 
     def test_streamed_quote_closes_paper_position_immediately(self) -> None:
-        # This position already ran up to a +30% peak in an earlier cycle
-        # (max_favorable_pct), so the new trailing-stop logic is what should
-        # fire here, not the old flat +20% cap - the incoming quote pulls it
-        # back to +20%, breaching the 8pt giveback allowed from that peak.
+        # This position already peaked at +40% in an earlier cycle
+        # (max_favorable_pct), well past SPY_0DTE's floor trigger (30%), so
+        # the raised floor (-15%) is what should govern here, not the full
+        # -50% stop - the incoming quote pulls it back to -16%, past the
+        # floor, and the streaming path (not just REST polling) must catch it.
         original_log = spy_scanner.LOG_PATH
         with tempfile.TemporaryDirectory() as temp:
             spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
             row = {field: "" for field in spy_scanner.LOG_HEADER}
             row.update(
                 {
-                    "trade_id": "VALE-STREAM-001",
-                    "ticker": "VALE",
-                    "play_type": "LONG",
-                    "option_symbol": "VALE260821C00015000",
-                    "expiration": "2026-08-21",
+                    "trade_id": "SPY-STREAM-001",
+                    "ticker": "SPY",
+                    "play_type": "SPY_0DTE",
+                    "option_symbol": "SPY260821C00500000",
+                    "expiration": spy_scanner.now_ct().date().isoformat(),
                     "entry_price": "0.50",
                     "outcome": "OPEN",
-                    "max_favorable_pct": "30",
+                    "max_favorable_pct": "40",
                 }
             )
             spy_scanner.write_log([row])
@@ -1395,14 +1352,14 @@ class InformationEngineTests(unittest.TestCase):
                 engine._stream_quote_event(
                     {
                         "type": "quote",
-                        "symbol": "VALE260821C00015000",
-                        "bid": 0.60,
-                        "ask": 0.62,
+                        "symbol": "SPY260821C00500000",
+                        "bid": 0.42,
+                        "ask": 0.44,
                     }
                 )
             closed = spy_scanner.read_log()[0]
-            self.assertEqual(closed["outcome"], "WIN")
-            self.assertEqual(closed["last_signal"], "TAKE PROFIT")
+            self.assertEqual(closed["outcome"], "LOSS")
+            self.assertEqual(closed["last_signal"], "BREAKEVEN STOP")
             route_close.assert_called_once()
         spy_scanner.LOG_PATH = original_log
 

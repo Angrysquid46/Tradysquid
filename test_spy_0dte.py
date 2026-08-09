@@ -144,11 +144,10 @@ def test_candidate_builder_rejects_a_delta_outside_its_own_band():
     assert spy_scanner.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0) == []
 
 
-def test_candidate_builder_accepts_a_contract_priced_above_the_shared_system_cap():
-    # $2.00 > the OTHER play types' MAX_CONTRACT_ASK ($1.00) but well
-    # under SPY_0DTE_MAX_CONTRACT_ASK - proves this reads its own cap,
-    # not the borrowed one.
-    assert spy_scanner.MAX_CONTRACT_ASK < 2.00 < spy_scanner.SPY_0DTE_MAX_CONTRACT_ASK
+def test_candidate_builder_accepts_a_contract_priced_well_under_its_own_cap():
+    # $2.00 is well under SPY_0DTE_MAX_CONTRACT_ASK - proves ordinary
+    # contract prices clear the real, standalone cap this play type uses.
+    assert 2.00 < spy_scanner.SPY_0DTE_MAX_CONTRACT_ASK
     chain = [_option(delta=0.50, ask=2.00)]
     candidates = spy_scanner.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0)
     assert len(candidates) == 1
