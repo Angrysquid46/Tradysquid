@@ -260,6 +260,24 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(result["open_interest"], 1000)
         self.assertGreater(result["quality_score"], 50)
 
+    def test_status_job_dashboard_text_matches_its_own_status_dict_keys(self) -> None:
+        # The dashboard-text f-strings index status[...] directly, built as
+        # part of the upsert_dashboard() call arguments - so a stale key
+        # reference there raises immediately, before Discord is ever
+        # checked. Caught a real live regression: a key was renamed in the
+        # dict but not in the very next lines that render it.
+        original = engine.DB_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            engine.DB_PATH = Path(temp) / "status.db"
+            connection = engine.connect_db()
+            try:
+                result = engine.status_job(connection)
+            finally:
+                connection.close()
+        engine.DB_PATH = original
+        payload = json.loads(result)
+        self.assertIn("news_feed_identified", payload)
+
     def test_sqlite_state_and_observation_round_trip(self) -> None:
         original = engine.DB_PATH
         with tempfile.TemporaryDirectory() as temp:
@@ -321,6 +339,37 @@ class InformationEngineTests(unittest.TestCase):
             "outcome-learning",
             "discord-card-migration",
         }.issubset(job_names))
+
+    def test_discord_structure_sync_runs_frequently_not_every_two_hours(self) -> None:
+        # This trades 0DTE - a stale Discord channel or guide sitting for
+        # hours after a code change is not acceptable. The job must be
+        # checked on a short interval, not the original 2-hour cadence.
+        job = next(j for j in engine.JOBS if j.name == "discord-structure-sync")
+        self.assertLessEqual(job.interval, timedelta(minutes=5))
+
+    def test_discord_structure_sync_skips_the_real_api_call_when_code_has_not_moved(self) -> None:
+        original = engine.DB_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            engine.DB_PATH = Path(temp) / "sync.db"
+            connection = engine.connect_db()
+            engine.store_observation(connection, "discord-structure-sync", {"sha": "same-sha"})
+            connection.close()
+            with (
+                patch.object(spy_scanner, "DISCORD_BOT_TOKEN", "fake-token"),
+                patch.object(spy_scanner, "DISCORD_GUILD_ID", "fake-guild"),
+                patch.object(engine, "_current_commit_sha", return_value="same-sha"),
+            ):
+                # If the skip check did not work, this would try to import
+                # sync_discord_structure_public and make real Discord API
+                # calls with a fake token, which would raise instead of
+                # returning cleanly.
+                connection = engine.connect_db()
+                try:
+                    result = engine.discord_structure_sync_job(connection)
+                finally:
+                    connection.close()
+            self.assertIn("no code change", result)
+        engine.DB_PATH = original
 
     def test_certain_information_jobs_run_in_the_background(self) -> None:
         background = {job.name for job in engine.JOBS if job.background}

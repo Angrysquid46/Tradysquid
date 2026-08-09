@@ -461,7 +461,7 @@ def data_age_text(observed_at: str | None) -> str:
     return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
 
 
-def market_alert_text(snapshot: dict[str, Any], ticker: str = "F") -> str:
+def market_alert_text(snapshot: dict[str, Any], ticker: str = "SPY") -> str:
     def number(key: str, digits: int = 2, suffix: str = "") -> str:
         value = snapshot.get(key)
         return "Unavailable" if value is None else f"{float(value):.{digits}f}{suffix}"
@@ -723,7 +723,7 @@ def market_is_open() -> bool:
     return bool(spy_scanner.market_is_open_now()[0])
 
 
-def technicals_text(snapshot: dict[str, Any], ticker: str = "F") -> str:
+def technicals_text(snapshot: dict[str, Any], ticker: str = "SPY") -> str:
     def value(key: str, digits: int = 2) -> str:
         item = snapshot.get(key)
         return "Unavailable" if item is None else f"{float(item):.{digits}f}"
@@ -740,47 +740,13 @@ def technicals_text(snapshot: dict[str, Any], ticker: str = "F") -> str:
     ])
 
 
-def market_pulse_text(snapshot: dict[str, Any], ticker: str = "F") -> str:
+def market_pulse_text(snapshot: dict[str, Any], ticker: str = "SPY") -> str:
     session = "live" if market_is_open() else "closed; showing the latest available quote"
     return (
         "## Tradysquids Market Pulse\n"
         f"Market is **{session}**.\n"
         + market_alert_text(snapshot, ticker).replace(f"## {ticker} Local Market Monitor\n", "")
     )
-
-
-def options_dashboard_text(
-    snapshot: dict[str, Any], options: list[dict[str, Any]], ticker: str = "F"
-) -> str:
-    lines = [
-        "## Tradysquids Options Chain",
-        (
-            "**Live scan**" if market_is_open()
-            else "**Market closed — quotes are the last available snapshot, not tradable prices.**"
-        ),
-        f"{ticker} spot **${float(snapshot['price']):.2f}** · ranked for liquidity and conservative delta.",
-    ]
-    if not options:
-        lines.append("No contract currently passes the available chain filters.")
-    for item in options[:5]:
-        delta = item.get("delta")
-        if delta is None:
-            lines.append(f"• `{item.get('symbol')}` · Greeks unavailable")
-            continue
-        width = item.get("width_pct")
-        width_text = "n/a" if width is None else f"{float(width) * 100:.1f}%"
-        lines.append(
-            f"• `{item.get('symbol')}` · ${float(item.get('strike') or 0):.2f} "
-            f"· bid/ask ${float(item.get('bid') or 0):.2f}/${float(item.get('ask') or 0):.2f} "
-            f"· Δ {float(delta):.2f} · OI {int(item.get('open_interest') or 0)} "
-            f"· vol {int(item.get('volume') or 0)} · spread {width_text} "
-            f"· {'LIQUIDITY PASS' if item.get('liquidity_pass') else 'LIQUIDITY WATCH'}"
-        )
-    lines.extend([
-        f"Updated {snapshot.get('observed_at')}.",
-        "Liquidity status is not a full trade qualification. Ranking is informational, not a recommendation or guarantee.",
-    ])
-    return "\n".join(lines)
 
 
 def publish_change_only(
@@ -833,85 +799,6 @@ def publish_change_only(
     )
     connection.commit()
     return True
-
-
-def market_job(connection: sqlite3.Connection) -> str:
-    snapshot = market_snapshot()
-    store_observation(
-        connection,
-        "market",
-        {key: value for key, value in snapshot.items() if key != "history"},
-    )
-    previous_regime = get_state(connection, "last_regime")
-    previous_price = spy_scanner.as_float(get_state(connection, "last_price"))
-    price = float(snapshot["price"])
-    regime_changed = bool(previous_regime and previous_regime != snapshot["regime"])
-    level_cross = False
-    if previous_price is not None:
-        level_cross = (
-            previous_price < snapshot["resistance20"] <= price
-            or previous_price > snapshot["support20"] >= price
-        )
-    unusual_volume = (snapshot.get("relative_volume") or 0) >= 1.75
-    if regime_changed or level_cross or unusual_volume:
-        reason = []
-        if regime_changed:
-            reason.append(f"regime changed from {previous_regime} to {snapshot['regime']}")
-        if level_cross:
-            reason.append("price crossed a tracked 20-day level")
-        if unusual_volume:
-            reason.append("relative volume reached at least 1.75x")
-        publish_change_only(
-            connection,
-            "material-market-change",
-            market_alert_text(snapshot) + "\n**Alert reason:** " + "; ".join(reason),
-            minimum_minutes=15,
-        )
-    set_state(connection, "last_regime", str(snapshot["regime"]))
-    set_state(connection, "last_price", str(price))
-    upsert_dashboard(connection, "market_pulse", "market-pulse", market_pulse_text(snapshot))
-    upsert_dashboard(connection, "technicals", "technicals", technicals_text(snapshot))
-    upsert_dashboard(
-        connection,
-        "research_summary",
-        "research-summary",
-        "\n".join([
-            "## Tradysquids Research Summary",
-            f"Current regime: **{snapshot.get('regime')}** · qualified: **{'yes' if snapshot.get('qualified') else 'no'}**",
-            f"System read: {snapshot.get('reason') or 'No controlled setup.'}",
-            "Tracked failures: " + (", ".join(snapshot.get("failures") or []) or "none"),
-            f"Updated {snapshot.get('observed_at')}. This is evidence tracking, not financial advice.",
-        ]),
-    )
-    return f"F ${price:.2f} · {snapshot['regime']}"
-
-
-def options_job(connection: sqlite3.Connection) -> str:
-    market = latest_observation("market")
-    snapshot = market["payload"] if market else market_snapshot()
-    options = ranked_option_chain("call", limit=8)
-    store_observation(connection, "options-chain", {"options": options})
-    upsert_dashboard(
-        connection,
-        "options_chain",
-        "options-chain",
-        options_dashboard_text(snapshot, options),
-    )
-    risk_lines = [
-        "## Tradysquids Risk Desk",
-        "The scanner does not remove risk and does not guarantee a profitable trade.",
-        f"SPY regime: **{snapshot.get('regime')}** · ATR14 **${float(snapshot.get('atr14') or 0):.2f}**.",
-        "Only consider contracts that pass configured liquidity, spread, DTE, and delta rules.",
-        "Avoid chasing entries, use a defined maximum loss, and verify quotes before any order.",
-        (
-            f"Best current liquidity candidate: `{options[0].get('symbol')}` "
-            f"({'passes' if options[0].get('liquidity_pass') else 'does not pass'} rules)."
-            if options else "No eligible contract is available."
-        ),
-        f"Updated {iso_now()}. Educational information only.",
-    ]
-    upsert_dashboard(connection, "risk_desk", "risk-desk", "\n".join(risk_lines))
-    return f"{len(options)} ranked calls"
 
 
 def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
@@ -1010,7 +897,7 @@ def status_job(connection: sqlite3.Connection) -> str:
             f"**Market data age:** {status['market_data_age']}",
             f"**Tradier:** {'configured' if status['tradier_configured'] else 'missing'}",
             f"**Discord scheduling:** {'configured' if status['discord_scheduled_posts'] else 'missing'}",
-            f"**SEC monitor:** {'configured' if status['sec_monitor'] else 'missing'}",
+            f"**News feed ID:** {'configured' if status['news_feed_identified'] else 'missing'}",
             f"Updated {status['updated_at']}. This private card updates in place.",
         ]),
     )
@@ -1412,14 +1299,42 @@ def universe_refresh_job(connection: sqlite3.Connection) -> str:
     return f"{updated}/{len(symbols)} universe quotes refreshed"
 
 
+def _current_commit_sha() -> str:
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
 def discord_structure_sync_job(connection: sqlite3.Connection) -> str:
     """Keep the live Discord server's channels, categories, and guide text
     in sync with what the code actually defines. The deploy path deliberately
     never runs this (Discord is a runtime responsibility, not a deployment
-    gate - see run_supervisor_simple.py), so this periodic job is what
-    actually makes "the code changed" eventually mean "Discord changed"."""
+    gate - see run_supervisor_simple.py), so this is what actually makes
+    "the code changed" eventually mean "Discord changed" - checked on a
+    short interval so a same-day code change (this trades 0DTE; a stale
+    scanner description or a channel that should be gone sitting there for
+    hours is not acceptable) shows up within minutes, not hours. Cheap to
+    check every cycle: only the actual Discord API sync - the expensive
+    part - is skipped when the code has not moved since the last time it
+    ran, so this does not hammer the Discord API when nothing changed."""
     if not (spy_scanner.DISCORD_BOT_TOKEN and spy_scanner.DISCORD_GUILD_ID):
         return "Discord bot token/guild not configured; skipped"
+    current_sha = _current_commit_sha()
+    last = latest_observation("discord-structure-sync")
+    last_sha = str((last or {}).get("payload", {}).get("sha") or "")
+    if current_sha and current_sha == last_sha:
+        return f"already synced at {current_sha[:12]}; no code change since"
+
     import sys
 
     import sync_discord_structure_reports  # noqa: F401  (runs the patch chain on import)
@@ -1433,8 +1348,8 @@ def discord_structure_sync_job(connection: sqlite3.Connection) -> str:
         sys.argv = original_argv
     if result:
         raise RuntimeError(f"Discord structure sync exited with code {result}")
-    store_observation(connection, "discord-structure-sync", {"at": iso_now()})
-    return "Discord channels, categories, and guides synchronized"
+    store_observation(connection, "discord-structure-sync", {"at": iso_now(), "sha": current_sha})
+    return f"Discord channels, categories, and guides synchronized at {current_sha[:12] or 'unknown'}"
 
 
 def _route_stream_close(
@@ -1860,11 +1775,11 @@ JOBS = [
     ),
     Job(
         "discord-structure-sync",
-        timedelta(hours=2),
+        timedelta(minutes=3),
         discord_structure_sync_job,
         background=True,
         provider_heavy=True,
-        retry_interval=timedelta(minutes=15),
+        retry_interval=timedelta(minutes=2),
     ),
     Job(
         "managed-ticker-news",
