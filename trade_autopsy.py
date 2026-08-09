@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 
-import ford_scan
+import spy_scanner
 
 
 def _parse_ts(value: str) -> datetime | None:
@@ -30,8 +30,8 @@ def _parse_ts(value: str) -> datetime | None:
 
 
 def _entry_spread_pct(row: dict) -> float:
-    entry = ford_scan.as_float(row.get("entry_price")) or 0.0
-    spread = ford_scan.as_float(row.get("bid_ask_width_at_entry")) or 0.0
+    entry = spy_scanner.as_float(row.get("entry_price")) or 0.0
+    spread = spy_scanner.as_float(row.get("bid_ask_width_at_entry")) or 0.0
     return (spread / entry * 100) if entry else 0.0
 
 
@@ -44,15 +44,15 @@ def _widened_stop_floor(row: dict) -> float:
     produced false "EXECUTION ANOMALY" flags on ordinary, correct 0DTE
     losses that happened before the floor engaged."""
     if row.get("play_type") == "SPY_0DTE":
-        peak = ford_scan.as_float(row.get("max_favorable_pct")) or 0.0
-        if peak >= ford_scan.SPY_0DTE_FLOOR_TRIGGER_PCT:
-            return ford_scan.SPY_0DTE_FLOOR_PCT
-        return -ford_scan.SPY_0DTE_STOP_PCT * 100
+        peak = spy_scanner.as_float(row.get("max_favorable_pct")) or 0.0
+        if peak >= spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT:
+            return spy_scanner.SPY_0DTE_FLOOR_PCT
+        return -spy_scanner.SPY_0DTE_STOP_PCT * 100
     base = -SINGLE_STOP_PCT_HINT * 100
     return base - abs(_entry_spread_pct(row))
 
 
-SINGLE_STOP_PCT_HINT = ford_scan.SINGLE_STOP_PCT
+SINGLE_STOP_PCT_HINT = spy_scanner.SINGLE_STOP_PCT
 
 
 def _fmt(value, digits: int = 1, suffix: str = "") -> str:
@@ -104,10 +104,10 @@ def autopsy(row: dict) -> str:
     try:
         oi = int(float(row.get("open_interest_at_entry") or 0))
         vol = int(float(row.get("option_volume_at_entry") or 0))
-        if oi < ford_scan.MIN_OPEN_INTEREST or vol < ford_scan.MIN_OPTION_VOLUME:
+        if oi < spy_scanner.MIN_OPEN_INTEREST or vol < spy_scanner.MIN_OPTION_VOLUME:
             lines.append(
                 f"  !! FLAG: entered below the CURRENT liquidity floor "
-                f"(OI>={ford_scan.MIN_OPEN_INTEREST}, vol>={ford_scan.MIN_OPTION_VOLUME}) "
+                f"(OI>={spy_scanner.MIN_OPEN_INTEREST}, vol>={spy_scanner.MIN_OPTION_VOLUME}) "
                 f"- this trade predates the current filter."
             )
     except (TypeError, ValueError):
@@ -121,11 +121,11 @@ def autopsy(row: dict) -> str:
     lines.append("  --- Risk floor ---")
     widened = _widened_stop_floor(row)
     if row.get("play_type") == "SPY_0DTE":
-        peak = ford_scan.as_float(row.get("max_favorable_pct")) or 0.0
-        raised = peak >= ford_scan.SPY_0DTE_FLOOR_TRIGGER_PCT
+        peak = spy_scanner.as_float(row.get("max_favorable_pct")) or 0.0
+        raised = peak >= spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT
         lines.append(
-            f"  0DTE stop={-ford_scan.SPY_0DTE_STOP_PCT * 100:.0f}%"
-            f"  floor trigger={ford_scan.SPY_0DTE_FLOOR_TRIGGER_PCT:.0f}% peak"
+            f"  0DTE stop={-spy_scanner.SPY_0DTE_STOP_PCT * 100:.0f}%"
+            f"  floor trigger={spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT:.0f}% peak"
             f"  peak reached={peak:.0f}%"
             f"  {'floor RAISED to' if raised else 'floor not yet raised, still at'} {widened:.0f}%"
         )
@@ -137,8 +137,8 @@ def autopsy(row: dict) -> str:
         )
 
     lines.append("  --- Excursion ---")
-    max_fav = ford_scan.as_float(row.get("max_favorable_pct"))
-    max_adv = ford_scan.as_float(row.get("max_adverse_pct"))
+    max_fav = spy_scanner.as_float(row.get("max_favorable_pct"))
+    max_adv = spy_scanner.as_float(row.get("max_adverse_pct"))
     lines.append(
         f"  max_favorable={_fmt(max_fav, 1, '%')}"
         f"  max_adverse={_fmt(max_adv, 1, '%')}"
@@ -158,7 +158,7 @@ def autopsy(row: dict) -> str:
             f"  realized=${_fmt(row.get('realized_pl_dollars'), 2, '')}"
             f"  last_signal={row.get('last_signal')}"
         )
-        pnl = ford_scan.as_float(row.get("pct_gain_loss"))
+        pnl = spy_scanner.as_float(row.get("pct_gain_loss"))
         if pnl is not None and outcome == "LOSS" and pnl < widened - 5:
             lines.append(
                 f"  !! FLAG: EXECUTION ANOMALY - realized loss ({pnl:.0f}%) blew past the "
@@ -180,12 +180,12 @@ def summarize(rows: list[dict]) -> str:
     losses = [r for r in closed if r.get("outcome") == "LOSS"]
     never_green = [
         r for r in rows
-        if (ford_scan.as_float(r.get("max_favorable_pct")) or 0) <= 0.01
+        if (spy_scanner.as_float(r.get("max_favorable_pct")) or 0) <= 0.01
     ]
     anomalies = []
     for row in closed:
         widened = _widened_stop_floor(row)
-        pnl = ford_scan.as_float(row.get("pct_gain_loss"))
+        pnl = spy_scanner.as_float(row.get("pct_gain_loss"))
         if row.get("outcome") == "LOSS" and pnl is not None and pnl < widened - 5:
             anomalies.append(row)
     lines = [
@@ -210,16 +210,16 @@ def main() -> int:
     parser.add_argument("--summary", action="store_true")
     args = parser.parse_args()
 
-    rows = ford_scan.read_log()
+    rows = spy_scanner.read_log()
 
     if args.trade_id:
         rows = [r for r in rows if r.get("trade_id") == args.trade_id]
     elif args.ticker:
         rows = [r for r in rows if (r.get("ticker") or "").upper() == args.ticker.upper()]
     elif args.open:
-        rows = ford_scan.open_rows(rows)
+        rows = spy_scanner.open_rows(rows)
     elif args.closed:
-        rows = ford_scan.closed_rows(rows)
+        rows = spy_scanner.closed_rows(rows)
     elif args.all:
         pass
     else:

@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import ford_scan
+import spy_scanner
 import learning_application
 import learning_center_content as learning
 import learning_search_router as routed
@@ -142,7 +142,7 @@ def _record_question(
 
 
 def _find_channel(
-    tracker: ford_scan.DiscordTracker,
+    tracker: spy_scanner.DiscordTracker,
     channel_name: str,
 ) -> dict[str, Any] | None:
     channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
@@ -199,8 +199,8 @@ def _review_card(record: dict[str, Any]) -> str:
 
 
 def post_or_update_review(record: dict[str, Any]) -> str:
-    tracker = ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+    tracker = spy_scanner.DiscordTracker(
+        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
     )
     if not tracker.enabled:
         return ""
@@ -223,7 +223,7 @@ def post_or_update_review(record: dict[str, Any]) -> str:
                 "PATCH", f"/channels/{channel_id}/messages/{message_id}", payload
             )
             message = result if isinstance(result, dict) else None
-        except ford_scan.DiscordError:
+        except spy_scanner.DiscordError:
             message = None
 
     if message is None:

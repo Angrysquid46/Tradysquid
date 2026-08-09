@@ -241,7 +241,7 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
         self.assertEqual(payload["permission_overwrites"][0]["deny"], "1024")
 
     def test_weekend_has_no_market_session(self) -> None:
-        saturday = datetime(2026, 8, 1, 10, 0, tzinfo=diagnostics.ford_scan.MARKET_TZ)
+        saturday = datetime(2026, 8, 1, 10, 0, tzinfo=diagnostics.spy_scanner.MARKET_TZ)
         self.assertIsNone(diagnostics.official_market_session(saturday, calendar_payload={}))
 
     def test_market_holiday_is_skipped(self) -> None:
@@ -253,7 +253,7 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
         self.assertEqual(session[1].hour, 12)
 
     def test_provider_calendar_controls_early_close(self) -> None:
-        moment = datetime(2026, 7, 2, 11, 0, tzinfo=diagnostics.ford_scan.MARKET_TZ)
+        moment = datetime(2026, 7, 2, 11, 0, tzinfo=diagnostics.spy_scanner.MARKET_TZ)
         payload = {
             "calendar": {
                 "days": {
@@ -271,7 +271,7 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
     def test_market_review_requires_two_hours(self) -> None:
         engine = FakeEngine()
         connection = sqlite3.connect(":memory:")
-        moment = datetime(2026, 7, 2, 10, 0, tzinfo=diagnostics.ford_scan.MARKET_TZ)
+        moment = datetime(2026, 7, 2, 10, 0, tzinfo=diagnostics.spy_scanner.MARKET_TZ)
         payload = {
             "calendar": {
                 "days": {

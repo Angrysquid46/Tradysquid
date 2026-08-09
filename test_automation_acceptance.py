@@ -35,7 +35,7 @@ class AutomationAcceptanceTests(unittest.TestCase):
             for index, name in enumerate(LEARNING_CHANNEL_ORDER)
         ]
         with (
-            patch.object(acceptance.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(acceptance.spy_scanner, "DiscordTracker", return_value=tracker),
             patch.object(
                 acceptance,
                 "category_and_children",
@@ -60,7 +60,7 @@ class AutomationAcceptanceTests(unittest.TestCase):
         ]
         tracker = Mock(enabled=True)
         with (
-            patch.object(acceptance.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(acceptance.spy_scanner, "DiscordTracker", return_value=tracker),
             patch.object(
                 acceptance,
                 "category_and_children",

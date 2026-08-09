@@ -58,9 +58,9 @@ def dedupe_and_retire_jobs(engine: Any) -> None:
     engine.JOBS = output
 
 
-def install_safe_intraday_history(ford_scan: Any) -> None:
+def install_safe_intraday_history(spy_scanner: Any) -> None:
     """Never ask Tradier for bars from a future session window."""
-    if getattr(ford_scan, "_tradysquid_safe_intraday", False):
+    if getattr(spy_scanner, "_tradysquid_safe_intraday", False):
         return
 
     def previous_weekday(day):
@@ -70,21 +70,21 @@ def install_safe_intraday_history(ford_scan: Any) -> None:
         return day
 
     def intraday_session_window(moment: datetime | None = None) -> tuple[str, str]:
-        current = (moment or ford_scan.now_ct()).astimezone(ford_scan.MARKET_TZ)
+        current = (moment or spy_scanner.now_ct()).astimezone(spy_scanner.MARKET_TZ)
         day = current.date()
         start = datetime.combine(
-            day, clock_time(*ford_scan.MARKET_OPEN), tzinfo=ford_scan.MARKET_TZ
+            day, clock_time(*spy_scanner.MARKET_OPEN), tzinfo=spy_scanner.MARKET_TZ
         )
         end = datetime.combine(
-            day, clock_time(*ford_scan.MARKET_CLOSE), tzinfo=ford_scan.MARKET_TZ
+            day, clock_time(*spy_scanner.MARKET_CLOSE), tzinfo=spy_scanner.MARKET_TZ
         )
         if current.weekday() >= 5 or current <= start + timedelta(minutes=1):
             day = previous_weekday(day)
             start = datetime.combine(
-                day, clock_time(*ford_scan.MARKET_OPEN), tzinfo=ford_scan.MARKET_TZ
+                day, clock_time(*spy_scanner.MARKET_OPEN), tzinfo=spy_scanner.MARKET_TZ
             )
             end = datetime.combine(
-                day, clock_time(*ford_scan.MARKET_CLOSE), tzinfo=ford_scan.MARKET_TZ
+                day, clock_time(*spy_scanner.MARKET_CLOSE), tzinfo=spy_scanner.MARKET_TZ
             )
         elif current < end:
             end = max(start, current - timedelta(minutes=1))
@@ -92,7 +92,7 @@ def install_safe_intraday_history(ford_scan: Any) -> None:
 
     def get_intraday_history(symbol: str, interval: str = "5min") -> list[dict[str, Any]]:
         start, end = intraday_session_window()
-        payload = ford_scan.tradier_get(
+        payload = spy_scanner.tradier_get(
             "/markets/timesales",
             {
                 "symbol": symbol,
@@ -108,9 +108,9 @@ def install_safe_intraday_history(ford_scan: Any) -> None:
             return []
         return [values] if isinstance(values, dict) else list(values)
 
-    ford_scan.intraday_session_window = intraday_session_window
-    ford_scan.get_intraday_history = get_intraday_history
-    ford_scan._tradysquid_safe_intraday = True
+    spy_scanner.intraday_session_window = intraday_session_window
+    spy_scanner.get_intraday_history = get_intraday_history
+    spy_scanner._tradysquid_safe_intraday = True
 
 
 def install_recovery_bridge(bridge: Any) -> None:

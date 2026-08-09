@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import dynamic_universe
-import ford_scan
+import spy_scanner
 import outcome_learning
 import trade_intelligence
 
@@ -45,7 +45,7 @@ ROTATION_LIMIT = max(1, min(4, int(os.environ.get("UNIVERSE_ROTATION_LIMIT", "2"
 # of that setting. Defaults False; UNIVERSE_ROTATION_ENABLED=true (env)
 # or scanner.json's universe_rotation_enabled restores the old behavior.
 UNIVERSE_ROTATION_ENABLED = str(os.environ.get(
-    "UNIVERSE_ROTATION_ENABLED", ford_scan.configured("universe_rotation_enabled", False)
+    "UNIVERSE_ROTATION_ENABLED", spy_scanner.configured("universe_rotation_enabled", False)
 )).strip().lower() not in ("false", "0", "no", "")
 
 LIQUID_CANDIDATES = (
@@ -261,7 +261,7 @@ def install_learning_extensions() -> None:
     supplements = _supplement_lessons()
     _ORIGINAL_LIBRARY_SECTIONS = learning.library_sections
     _ORIGINAL_LOAD_LESSONS = sync_learning_center.load_lessons
-    _ORIGINAL_TRADE_LEARNING_ANALYSIS = ford_scan.trade_learning_analysis
+    _ORIGINAL_TRADE_LEARNING_ANALYSIS = spy_scanner.trade_learning_analysis
 
     @lru_cache(maxsize=1)
     def merged_library_sections():
@@ -288,12 +288,12 @@ def install_learning_extensions() -> None:
     learning.library_sections = merged_library_sections
     sync_learning_center.load_lessons = merged_load_lessons
     trade_intelligence.learning_version = _combined_learning_version
-    ford_scan.trade_learning_analysis = enhanced_trade_learning_analysis
+    spy_scanner.trade_learning_analysis = enhanced_trade_learning_analysis
     journal_contract.JOURNAL_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
     journal_contract.REQUIRED_ENTRY_MARKERS = tuple(
         dict.fromkeys((*journal_contract.REQUIRED_ENTRY_MARKERS, "Applied Decision Checklist"))
     )
-    ford_scan.DISCORD_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
+    spy_scanner.DISCORD_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
     _LEARNING_INSTALLED = True
 
 
@@ -322,11 +322,11 @@ def _set_state_json(connection: Any, key: str, payload: dict[str, Any]) -> None:
 
 def _quote_change(quote: dict[str, Any]) -> float | None:
     for key in ("change_percentage", "change_pct", "percent_change"):
-        value = ford_scan.as_float(quote.get(key))
+        value = spy_scanner.as_float(quote.get(key))
         if value is not None:
             return value
-    last = ford_scan.as_float(quote.get("last"))
-    previous = ford_scan.as_float(quote.get("prevclose") or quote.get("previous_close"))
+    last = spy_scanner.as_float(quote.get("last"))
+    previous = spy_scanner.as_float(quote.get("prevclose") or quote.get("previous_close"))
     if last is not None and previous:
         return (last / previous - 1) * 100
     return None
@@ -395,7 +395,7 @@ def _cleanup_dashboard_cards(
         if message_id:
             try:
                 tracker._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
-            except ford_scan.DiscordError as exc:
+            except spy_scanner.DiscordError as exc:
                 if "HTTP 404" not in str(exc):
                     raise
         messages.pop(state_key, None)
@@ -416,25 +416,25 @@ def _require_dashboard(
 
 
 def _fmt_price(value: Any) -> str:
-    number = ford_scan.as_float(value)
+    number = spy_scanner.as_float(value)
     return "unavailable" if number is None else f"${number:.2f}"
 
 
 def _fmt_change(value: Any) -> str:
-    number = ford_scan.as_float(value)
+    number = spy_scanner.as_float(value)
     return "change unavailable" if number is None else f"{number:+.2f}%"
 
 
 def _fmt_number(value: Any, digits: int = 1, suffix: str = "") -> str:
-    number = ford_scan.as_float(value)
+    number = spy_scanner.as_float(value)
     return "unavailable" if number is None else f"{number:.{digits}f}{suffix}"
 
 
 def active_premarket_job(connection: Any) -> str:
     symbols = dynamic_universe.active_symbols()
-    quotes = ford_scan.get_quotes(symbols, include_greeks=False) if symbols else {}
+    quotes = spy_scanner.get_quotes(symbols, include_greeks=False) if symbols else {}
     rows = _universe_rows()
-    session = _PUBLIC._session_label(ford_scan.now_ct(), bool(ford_scan.market_is_open_now()[0]))
+    session = _PUBLIC._session_label(spy_scanner.now_ct(), bool(spy_scanner.market_is_open_now()[0]))
     ranked = sorted(
         symbols,
         key=lambda symbol: abs(_quote_change(quotes.get(symbol) or {}) or 0.0),
@@ -451,7 +451,7 @@ def active_premarket_job(connection: Any) -> str:
         overview.append(
             f"• **{symbol}** · {_fmt_price(quote.get('last'))} · "
             f"{_fmt_change(_quote_change(quote))} · volume "
-            f"{int(ford_scan.as_float(quote.get('volume'), 0) or 0):,}"
+            f"{int(spy_scanner.as_float(quote.get('volume'), 0) or 0):,}"
         )
     overview.append(f"Updated **{_engine().iso_now()}**. Last/closed quotes may be stale outside market hours.")
     _require_dashboard(connection, "premarket", "premarket-active-overview", "\n".join(overview))
@@ -466,12 +466,12 @@ def active_premarket_job(connection: Any) -> str:
             metadata = rows.get(symbol) or {}
             items = news.get("items") if isinstance(news.get("items"), list) else []
             headline = str((items[0] if items else {}).get("title") or "No recent headline recorded.")
-            volume = int(ford_scan.as_float(quote.get("volume"), 0) or 0)
-            average_volume = ford_scan.as_float(metadata.get("average_volume"))
+            volume = int(spy_scanner.as_float(quote.get("volume"), 0) or 0)
+            average_volume = spy_scanner.as_float(metadata.get("average_volume"))
             relative_volume = (
                 volume / average_volume
                 if average_volume and average_volume > 0
-                else ford_scan.as_float(snapshot.get("relative_volume"))
+                else spy_scanner.as_float(snapshot.get("relative_volume"))
             )
             content = "\n".join(
                 [
@@ -638,7 +638,7 @@ def _snapshot_direction(snapshot: dict[str, Any], change: float | None) -> str:
 
 def market_regime_summary_job(connection: Any) -> str:
     symbols = dynamic_universe.active_symbols()
-    quotes = ford_scan.get_quotes(symbols, include_greeks=False) if symbols else {}
+    quotes = spy_scanner.get_quotes(symbols, include_greeks=False) if symbols else {}
     groups: dict[str, list[str]] = {"BULLISH": [], "BEARISH": [], "RANGE": [], "OTHER": []}
     records: list[dict[str, Any]] = []
 
@@ -652,8 +652,8 @@ def market_regime_summary_job(connection: Any) -> str:
         records.append(
             {
                 "symbol": symbol,
-                "price": ford_scan.as_float(quote.get("last") or snapshot.get("price")),
-                "change": change if change is not None else ford_scan.as_float(snapshot.get("change_pct")),
+                "price": spy_scanner.as_float(quote.get("last") or snapshot.get("price")),
+                "change": change if change is not None else spy_scanner.as_float(snapshot.get("change_pct")),
                 "direction": direction,
                 "regime": snapshot.get("regime") or "awaiting refresh",
                 "rsi": snapshot.get("rsi14"),
@@ -733,7 +733,7 @@ def _render_intraday_chart(symbol: str, bars: list[dict[str, Any]], output: Path
 
     points: list[tuple[str, float]] = []
     for bar in bars:
-        value = ford_scan.as_float(bar.get("close") or bar.get("price"))
+        value = spy_scanner.as_float(bar.get("close") or bar.get("price"))
         if value is None:
             continue
         label = str(bar.get("time") or bar.get("timestamp") or bar.get("date") or "")
@@ -826,7 +826,7 @@ def _replace_chart_message(connection: Any, symbol: str, path: Path, caption: st
     if old_id and old_id != new_id and channel_id:
         try:
             tracker._request("DELETE", f"/channels/{channel_id}/messages/{old_id}")
-        except ford_scan.DiscordError as exc:
+        except spy_scanner.DiscordError as exc:
             if "HTTP 404" not in str(exc):
                 raise
     state[symbol] = new_id
@@ -848,7 +848,7 @@ def _cleanup_chart_messages(connection: Any, active: set[str]) -> int:
         if message_id and channel_id:
             try:
                 tracker._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
-            except ford_scan.DiscordError as exc:
+            except spy_scanner.DiscordError as exc:
                 if "HTTP 404" not in str(exc):
                     raise
         state.pop(symbol, None)
@@ -865,10 +865,10 @@ def intraday_chart_job(connection: Any) -> str:
     keep = {f"local-engine:intraday-levels:{symbol}" for symbol in symbols}
     for symbol in batch:
         try:
-            bars = ford_scan.get_intraday_history(symbol)
+            bars = spy_scanner.get_intraday_history(symbol)
             timeframe = "5-minute session"
             if len(bars) < 2:
-                bars = ford_scan.get_daily_history(symbol, days=45)[-30:]
+                bars = spy_scanner.get_daily_history(symbol, days=45)[-30:]
                 timeframe = "30-session fallback"
             output = CHART_DIR / f"{symbol.lower()}-active-session.png"
             metrics = _render_intraday_chart(symbol, bars, output)
@@ -931,11 +931,11 @@ def intraday_chart_job(connection: Any) -> str:
 def _ticker_performance() -> dict[str, dict[str, float]]:
     buckets: dict[str, list[float]] = {}
     wins: dict[str, int] = {}
-    for row in ford_scan.closed_rows(ford_scan.read_log()):
+    for row in spy_scanner.closed_rows(spy_scanner.read_log()):
         symbol = str(row.get("ticker") or "").upper()
         if not symbol:
             continue
-        buckets.setdefault(symbol, []).append(ford_scan.realized_pl_dollars(row))
+        buckets.setdefault(symbol, []).append(spy_scanner.realized_pl_dollars(row))
         wins[symbol] = wins.get(symbol, 0) + int(str(row.get("outcome") or "").upper() == "WIN")
     result: dict[str, dict[str, float]] = {}
     for symbol, pnl in buckets.items():
@@ -949,8 +949,8 @@ def _ticker_performance() -> dict[str, dict[str, float]]:
 
 
 def _candidate_score(symbol: str, quote: dict[str, Any], performance: dict[str, float] | None = None) -> float:
-    volume = max(0.0, ford_scan.as_float(quote.get("volume"), 0.0) or 0.0)
-    price = max(0.01, ford_scan.as_float(quote.get("last"), 0.01) or 0.01)
+    volume = max(0.0, spy_scanner.as_float(quote.get("volume"), 0.0) or 0.0)
+    price = max(0.01, spy_scanner.as_float(quote.get("last"), 0.01) or 0.01)
     change = abs(_quote_change(quote) or 0.0)
     liquidity = min(math.log10(volume + 1) * 12, 90)
     movement = min(change * 4, 24)
@@ -978,7 +978,7 @@ def universe_rotation_job(connection: Any) -> str:
     protected = set(member.get("additions") or [])
     protected.update(
         str(row.get("ticker") or "").upper()
-        for row in ford_scan.open_rows(ford_scan.read_log())
+        for row in spy_scanner.open_rows(spy_scanner.read_log())
         if row.get("ticker")
     )
     excluded = set(member.get("removals") or [])
@@ -988,18 +988,18 @@ def universe_rotation_job(connection: Any) -> str:
         if symbol not in active and symbol not in excluded and symbol not in _active_rotation_exclusions(state)
     ]
     batch = _rotation_batch(connection, "universe-candidates", candidate_pool, ROTATION_BATCH_SIZE)
-    quotes = ford_scan.get_quotes(batch, include_greeks=False) if batch else {}
+    quotes = spy_scanner.get_quotes(batch, include_greeks=False) if batch else {}
     performance = _ticker_performance()
     candidates: list[tuple[float, str, dict[str, Any]]] = []
     failures: list[str] = []
     for symbol in batch:
         try:
             quote = quotes.get(symbol) or {}
-            price = ford_scan.as_float(quote.get("last"))
-            volume = ford_scan.as_float(quote.get("volume"), 0) or 0
+            price = spy_scanner.as_float(quote.get("last"))
+            volume = spy_scanner.as_float(quote.get("volume"), 0) or 0
             if price is None or volume < 250_000:
                 continue
-            expirations = ford_scan.get_expirations(symbol)
+            expirations = spy_scanner.get_expirations(symbol)
             if not expirations:
                 continue
             score = _candidate_score(symbol, quote)
@@ -1010,7 +1010,7 @@ def universe_rotation_job(connection: Any) -> str:
     candidates.sort(reverse=True)
 
     current_rows = _universe_rows()
-    active_quotes = ford_scan.get_quotes(active, include_greeks=False) if active else {}
+    active_quotes = spy_scanner.get_quotes(active, include_greeks=False) if active else {}
     current_scores: list[tuple[float, str]] = []
     for symbol in active:
         score = _candidate_score(symbol, active_quotes.get(symbol) or current_rows.get(symbol) or {}, performance.get(symbol))
@@ -1044,8 +1044,8 @@ def universe_rotation_job(connection: Any) -> str:
                     symbol,
                     "automatic_rotation",
                     score=score,
-                    last_price=ford_scan.as_float(quote.get("last")),
-                    average_volume=ford_scan.as_float(quote.get("volume")),
+                    last_price=spy_scanner.as_float(quote.get("last")),
+                    average_volume=spy_scanner.as_float(quote.get("volume")),
                     options_available=True,
                     reason="high-liquidity optionable candidate promoted by rotating universe",
                     ttl_minutes=60 * 48,
@@ -1125,7 +1125,7 @@ def enhanced_activity_card(connection: Any, rows: list[dict[str, Any]]) -> str:
     ]
     lines = [
         "## Live Tradysquids System Activity",
-        f"**Market:** {'OPEN' if ford_scan.market_is_open_now()[0] else 'CLOSED'} · "
+        f"**Market:** {'OPEN' if spy_scanner.market_is_open_now()[0] else 'CLOSED'} · "
         f"**Active universe:** {len(active)}/{dynamic_universe.max_active_symbols()}",
         f"**Needs attention:** {len(attention)} scheduled job(s)",
         "### What actually happened",
@@ -1219,8 +1219,8 @@ def learning_results_text(summary: dict[str, Any]) -> str:
         lines.extend(
             f"• **{item['feature']} = {item['value']}** · {item['samples']} trades · "
             f"{item['win_rate_pct']:.0f}% wins · avg "
-            f"{ford_scan.fmt_money(item['average_pl_dollars'])} · total "
-            f"{ford_scan.fmt_money(item['total_pl_dollars'])}"
+            f"{spy_scanner.fmt_money(item['average_pl_dollars'])} · total "
+            f"{spy_scanner.fmt_money(item['total_pl_dollars'])}"
             for item in positive[:6]
         )
     else:
@@ -1230,7 +1230,7 @@ def learning_results_text(summary: dict[str, Any]) -> str:
         lines.extend(
             f"• **{item['feature']} = {item['value']}** · {item['samples']} trades · "
             f"{item['win_rate_pct']:.0f}% wins · avg "
-            f"{ford_scan.fmt_money(item['average_pl_dollars'])} · "
+            f"{spy_scanner.fmt_money(item['average_pl_dollars'])} · "
             f"MAE {_fmt_number(item.get('average_mae_pct'), 1, '%')}"
             for item in negative[:6]
         )
@@ -1271,8 +1271,8 @@ def style_evidence_text(
         f"**Sample:** {samples}/{minimum_sample} · **Confidence:** {confidence}",
         "### Aggregate evidence",
         f"Win rate **{float(group.get('win_rate_pct') or 0):.1f}%** · "
-        f"average P/L **{ford_scan.fmt_money(group.get('average_pl_dollars'))}** · "
-        f"total P/L **{ford_scan.fmt_money(group.get('total_pl_dollars'))}**",
+        f"average P/L **{spy_scanner.fmt_money(group.get('average_pl_dollars'))}** · "
+        f"total P/L **{spy_scanner.fmt_money(group.get('total_pl_dollars'))}**",
         f"Profit factor **{group.get('profit_factor') if group.get('profit_factor') is not None else 'unavailable'}** · "
         f"average MFE **{_fmt_number(group.get('average_mfe_pct'), 1, '%')}** · "
         f"average MAE **{_fmt_number(group.get('average_mae_pct'), 1, '%')}**",
@@ -1306,7 +1306,7 @@ def enhanced_outcome_learning_job(connection: Any) -> str:
     )
     tracker = _tracker()
     if tracker:
-        report_state = ford_scan.read_report_state()
+        report_state = spy_scanner.read_report_state()
         tracker.upsert_channel_message(
             "learning_results",
             report_state,
@@ -1332,7 +1332,7 @@ def enhanced_outcome_learning_job(connection: Any) -> str:
                 style_evidence_text(title, group, suggestion, int(summary["minimum_sample"])),
                 search_token=f"{title} Evidence & Improvement",
             )
-        ford_scan.write_report_state(report_state)
+        spy_scanner.write_report_state(report_state)
     return (
         f"{summary['closed_trades']} closed trades; "
         f"{len(summary['evidence_ready_groups'])} evidence-ready groups; "
@@ -1374,14 +1374,14 @@ def upgrade_request_migration_job(connection: Any) -> str:
             continue
         try:
             messages = tracker._request("GET", f"/channels/{channel_id}/messages?limit=100")
-        except ford_scan.DiscordError:
+        except spy_scanner.DiscordError:
             continue
         for message in messages if isinstance(messages, list) else []:
             scanned += 1
             author = message.get("author") or {}
             if not author.get("bot"):
                 continue
-            text = ford_scan.message_search_text(message)
+            text = spy_scanner.message_search_text(message)
             if (
                 "Upgrade request" not in text
                 or ("uploaded" not in text and "Batch issue" not in text)

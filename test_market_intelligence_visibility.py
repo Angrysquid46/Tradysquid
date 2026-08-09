@@ -81,11 +81,11 @@ class MarketIntelligenceVisibilityTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(public.ford_scan, "now_ct", return_value=saturday),
-            mock.patch.object(public.ford_scan, "market_is_open_now", return_value=(False, "weekend")),
+            mock.patch.object(public.spy_scanner, "now_ct", return_value=saturday),
+            mock.patch.object(public.spy_scanner, "market_is_open_now", return_value=(False, "weekend")),
             mock.patch.object(public.dynamic_universe, "active_symbols", return_value=["F", "AAL"]),
             mock.patch.object(public.dynamic_universe, "max_active_symbols", return_value=25),
-            mock.patch.object(public.ford_scan, "get_quotes", return_value={
+            mock.patch.object(public.spy_scanner, "get_quotes", return_value={
                 "F": {"last": 12.34, "change_percentage": 1.2, "volume": 1_500_000},
                 "AAL": {"last": 11.20, "change_percentage": -2.4, "volume": 2_000_000},
             }),

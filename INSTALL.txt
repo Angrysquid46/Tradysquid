@@ -2,9 +2,9 @@ TRADYSQUIDS TRADEBOT UPGRADE
 
 Replace these repository files with the files in this package:
 
-  ford_scan.py
+  spy_scanner.py
   requirements.txt
-  .github/workflows/ford-scan.yml
+  .github/workflows/spy-scan.yml
   state/ford-plays-log.csv
   docs/index.html
 

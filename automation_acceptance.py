@@ -24,7 +24,7 @@ import requests
 
 import discord_command_bot as command_bot
 import dynamic_universe
-import ford_scan
+import spy_scanner
 from learning_center_catalog import LEARNING_CHANNEL_ORDER
 from strict_learning_order import category_and_children, normalized, ordered_children
 
@@ -251,7 +251,7 @@ def run_discord_sync() -> str:
 
 
 def verify_visible_learning_order() -> dict[str, Any]:
-    tracker = ford_scan.DiscordTracker(ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID)
+    tracker = spy_scanner.DiscordTracker(spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID)
     if not tracker.enabled:
         raise AcceptanceFailure("Discord bot token and guild ID are required for order verification.")
     _, children = category_and_children(tracker)
@@ -280,8 +280,8 @@ def verify_status_logic() -> dict[str, str]:
 
 def post_report(message: str) -> None:
     try:
-        tracker = ford_scan.DiscordTracker(
-            ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+        tracker = spy_scanner.DiscordTracker(
+            spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
         )
         channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
         channel = next((item for item in channels if str(item.get("name") or "").casefold() == "system-health"), None)
@@ -290,7 +290,7 @@ def post_report(message: str) -> None:
             tracker.upsert_singleton_message(
                 str(channel["id"]), message[:1900], title
             )
-    except (ford_scan.DiscordError, ValueError, TypeError):
+    except (spy_scanner.DiscordError, ValueError, TypeError):
         pass
 
 

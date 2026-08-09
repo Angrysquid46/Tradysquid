@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import ford_scan
+import spy_scanner
 
 CATEGORY_NAME = "Start Here"
 CHANNEL_NAME = "bot-commands"
@@ -72,8 +72,8 @@ not professional financial advice or a guarantee of profit."""
 
 
 def main() -> int:
-    tracker = ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+    tracker = spy_scanner.DiscordTracker(
+        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
     )
     if not tracker.enabled:
         raise SystemExit("Local DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required")
@@ -121,7 +121,7 @@ def main() -> int:
             item
             for item in recent
             if (item.get("author") or {}).get("bot")
-            and GUIDE_MARKER in ford_scan.message_search_text(item)
+            and GUIDE_MARKER in spy_scanner.message_search_text(item)
         ),
         None,
     )
@@ -147,7 +147,7 @@ def main() -> int:
             "PUT", f"/channels/{channel['id']}/pins/{message['id']}"
         )
         print("Pinned the command guide.")
-    except ford_scan.DiscordError as exc:
+    except spy_scanner.DiscordError as exc:
         if "HTTP 403" not in str(exc):
             raise
         print(

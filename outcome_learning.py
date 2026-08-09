@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import ford_scan
+import spy_scanner
 import trade_intelligence
 
 ROOT = Path(__file__).resolve().parent
@@ -41,7 +41,7 @@ EXPORT_FIELDS = [
 
 
 def number(row: dict[str, str], key: str) -> float | None:
-    return ford_scan.as_float(row.get(key))
+    return spy_scanner.as_float(row.get(key))
 
 
 def days_to_expiration(row: dict[str, str]) -> int | None:
@@ -74,7 +74,7 @@ def review_alignment(record: dict[str, Any]) -> str:
 
 
 def sanitized_rows() -> list[dict[str, Any]]:
-    rows = ford_scan.closed_rows(ford_scan.read_log())
+    rows = spy_scanner.closed_rows(spy_scanner.read_log())
     reviews = review_records()
     exports: list[dict[str, Any]] = []
     for row in rows:
@@ -118,11 +118,11 @@ def feature_groups(row: dict[str, Any]) -> dict[str, str]:
         "regime": str(row.get("market_regime") or "UNKNOWN").upper(),
         "review_primary_cause": str(row.get("review_primary_cause") or "UNREVIEWED"),
         "review_alignment": str(row.get("review_alignment") or "UNRECORDED"),
-        "delta_band": bucket(ford_scan.as_float(row.get("delta_at_entry")), (0.15, 0.25, 0.40, 0.60, 0.75)),
-        "iv_band": bucket(ford_scan.as_float(row.get("iv_at_entry")), (0.25, 0.40, 0.60, 0.90)),
-        "dte_band": bucket(ford_scan.as_float(row.get("dte_at_entry")), (7, 14, 21, 30, 45, 61)),
-        "score_band": bucket(ford_scan.as_float(row.get("setup_score")), (40, 55, 70, 85)),
-        "open_interest_band": bucket(ford_scan.as_float(row.get("open_interest_at_entry")), (100, 500, 1000, 2500, 5000)),
+        "delta_band": bucket(spy_scanner.as_float(row.get("delta_at_entry")), (0.15, 0.25, 0.40, 0.60, 0.75)),
+        "iv_band": bucket(spy_scanner.as_float(row.get("iv_at_entry")), (0.25, 0.40, 0.60, 0.90)),
+        "dte_band": bucket(spy_scanner.as_float(row.get("dte_at_entry")), (7, 14, 21, 30, 45, 61)),
+        "score_band": bucket(spy_scanner.as_float(row.get("setup_score")), (40, 55, 70, 85)),
+        "open_interest_band": bucket(spy_scanner.as_float(row.get("open_interest_at_entry")), (100, 500, 1000, 2500, 5000)),
     }
 
 
@@ -138,12 +138,12 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     summaries = []
     for (feature, value), members in sorted(groups.items()):
-        pnl = [ford_scan.as_float(row.get("realized_pl_dollars"), 0.0) or 0.0 for row in members]
+        pnl = [spy_scanner.as_float(row.get("realized_pl_dollars"), 0.0) or 0.0 for row in members]
         wins = sum(str(row.get("outcome") or "").upper() == "WIN" for row in members)
         gross_profit = sum(value for value in pnl if value > 0)
         gross_loss = abs(sum(value for value in pnl if value < 0))
-        mfe = [ford_scan.as_float(row.get("max_favorable_pct")) for row in members]
-        mae = [ford_scan.as_float(row.get("max_adverse_pct")) for row in members]
+        mfe = [spy_scanner.as_float(row.get("max_favorable_pct")) for row in members]
+        mae = [spy_scanner.as_float(row.get("max_adverse_pct")) for row in members]
         mfe = [value for value in mfe if value is not None]
         mae = [value for value in mae if value is not None]
         summaries.append({

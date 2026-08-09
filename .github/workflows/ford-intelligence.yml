@@ -42,7 +42,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements.txt
 
       - name: Validate scanner syntax
-        run: python -m py_compile ford_scan.py
+        run: python -m py_compile spy_scanner.py
 
       - name: Run Ford intelligence briefing
         env:
@@ -52,7 +52,7 @@ jobs:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
-        run: python ford_scan.py --intelligence-only
+        run: python spy_scanner.py --intelligence-only
 
       - name: Commit updated intelligence state and charts
         shell: bash

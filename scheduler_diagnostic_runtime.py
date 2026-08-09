@@ -47,7 +47,7 @@ def _latest_receipt(connection: Any, name: str) -> dict[str, Any] | None:
 
 def _market_open() -> bool:
     try:
-        return bool(diagnostics.ford_scan.market_is_open_now()[0])
+        return bool(diagnostics.spy_scanner.market_is_open_now()[0])
     except Exception:
         return False
 

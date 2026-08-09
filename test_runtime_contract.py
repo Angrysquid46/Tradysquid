@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-import ford_scan
+import spy_scanner
 import runtime_contract
 
 
@@ -38,23 +38,23 @@ class RuntimeContractTests(unittest.TestCase):
         )
 
     def test_weekend_intraday_window_uses_last_completed_weekday(self) -> None:
-        runtime_contract.install_safe_intraday_history(ford_scan)
-        moment = datetime(2026, 8, 2, 7, 25, tzinfo=ford_scan.MARKET_TZ)
-        start, end = ford_scan.intraday_session_window(moment)
+        runtime_contract.install_safe_intraday_history(spy_scanner)
+        moment = datetime(2026, 8, 2, 7, 25, tzinfo=spy_scanner.MARKET_TZ)
+        start, end = spy_scanner.intraday_session_window(moment)
         self.assertEqual(start, "2026-07-31 08:30")
         self.assertEqual(end, "2026-07-31 15:00")
 
     def test_premarket_intraday_window_never_uses_future_open(self) -> None:
-        runtime_contract.install_safe_intraday_history(ford_scan)
-        moment = datetime(2026, 8, 3, 7, 0, tzinfo=ford_scan.MARKET_TZ)
-        start, end = ford_scan.intraday_session_window(moment)
+        runtime_contract.install_safe_intraday_history(spy_scanner)
+        moment = datetime(2026, 8, 3, 7, 0, tzinfo=spy_scanner.MARKET_TZ)
+        start, end = spy_scanner.intraday_session_window(moment)
         self.assertEqual(start, "2026-07-31 08:30")
         self.assertEqual(end, "2026-07-31 15:00")
 
     def test_live_intraday_window_ends_one_minute_before_now(self) -> None:
-        runtime_contract.install_safe_intraday_history(ford_scan)
-        moment = datetime(2026, 8, 3, 10, 0, tzinfo=ford_scan.MARKET_TZ)
-        start, end = ford_scan.intraday_session_window(moment)
+        runtime_contract.install_safe_intraday_history(spy_scanner)
+        moment = datetime(2026, 8, 3, 10, 0, tzinfo=spy_scanner.MARKET_TZ)
+        start, end = spy_scanner.intraday_session_window(moment)
         self.assertEqual(start, "2026-08-03 08:30")
         self.assertEqual(end, "2026-08-03 09:59")
 

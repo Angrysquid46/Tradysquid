@@ -22,7 +22,7 @@ from datetime import date, datetime, time as clock_time, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
-import ford_scan
+import spy_scanner
 import github_upgrade_bridge as bridge
 import upgrade_batch_44
 
@@ -901,7 +901,7 @@ def _job_checks(engine_connection: sqlite3.Connection) -> list[HealthCheck]:
         started = _parse_time(payload.get("started_at"))
         finished = _parse_time(payload.get("finished_at"))
         interval = job.interval
-        if job.after_hours_interval and not ford_scan.market_is_open_now()[0]:
+        if job.after_hours_interval and not spy_scanner.market_is_open_now()[0]:
             interval = job.after_hours_interval
         overdue = bool(finished and current - finished > max(interval * 2, timedelta(minutes=15)))
         stuck = bool(status == "RUNNING" and started and current - started > max(interval * 2, timedelta(minutes=20)))
@@ -1188,11 +1188,11 @@ def official_market_session(
     *,
     calendar_payload: dict[str, Any] | None = None,
 ) -> tuple[datetime, datetime] | None:
-    moment = (moment or datetime.now(ford_scan.MARKET_TZ)).astimezone(ford_scan.MARKET_TZ)
+    moment = (moment or datetime.now(spy_scanner.MARKET_TZ)).astimezone(spy_scanner.MARKET_TZ)
     payload = calendar_payload
     if payload is None:
         try:
-            payload = ford_scan.tradier_get(
+            payload = spy_scanner.tradier_get(
                 "/markets/calendar",
                 {"month": moment.month, "year": moment.year},
             )
@@ -1209,15 +1209,15 @@ def official_market_session(
             start = _parse_clock(open_data.get("start") or item.get("open_time"), clock_time(8, 30))
             end = _parse_clock(open_data.get("end") or item.get("close_time"), clock_time(15, 0))
             return (
-                datetime.combine(moment.date(), start, tzinfo=ford_scan.MARKET_TZ),
-                datetime.combine(moment.date(), end, tzinfo=ford_scan.MARKET_TZ),
+                datetime.combine(moment.date(), start, tzinfo=spy_scanner.MARKET_TZ),
+                datetime.combine(moment.date(), end, tzinfo=spy_scanner.MARKET_TZ),
             )
     fallback = fallback_market_session(moment.date())
     if not fallback:
         return None
     return (
-        datetime.combine(moment.date(), fallback[0], tzinfo=ford_scan.MARKET_TZ),
-        datetime.combine(moment.date(), fallback[1], tzinfo=ford_scan.MARKET_TZ),
+        datetime.combine(moment.date(), fallback[0], tzinfo=spy_scanner.MARKET_TZ),
+        datetime.combine(moment.date(), fallback[1], tzinfo=spy_scanner.MARKET_TZ),
     )
 
 
@@ -1227,12 +1227,12 @@ def market_review_due(
     *,
     calendar_payload: dict[str, Any] | None = None,
 ) -> bool:
-    moment = (moment or datetime.now(ford_scan.MARKET_TZ)).astimezone(ford_scan.MARKET_TZ)
+    moment = (moment or datetime.now(spy_scanner.MARKET_TZ)).astimezone(spy_scanner.MARKET_TZ)
     session = official_market_session(moment, calendar_payload=calendar_payload)
     if not session or not (session[0] <= moment <= session[1]):
         return False
     last = _parse_time(_engine().get_state(engine_connection, MARKET_REVIEW_LAST_KEY, ""))
-    return not last or moment - last.astimezone(ford_scan.MARKET_TZ) >= timedelta(hours=2)
+    return not last or moment - last.astimezone(spy_scanner.MARKET_TZ) >= timedelta(hours=2)
 
 
 def _age(value: str) -> str:
@@ -1274,7 +1274,7 @@ def _queue_content(
 
 
 def market_upgrade_review_job(engine_connection: sqlite3.Connection) -> str:
-    moment = datetime.now(ford_scan.MARKET_TZ)
+    moment = datetime.now(spy_scanner.MARKET_TZ)
     if not market_review_due(engine_connection, moment):
         return "outside official market session or two-hour review is not due"
     try:

@@ -11,26 +11,26 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-import ford_scan
+import spy_scanner
 
 
 def _with_temp_snapshot_dir():
     class _Swap:
         def __enter__(self):
-            self.original = ford_scan.CHAIN_SNAPSHOT_DIR
+            self.original = spy_scanner.CHAIN_SNAPSHOT_DIR
             self.tmp = tempfile.TemporaryDirectory()
-            ford_scan.CHAIN_SNAPSHOT_DIR = Path(self.tmp.name) / "chain-snapshots"
-            return ford_scan.CHAIN_SNAPSHOT_DIR
+            spy_scanner.CHAIN_SNAPSHOT_DIR = Path(self.tmp.name) / "chain-snapshots"
+            return spy_scanner.CHAIN_SNAPSHOT_DIR
 
         def __exit__(self, *exc):
-            ford_scan.CHAIN_SNAPSHOT_DIR = self.original
+            spy_scanner.CHAIN_SNAPSHOT_DIR = self.original
             self.tmp.cleanup()
 
     return _Swap()
 
 
 def _row(**overrides) -> dict[str, str]:
-    row = {field: "" for field in ford_scan.LOG_HEADER}
+    row = {field: "" for field in spy_scanner.LOG_HEADER}
     row.update({
         "trade_id": "T-SNAP-1", "ticker": "F", "play_type": "REGULAR",
         "call_or_put": "call", "strike": "12", "expiration": "2026-08-21",
@@ -44,14 +44,14 @@ def _row(**overrides) -> dict[str, str]:
 def test_writes_a_snapshot_file_named_by_trade_id():
     with _with_temp_snapshot_dir() as snapshot_dir:
         row = _row()
-        ford_scan.save_chain_snapshot(row, all_candidates=[], timestamp=ford_scan.now_ct())
+        spy_scanner.save_chain_snapshot(row, all_candidates=[], timestamp=spy_scanner.now_ct())
         assert (snapshot_dir / "T-SNAP-1.json").exists()
 
 
 def test_the_snapshot_contains_the_chosen_contracts_key_details():
     with _with_temp_snapshot_dir() as snapshot_dir:
         row = _row()
-        ford_scan.save_chain_snapshot(row, all_candidates=[], timestamp=ford_scan.now_ct())
+        spy_scanner.save_chain_snapshot(row, all_candidates=[], timestamp=spy_scanner.now_ct())
         payload = json.loads((snapshot_dir / "T-SNAP-1.json").read_text())
         assert payload["chosen"]["strike"] == "12"
         assert payload["chosen"]["delta_at_entry"] == "0.55"
@@ -67,7 +67,7 @@ def test_other_qualifying_candidates_from_the_same_cycle_are_recorded():
             {"play_type": "REGULAR", "call_or_put": "call", "strike": "12",
              "expiration": "2026-08-21", "entry_price": 0.50, "delta": 0.55, "score": 3.0},  # this is the chosen one
         ]
-        ford_scan.save_chain_snapshot(row, other_candidates, timestamp=ford_scan.now_ct())
+        spy_scanner.save_chain_snapshot(row, other_candidates, timestamp=spy_scanner.now_ct())
         payload = json.loads((snapshot_dir / "T-SNAP-1.json").read_text())
         # The chosen contract itself must not be duplicated into "other" -
         # only the genuinely different candidate should appear.
@@ -80,10 +80,10 @@ def test_a_write_failure_never_raises_or_blocks_the_trade():
     with mock.patch.object(Path, "write_text", side_effect=OSError("disk full")):
         # Must not raise - this is called from the live trade-entry loop
         # and a failure here can never be allowed to break entry itself.
-        ford_scan.save_chain_snapshot(row, all_candidates=[], timestamp=ford_scan.now_ct())
+        spy_scanner.save_chain_snapshot(row, all_candidates=[], timestamp=spy_scanner.now_ct())
 
 
 def test_missing_trade_id_never_raises():
     row = _row(trade_id="")
     with _with_temp_snapshot_dir():
-        ford_scan.save_chain_snapshot(row, all_candidates=[], timestamp=ford_scan.now_ct())
+        spy_scanner.save_chain_snapshot(row, all_candidates=[], timestamp=spy_scanner.now_ct())

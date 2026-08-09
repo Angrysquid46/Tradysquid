@@ -88,7 +88,7 @@ class AlwaysOnOperationsTests(unittest.TestCase):
         # system_activity_job has been posting to this logical channel name
         # since before tonight - if it isn't a real, mapped entry, every
         # post it ever made was a silent no-op, landing nowhere.
-        self.assertEqual(engine.ford_scan.CHANNEL_NAMES["system_activity"], "system-activity")
+        self.assertEqual(engine.spy_scanner.CHANNEL_NAMES["system_activity"], "system-activity")
 
     def test_activity_card_shows_live_stream_status_from_position_tracker(self) -> None:
         directory, db_path, heartbeat = self.temporary_database()

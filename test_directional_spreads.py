@@ -5,7 +5,7 @@ that makes a bear call spread dangerous, and vice versa."""
 
 from __future__ import annotations
 
-import ford_scan
+import spy_scanner
 
 
 def _daily_history(closes: list[float]) -> list[dict]:
@@ -26,7 +26,7 @@ def test_a_strong_uptrend_permits_bull_put_but_not_bear_call():
     closes = _strong_uptrend_closes()
     # Spot a bit below the recent high, clear of the extreme buffer.
     spot = closes[-1] * 0.98
-    context = ford_scan.spread_market_context(
+    context = spy_scanner.spread_market_context(
         _daily_history(closes), spot, current_iv=0.50, iv_rank_value=None
     )
     assert context["qualified"] is True, context["failures"]
@@ -37,7 +37,7 @@ def test_a_strong_uptrend_permits_bull_put_but_not_bear_call():
 def test_a_strong_downtrend_permits_bear_call_but_not_bull_put():
     closes = _strong_downtrend_closes()
     spot = closes[-1] * 1.02
-    context = ford_scan.spread_market_context(
+    context = spy_scanner.spread_market_context(
         _daily_history(closes), spot, current_iv=0.50, iv_rank_value=None
     )
     assert context["qualified"] is True, context["failures"]
@@ -49,7 +49,7 @@ def test_a_calm_market_still_permits_both_directions():
     base = [100.0] * 40
     tail = [round(100 + 2 * math.sin(i * 0.5), 2) for i in range(20)]
     closes = base + tail
-    context = ford_scan.spread_market_context(
+    context = spy_scanner.spread_market_context(
         _daily_history(closes), closes[-1], current_iv=0.50, iv_rank_value=None
     )
     assert context["qualified"] is True, context["failures"]
@@ -62,7 +62,7 @@ def test_price_at_the_extreme_still_blocks_everything_regardless_of_trend():
     # separate, legitimate risk control, not the trend-direction gate.
     closes = _strong_uptrend_closes()
     spot = closes[-1]  # right at today's high, not clear of it
-    context = ford_scan.spread_market_context(
+    context = spy_scanner.spread_market_context(
         _daily_history(closes), spot, current_iv=0.50, iv_rank_value=None
     )
     assert context["qualified"] is False

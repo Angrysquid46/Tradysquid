@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 import discord_reconciliation_safety as safety
-import ford_scan
+import spy_scanner
 import performance_scorecards as scorecards
 
 
@@ -53,8 +53,8 @@ class DiscordReconciliationSafetyTests(unittest.TestCase):
         safety.install()
 
     def make_closed_row(self) -> dict[str, str]:
-        closed_at = datetime(2026, 8, 1, 14, 30, tzinfo=ford_scan.MARKET_TZ)
-        row = ford_scan.blank_row()
+        closed_at = datetime(2026, 8, 1, 14, 30, tzinfo=spy_scanner.MARKET_TZ)
+        row = spy_scanner.blank_row()
         row.update(
             {
                 "trade_id": "F-SAFETY-001",
@@ -87,7 +87,7 @@ class DiscordReconciliationSafetyTests(unittest.TestCase):
             discord,
             state,
             [self.make_closed_row()],
-            datetime(2026, 8, 2, 17, 30, tzinfo=ford_scan.MARKET_TZ),
+            datetime(2026, 8, 2, 17, 30, tzinfo=spy_scanner.MARKET_TZ),
             market_open=False,
         )
         self.assertEqual(discord.deleted, [])

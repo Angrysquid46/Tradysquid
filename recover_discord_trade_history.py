@@ -13,7 +13,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import run_with_env
-import ford_scan
+import spy_scanner
 
 
 CT = ZoneInfo("America/Chicago")
@@ -21,7 +21,7 @@ CT = ZoneInfo("America/Chicago")
 
 def number(value: str) -> float | None:
     cleaned = re.sub(r"[^0-9.\-]", "", value.replace(",", ""))
-    return ford_scan.as_float(cleaned)
+    return spy_scanner.as_float(cleaned)
 
 
 def field(text: str, label: str) -> str:
@@ -29,7 +29,7 @@ def field(text: str, label: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def archive_messages(tracker: ford_scan.DiscordTracker) -> list[dict]:
+def archive_messages(tracker: spy_scanner.DiscordTracker) -> list[dict]:
     channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
     by_name = {
         str(item.get("name") or ""): str(item.get("id") or "")
@@ -57,7 +57,7 @@ def archive_messages(tracker: ford_scan.DiscordTracker) -> list[dict]:
 
 
 def parse_closed_card(message: dict) -> dict[str, str] | None:
-    text = ford_scan.message_search_text(message)
+    text = spy_scanner.message_search_text(message)
     title = re.search(
         r"\b([A-Z]{1,6})\s+#(\d{3})\s+·\s+(WIN|LOSS|FLAT|SCRATCH)\s+·\s+([^\n]+)",
         text,
@@ -95,7 +95,7 @@ def parse_closed_card(message: dict) -> dict[str, str] | None:
     mae = number(field(text, "MAE"))
     journal = re.search(r"discord\.com/channels/\d+/(\d+)", text)
     message_id = str(message.get("id") or "")
-    row = ford_scan.blank_row()
+    row = spy_scanner.blank_row()
     row.update(
         {
             "trade_id": f"{ticker}-ARCHIVE-{message_id[-9:]}",
@@ -107,10 +107,10 @@ def parse_closed_card(message: dict) -> dict[str, str] | None:
             "strike": strike,
             "expiration": expiration,
             "cost_or_credit": f"{entry or 0:.2f} {'credit' if entry_label == 'Entry credit' else 'debit'}",
-            "entry_price": ford_scan.round_or_blank(entry, 2),
-            "exit_price": ford_scan.round_or_blank(exit_value, 2),
-            "entry_contract_value": ford_scan.round_or_blank((entry or 0) * 100, 0),
-            "exit_contract_value": ford_scan.round_or_blank((exit_value or 0) * 100, 0),
+            "entry_price": spy_scanner.round_or_blank(entry, 2),
+            "exit_price": spy_scanner.round_or_blank(exit_value, 2),
+            "entry_contract_value": spy_scanner.round_or_blank((entry or 0) * 100, 0),
+            "exit_contract_value": spy_scanner.round_or_blank((exit_value or 0) * 100, 0),
             "result_price_source": "discord-closed-result-archive",
             "setup_reason": "Historical entry setup was not present in the retained closed-result card.",
             "market_regime": "Not recorded",
@@ -122,16 +122,16 @@ def parse_closed_card(message: dict) -> dict[str, str] | None:
             "evidence_limitations": "Recovered from Discord closed-result evidence; absent entry facts remain unavailable.",
             "archive_sequence": sequence,
             "outcome": "LOSS" if outcome in {"LOSS", "SCRATCH"} else outcome,
-            "pct_gain_loss": ford_scan.round_or_blank(return_pct, 1),
-            "realized_pl_dollars": ford_scan.round_or_blank(realized, 0),
+            "pct_gain_loss": spy_scanner.round_or_blank(return_pct, 1),
+            "realized_pl_dollars": spy_scanner.round_or_blank(realized, 0),
             "closed_at": closed_at.isoformat(),
-            "max_favorable_pct": ford_scan.round_or_blank(mfe, 1),
-            "max_adverse_pct": ford_scan.round_or_blank(mae, 1),
+            "max_favorable_pct": spy_scanner.round_or_blank(mfe, 1),
+            "max_adverse_pct": spy_scanner.round_or_blank(mae, 1),
             "last_signal": field(text, "Close reason") or outcome,
             "last_evaluated_at": closed_at.isoformat(),
             "discord_thread_id": journal.group(1) if journal else "",
             "discord_status": outcome,
-            "discord_format_version": "" if journal else ford_scan.DISCORD_FORMAT_VERSION,
+            "discord_format_version": "" if journal else spy_scanner.DISCORD_FORMAT_VERSION,
         }
     )
     return row
@@ -151,13 +151,13 @@ def same_trade(existing: dict[str, str], recovered: dict[str, str]) -> bool:
 
 
 def recover(*, dry_run: bool = False) -> dict[str, int]:
-    ford_scan.DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
-    ford_scan.DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
-    tracker = ford_scan.initialize_discord()
+    spy_scanner.DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+    spy_scanner.DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
+    tracker = spy_scanner.initialize_discord()
     if not tracker.ready:
         raise RuntimeError("Discord is unavailable")
-    rows = ford_scan.read_log()
-    report_state = ford_scan.read_report_state()
+    rows = spy_scanner.read_log()
+    report_state = spy_scanner.read_report_state()
     generated_archive_message_ids = {
         str(message_id)
         for key, message_id in (report_state.get("messages") or {}).items()
@@ -192,12 +192,12 @@ def recover(*, dry_run: bool = False) -> dict[str, int]:
         rows.append(recovered)
         added += 1
     if not dry_run:
-        ford_scan.write_log(rows)
-        report_state = ford_scan.read_report_state()
+        spy_scanner.write_log(rows)
+        report_state = spy_scanner.read_report_state()
         routed = set(report_state.get("routed_closed_trade_ids") or [])
         routed.update(row["trade_id"] for row in rows if row.get("outcome") != "OPEN")
         report_state["routed_closed_trade_ids"] = sorted(routed)
-        ford_scan.write_report_state(report_state)
+        spy_scanner.write_report_state(report_state)
     return {
         "unique_archive_cards": len(parsed),
         "added": added,

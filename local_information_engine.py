@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote, quote_plus, urljoin
 
-import ford_scan
+import spy_scanner
 import dynamic_universe
 import multi_ticker_scan
 import outcome_learning
@@ -207,9 +207,9 @@ def average_true_range(history: list[dict[str, Any]], period: int = 14) -> float
     ranges: list[float] = []
     previous_close: float | None = None
     for day in history:
-        high = ford_scan.as_float(day.get("high"))
-        low = ford_scan.as_float(day.get("low"))
-        close = ford_scan.as_float(day.get("close"))
+        high = spy_scanner.as_float(day.get("high"))
+        low = spy_scanner.as_float(day.get("low"))
+        close = spy_scanner.as_float(day.get("close"))
         if high is None or low is None or close is None:
             continue
         ranges.append(
@@ -223,48 +223,48 @@ def average_true_range(history: list[dict[str, Any]], period: int = 14) -> float
     return sum(ranges[-period:]) / period if len(ranges) >= period else None
 
 
-def market_snapshot(symbol: str = ford_scan.TICKER) -> dict[str, Any]:
-    quote = ford_scan.get_quote(symbol) or {}
-    history = ford_scan.get_daily_history(symbol, days=400)
-    spot = ford_scan.as_float(quote.get("last"))
+def market_snapshot(symbol: str = spy_scanner.TICKER) -> dict[str, Any]:
+    quote = spy_scanner.get_quote(symbol) or {}
+    history = spy_scanner.get_daily_history(symbol, days=400)
+    spot = spy_scanner.as_float(quote.get("last"))
     if spot is None or not history:
-        raise ford_scan.TradierError(f"{symbol} quote or price history is unavailable")
+        raise spy_scanner.TradierError(f"{symbol} quote or price history is unavailable")
     try:
-        intraday = ford_scan.get_intraday_history(symbol)
-    except (ford_scan.TradierError, requests.RequestException):
+        intraday = spy_scanner.get_intraday_history(symbol)
+    except (spy_scanner.TradierError, requests.RequestException):
         intraday = []
     closes = [
         value
         for day in history
-        if (value := ford_scan.as_float(day.get("close"))) is not None
+        if (value := spy_scanner.as_float(day.get("close"))) is not None
     ]
     volumes = [
         value
         for day in history
-        if (value := ford_scan.as_float(day.get("volume"))) is not None
+        if (value := spy_scanner.as_float(day.get("volume"))) is not None
     ]
-    context = ford_scan.directional_market_context(history, spot, intraday)
+    context = spy_scanner.directional_market_context(history, spot, intraday)
     ema12 = exponential_moving_average(closes, 12)
     ema26 = exponential_moving_average(closes, 26)
     macd = ema12 - ema26 if ema12 is not None and ema26 is not None else None
     std20 = standard_deviation(closes[-20:])
-    sma20 = ford_scan.simple_moving_average(closes, 20)
+    sma20 = spy_scanner.simple_moving_average(closes, 20)
     bollinger_upper = sma20 + 2 * std20 if sma20 is not None and std20 is not None else None
     bollinger_lower = sma20 - 2 * std20 if sma20 is not None and std20 is not None else None
     atr14 = average_true_range(history)
-    average_volume20 = ford_scan.simple_moving_average(volumes, 20)
-    current_volume = ford_scan.as_float(quote.get("volume"))
+    average_volume20 = spy_scanner.simple_moving_average(volumes, 20)
+    current_volume = spy_scanner.as_float(quote.get("volume"))
     relative_volume = (
         current_volume / average_volume20
         if current_volume is not None and average_volume20
         else context.get("volume_ratio")
     )
-    previous_close = ford_scan.as_float(quote.get("prevclose"))
+    previous_close = spy_scanner.as_float(quote.get("prevclose"))
     change_pct = (
         (spot / previous_close - 1) * 100 if previous_close and previous_close > 0 else None
     )
-    bid = ford_scan.as_float(quote.get("bid"))
-    ask = ford_scan.as_float(quote.get("ask"))
+    bid = spy_scanner.as_float(quote.get("bid"))
+    ask = spy_scanner.as_float(quote.get("ask"))
     spread_pct = (
         (ask - bid) / ((ask + bid) / 2)
         if bid is not None and ask is not None and bid > 0 and ask >= bid
@@ -289,7 +289,7 @@ def market_snapshot(symbol: str = ford_scan.TICKER) -> dict[str, Any]:
         "failures": context.get("failures") or [],
         "sma20": context.get("sma20"),
         "sma50": context.get("sma50"),
-        "sma200": ford_scan.simple_moving_average(closes, 200),
+        "sma200": spy_scanner.simple_moving_average(closes, 200),
         "rsi14": context.get("rsi14"),
         "intraday_change_pct": context.get("intraday_change_pct"),
         "intraday_vwap": context.get("intraday_vwap"),
@@ -304,24 +304,24 @@ def market_snapshot(symbol: str = ford_scan.TICKER) -> dict[str, Any]:
         "bollinger_lower": bollinger_lower,
         "support20": support20,
         "resistance20": resistance20,
-        "day_high": ford_scan.as_float(quote.get("high")),
-        "day_low": ford_scan.as_float(quote.get("low")),
+        "day_high": spy_scanner.as_float(quote.get("high")),
+        "day_low": spy_scanner.as_float(quote.get("low")),
         "history": history,
     }
 
 
 def option_quality(option: dict[str, Any], spot: float) -> dict[str, Any]:
-    bid = ford_scan.as_float(option.get("bid"), 0.0) or 0.0
-    ask = ford_scan.as_float(option.get("ask"), 0.0) or 0.0
+    bid = spy_scanner.as_float(option.get("bid"), 0.0) or 0.0
+    ask = spy_scanner.as_float(option.get("ask"), 0.0) or 0.0
     mid = (bid + ask) / 2 if bid > 0 and ask >= bid else None
     width = ask - bid if ask >= bid else None
     width_pct = width / mid if width is not None and mid else None
-    oi = ford_scan.open_interest_value(option)
-    volume = ford_scan.option_volume_value(option)
-    delta = ford_scan.greek(option, "delta")
-    theta = ford_scan.greek(option, "theta")
-    iv = ford_scan.iv_value(option)
-    strike = ford_scan.as_float(option.get("strike"))
+    oi = spy_scanner.open_interest_value(option)
+    volume = spy_scanner.option_volume_value(option)
+    delta = spy_scanner.greek(option, "delta")
+    theta = spy_scanner.greek(option, "theta")
+    iv = spy_scanner.iv_value(option)
+    strike = spy_scanner.as_float(option.get("strike"))
     option_type = str(option.get("option_type") or "")
     intrinsic = 0.0
     if strike is not None:
@@ -332,14 +332,14 @@ def option_quality(option: dict[str, Any], spot: float) -> dict[str, Any]:
         )
     extrinsic = max((mid or 0) - intrinsic, 0)
     liquidity_pass = (
-        oi >= ford_scan.MIN_OPEN_INTEREST
-        and volume >= ford_scan.MIN_OPTION_VOLUME
+        oi >= spy_scanner.MIN_OPEN_INTEREST
+        and volume >= spy_scanner.MIN_OPTION_VOLUME
         and width_pct is not None
-        and width_pct <= ford_scan.MAX_BID_ASK_PCT
+        and width_pct <= spy_scanner.MAX_BID_ASK_PCT
     )
     score = 0.0
-    score += min(oi / max(ford_scan.MIN_OPEN_INTEREST, 1), 5) * 10
-    score += min(volume / max(ford_scan.MIN_OPTION_VOLUME, 1), 5) * 8
+    score += min(oi / max(spy_scanner.MIN_OPEN_INTEREST, 1), 5) * 10
+    score += min(volume / max(spy_scanner.MIN_OPTION_VOLUME, 1), 5) * 8
     score += max(0, 40 - (width_pct or 1) * 200)
     if delta is not None:
         score += max(0, 20 - abs(abs(delta) - 0.65) * 50)
@@ -374,19 +374,19 @@ def ranked_option_chain(
     side: str = "call",
     limit: int = 8,
     expiration: str | None = None,
-    symbol: str = ford_scan.TICKER,
+    symbol: str = spy_scanner.TICKER,
 ) -> list[dict[str, Any]]:
-    spot_quote = ford_scan.get_quote(symbol) or {}
-    spot = ford_scan.as_float(spot_quote.get("last"))
+    spot_quote = spy_scanner.get_quote(symbol) or {}
+    spot = spy_scanner.as_float(spot_quote.get("last"))
     if spot is None:
-        raise ford_scan.TradierError("Ford spot price is unavailable")
-    expirations = ford_scan.get_expirations(symbol)
+        raise spy_scanner.TradierError("Ford spot price is unavailable")
+    expirations = spy_scanner.get_expirations(symbol)
     if expiration is None:
-        _, swing = ford_scan.pick_expirations(expirations, ford_scan.now_ct().date())
+        _, swing = spy_scanner.pick_expirations(expirations, spy_scanner.now_ct().date())
         expiration = swing[0] if swing else next(iter(expirations), None)
     if not expiration:
         return []
-    chain = ford_scan.get_chain(symbol, expiration)
+    chain = spy_scanner.get_chain(symbol, expiration)
     ranked = [
         option_quality(option, spot)
         for option in chain
@@ -396,7 +396,7 @@ def ranked_option_chain(
         item
         for item in ranked
         if item["strike"] is not None
-        and abs(float(item["strike"]) / spot - 1) <= ford_scan.STRIKE_BAND_PCT
+        and abs(float(item["strike"]) / spot - 1) <= spy_scanner.STRIKE_BAND_PCT
     ]
     ranked.sort(
         key=lambda item: (
@@ -411,36 +411,36 @@ def ranked_option_chain(
 
 def contract_snapshot(symbol: str) -> dict[str, Any] | None:
     symbol = symbol.strip().upper()
-    option = ford_scan.get_quotes([symbol], include_greeks=True).get(symbol)
+    option = spy_scanner.get_quotes([symbol], include_greeks=True).get(symbol)
     underlying = str(
         (option or {}).get("root_symbol")
         or (option or {}).get("underlying")
-        or ford_scan.TICKER
+        or spy_scanner.TICKER
     ).upper()
-    spot_quote = ford_scan.get_quote(underlying) or {}
-    spot = ford_scan.as_float(spot_quote.get("last"))
+    spot_quote = spy_scanner.get_quote(underlying) or {}
+    spot = spy_scanner.as_float(spot_quote.get("last"))
     if not option or spot is None:
         return None
     return option_quality(option, spot)
 
 
 def performance_snapshot(ticker: str | None = None) -> dict[str, Any]:
-    rows = ford_scan.read_log()
+    rows = spy_scanner.read_log()
     if ticker:
         rows = [
             row for row in rows
             if str(row.get("ticker") or "F").upper() == ticker.upper()
         ]
-    closed = ford_scan.closed_rows(rows)
-    metrics = ford_scan.result_metrics(closed)
-    open_count = len(ford_scan.open_rows(rows))
+    closed = spy_scanner.closed_rows(rows)
+    metrics = spy_scanner.result_metrics(closed)
+    open_count = len(spy_scanner.open_rows(rows))
     strategy: dict[str, dict[str, float]] = {}
     for row in closed:
         key = row.get("play_type") or "UNKNOWN"
         bucket = strategy.setdefault(key, {"count": 0, "wins": 0, "pl": 0.0})
         bucket["count"] += 1
         bucket["wins"] += 1 if row.get("outcome") == "WIN" else 0
-        bucket["pl"] += ford_scan.realized_pl_dollars(row)
+        bucket["pl"] += spy_scanner.realized_pl_dollars(row)
     return {
         "tracked": len(rows),
         "open": open_count,
@@ -493,10 +493,10 @@ def market_alert_text(snapshot: dict[str, Any], ticker: str = "F") -> str:
     )
 
 
-def discord_tracker() -> ford_scan.DiscordTracker | None:
-    if not ford_scan.DISCORD_BOT_TOKEN or not ford_scan.DISCORD_GUILD_ID:
+def discord_tracker() -> spy_scanner.DiscordTracker | None:
+    if not spy_scanner.DISCORD_BOT_TOKEN or not spy_scanner.DISCORD_GUILD_ID:
         return None
-    tracker = ford_scan.initialize_discord()
+    tracker = spy_scanner.initialize_discord()
     return tracker if tracker.ready else None
 
 
@@ -613,13 +613,13 @@ def upsert_ticker_dashboard(
     message_id = str(messages.get(state_key) or "")
     payload = {
         "content": "",
-        "embeds": [ford_scan.discord_card(content[:6000])],
+        "embeds": [spy_scanner.discord_card(content[:6000])],
         "allowed_mentions": {"parse": []},
     }
     if message_id:
         try:
             tracker._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
-        except ford_scan.DiscordError as exc:
+        except spy_scanner.DiscordError as exc:
             if "HTTP 404" not in str(exc):
                 raise
             message_id = ""
@@ -643,7 +643,7 @@ def send_ticker_chart(
     if not tracker or not file_path.exists():
         return False
     state_key = f"ticker-chart-date:{ticker}"
-    today = ford_scan.now_ct().date().isoformat()
+    today = spy_scanner.now_ct().date().isoformat()
     if get_state(connection, state_key) == today:
         return True
     response = tracker.send_channel_file("charts", file_path, content=content)
@@ -658,7 +658,7 @@ def fetch_ticker_news(ticker: str, limit: int = 8) -> list[dict[str, str]]:
     query = quote_plus(f'"{ticker}" stock when:2d')
     response = requests.get(
         f"{GOOGLE_NEWS_RSS_URL}?q={query}&hl=en-US&gl=US&ceid=US:en",
-        headers={"User-Agent": ford_scan.SEC_USER_AGENT or "Tradysquids local monitor"},
+        headers={"User-Agent": spy_scanner.SEC_USER_AGENT or "Tradysquids local monitor"},
         timeout=25,
     )
     response.raise_for_status()
@@ -725,7 +725,7 @@ def managed_ticker_news_job(connection: sqlite3.Connection) -> str:
 
 
 def market_is_open() -> bool:
-    return bool(ford_scan.market_is_open_now()[0])
+    return bool(spy_scanner.market_is_open_now()[0])
 
 
 def technicals_text(snapshot: dict[str, Any], ticker: str = "F") -> str:
@@ -801,7 +801,7 @@ def fetch_ford_news() -> list[dict[str, str]]:
             "pageNumber": 0,
             "tagList": "",
         },
-        headers={"User-Agent": ford_scan.SEC_USER_AGENT or "Tradysquids local monitor"},
+        headers={"User-Agent": spy_scanner.SEC_USER_AGENT or "Tradysquids local monitor"},
         timeout=25,
     )
     response.raise_for_status()
@@ -845,9 +845,9 @@ def publish_change_only(
     tracker = discord_tracker()
     if tracker:
         tracker.send_channel(logical_channel, content=content)
-    elif ford_scan.DISCORD_WEBHOOK_URL:
+    elif spy_scanner.DISCORD_WEBHOOK_URL:
         response = requests.post(
-            ford_scan.DISCORD_WEBHOOK_URL,
+            spy_scanner.DISCORD_WEBHOOK_URL,
             json={
                 "content": content[:2000],
                 "allowed_mentions": {"parse": []},
@@ -881,7 +881,7 @@ def market_job(connection: sqlite3.Connection) -> str:
         {key: value for key, value in snapshot.items() if key != "history"},
     )
     previous_regime = get_state(connection, "last_regime")
-    previous_price = ford_scan.as_float(get_state(connection, "last_price"))
+    previous_price = spy_scanner.as_float(get_state(connection, "last_price"))
     price = float(snapshot["price"])
     regime_changed = bool(previous_regime and previous_regime != snapshot["regime"])
     level_cross = False
@@ -964,7 +964,7 @@ def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
                 {key: value for key, value in snapshot.items() if key != "history"},
             )
             chart_path = TICKER_CHART_DIR / f"{ticker.lower()}-market-chart.png"
-            ford_scan.render_market_chart_png(
+            spy_scanner.render_market_chart_png(
                 snapshot["history"],
                 float(snapshot["price"]),
                 {
@@ -981,7 +981,7 @@ def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
                 ticker,
                 chart_path,
                 (
-                    f"{ticker} daily market chart · {ford_scan.now_ct().date().isoformat()} "
+                    f"{ticker} daily market chart · {spy_scanner.now_ct().date().isoformat()} "
                     f"· ${float(snapshot['price']):.2f} · {snapshot.get('regime')}"
                 ),
             )
@@ -1000,8 +1000,8 @@ def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
                     f"Regime: **{snapshot.get('regime')}**",
                     f"Qualified chart: **{'yes' if snapshot.get('qualified') else 'no'}**",
                     f"Evidence: {snapshot.get('reason') or 'No controlled setup.'}",
-                    f"RSI14: **{snapshot.get('rsi14')}** · ATR14: **{ford_scan.fmt_money(snapshot.get('atr14'))}**",
-                    f"Support: **{ford_scan.fmt_money(snapshot.get('support20'))}** · resistance: **{ford_scan.fmt_money(snapshot.get('resistance20'))}**",
+                    f"RSI14: **{snapshot.get('rsi14')}** · ATR14: **{spy_scanner.fmt_money(snapshot.get('atr14'))}**",
+                    f"Support: **{spy_scanner.fmt_money(snapshot.get('support20'))}** · resistance: **{spy_scanner.fmt_money(snapshot.get('resistance20'))}**",
                     f"Updated {snapshot.get('observed_at')}. Educational information only.",
                 ]),
             )
@@ -1092,7 +1092,7 @@ def news_job(connection: sqlite3.Connection) -> str:
 
 
 def filings_job(connection: sqlite3.Connection) -> str:
-    filings = ford_scan.fetch_recent_ford_filings()
+    filings = spy_scanner.fetch_recent_ford_filings()
     previous = set(json.loads(get_state(connection, "seen_filings", "[]")))
     fresh = [item for item in filings if item["id"] not in previous]
     store_observation(connection, "filings", {"filings": filings, "new": fresh})
@@ -1142,12 +1142,12 @@ def status_job(connection: sqlite3.Connection) -> str:
         "engine": "online",
         "updated_at": iso_now(),
         "market_data_age": data_age_text(market["observed_at"] if market else None),
-        "tradier_configured": bool(ford_scan.TRADIER_TOKEN),
+        "tradier_configured": bool(spy_scanner.TRADIER_TOKEN),
         "discord_scheduled_posts": bool(
-            (ford_scan.DISCORD_BOT_TOKEN and ford_scan.DISCORD_GUILD_ID)
-            or ford_scan.DISCORD_WEBHOOK_URL
+            (spy_scanner.DISCORD_BOT_TOKEN and spy_scanner.DISCORD_GUILD_ID)
+            or spy_scanner.DISCORD_WEBHOOK_URL
         ),
-        "sec_monitor": bool(ford_scan.SEC_USER_AGENT),
+        "sec_monitor": bool(spy_scanner.SEC_USER_AGENT),
     }
     store_observation(connection, "status", status)
     upsert_dashboard(
@@ -1168,7 +1168,7 @@ def status_job(connection: sqlite3.Connection) -> str:
 
 
 def briefing_job(connection: sqlite3.Connection) -> str:
-    now = ford_scan.now_ct()
+    now = spy_scanner.now_ct()
     weekday = now.weekday() < 5
     session = ""
     if weekday and (7 <= now.hour < 8 or (now.hour == 8 and now.minute < 25)):
@@ -1183,25 +1183,25 @@ def briefing_job(connection: sqlite3.Connection) -> str:
     if get_state(connection, key) == "sent":
         return f"{session} already sent"
     symbols = dynamic_universe.active_symbols()
-    quotes = ford_scan.get_quotes(symbols, include_greeks=False) if symbols else {}
+    quotes = spy_scanner.get_quotes(symbols, include_greeks=False) if symbols else {}
     ranked = sorted(
         symbols,
-        key=lambda symbol: ford_scan.as_float((quotes.get(symbol) or {}).get("volume"), 0) or 0,
+        key=lambda symbol: spy_scanner.as_float((quotes.get(symbol) or {}).get("volume"), 0) or 0,
         reverse=True,
     )
     lines = [
         f"## Tradysquids {session.replace('-', ' ').title()} Briefing",
-        f"**{len(symbols)} active universe symbols** · {ford_scan.portable_strftime(now, '%m/%d/%y %-I:%M %p CT')}",
+        f"**{len(symbols)} active universe symbols** · {spy_scanner.portable_strftime(now, '%m/%d/%y %-I:%M %p CT')}",
         "### Highest-Volume Universe Names",
     ]
     for symbol in ranked[:12]:
         quote = quotes.get(symbol) or {}
-        price = ford_scan.as_float(quote.get("last"))
-        change = ford_scan.as_float(quote.get("change_percentage"))
-        volume = int(ford_scan.as_float(quote.get("volume"), 0) or 0)
+        price = spy_scanner.as_float(quote.get("last"))
+        change = spy_scanner.as_float(quote.get("change_percentage"))
+        volume = int(spy_scanner.as_float(quote.get("volume"), 0) or 0)
         change_text = "n/a" if change is None else f"{change:+.2f}%"
         lines.append(
-            f"• **{symbol}** · {ford_scan.fmt_money(price)} · {change_text} · volume {volume:,}"
+            f"• **{symbol}** · {spy_scanner.fmt_money(price)} · {change_text} · volume {volume:,}"
         )
     lines.extend([
         "### Broad Market Regime",
@@ -1214,7 +1214,7 @@ def briefing_job(connection: sqlite3.Connection) -> str:
                 key: value for key, value in snapshot.items() if key != "history"
             }
             lines.append(
-                f"• **{benchmark}** {ford_scan.fmt_money(snapshot.get('price'))} · "
+                f"• **{benchmark}** {spy_scanner.fmt_money(snapshot.get('price'))} · "
                 f"{snapshot.get('regime')} · RSI14 {snapshot.get('rsi14')}"
             )
         except Exception as exc:
@@ -1245,7 +1245,7 @@ def briefing_job(connection: sqlite3.Connection) -> str:
 
 
 def weekly_review_job(connection: sqlite3.Connection) -> str:
-    now = ford_scan.now_ct()
+    now = spy_scanner.now_ct()
     if now.weekday() != 4 or now.hour < 15:
         return "outside weekly review window"
     key = f"weekly-local-review:{now.strftime('%G-W%V')}"
@@ -1262,7 +1262,7 @@ def weekly_review_job(connection: sqlite3.Connection) -> str:
         ),
         (
             f"Win rate {float(metrics.get('win_rate', 0)):.1f}% · "
-            f"recorded P/L {ford_scan.fmt_money(metrics.get('total_pnl'))}"
+            f"recorded P/L {spy_scanner.fmt_money(metrics.get('total_pnl'))}"
         ),
         "Review recorded evidence and filter quality before changing strategy rules.",
         "Historical results do not guarantee future performance.",
@@ -1282,7 +1282,7 @@ def weekly_review_job(connection: sqlite3.Connection) -> str:
 def full_scanner_job(connection: sqlite3.Connection) -> str:
     if not FULL_SCAN_ENABLED:
         return "disabled until LOCAL_FULL_SCAN_ENABLED=true"
-    if not ford_scan.DISCORD_BOT_TOKEN:
+    if not spy_scanner.DISCORD_BOT_TOKEN:
         return "waiting for local DISCORD_BOT_TOKEN"
     tickers = multi_ticker_scan.configured_active_tickers()
     with POSITION_FILE_LOCK:
@@ -1305,7 +1305,7 @@ def manual_options_scan_job(connection: sqlite3.Connection) -> str:
     """Scan every currently active symbol instead of the scheduled rotating batch."""
     if not FULL_SCAN_ENABLED:
         return "disabled until LOCAL_FULL_SCAN_ENABLED=true"
-    if not ford_scan.DISCORD_BOT_TOKEN:
+    if not spy_scanner.DISCORD_BOT_TOKEN:
         return "waiting for local DISCORD_BOT_TOKEN"
     tickers = dynamic_universe.active_symbols()
     with POSITION_FILE_LOCK:
@@ -1321,7 +1321,7 @@ def manual_options_scan_job(connection: sqlite3.Connection) -> str:
         raise RuntimeError(f"Scanner failed for: {', '.join(failed)}")
     if result:
         raise RuntimeError("Scanner returned failure without per-ticker results")
-    market_open, _ = ford_scan.market_is_open_now()
+    market_open, _ = spy_scanner.market_is_open_now()
     session = "live option chains" if market_open else "market-closed routing checks"
     return (
         f"{len(tickers)} active tickers processed using {session}: "
@@ -1332,17 +1332,17 @@ def manual_options_scan_job(connection: sqlite3.Connection) -> str:
 def manual_intelligence_job(connection: sqlite3.Connection) -> str:
     """Publish a timestamped broad-market and universe snapshot on demand."""
     symbols = dynamic_universe.active_symbols()
-    quotes = ford_scan.get_quotes(symbols, include_greeks=False) if symbols else {}
+    quotes = spy_scanner.get_quotes(symbols, include_greeks=False) if symbols else {}
     tracker = discord_tracker()
     if not tracker:
         return "Discord tracker is unavailable"
     observed_at = iso_now()
-    market_open, _ = ford_scan.market_is_open_now()
+    market_open, _ = spy_scanner.market_is_open_now()
     session = "MARKET OPEN" if market_open else "MARKET CLOSED / LAST QUOTES"
 
     ranked = sorted(
         symbols,
-        key=lambda symbol: ford_scan.as_float((quotes.get(symbol) or {}).get("volume"), 0)
+        key=lambda symbol: spy_scanner.as_float((quotes.get(symbol) or {}).get("volume"), 0)
         or 0,
         reverse=True,
     )
@@ -1352,11 +1352,11 @@ def manual_intelligence_job(connection: sqlite3.Connection) -> str:
     ]
     for symbol in ranked[:30]:
         quote = quotes.get(symbol) or {}
-        price = ford_scan.as_float(quote.get("last"))
-        volume = int(ford_scan.as_float(quote.get("volume"), 0) or 0)
+        price = spy_scanner.as_float(quote.get("last"))
+        volume = int(spy_scanner.as_float(quote.get("volume"), 0) or 0)
         universe_lines.append(
             f"• **{symbol}** · "
-            f"{ford_scan.fmt_money(price) if price is not None else 'quote unavailable'} "
+            f"{spy_scanner.fmt_money(price) if price is not None else 'quote unavailable'} "
             f"· volume {volume:,}"
         )
     if len(ranked) > 30:
@@ -1374,10 +1374,10 @@ def manual_intelligence_job(connection: sqlite3.Connection) -> str:
         try:
             snapshot = market_snapshot(benchmark)
             benchmark_lines.append(
-                f"• **{benchmark}** {ford_scan.fmt_money(snapshot['price'])} · "
+                f"• **{benchmark}** {spy_scanner.fmt_money(snapshot['price'])} · "
                 f"{snapshot['regime']} · RSI {float(snapshot.get('rsi14') or 0):.1f} · "
-                f"support {ford_scan.fmt_money(snapshot.get('support20'))} · "
-                f"resistance {ford_scan.fmt_money(snapshot.get('resistance20'))}"
+                f"support {spy_scanner.fmt_money(snapshot.get('support20'))} · "
+                f"resistance {spy_scanner.fmt_money(snapshot.get('resistance20'))}"
             )
         except Exception as exc:
             benchmark_lines.append(
@@ -1535,12 +1535,12 @@ def universe_refresh_job(connection: sqlite3.Connection) -> str:
     symbols = dynamic_universe.initialize()
     if not symbols:
         return "empty universe"
-    quotes = ford_scan.get_quotes(symbols, include_greeks=False)
+    quotes = spy_scanner.get_quotes(symbols, include_greeks=False)
     candidates: list[dynamic_universe.Candidate] = []
     for symbol in symbols:
         quote = quotes.get(symbol) or {}
-        price = ford_scan.as_float(quote.get("last"))
-        volume = ford_scan.as_float(quote.get("volume"))
+        price = spy_scanner.as_float(quote.get("last"))
+        volume = spy_scanner.as_float(quote.get("volume"))
         if price is None:
             continue
         score = min((volume or 0) / 1_000_000, 20) * 5
@@ -1568,53 +1568,53 @@ def _route_stream_close(
     tracker = discord_tracker()
     if not tracker:
         return
-    report_state = ford_scan.read_report_state()
-    ford_scan.post_close(row, evaluation, tracker, report_state)
-    rows = ford_scan.read_log()
+    report_state = spy_scanner.read_report_state()
+    spy_scanner.post_close(row, evaluation, tracker, report_state)
+    rows = spy_scanner.read_log()
     # refresh_all_summary_dashboards, not update_performance_pages directly
     # - the latter gets replaced with a no-op by a separate reconciliation
     # system once it installs, and a stream-triggered close needs to stay
     # correct regardless of whether that's happened yet.
-    ford_scan.refresh_all_summary_dashboards(tracker, report_state, rows)
-    ford_scan.sync_reports(
+    spy_scanner.refresh_all_summary_dashboards(tracker, report_state, rows)
+    spy_scanner.sync_reports(
         tracker,
         report_state,
         rows,
-        ford_scan.now_ct(),
-        market_open=ford_scan.market_is_open_now()[0],
+        spy_scanner.now_ct(),
+        market_open=spy_scanner.market_is_open_now()[0],
     )
-    ford_scan.write_report_state(report_state)
+    spy_scanner.write_report_state(report_state)
 
 
 def _position_symbols() -> list[str]:
     with POSITION_FILE_LOCK:
-        rows = ford_scan.read_log()
-        return ford_scan.symbols_for_rows(ford_scan.open_rows(rows))
+        rows = spy_scanner.read_log()
+        return spy_scanner.symbols_for_rows(spy_scanner.open_rows(rows))
 
 
 def _stream_quote_event(event: dict[str, Any]) -> None:
     """Evaluate exits immediately when a streamed option quote changes."""
     symbol = str(event.get("symbol") or "")
-    if not symbol or not ford_scan.market_is_open_now()[0]:
+    if not symbol or not spy_scanner.market_is_open_now()[0]:
         return
     STREAM_QUOTES.setdefault(symbol, {}).update(event)
-    timestamp = ford_scan.now_ct()
+    timestamp = spy_scanner.now_ct()
     now_monotonic = time.monotonic()
     with POSITION_FILE_LOCK:
-        rows = ford_scan.read_log()
+        rows = spy_scanner.read_log()
         changed = False
         closed_events: list[tuple[dict[str, str], dict[str, Any]]] = []
-        for row in ford_scan.open_rows(rows):
-            required = set(ford_scan.symbols_for_rows([row]))
+        for row in spy_scanner.open_rows(rows):
+            required = set(spy_scanner.symbols_for_rows([row]))
             option_symbols = required - {row.get("ticker", "")}
             if symbol not in option_symbols or not option_symbols.issubset(STREAM_QUOTES):
                 continue
-            evaluation = ford_scan.evaluate_open_row(row, STREAM_QUOTES, timestamp)
+            evaluation = spy_scanner.evaluate_open_row(row, STREAM_QUOTES, timestamp)
             if evaluation.get("pl_pct") is None:
                 continue
             signal = evaluation.get("signal")
             if signal in {"STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT"}:
-                ford_scan.close_row(row, evaluation, timestamp)
+                spy_scanner.close_row(row, evaluation, timestamp)
                 closed_events.append((row, evaluation))
                 changed = True
             else:
@@ -1624,7 +1624,7 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
                     STREAM_LAST_WRITTEN[trade_id] = now_monotonic
                     changed = True
         if changed:
-            ford_scan.write_log(rows)
+            spy_scanner.write_log(rows)
         for row, evaluation in closed_events:
             _route_stream_close(row, evaluation)
 
@@ -1632,40 +1632,40 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
 def position_tracker_job(connection: sqlite3.Connection) -> str:
     """REST safety refresh used if a stream tick is missed or disconnected."""
     with POSITION_FILE_LOCK:
-        rows = ford_scan.read_log()
-        opened = ford_scan.open_rows(rows)
+        rows = spy_scanner.read_log()
+        opened = spy_scanner.open_rows(rows)
     if not opened:
         stream_state = (
             "connected" if POSITION_STREAM and POSITION_STREAM.connected else "idle"
         )
         return f"no open positions; stream {stream_state}"
-    timestamp = ford_scan.now_ct()
-    quotes = ford_scan.get_quotes(
-        ford_scan.symbols_for_rows(opened), include_greeks=True
+    timestamp = spy_scanner.now_ct()
+    quotes = spy_scanner.get_quotes(
+        spy_scanner.symbols_for_rows(opened), include_greeks=True
     )
     closed = 0
     refreshed = 0
     with POSITION_FILE_LOCK:
         for row in list(opened):
-            evaluation = ford_scan.evaluate_open_row(row, quotes, timestamp)
+            evaluation = spy_scanner.evaluate_open_row(row, quotes, timestamp)
             if evaluation.get("pl_pct") is None:
                 continue
             if evaluation.get("signal") in {
                 "STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT"
             }:
-                ford_scan.close_row(row, evaluation, timestamp)
+                spy_scanner.close_row(row, evaluation, timestamp)
                 _route_stream_close(row, evaluation)
                 closed += 1
             else:
-                row["current_pl_pct"] = ford_scan.round_or_blank(
+                row["current_pl_pct"] = spy_scanner.round_or_blank(
                     evaluation.get("pl_pct"), 1
                 )
-                row["current_pl_dollars"] = ford_scan.round_or_blank(
+                row["current_pl_dollars"] = spy_scanner.round_or_blank(
                     evaluation.get("pl_dollars"), 0
                 )
             refreshed += 1
         if refreshed:
-            ford_scan.write_log(rows)
+            spy_scanner.write_log(rows)
     stream_connected = bool(POSITION_STREAM and POSITION_STREAM.connected)
     stream_state = "connected" if stream_connected else "fallback"
     stream_error = (POSITION_STREAM.last_error if POSITION_STREAM else "") or ""
@@ -1686,22 +1686,22 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
 def closed_position_cleanup_job(connection: sqlite3.Connection) -> str:
     """Keep completed trades out of held-positions without running a market scan."""
     with POSITION_FILE_LOCK:
-        rows = ford_scan.read_log()
-    closed = ford_scan.closed_rows(rows)
+        rows = spy_scanner.read_log()
+    closed = spy_scanner.closed_rows(rows)
     if not closed:
         return "no closed trades to reconcile"
     tracker = discord_tracker()
     if not tracker:
         raise RuntimeError("Discord tracker is unavailable")
-    report_state = ford_scan.read_report_state()
+    report_state = spy_scanner.read_report_state()
     pending = trade_intelligence.pending_rows(
         closed, ("journal", "result-channel")
     )
-    journal_counts = ford_scan.sync_all_trade_journals(pending, tracker)
-    routed = ford_scan.sync_closed_result_channels(pending, tracker, report_state)
+    journal_counts = spy_scanner.sync_all_trade_journals(pending, tracker)
+    routed = spy_scanner.sync_closed_result_channels(pending, tracker, report_state)
     with POSITION_FILE_LOCK:
-        ford_scan.write_log(rows)
-    ford_scan.write_report_state(report_state)
+        spy_scanner.write_log(rows)
+    spy_scanner.write_report_state(report_state)
     store_observation(
         connection,
         "closed-position-cleanup",
@@ -1733,7 +1733,7 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
     )
     tracker = discord_tracker()
     if tracker:
-        report_state = ford_scan.read_report_state()
+        report_state = spy_scanner.read_report_state()
         evidence = summary["evidence_ready_groups"]
         lines = [
             "## Learning Results",
@@ -1747,8 +1747,8 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
                 lines.append(
                     f"**{item['feature']}: {item['value']}** — {item['samples']} trades · "
                     f"{item['win_rate_pct']:.0f}% wins · "
-                    f"avg {ford_scan.fmt_money(item['average_pl_dollars'])} · "
-                    f"total {ford_scan.fmt_money(item['total_pl_dollars'])}"
+                    f"avg {spy_scanner.fmt_money(item['average_pl_dollars'])} · "
+                    f"total {spy_scanner.fmt_money(item['total_pl_dollars'])}"
                 )
         else:
             lines.append(
@@ -1757,7 +1757,7 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
         lines.extend([
             "### Guardrail",
             "Historical evidence only; this never changes scanner rules automatically.",
-            f"Updated **{ford_scan.portable_strftime(ford_scan.now_ct(), '%m/%d/%y %-I:%M %p CT')}**",
+            f"Updated **{spy_scanner.portable_strftime(spy_scanner.now_ct(), '%m/%d/%y %-I:%M %p CT')}**",
         ])
         tracker.upsert_channel_message(
             "learning_results",
@@ -1796,7 +1796,7 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
                 ])[:2000],
                 search_token=f"{style.replace('-', ' ').title()} Improvement Summary",
             )
-        ford_scan.write_report_state(report_state)
+        spy_scanner.write_report_state(report_state)
     return (
         f"{summary['closed_trades']} closed trades; "
         f"{len(summary['evidence_ready_groups'])} evidence-ready groups"
@@ -1806,12 +1806,12 @@ def outcome_learning_job(connection: sqlite3.Connection) -> str:
 def discord_reporting_job(connection: sqlite3.Connection) -> str:
     """Refresh every result dashboard from the complete tracked trade history."""
     with POSITION_FILE_LOCK:
-        rows = ford_scan.read_log()
+        rows = spy_scanner.read_log()
     tracker = discord_tracker()
     if not tracker:
         raise RuntimeError("Discord tracker is unavailable")
-    report_state = ford_scan.read_report_state()
-    closed_rows = ford_scan.closed_rows(rows)
+    report_state = spy_scanner.read_report_state()
+    closed_rows = spy_scanner.closed_rows(rows)
     consumers = (
         "performance-dashboard", "ticker-results", "strategy-results", "wins-losses",
         "play-style-results", "learning-results",
@@ -1825,16 +1825,16 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
     # a real refresh even when nothing is "pending" in the sync-ack sense.
     reset_detected = len(closed_rows) != int(report_state.get("last_closed_total", -1))
     if changed or reset_detected:
-        ford_scan.refresh_all_summary_dashboards(tracker, report_state, rows)
+        spy_scanner.refresh_all_summary_dashboards(tracker, report_state, rows)
     report_state["last_closed_total"] = len(closed_rows)
-    ford_scan.sync_reports(
+    spy_scanner.sync_reports(
         tracker,
         report_state,
         rows,
-        ford_scan.now_ct(),
-        market_open=ford_scan.market_is_open_now()[0],
+        spy_scanner.now_ct(),
+        market_open=spy_scanner.market_is_open_now()[0],
     )
-    ford_scan.write_report_state(report_state)
+    spy_scanner.write_report_state(report_state)
     if changed:
         outcome_learning_job(connection)
     acknowledged = (
@@ -1851,8 +1851,8 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
 def trade_intelligence_health_job(connection: sqlite3.Connection) -> str:
     health = trade_intelligence.health()
     with POSITION_FILE_LOCK:
-        rows = ford_scan.read_log()
-    closed = ford_scan.closed_rows(rows)
+        rows = spy_scanner.read_log()
+    closed = spy_scanner.closed_rows(rows)
     missing_learning = [row.get("trade_id") for row in rows if not row.get("learning_version")]
     missing_thesis = [row.get("trade_id") for row in rows if not row.get("thesis")]
     health.update({
@@ -1913,33 +1913,33 @@ def playbook_card_text(
         else "bearish evidence: downside confirmation and a controlled decline setup"
     )
     if play_type == "SPREAD":
-        dte = f"{ford_scan.MIN_DTE}–{ford_scan.MAX_DTE} DTE"
+        dte = f"{spy_scanner.MIN_DTE}–{spy_scanner.MAX_DTE} DTE"
         entry = "SELL TO OPEN the short leg and BUY TO OPEN the protective long leg for one net credit."
         risk = (
-            f"Target: BUY TO CLOSE near {ford_scan.SPREAD_TAKE_PROFIT_PCT:.0%} credit capture. "
-            f"Stop: BUY TO CLOSE if cost reaches {ford_scan.SPREAD_STOP_MULTIPLE:g}× entry credit. "
-            f"Close no later than {ford_scan.SPREAD_EXIT_DTE} DTE."
+            f"Target: BUY TO CLOSE near {spy_scanner.SPREAD_TAKE_PROFIT_PCT:.0%} credit capture. "
+            f"Stop: BUY TO CLOSE if cost reaches {spy_scanner.SPREAD_STOP_MULTIPLE:g}× entry credit. "
+            f"Close no later than {spy_scanner.SPREAD_EXIT_DTE} DTE."
         )
         stat_reason = (
-            f"Short-leg |delta| {ford_scan.SPREAD_SHORT_DELTA_MIN:.2f}–"
-            f"{ford_scan.SPREAD_SHORT_DELTA_MAX:.2f}; liquid adjacent protection; "
+            f"Short-leg |delta| {spy_scanner.SPREAD_SHORT_DELTA_MIN:.2f}–"
+            f"{spy_scanner.SPREAD_SHORT_DELTA_MAX:.2f}; liquid adjacent protection; "
             "credit and maximum loss must pass the risk cap."
         )
     else:
         dte = (
-            f"{ford_scan.REGULAR_MIN_DTE}–{ford_scan.REGULAR_MAX_DTE} DTE"
+            f"{spy_scanner.REGULAR_MIN_DTE}–{spy_scanner.REGULAR_MAX_DTE} DTE"
             if play_type == "REGULAR"
-            else f"{ford_scan.MIN_DTE}–{ford_scan.MAX_DTE} DTE"
+            else f"{spy_scanner.MIN_DTE}–{spy_scanner.MAX_DTE} DTE"
         )
         entry = "BUY TO OPEN one contract near the recorded ask after every scanner gate passes."
         risk = (
-            f"Target: SELL TO CLOSE at approximately +{ford_scan.SINGLE_TAKE_PROFIT_PCT:.0%}. "
-            f"Stop: SELL TO CLOSE at approximately -{ford_scan.SINGLE_STOP_PCT:.0%}; "
+            f"Target: SELL TO CLOSE at approximately +{spy_scanner.SINGLE_TAKE_PROFIT_PCT:.0%}. "
+            f"Stop: SELL TO CLOSE at approximately -{spy_scanner.SINGLE_STOP_PCT:.0%}; "
             "also close near expiration."
         )
         stat_reason = (
-            f"|Delta| {ford_scan.SINGLE_LEG_DELTA_MIN:.2f}–{ford_scan.SINGLE_LEG_DELTA_MAX:.2f}; "
-            f"premium at most {ford_scan.fmt_money(ford_scan.MAX_RISK_PER_TRADE)}; "
+            f"|Delta| {spy_scanner.SINGLE_LEG_DELTA_MIN:.2f}–{spy_scanner.SINGLE_LEG_DELTA_MAX:.2f}; "
+            f"premium at most {spy_scanner.fmt_money(spy_scanner.MAX_RISK_PER_TRADE)}; "
             "open interest, volume, and bid/ask spread must pass liquidity gates."
         )
     lines = [
@@ -1955,7 +1955,7 @@ def playbook_card_text(
         risk,
     ]
     if example:
-        metrics = ford_scan.result_metrics([example])
+        metrics = spy_scanner.result_metrics([example])
         reason = example.get("setup_reason") or example.get("market_regime") or thesis
         lines.extend([
             "### Rotating recorded example",
@@ -1963,7 +1963,7 @@ def playbook_card_text(
             f"{example.get('strike', '—')} · exp {example.get('expiration', '—')}",
             f"Selected because: {reason}",
             f"Entry {example.get('entry_price') or '—'} · exit {example.get('exit_price') or '—'} · "
-            f"{example.get('outcome', 'CLOSED')} · net {ford_scan.fmt_metric_money(metrics, 'total_pnl')}",
+            f"{example.get('outcome', 'CLOSED')} · net {spy_scanner.fmt_metric_money(metrics, 'total_pnl')}",
         ])
     else:
         lines.extend([
@@ -1981,12 +1981,12 @@ def playbook_card_text(
 
 def examples_reviews_job(connection: sqlite3.Connection) -> str:
     with POSITION_FILE_LOCK:
-        rows = ford_scan.read_log()
+        rows = spy_scanner.read_log()
     tracker = discord_tracker()
     if not tracker:
         raise RuntimeError("Discord tracker is unavailable")
-    report_state = ford_scan.read_report_state()
-    today = ford_scan.now_ct().date()
+    report_state = spy_scanner.read_report_state()
+    today = spy_scanner.now_ct().date()
     for key, title, play_type, direction in PLAYBOOK_SPECS:
         tracker.upsert_channel_message(
             "examples_reviews",
@@ -1995,11 +1995,11 @@ def examples_reviews_job(connection: sqlite3.Connection) -> str:
             playbook_card_text(title, play_type, direction, rows, today),
             search_token=title,
         )
-    ford_scan.write_report_state(report_state)
+    spy_scanner.write_report_state(report_state)
     store_observation(
         connection,
         "examples-reviews",
-        {"cards": len(PLAYBOOK_SPECS), "closed_examples": len(ford_scan.closed_rows(rows))},
+        {"cards": len(PLAYBOOK_SPECS), "closed_examples": len(spy_scanner.closed_rows(rows))},
     )
     return f"{len(PLAYBOOK_SPECS)} strategy playbook cards refreshed"
 
@@ -2007,11 +2007,11 @@ def examples_reviews_job(connection: sqlite3.Connection) -> str:
 def discord_card_migration_job(connection: sqlite3.Connection) -> str:
     """Refresh a bounded set of legacy forum cards without delaying scans."""
     with POSITION_FILE_LOCK:
-        rows = ford_scan.read_log()
+        rows = spy_scanner.read_log()
         pending = [
             dict(row)
-            for row in ford_scan.open_rows(rows)
-            if row.get("discord_format_version") != ford_scan.DISCORD_FORMAT_VERSION
+            for row in spy_scanner.open_rows(rows)
+            if row.get("discord_format_version") != spy_scanner.DISCORD_FORMAT_VERSION
         ][:5]
     if not pending:
         return "all open trade forum cards are current"
@@ -2020,15 +2020,15 @@ def discord_card_migration_job(connection: sqlite3.Connection) -> str:
         raise RuntimeError("Discord tracker is unavailable")
     refreshed_ids: list[str] = []
     refreshed_threads: dict[str, str] = {}
-    report_state = ford_scan.read_report_state()
+    report_state = spy_scanner.read_report_state()
     for row in pending:
         if not row.get("discord_thread_id"):
             tracker.create_trade_thread(row, "OPEN")
         else:
             try:
                 tracker.refresh_trade_thread(row)
-            except ford_scan.DiscordError as exc:
-                if not ford_scan.discord_route_is_missing(exc):
+            except spy_scanner.DiscordError as exc:
+                if not spy_scanner.discord_route_is_missing(exc):
                     raise
                 row["discord_thread_id"] = ""
                 row["discord_status"] = ""
@@ -2036,25 +2036,25 @@ def discord_card_migration_job(connection: sqlite3.Connection) -> str:
                 tracker.create_trade_thread(row, "OPEN")
         refreshed_ids.append(row.get("trade_id", ""))
         refreshed_threads[row.get("trade_id", "")] = row.get("discord_thread_id", "")
-        ford_scan.sync_open_trade_cards(
+        spy_scanner.sync_open_trade_cards(
             row,
             tracker,
             report_state,
-            ford_scan.stored_open_evaluation(row),
+            spy_scanner.stored_open_evaluation(row),
             include_entry=True,
         )
         time.sleep(1.0)
     with POSITION_FILE_LOCK:
-        latest = ford_scan.read_log()
+        latest = spy_scanner.read_log()
         refreshed = set(refreshed_ids)
         for row in latest:
             if row.get("trade_id") in refreshed:
                 row["discord_thread_id"] = refreshed_threads.get(
                     row.get("trade_id", ""), row.get("discord_thread_id", "")
                 )
-                row["discord_format_version"] = ford_scan.DISCORD_FORMAT_VERSION
-        ford_scan.write_log(latest)
-    ford_scan.write_report_state(report_state)
+                row["discord_format_version"] = spy_scanner.DISCORD_FORMAT_VERSION
+        spy_scanner.write_log(latest)
+    spy_scanner.write_report_state(report_state)
     store_observation(
         connection,
         "discord-card-migration",
@@ -2195,7 +2195,7 @@ def due(connection: sqlite3.Connection, job: Job, now: datetime) -> bool:
         except ValueError:
             pass
     if job.market_hours_only:
-        market_open, _ = ford_scan.market_is_open_now()
+        market_open, _ = spy_scanner.market_is_open_now()
         return market_open
     return True
 
@@ -2345,8 +2345,8 @@ def main() -> int:
         daemon=True,
     ).start()
     POSITION_STREAM = tradier_stream.TradierPositionStream(
-        ford_scan.TRADIER_TOKEN,
-        ford_scan.TRADIER_BASE_URL,
+        spy_scanner.TRADIER_TOKEN,
+        spy_scanner.TRADIER_BASE_URL,
         _position_symbols,
         _stream_quote_event,
     )

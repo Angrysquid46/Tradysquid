@@ -9,16 +9,16 @@ from pathlib import Path
 from typing import Any
 
 import dynamic_universe
-import ford_scan
+import spy_scanner
 
 # Register the always-on Discord destinations before the engine discovers
 # channels. The underlying scanner remains read-only and cannot place orders.
-ford_scan.CHANNEL_NAMES.setdefault("system_activity", "system-activity")
-ford_scan.CHANNEL_NAMES.setdefault("automation_diagnostics", "automation-diagnostics")
+spy_scanner.CHANNEL_NAMES.setdefault("system_activity", "system-activity")
+spy_scanner.CHANNEL_NAMES.setdefault("automation_diagnostics", "automation-diagnostics")
 for key in ("system_activity", "automation_diagnostics"):
-    if key not in ford_scan.AUTOMATED_CHANNEL_KEYS:
-        ford_scan.AUTOMATED_CHANNEL_KEYS.append(key)
-ford_scan.SYSTEM_CHANNEL_KEYS.add("automation_diagnostics")
+    if key not in spy_scanner.AUTOMATED_CHANNEL_KEYS:
+        spy_scanner.AUTOMATED_CHANNEL_KEYS.append(key)
+spy_scanner.SYSTEM_CHANNEL_KEYS.add("automation_diagnostics")
 
 # Preserve the exact market-hours rotation so #system-activity can show what the
 # scanner actually processed, not merely the next cursor position.
@@ -76,7 +76,7 @@ def _session_label(now: datetime, market_open: bool) -> str:
 
 def _quote_change(quote: dict[str, Any]) -> float | None:
     for key in ("change_percentage", "change_pct", "percent_change"):
-        value = ford_scan.as_float(quote.get(key))
+        value = spy_scanner.as_float(quote.get(key))
         if value is not None:
             return value
     return None
@@ -142,15 +142,15 @@ def _latest_batch(kind: str) -> list[str]:
 
 def premarket_visibility_job(connection) -> str:
     """Keep #premarket visibly current during every session, including weekends."""
-    now = ford_scan.now_ct()
-    market_open = bool(ford_scan.market_is_open_now()[0])
+    now = spy_scanner.now_ct()
+    market_open = bool(spy_scanner.market_is_open_now()[0])
     session = _session_label(now, market_open)
     symbols = dynamic_universe.active_symbols()
     quotes: dict[str, dict[str, Any]] = {}
     quote_error = ""
     if symbols:
         try:
-            quotes = ford_scan.get_quotes(symbols, include_greeks=False)
+            quotes = spy_scanner.get_quotes(symbols, include_greeks=False)
         except Exception as exc:
             quote_error = f"{type(exc).__name__}: {' '.join(str(exc).split())[:180]}"
 
@@ -174,15 +174,15 @@ def premarket_visibility_job(connection) -> str:
     visible = 0
     for symbol in ranked[:10]:
         quote = quotes.get(symbol) or {}
-        price = ford_scan.as_float(quote.get("last"))
+        price = spy_scanner.as_float(quote.get("last"))
         change = _quote_change(quote)
-        volume = int(ford_scan.as_float(quote.get("volume"), 0) or 0)
+        volume = int(spy_scanner.as_float(quote.get("volume"), 0) or 0)
         if price is None and change is None and not volume:
             continue
         visible += 1
         change_text = "change unavailable" if change is None else f"{change:+.2f}%"
         lines.append(
-            f"• **{symbol}** · {ford_scan.fmt_money(price)} · {change_text} · volume {volume:,}"
+            f"• **{symbol}** · {spy_scanner.fmt_money(price)} · {change_text} · volume {volume:,}"
         )
     if visible == 0:
         lines.append(

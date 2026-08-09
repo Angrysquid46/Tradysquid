@@ -49,7 +49,7 @@ def install_runtime_overrides(
     include_information_engine: bool = False,
     include_supervisor_guard: bool = False,
 ) -> None:
-    import ford_scan
+    import spy_scanner
     import github_upgrade_bridge
     import github_upgrade_bridge_runtime
     import journal_contract
@@ -61,7 +61,7 @@ def install_runtime_overrides(
     import upgrade_batch_44
 
     network_compat.install()
-    runtime_contract.install_safe_intraday_history(ford_scan)
+    runtime_contract.install_safe_intraday_history(spy_scanner)
     runtime_contract.install_recovery_bridge(github_upgrade_bridge)
     github_upgrade_bridge_runtime.install()
     journal_contract.install()

@@ -1,6 +1,6 @@
 import unittest
 
-import ford_scan
+import spy_scanner
 
 
 def _option(**overrides):
@@ -17,24 +17,24 @@ def _option(**overrides):
 class OptionLiquidityVolumeFloorTests(unittest.TestCase):
     def test_rejects_a_contract_with_almost_no_same_day_trading(self) -> None:
         option = _option(volume=2)
-        self.assertFalse(ford_scan.option_has_liquidity(option))
+        self.assertFalse(spy_scanner.option_has_liquidity(option))
 
     def test_rejects_a_contract_with_stale_open_interest_only(self) -> None:
         # High open interest can just mean a position has sat unchanged for
         # weeks. Real same-day volume is required too.
         option = _option(open_interest=200, volume=500)
-        self.assertFalse(ford_scan.option_has_liquidity(option))
+        self.assertFalse(spy_scanner.option_has_liquidity(option))
 
     def test_accepts_a_contract_with_real_same_day_trading(self) -> None:
         option = _option(volume=200, open_interest=500)
-        self.assertTrue(ford_scan.option_has_liquidity(option))
+        self.assertTrue(spy_scanner.option_has_liquidity(option))
 
     def test_volume_and_open_interest_floors_are_genuinely_high(self) -> None:
-        # Set from real chain depth (see ford_scan.py comment), not a
+        # Set from real chain depth (see spy_scanner.py comment), not a
         # trivial "not literally zero" bar. Regression guard against
         # silently dropping these back down to a near-worthless floor.
-        self.assertGreaterEqual(ford_scan.MIN_OPTION_VOLUME, 200)
-        self.assertGreaterEqual(ford_scan.MIN_OPEN_INTEREST, 500)
+        self.assertGreaterEqual(spy_scanner.MIN_OPTION_VOLUME, 200)
+        self.assertGreaterEqual(spy_scanner.MIN_OPEN_INTEREST, 500)
 
 
 if __name__ == "__main__":

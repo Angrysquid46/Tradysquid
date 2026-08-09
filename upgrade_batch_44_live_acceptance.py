@@ -22,7 +22,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
-import ford_scan
+import spy_scanner
 import github_upgrade_patch
 import journal_contract
 import upgrade_batch_44
@@ -124,7 +124,7 @@ def is_upgrade_confirmation(message: dict[str, Any]) -> bool:
     author = message.get("author") or {}
     if not author.get("bot"):
         return False
-    text = " ".join(ford_scan.message_search_text(message).split()).casefold()
+    text = " ".join(spy_scanner.message_search_text(message).split()).casefold()
     if "upgrade request" not in text:
         return False
     return any(
@@ -179,7 +179,7 @@ def _migration_text(message: dict[str, Any], source_channel_id: str) -> str:
         if line.strip()
     ).strip()
     if not original:
-        original = ford_scan.message_search_text(message).strip()
+        original = spy_scanner.message_search_text(message).strip()
     original = original[:1400] or "Upgrade confirmation contained no readable text."
     return "\n".join(
         [
@@ -243,7 +243,7 @@ def _upsert_plain_receipt(
                 payload,
             )
             return message_id
-        except ford_scan.DiscordError as exc:
+        except spy_scanner.DiscordError as exc:
             if "HTTP 404" not in str(exc):
                 raise
     created = tracker._request("POST", f"/channels/{channel_id}/messages", payload)

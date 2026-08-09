@@ -47,9 +47,9 @@ def _status_reply() -> str:
 
 
 def _upgrade_destination() -> tuple[Any | None, str]:
-    tracker = bot.ford_scan.DiscordTracker(
-        bot.ford_scan.DISCORD_BOT_TOKEN,
-        bot.ford_scan.DISCORD_GUILD_ID,
+    tracker = bot.spy_scanner.DiscordTracker(
+        bot.spy_scanner.DISCORD_BOT_TOKEN,
+        bot.spy_scanner.DISCORD_GUILD_ID,
     )
     if not tracker.enabled:
         return None, ""
@@ -204,7 +204,7 @@ def install() -> None:
                 )
                 if str(interaction.get("channel_id") or "") != destination_id:
                     _delete_original_response(application_id, token)
-        except (bot.requests.RequestException, bot.ford_scan.DiscordError):
+        except (bot.requests.RequestException, bot.spy_scanner.DiscordError):
             pass
 
     def help_reply() -> str:

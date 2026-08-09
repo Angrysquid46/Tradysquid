@@ -49,7 +49,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
         ]
 
     def open_trade(self) -> dict[str, str]:
-        row = bootstrap.public.ford_scan.blank_row()
+        row = bootstrap.public.spy_scanner.blank_row()
         row.update(
             {
                 "trade_id": "TEST-OPEN-001",
@@ -69,11 +69,11 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
             patch.object(engine, "JOBS", self.required_jobs()),
             patch.object(bootstrap, "ACCEPTANCE_PATH", acceptance_path),
             patch.object(
-                bootstrap.public.ford_scan,
+                bootstrap.public.spy_scanner,
                 "read_report_state",
                 return_value=self.scorecard_state(),
             ),
-            patch.object(bootstrap.public.ford_scan, "read_log", return_value=[]),
+            patch.object(bootstrap.public.spy_scanner, "read_log", return_value=[]),
         ):
             payload = bootstrap.run_required_startup_jobs()
 
@@ -113,18 +113,18 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
             patch.object(engine, "JOBS", self.required_jobs()),
             patch.object(bootstrap, "ACCEPTANCE_PATH", acceptance_path),
             patch.object(
-                bootstrap.public.ford_scan,
+                bootstrap.public.spy_scanner,
                 "read_report_state",
                 return_value=self.scorecard_state(),
             ),
-            patch.object(bootstrap.public.ford_scan, "read_log", return_value=[trade]),
-            patch.object(bootstrap.public.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(bootstrap.public.spy_scanner, "read_log", return_value=[trade]),
+            patch.object(bootstrap.public.spy_scanner, "DiscordTracker", return_value=tracker),
             patch.object(
-                bootstrap.public.ford_scan,
+                bootstrap.public.spy_scanner,
                 "sync_all_trade_journals",
                 return_value=journal_result,
             ) as sync_journals,
-            patch.object(bootstrap.public.ford_scan, "write_log") as write_log,
+            patch.object(bootstrap.public.spy_scanner, "write_log") as write_log,
             patch.object(bootstrap.trade_intelligence, "needs_sync", return_value=False),
         ):
             payload = bootstrap.run_required_startup_jobs()
@@ -148,14 +148,14 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
             patch.object(engine, "JOBS", self.required_jobs()),
             patch.object(bootstrap, "ACCEPTANCE_PATH", acceptance_path),
             patch.object(
-                bootstrap.public.ford_scan,
+                bootstrap.public.spy_scanner,
                 "read_report_state",
                 return_value=self.scorecard_state(),
             ),
-            patch.object(bootstrap.public.ford_scan, "read_log", return_value=[trade]),
-            patch.object(bootstrap.public.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(bootstrap.public.spy_scanner, "read_log", return_value=[trade]),
+            patch.object(bootstrap.public.spy_scanner, "DiscordTracker", return_value=tracker),
             patch.object(
-                bootstrap.public.ford_scan,
+                bootstrap.public.spy_scanner,
                 "sync_all_trade_journals",
                 return_value={
                     "created": 0,
@@ -166,7 +166,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
                     "pending": 1,
                 },
             ),
-            patch.object(bootstrap.public.ford_scan, "write_log"),
+            patch.object(bootstrap.public.spy_scanner, "write_log"),
             patch.object(bootstrap.trade_intelligence, "needs_sync", return_value=True),
         ):
             with self.assertRaisesRegex(RuntimeError, "complete entry contract"):
@@ -226,7 +226,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
             patch.object(engine, "DB_PATH", db_path),
             patch.object(engine, "JOBS", jobs),
             patch.object(bootstrap, "ACCEPTANCE_PATH", acceptance_path),
-            patch.object(bootstrap.public.ford_scan, "read_report_state", return_value={}),
+            patch.object(bootstrap.public.spy_scanner, "read_report_state", return_value={}),
         ):
             with self.assertRaisesRegex(RuntimeError, "scorecard version"):
                 bootstrap.run_required_startup_jobs()
@@ -245,7 +245,7 @@ class MarketIntelligenceBootstrapTests(unittest.TestCase):
             patch.object(engine, "JOBS", self.required_jobs()),
             patch.object(bootstrap, "ACCEPTANCE_PATH", acceptance_path),
             patch.object(
-                bootstrap.public.ford_scan,
+                bootstrap.public.spy_scanner,
                 "read_report_state",
                 return_value=state,
             ),

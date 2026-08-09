@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta
 
-import ford_scan
+import spy_scanner
 import journal_contract
 
 
@@ -13,8 +13,8 @@ class JournalContractTests(unittest.TestCase):
         journal_contract.install()
 
     def make_row(self, trade_id: str = "TEST-JOURNAL-001", outcome: str = "OPEN") -> dict[str, str]:
-        opened = datetime(2026, 8, 1, 10, 0, tzinfo=ford_scan.MARKET_TZ)
-        row = ford_scan.blank_row()
+        opened = datetime(2026, 8, 1, 10, 0, tzinfo=spy_scanner.MARKET_TZ)
+        row = spy_scanner.blank_row()
         row.update(
             {
                 "trade_id": trade_id,
@@ -66,13 +66,13 @@ class JournalContractTests(unittest.TestCase):
 
     @staticmethod
     def rendered_text(content: str) -> tuple[str, dict]:
-        card = ford_scan.discord_card(content)
+        card = spy_scanner.discord_card(content)
         message = {"content": "", "embeds": [card]}
-        return ford_scan.message_search_text(message), card
+        return spy_scanner.message_search_text(message), card
 
     def test_entry_card_contains_complete_contract(self) -> None:
         row = self.make_row()
-        content = ford_scan.entry_alert_text(row)
+        content = spy_scanner.entry_alert_text(row)
         rendered, card = self.rendered_text(content)
         for marker in journal_contract.REQUIRED_ENTRY_MARKERS:
             self.assertIn(marker, rendered)
@@ -82,7 +82,7 @@ class JournalContractTests(unittest.TestCase):
         self.assertTrue(
             all(len(str(field.get("value") or "")) <= 1024 for field in card.get("fields") or [])
         )
-        self.assertEqual(ford_scan.DISCORD_FORMAT_VERSION, "15")
+        self.assertEqual(spy_scanner.DISCORD_FORMAT_VERSION, "15")
 
     def test_rendered_card_does_not_truncate_long_learning_evidence(self) -> None:
         row = self.make_row()
@@ -95,7 +95,7 @@ class JournalContractTests(unittest.TestCase):
             "evidence_limitations": "LIMIT START " + ("recorded limitation " * 24) + "LIMIT END",
         }
         row.update(fields)
-        content = ford_scan.entry_alert_text(row)
+        content = spy_scanner.entry_alert_text(row)
         rendered, card = self.rendered_text(content)
         for sentinel in (
             "THESIS END",
@@ -127,7 +127,7 @@ class JournalContractTests(unittest.TestCase):
             "data_confidence",
         ):
             row[key] = ""
-        content = ford_scan.entry_alert_text(row)
+        content = spy_scanner.entry_alert_text(row)
         rendered, _ = self.rendered_text(content)
         self.assertGreaterEqual(rendered.count("Unavailable (not recorded at entry)."), 8)
         self.assertNotIn("This regular call expresses a bullish paper thesis", rendered)
@@ -135,10 +135,10 @@ class JournalContractTests(unittest.TestCase):
 
     def test_closed_journal_requires_post_trade_review(self) -> None:
         row = self.make_row(outcome="WIN")
-        entry = ford_scan.entry_alert_text(row)
-        close = ford_scan.close_alert_text(row, ford_scan.stored_close_evaluation(row))
-        entry_card = ford_scan.discord_card(entry)
-        close_card = ford_scan.discord_card(close)
+        entry = spy_scanner.entry_alert_text(row)
+        close = spy_scanner.close_alert_text(row, spy_scanner.stored_close_evaluation(row))
+        entry_card = spy_scanner.discord_card(entry)
+        close_card = spy_scanner.discord_card(close)
         messages = [{"embeds": [entry_card]}, {"embeds": [close_card]}]
         self.assertEqual(journal_contract.missing_markers(row, messages), [])
 

@@ -11,7 +11,7 @@ from unittest.mock import patch
 import discord_command_bot
 import ai_coordination
 import dynamic_universe
-import ford_scan
+import spy_scanner
 import local_information_engine as engine
 import multi_ticker_scan
 import outcome_learning
@@ -52,7 +52,7 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(float(row["realized_pl_dollars"]), -12.0)
         self.assertEqual(row["outcome"], "LOSS")
         self.assertIn("unavailable", row["thesis"])
-        self.assertIn("NU #009", ford_scan.trade_title(row))
+        self.assertIn("NU #009", spy_scanner.trade_title(row))
 
         later_version = dict(row)
         later_version["realized_pl_dollars"] = "-14"
@@ -69,7 +69,7 @@ class InformationEngineTests(unittest.TestCase):
             "setup_reason": "price above VWAP with volume confirmation",
             "market_regime": "BULLISH / CONTROLLED",
         }
-        row = ford_scan.candidate_to_row(candidate, [], ford_scan.now_ct())
+        row = spy_scanner.candidate_to_row(candidate, [], spy_scanner.now_ct())
         for key in (
             "thesis", "entry_confirmation", "invalidation", "risk_plan",
             "learning_plan", "evidence_limitations",
@@ -100,8 +100,8 @@ class InformationEngineTests(unittest.TestCase):
             "expiration": "2026-08-07",
             "entry_price": "0.35",
         }
-        self.assertTrue(ford_scan.trade_title(row).startswith("RIVN #001"))
-        card = ford_scan.entry_alert_text(row)
+        self.assertTrue(spy_scanner.trade_title(row).startswith("RIVN #001"))
+        card = spy_scanner.entry_alert_text(row)
         self.assertIn("RIVN #001", card)
         self.assertIn("BUY 1 RIVN 15 CALL", card)
         self.assertNotIn("BUY 1 F 15 CALL", card)
@@ -117,7 +117,7 @@ class InformationEngineTests(unittest.TestCase):
         }
         for (play_type, kind), expected in cases.items():
             self.assertEqual(
-                ford_scan.play_style_key(
+                spy_scanner.play_style_key(
                     {"play_type": play_type, "call_or_put": kind}
                 ),
                 expected,
@@ -136,10 +136,10 @@ class InformationEngineTests(unittest.TestCase):
             "setup_reason": "price held above VWAP with rising volume",
         }
         with patch(
-            "ford_scan.learning_channel_reference",
+            "spy_scanner.learning_channel_reference",
             side_effect=lambda channel: f"#{channel}",
         ):
-            card = ford_scan.entry_alert_text(row)
+            card = spy_scanner.entry_alert_text(row)
         self.assertIn("Applied Learning Center Analysis", card)
         self.assertIn("price held above VWAP", card)
         self.assertIn("#06-charts-price-action", card)
@@ -163,8 +163,8 @@ class InformationEngineTests(unittest.TestCase):
                 "discord_thread_id": "thread-1",
             }
         ]
-        with patch.object(ford_scan, "DISCORD_GUILD_ID", "guild-1"):
-            card = ford_scan.format_play_style_performance(rows, "regular-call")
+        with patch.object(spy_scanner, "DISCORD_GUILD_ID", "guild-1"):
+            card = spy_scanner.format_play_style_performance(rows, "regular-call")
         self.assertIn("Regular Call Performance", card)
         self.assertIn("Profit factor", card)
         self.assertIn("avg hold **2.0h**", card)
@@ -192,8 +192,8 @@ class InformationEngineTests(unittest.TestCase):
             "expiration": "2026-08-21",
         }
         with tempfile.TemporaryDirectory() as directory:
-            with patch.object(ford_scan, "TRADE_SNAPSHOT_DIR", Path(directory)):
-                output = ford_scan.render_trade_multitimeframe_snapshot(
+            with patch.object(spy_scanner, "TRADE_SNAPSHOT_DIR", Path(directory)):
+                output = spy_scanner.render_trade_multitimeframe_snapshot(
                     row, "entry", intraday, daily
                 )
             self.assertIsNotNone(output)
@@ -201,17 +201,17 @@ class InformationEngineTests(unittest.TestCase):
             self.assertIn("multitimeframe", output.name)
 
     def test_trade_daily_history_is_cached_without_staling_intraday(self) -> None:
-        ford_scan.DAILY_SNAPSHOT_CACHE.clear()
+        spy_scanner.DAILY_SNAPSHOT_CACHE.clear()
         bars = [{"date": "2026-08-01", "close": 10.0}]
-        with patch.object(ford_scan, "get_daily_history", return_value=bars) as fetch:
-            self.assertEqual(ford_scan.trade_daily_history("AAL"), bars)
-            self.assertEqual(ford_scan.trade_daily_history("aal"), bars)
+        with patch.object(spy_scanner, "get_daily_history", return_value=bars) as fetch:
+            self.assertEqual(spy_scanner.trade_daily_history("AAL"), bars)
+            self.assertEqual(spy_scanner.trade_daily_history("aal"), bars)
         fetch.assert_called_once_with("AAL", days=420)
 
     def test_intraday_selloff_can_override_slow_bullish_daily_trend(self) -> None:
         daily = self.market_history([10 + index * 0.1 for index in range(60)])
         intraday = self.intraday_history([15.9 - index * 0.08 for index in range(24)])
-        context = ford_scan.directional_market_context(daily, intraday[-1]["close"], intraday)
+        context = spy_scanner.directional_market_context(daily, intraday[-1]["close"], intraday)
         self.assertTrue(context["qualified"])
         self.assertEqual(context["regime"], "BEARISH / CONTROLLED")
         self.assertLessEqual(context["evidence_score"], -2)
@@ -219,7 +219,7 @@ class InformationEngineTests(unittest.TestCase):
     def test_intraday_rally_can_override_slow_bearish_daily_trend(self) -> None:
         daily = self.market_history([16 - index * 0.1 for index in range(60)])
         intraday = self.intraday_history([10.1 + index * 0.08 for index in range(24)])
-        context = ford_scan.directional_market_context(daily, intraday[-1]["close"], intraday)
+        context = spy_scanner.directional_market_context(daily, intraday[-1]["close"], intraday)
         self.assertTrue(context["qualified"])
         self.assertEqual(context["regime"], "BULLISH / CONTROLLED")
         self.assertGreaterEqual(context["evidence_score"], 2)
@@ -233,7 +233,7 @@ class InformationEngineTests(unittest.TestCase):
             15.0 + (0.02 if index % 2 else -0.02)
             for index in range(24)
         ])
-        context = ford_scan.directional_market_context(daily, 15.0, intraday)
+        context = spy_scanner.directional_market_context(daily, 15.0, intraday)
         self.assertTrue(context["qualified"])
         self.assertEqual(context["regime"], "NEUTRAL / RANGE")
 
@@ -242,12 +242,12 @@ class InformationEngineTests(unittest.TestCase):
             15.0 + (0.1 if index % 2 else -0.1)
             for index in range(60)
         ])
-        context = ford_scan.directional_market_context(daily, 15.0)
+        context = spy_scanner.directional_market_context(daily, 15.0)
         self.assertFalse(context["qualified"])
         self.assertEqual(context["regime"], "NO TRADE")
 
     def test_regular_and_swing_expirations_are_both_considered(self) -> None:
-        regular, swing = ford_scan.pick_expirations(
+        regular, swing = spy_scanner.pick_expirations(
             ["2026-08-07", "2026-08-21", "2026-09-11"],
             date(2026, 7, 30),
         )
@@ -405,12 +405,12 @@ class InformationEngineTests(unittest.TestCase):
         tracker = object()
         connection = object()
         with (
-            patch.object(engine.ford_scan, "read_log", return_value=rows),
+            patch.object(engine.spy_scanner, "read_log", return_value=rows),
             patch.object(engine, "discord_tracker", return_value=tracker),
-            patch.object(engine.ford_scan, "read_report_state", return_value=state),
-            patch.object(engine.ford_scan, "refresh_all_summary_dashboards") as refresh,
-            patch.object(engine.ford_scan, "sync_reports") as reports,
-            patch.object(engine.ford_scan, "write_report_state") as write_state,
+            patch.object(engine.spy_scanner, "read_report_state", return_value=state),
+            patch.object(engine.spy_scanner, "refresh_all_summary_dashboards") as refresh,
+            patch.object(engine.spy_scanner, "sync_reports") as reports,
+            patch.object(engine.spy_scanner, "write_report_state") as write_state,
             patch.object(engine, "outcome_learning_job") as learning,
             patch.object(engine, "store_observation"),
             patch.object(engine.trade_intelligence, "pending_rows", return_value=rows),
@@ -426,12 +426,12 @@ class InformationEngineTests(unittest.TestCase):
     def test_reporting_job_skips_unchanged_aggregate_cards(self) -> None:
         rows = [{"trade_id": "F-1", "ticker": "F", "outcome": "WIN"}]
         with (
-            patch.object(engine.ford_scan, "read_log", return_value=rows),
+            patch.object(engine.spy_scanner, "read_log", return_value=rows),
             patch.object(engine, "discord_tracker", return_value=object()),
-            patch.object(engine.ford_scan, "read_report_state", return_value={"last_closed_total": 1}),
-            patch.object(engine.ford_scan, "refresh_all_summary_dashboards") as refresh,
-            patch.object(engine.ford_scan, "sync_reports") as reports,
-            patch.object(engine.ford_scan, "write_report_state"),
+            patch.object(engine.spy_scanner, "read_report_state", return_value={"last_closed_total": 1}),
+            patch.object(engine.spy_scanner, "refresh_all_summary_dashboards") as refresh,
+            patch.object(engine.spy_scanner, "sync_reports") as reports,
+            patch.object(engine.spy_scanner, "write_report_state"),
             patch.object(engine, "outcome_learning_job") as learning,
             patch.object(engine, "store_observation"),
             patch.object(engine.trade_intelligence, "pending_rows", return_value=[]),
@@ -449,12 +449,12 @@ class InformationEngineTests(unittest.TestCase):
         state: dict = {"last_closed_total": 5}
         tracker = object()
         with (
-            patch.object(engine.ford_scan, "read_log", return_value=[]),
+            patch.object(engine.spy_scanner, "read_log", return_value=[]),
             patch.object(engine, "discord_tracker", return_value=tracker),
-            patch.object(engine.ford_scan, "read_report_state", return_value=state),
-            patch.object(engine.ford_scan, "refresh_all_summary_dashboards") as refresh,
-            patch.object(engine.ford_scan, "sync_reports"),
-            patch.object(engine.ford_scan, "write_report_state"),
+            patch.object(engine.spy_scanner, "read_report_state", return_value=state),
+            patch.object(engine.spy_scanner, "refresh_all_summary_dashboards") as refresh,
+            patch.object(engine.spy_scanner, "sync_reports"),
+            patch.object(engine.spy_scanner, "write_report_state"),
             patch.object(engine, "outcome_learning_job") as learning,
             patch.object(engine, "store_observation"),
             patch.object(engine.trade_intelligence, "pending_rows", return_value=[]),
@@ -470,17 +470,17 @@ class InformationEngineTests(unittest.TestCase):
             {"ticker": "F", "outcome": "LOSS", "realized_pl_dollars": "-5"},
             {"ticker": "NU", "outcome": "LOSS", "realized_pl_dollars": "-10"},
         ]
-        content = ford_scan.format_ticker_results(rows)
+        content = spy_scanner.format_ticker_results(rows)
         self.assertIn("**F**", content)
         self.assertIn("1W / 1L", content)
         self.assertIn("**NU**", content)
 
     def test_weekly_report_marks_live_and_final(self) -> None:
         report_date = date(2026, 7, 31)
-        self.assertIn("**Status:** LIVE", ford_scan.format_weekly_report([], report_date))
+        self.assertIn("**Status:** LIVE", spy_scanner.format_weekly_report([], report_date))
         self.assertIn(
             "**Status:** FINAL",
-            ford_scan.format_weekly_report([], report_date, final=True),
+            spy_scanner.format_weekly_report([], report_date, final=True),
         )
     def test_closed_position_cleanup_reconciles_without_market_scan(self) -> None:
         closed = [{"trade_id": "NU-009", "outcome": "LOSS"}]
@@ -488,20 +488,20 @@ class InformationEngineTests(unittest.TestCase):
         tracker = object()
         connection = object()
         with (
-            patch.object(engine.ford_scan, "read_log", return_value=closed),
-            patch.object(engine.ford_scan, "closed_rows", return_value=closed),
+            patch.object(engine.spy_scanner, "read_log", return_value=closed),
+            patch.object(engine.spy_scanner, "closed_rows", return_value=closed),
             patch.object(engine, "discord_tracker", return_value=tracker),
-            patch.object(engine.ford_scan, "read_report_state", return_value=state),
+            patch.object(engine.spy_scanner, "read_report_state", return_value=state),
             patch.object(
-                engine.ford_scan,
+                engine.spy_scanner,
                 "sync_all_trade_journals",
                 return_value={"created": 0, "refreshed": 0, "closed_reviews": 1},
             ),
             patch.object(
-                engine.ford_scan, "sync_closed_result_channels", return_value=0
+                engine.spy_scanner, "sync_closed_result_channels", return_value=0
             ) as sync,
-            patch.object(engine.ford_scan, "write_log"),
-            patch.object(engine.ford_scan, "write_report_state") as write_state,
+            patch.object(engine.spy_scanner, "write_log"),
+            patch.object(engine.spy_scanner, "write_report_state") as write_state,
             patch.object(engine, "store_observation") as observe,
             patch.object(engine.trade_intelligence, "record_event"),
             patch.object(engine.trade_intelligence, "pending_rows", return_value=closed),
@@ -516,10 +516,10 @@ class InformationEngineTests(unittest.TestCase):
         calls: list[tuple[str, bool]] = []
 
         def scanner(*, publish_shared: bool = True) -> int:
-            calls.append((ford_scan.TICKER, publish_shared))
+            calls.append((spy_scanner.TICKER, publish_shared))
             return 0
 
-        with patch.object(multi_ticker_scan.ford_scan, "main", scanner):
+        with patch.object(multi_ticker_scan.spy_scanner, "main", scanner):
             result = multi_ticker_scan.main(["BAC", "CCL", "RIVN"])
         self.assertEqual(result, 0)
         self.assertEqual(multi_ticker_scan.LAST_RESULTS, {
@@ -534,11 +534,11 @@ class InformationEngineTests(unittest.TestCase):
         ])
 
     def test_scanner_outputs_use_consolidated_channels(self) -> None:
-        self.assertEqual(ford_scan.CHANNEL_NAMES["qualified"], "new-positions")
-        self.assertEqual(ford_scan.CHANNEL_NAMES["scratches"], "losses")
-        self.assertEqual(ford_scan.CHANNEL_NAMES["charts"], "charts-and-levels")
-        self.assertEqual(ford_scan.CHANNEL_NAMES["universe_watch"], "universe-watch")
-        self.assertEqual(ford_scan.CHANNEL_NAMES["premarket"], "premarket")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["qualified"], "new-positions")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["scratches"], "losses")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["charts"], "charts-and-levels")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["universe_watch"], "universe-watch")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["premarket"], "premarket")
 
     def test_manual_full_scan_runs_every_local_section_in_order(self) -> None:
         original = engine.DB_PATH
@@ -710,7 +710,7 @@ class InformationEngineTests(unittest.TestCase):
             {"ticker": "F", "outcome": "OPEN"},
             {"ticker": "VALE", "outcome": "OPEN"},
         ]
-        with patch.object(engine.ford_scan, "read_log", return_value=rows):
+        with patch.object(engine.spy_scanner, "read_log", return_value=rows):
             ford = engine.performance_snapshot("F")
             vale = engine.performance_snapshot("VALE")
         self.assertEqual(ford["tracked"], 1)
@@ -753,7 +753,7 @@ class InformationEngineTests(unittest.TestCase):
             "outcome": "OPEN",
         }]
         with patch.object(
-            discord_command_bot.ford_scan, "read_log", return_value=rows
+            discord_command_bot.spy_scanner, "read_log", return_value=rows
         ):
             self.assertIn(
                 "No tracked VALE trade",
@@ -781,8 +781,8 @@ class InformationEngineTests(unittest.TestCase):
             "data": {"options": [{"name": "ticker", "value": "vale"}]},
         }
         with (
-            patch.object(discord_command_bot.ford_scan, "get_quote", return_value={"last": 14.77}),
-            patch.object(discord_command_bot.ford_scan, "get_expirations", return_value=["2026-08-07"]),
+            patch.object(discord_command_bot.spy_scanner, "get_quote", return_value={"last": 14.77}),
+            patch.object(discord_command_bot.spy_scanner, "get_expirations", return_value=["2026-08-07"]),
             patch.object(discord_command_bot.dynamic_universe, "upsert_candidates") as upsert,
             patch.object(discord_command_bot.ticker_registry, "save") as save,
         ):
@@ -812,7 +812,7 @@ class InformationEngineTests(unittest.TestCase):
             "closed_at": "2026-07-31T13:00:00-05:00",
         }
         state = {"routed_closed_trade_ids": [row["trade_id"]]}
-        updated = ford_scan.sync_closed_result_channels([row], Tracker(), state)
+        updated = spy_scanner.sync_closed_result_channels([row], Tracker(), state)
         self.assertEqual(updated, 0)
         self.assertEqual(
             calls,
@@ -823,7 +823,7 @@ class InformationEngineTests(unittest.TestCase):
         )
 
     def test_delete_trade_message_finds_legacy_card_without_state(self) -> None:
-        tracker = ford_scan.DiscordTracker("token", "guild")
+        tracker = spy_scanner.DiscordTracker("token", "guild")
         tracker.ready = True
         tracker.channels["updates"] = "held-channel"
         requests: list[tuple[str, str]] = []
@@ -852,7 +852,7 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(state["messages"], {})
 
     def test_singleton_message_updates_newest_and_removes_older_duplicates(self) -> None:
-        tracker = ford_scan.DiscordTracker("token", "guild")
+        tracker = spy_scanner.DiscordTracker("token", "guild")
         requests: list[tuple[str, str]] = []
 
         def request(method: str, path: str, payload=None):
@@ -921,11 +921,11 @@ class InformationEngineTests(unittest.TestCase):
             "pct_gain_loss": "20",
             "last_signal": "TAKE PROFIT",
         }
-        result = ford_scan.sync_all_trade_journals([row], Tracker())
+        result = spy_scanner.sync_all_trade_journals([row], Tracker())
         self.assertEqual(result["created"], 1)
         self.assertEqual(result["closed_reviews"], 1)
         self.assertIn(("singleton", "thread-1", "F #100 · WIN"), calls)
-        self.assertEqual(row["discord_format_version"], ford_scan.DISCORD_FORMAT_VERSION)
+        self.assertEqual(row["discord_format_version"], spy_scanner.DISCORD_FORMAT_VERSION)
 
     def test_new_close_is_not_posted_back_to_held_positions(self) -> None:
         calls: list[tuple] = []
@@ -947,7 +947,7 @@ class InformationEngineTests(unittest.TestCase):
             "pct_gain_loss": "10",
         }
         state: dict = {}
-        self.assertEqual(ford_scan.sync_closed_result_channels([row], Tracker(), state), 1)
+        self.assertEqual(spy_scanner.sync_closed_result_channels([row], Tracker(), state), 1)
         self.assertEqual([call[0] for call in calls], ["result", "delete", "delete"])
 
     def test_entry_snapshot_is_sent_to_trade_thread_not_chart_channel(self) -> None:
@@ -978,12 +978,12 @@ class InformationEngineTests(unittest.TestCase):
             image = Path(temp) / "entry.png"
             image.write_bytes(b"png")
             with (
-                patch.object(ford_scan, "sync_open_trade_cards"),
-                patch.object(ford_scan, "build_trade_snapshot", return_value=image),
-                patch.object(ford_scan.trade_intelligence, "register_snapshot", return_value=True),
-                patch.object(ford_scan.trade_intelligence, "record_event"),
+                patch.object(spy_scanner, "sync_open_trade_cards"),
+                patch.object(spy_scanner, "build_trade_snapshot", return_value=image),
+                patch.object(spy_scanner.trade_intelligence, "register_snapshot", return_value=True),
+                patch.object(spy_scanner.trade_intelligence, "record_event"),
             ):
-                ford_scan.post_new_trade(row, Tracker(), {})
+                spy_scanner.post_new_trade(row, Tracker(), {})
         self.assertEqual(calls[0][0], "thread-1")
         self.assertIn("5-minute underlying session", calls[0][1])
 
@@ -1024,13 +1024,13 @@ class InformationEngineTests(unittest.TestCase):
             ticker_registry.normalize_ticker("bad ticker!")
 
     def test_trade_ids_use_current_ticker(self) -> None:
-        original = engine.ford_scan.TICKER
-        engine.ford_scan.TICKER = "VALE"
+        original = engine.spy_scanner.TICKER
+        engine.spy_scanner.TICKER = "VALE"
         try:
-            trade_id = engine.ford_scan.next_trade_id([], engine.ford_scan.now_ct())
+            trade_id = engine.spy_scanner.next_trade_id([], engine.spy_scanner.now_ct())
             self.assertTrue(trade_id.startswith("VALE-"))
         finally:
-            engine.ford_scan.TICKER = original
+            engine.spy_scanner.TICKER = original
 
     def test_dynamic_universe_rotates_provider_safe_batches(self) -> None:
         original_db = dynamic_universe.DB_PATH
@@ -1312,17 +1312,17 @@ class InformationEngineTests(unittest.TestCase):
 
     def test_new_closed_trades_are_binary_not_scratch(self) -> None:
         row = {"play_type": "LONG", "entry_price": "0.50"}
-        with patch.object(ford_scan.trade_intelligence, "record_event"):
-            ford_scan.close_row(
+        with patch.object(spy_scanner.trade_intelligence, "record_event"):
+            spy_scanner.close_row(
                 row,
                 {"signal": "EXPIRY CLOSE", "mark": 0.50, "pl_dollars": 0},
-                ford_scan.now_ct(),
+                spy_scanner.now_ct(),
             )
         self.assertEqual(row["outcome"], "LOSS")
 
     def test_contract_price_guard_is_one_dollar(self) -> None:
-        self.assertEqual(ford_scan.MAX_CONTRACT_ASK, 1.0)
-        self.assertEqual(ford_scan.MAX_RISK_PER_TRADE, 100.0)
+        self.assertEqual(spy_scanner.MAX_CONTRACT_ASK, 1.0)
+        self.assertEqual(spy_scanner.MAX_RISK_PER_TRADE, 100.0)
 
     def test_open_position_symbols_are_dynamic_and_deduplicated(self) -> None:
         rows = [
@@ -1339,7 +1339,7 @@ class InformationEngineTests(unittest.TestCase):
             },
         ]
         self.assertEqual(
-            ford_scan.symbols_for_rows(rows),
+            spy_scanner.symbols_for_rows(rows),
             [
                 "VALE",
                 "VALE260821C00015000",
@@ -1364,10 +1364,10 @@ class InformationEngineTests(unittest.TestCase):
         # (max_favorable_pct), so the new trailing-stop logic is what should
         # fire here, not the old flat +20% cap - the incoming quote pulls it
         # back to +20%, breaching the 8pt giveback allowed from that peak.
-        original_log = ford_scan.LOG_PATH
+        original_log = spy_scanner.LOG_PATH
         with tempfile.TemporaryDirectory() as temp:
-            ford_scan.LOG_PATH = Path(temp) / "plays.csv"
-            row = {field: "" for field in ford_scan.LOG_HEADER}
+            spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
+            row = {field: "" for field in spy_scanner.LOG_HEADER}
             row.update(
                 {
                     "trade_id": "VALE-STREAM-001",
@@ -1380,17 +1380,17 @@ class InformationEngineTests(unittest.TestCase):
                     "max_favorable_pct": "30",
                 }
             )
-            ford_scan.write_log([row])
+            spy_scanner.write_log([row])
             engine.STREAM_QUOTES.clear()
             engine.STREAM_LAST_WRITTEN.clear()
             with (
                 patch.object(
-                    engine.ford_scan,
+                    engine.spy_scanner,
                     "market_is_open_now",
-                    return_value=(True, ford_scan.now_ct()),
+                    return_value=(True, spy_scanner.now_ct()),
                 ),
                 patch.object(engine, "_route_stream_close") as route_close,
-                patch.object(ford_scan.trade_intelligence, "record_event"),
+                patch.object(spy_scanner.trade_intelligence, "record_event"),
             ):
                 engine._stream_quote_event(
                     {
@@ -1400,37 +1400,37 @@ class InformationEngineTests(unittest.TestCase):
                         "ask": 0.62,
                     }
                 )
-            closed = ford_scan.read_log()[0]
+            closed = spy_scanner.read_log()[0]
             self.assertEqual(closed["outcome"], "WIN")
             self.assertEqual(closed["last_signal"], "TAKE PROFIT")
             route_close.assert_called_once()
-        ford_scan.LOG_PATH = original_log
+        spy_scanner.LOG_PATH = original_log
 
     def test_trade_log_writes_atomically_and_rejects_zero_byte_history(self) -> None:
-        original_log = ford_scan.LOG_PATH
-        original_state = ford_scan.STATE_DIR
+        original_log = spy_scanner.LOG_PATH
+        original_state = spy_scanner.STATE_DIR
         try:
             with tempfile.TemporaryDirectory() as temp:
-                ford_scan.STATE_DIR = Path(temp)
-                ford_scan.LOG_PATH = Path(temp) / "plays.csv"
-                row = {field: "" for field in ford_scan.LOG_HEADER}
+                spy_scanner.STATE_DIR = Path(temp)
+                spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
+                row = {field: "" for field in spy_scanner.LOG_HEADER}
                 row.update({"trade_id": "TEST-001", "ticker": "TEST", "outcome": "OPEN"})
-                ford_scan.write_log([row])
-                self.assertEqual(ford_scan.read_log()[0]["trade_id"], "TEST-001")
+                spy_scanner.write_log([row])
+                self.assertEqual(spy_scanner.read_log()[0]["trade_id"], "TEST-001")
                 self.assertEqual(list(Path(temp).glob("*.tmp")), [])
-                ford_scan.LOG_PATH.write_bytes(b"")
+                spy_scanner.LOG_PATH.write_bytes(b"")
                 with self.assertRaisesRegex(RuntimeError, "is empty"):
-                    ford_scan.read_log()
+                    spy_scanner.read_log()
         finally:
-            ford_scan.LOG_PATH = original_log
-            ford_scan.STATE_DIR = original_state
+            spy_scanner.LOG_PATH = original_log
+            spy_scanner.STATE_DIR = original_state
 
     def test_github_backup_workflow_runs_multi_ticker_entrypoint(self) -> None:
         workflow = (
             Path(__file__).resolve().parent
             / ".github"
             / "workflows"
-            / "ford-scan.yml"
+            / "spy-scan.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("python multi_ticker_scan.py", workflow)
         self.assertIn("Multi-Ticker Options Scan", workflow)

@@ -92,7 +92,7 @@ def run_required_startup_jobs() -> dict[str, Any]:
                 "detail": str(row["detail"] or ""),
             }
 
-        report_state = public.ford_scan.read_report_state()
+        report_state = public.spy_scanner.read_report_state()
         performance_version = str(
             report_state.get("performance_reconciliation_version") or ""
         )
@@ -111,7 +111,7 @@ def run_required_startup_jobs() -> dict[str, Any]:
                 f"performance channels still contain history-page output: {history_pages}"
             )
 
-        trade_rows = public.ford_scan.read_log()
+        trade_rows = public.spy_scanner.read_log()
         journal_result = {
             "created": 0,
             "refreshed": 0,
@@ -121,16 +121,16 @@ def run_required_startup_jobs() -> dict[str, Any]:
             "pending": 0,
         }
         if trade_rows:
-            journal_tracker = public.ford_scan.DiscordTracker(
-                public.ford_scan.DISCORD_BOT_TOKEN,
-                public.ford_scan.DISCORD_GUILD_ID,
+            journal_tracker = public.spy_scanner.DiscordTracker(
+                public.spy_scanner.DISCORD_BOT_TOKEN,
+                public.spy_scanner.DISCORD_GUILD_ID,
             )
             if not journal_tracker.ready:
                 raise RuntimeError("Discord tracker is unavailable for journal verification")
-            journal_result = public.ford_scan.sync_all_trade_journals(
+            journal_result = public.spy_scanner.sync_all_trade_journals(
                 trade_rows, journal_tracker
             )
-            public.ford_scan.write_log(trade_rows)
+            public.spy_scanner.write_log(trade_rows)
 
         open_unverified = [
             str(row.get("trade_id") or "unknown")
