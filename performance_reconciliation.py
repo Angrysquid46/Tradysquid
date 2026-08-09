@@ -13,7 +13,7 @@ import math
 from datetime import date, datetime, timedelta
 from typing import Any, Iterable
 
-import ford_scan
+import spy_scanner
 
 
 REPORT_VERSION = "performance-ledger-v3"
@@ -21,7 +21,7 @@ PAGE_SIZE = 10
 MAX_MONTHS = 24
 _INSTALLED = False
 
-_ORIGINAL_CLOSED_ROWS = ford_scan.closed_rows
+_ORIGINAL_CLOSED_ROWS = spy_scanner.closed_rows
 
 REPORT_ROUTES = {
     "daily_recap": "daily-recap",
@@ -69,7 +69,7 @@ STATE_PREFIXES = (
 def effective_closed_at(row: dict[str, Any]) -> datetime | None:
     """Use the best recorded lifecycle timestamp without inventing a date."""
     for key in ("closed_at", "last_evaluated_at", "timestamp"):
-        parsed = ford_scan.parse_iso(str(row.get(key) or ""))
+        parsed = spy_scanner.parse_iso(str(row.get(key) or ""))
         if parsed is not None:
             return parsed
     return None
@@ -90,7 +90,7 @@ def canonical_closed_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return sorted(
         completed,
         key=lambda row: (
-            effective_closed_at(row) or datetime.min.replace(tzinfo=ford_scan.MARKET_TZ),
+            effective_closed_at(row) or datetime.min.replace(tzinfo=spy_scanner.MARKET_TZ),
             str(row.get("trade_id") or ""),
         ),
     )
@@ -163,15 +163,15 @@ def compact_trade_line(row: dict[str, str]) -> str:
     ticker = str(row.get("ticker") or "F").upper()[:6]
     label = strategy_label(row)[:18]
     outcome = str(row.get("outcome") or "CLOSED").upper()[:7]
-    dollars = ford_scan.fmt_money(ford_scan.realized_pl_dollars(row))
-    pct = ford_scan.fmt_pct(ford_scan.as_float(row.get("pct_gain_loss"), 0.0))
+    dollars = spy_scanner.fmt_money(spy_scanner.realized_pl_dollars(row))
+    pct = spy_scanner.fmt_pct(spy_scanner.as_float(row.get("pct_gain_loss"), 0.0))
     closed_at = effective_closed_at(row)
     stamp = closed_at.strftime("%m/%d") if closed_at else "date?"
     return f"• **{trade_id}** · {ticker} {label} · **{outcome} {dollars} ({pct})** · {stamp}"
 
 
 def result_summary(title: str, completed: list[dict[str, str]], period_text: str) -> str:
-    metrics = ford_scan.result_metrics(completed)
+    metrics = spy_scanner.result_metrics(completed)
     lines = [
         f"## {title}",
         f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades.",
@@ -184,9 +184,9 @@ def result_summary(title: str, completed: list[dict[str, str]], period_text: str
         ),
         "### Money",
         (
-            f"Won **{ford_scan.fmt_metric_money(metrics, 'gross_won')}** · "
-            f"Lost **{ford_scan.fmt_metric_money(metrics, 'gross_lost')}** · "
-            f"Net **{ford_scan.fmt_metric_money(metrics, 'total_pnl')}**"
+            f"Won **{spy_scanner.fmt_metric_money(metrics, 'gross_won')}** · "
+            f"Lost **{spy_scanner.fmt_metric_money(metrics, 'gross_lost')}** · "
+            f"Net **{spy_scanner.fmt_metric_money(metrics, 'total_pnl')}**"
         ),
         "### Trade Quality",
         (
@@ -198,12 +198,12 @@ def result_summary(title: str, completed: list[dict[str, str]], period_text: str
     if completed:
         best = max(
             completed,
-            key=lambda row: ford_scan.as_float(row.get("realized_pl_dollars"), -math.inf)
+            key=lambda row: spy_scanner.as_float(row.get("realized_pl_dollars"), -math.inf)
             or -math.inf,
         )
         worst = min(
             completed,
-            key=lambda row: ford_scan.as_float(row.get("realized_pl_dollars"), math.inf)
+            key=lambda row: spy_scanner.as_float(row.get("realized_pl_dollars"), math.inf)
             or math.inf,
         )
         lines.extend(
@@ -286,8 +286,8 @@ def strategy_summary_pages(rows: list[dict[str, str]]) -> list[str]:
     ranked = sorted(
         groups.items(),
         key=lambda item: (
-            ford_scan.result_metrics(item[1])["total_pnl"],
-            ford_scan.result_metrics(item[1])["expectancy_pct"],
+            spy_scanner.result_metrics(item[1])["total_pnl"],
+            spy_scanner.result_metrics(item[1])["expectancy_pct"],
         ),
         reverse=True,
     )
@@ -307,11 +307,11 @@ def strategy_summary_pages(rows: list[dict[str, str]]) -> list[str]:
             "### Ranked Strategies",
         ]
         for label, group in page_groups:
-            metrics = ford_scan.result_metrics(group)
+            metrics = spy_scanner.result_metrics(group)
             lines.append(
                 f"**{label}** · {len(group)} trades · {int(metrics['wins'])}W/"
                 f"{int(metrics['losses'])}L · {metrics['win_rate']:.0f}% · "
-                f"Net {ford_scan.fmt_metric_money(metrics, 'total_pnl')} · "
+                f"Net {spy_scanner.fmt_metric_money(metrics, 'total_pnl')} · "
                 f"Exp {metrics['expectancy_pct']:+.0f}%"
             )
         pages.append("\n".join(lines)[:5900])
@@ -378,7 +378,7 @@ def _purge_report_channel(discord: Any, logical_name: str) -> int:
             author = message.get("author") or {}
             if not (author.get("bot") or message.get("webhook_id")):
                 continue
-            text = ford_scan.message_search_text(message)
+            text = spy_scanner.message_search_text(message)
             if any(marker in text for marker in markers):
                 message_id = str(message.get("id") or "")
                 if message_id:
@@ -657,24 +657,24 @@ def install() -> None:
     global _INSTALLED
     if _INSTALLED:
         return
-    ford_scan.CHANNEL_NAMES.update(REPORT_ROUTES)
+    spy_scanner.CHANNEL_NAMES.update(REPORT_ROUTES)
     for logical_name in REPORT_ROUTES:
-        if logical_name not in ford_scan.AUTOMATED_CHANNEL_KEYS:
-            ford_scan.AUTOMATED_CHANNEL_KEYS.append(logical_name)
-    ford_scan.rows_closed_on = rows_closed_on
-    ford_scan.rows_closed_between = rows_closed_between
-    ford_scan.format_daily_recap = format_daily_recap
-    ford_scan.format_weekly_report = format_weekly_report
-    ford_scan.format_strategy_breakdown = format_strategy_breakdown
-    ford_scan.format_performance_stats = format_performance_stats
-    ford_scan.update_performance_pages = update_performance_pages
-    ford_scan.sync_reports = sync_reports
+        if logical_name not in spy_scanner.AUTOMATED_CHANNEL_KEYS:
+            spy_scanner.AUTOMATED_CHANNEL_KEYS.append(logical_name)
+    spy_scanner.rows_closed_on = rows_closed_on
+    spy_scanner.rows_closed_between = rows_closed_between
+    spy_scanner.format_daily_recap = format_daily_recap
+    spy_scanner.format_weekly_report = format_weekly_report
+    spy_scanner.format_strategy_breakdown = format_strategy_breakdown
+    spy_scanner.format_performance_stats = format_performance_stats
+    spy_scanner.update_performance_pages = update_performance_pages
+    spy_scanner.sync_reports = sync_reports
     _INSTALLED = True
 
 
 def validate_reconciliation() -> dict[str, int]:
     rows: list[dict[str, str]] = []
-    monday = datetime(2026, 7, 27, 14, 30, tzinfo=ford_scan.MARKET_TZ)
+    monday = datetime(2026, 7, 27, 14, 30, tzinfo=spy_scanner.MARKET_TZ)
     strategies = (
         ("REGULAR", "call"),
         ("REGULAR", "put"),
@@ -685,7 +685,7 @@ def validate_reconciliation() -> dict[str, int]:
     for index in range(100):
         closed_at = monday + timedelta(days=index % 5, minutes=index)
         play_type, side = strategies[index % len(strategies)]
-        row = ford_scan.blank_row()
+        row = spy_scanner.blank_row()
         row.update(
             {
                 "trade_id": f"TEST-{index + 1:03d}",

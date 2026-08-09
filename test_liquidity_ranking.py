@@ -6,7 +6,7 @@ swamped by a small delta difference."""
 
 from __future__ import annotations
 
-import ford_scan
+import spy_scanner
 
 
 def _option(delta: float, volume: int, open_interest: int, **overrides) -> dict:
@@ -25,9 +25,9 @@ def test_much_deeper_liquidity_outranks_a_marginally_better_delta_fit():
     # slightly further off but has 10x the real depth on both axes.
     thin = _option(delta=-0.55, volume=210, open_interest=520, strike=12.5)
     deep = _option(delta=-0.50, volume=3000, open_interest=8000, strike=13.0)
-    candidates = ford_scan.scan_single_legs([thin, deep], "put", "2026-08-21", "REGULAR")
+    candidates = spy_scanner.scan_single_legs([thin, deep], "put", "2026-08-21", "REGULAR")
     by_strike = {c["strike"]: c["score"] for c in candidates}
-    assert by_strike[ford_scan.fmt_strike(13.0)] > by_strike[ford_scan.fmt_strike(12.5)]
+    assert by_strike[spy_scanner.fmt_strike(13.0)] > by_strike[spy_scanner.fmt_strike(12.5)]
 
 
 def test_a_small_delta_edge_no_longer_beats_a_large_liquidity_gap():
@@ -35,6 +35,6 @@ def test_a_small_delta_edge_no_longer_beats_a_large_liquidity_gap():
     # alone should still be decisive.
     thin = _option(delta=-0.52, volume=205, open_interest=505, strike=12.5)
     deep = _option(delta=-0.50, volume=5000, open_interest=15000, strike=13.0)
-    candidates = ford_scan.scan_single_legs([thin, deep], "put", "2026-08-21", "REGULAR")
+    candidates = spy_scanner.scan_single_legs([thin, deep], "put", "2026-08-21", "REGULAR")
     by_strike = {c["strike"]: c["score"] for c in candidates}
-    assert by_strike[ford_scan.fmt_strike(13.0)] > by_strike[ford_scan.fmt_strike(12.5)]
+    assert by_strike[spy_scanner.fmt_strike(13.0)] > by_strike[spy_scanner.fmt_strike(12.5)]

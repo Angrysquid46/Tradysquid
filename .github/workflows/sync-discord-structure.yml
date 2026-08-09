@@ -42,7 +42,7 @@ jobs:
       - name: Apply Discord channel structure
         # Goes through run_with_env.py, same as the local supervisor's
         # run_discord_configuration() - it loads .env before importing
-        # ford_scan (sync_discord_structure.py imports ford_scan at module
+        # spy_scanner (sync_discord_structure.py imports spy_scanner at module
         # level, before its own main() ever calls load_env(), so running it
         # directly would always see empty DISCORD_BOT_TOKEN/GUILD_ID). This
         # also picks up the same SCRIPT_OVERRIDES redirect to

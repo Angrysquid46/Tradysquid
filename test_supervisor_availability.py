@@ -88,7 +88,7 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         write_state = Mock()
         post = Mock()
         with (
-            patch.object(run_supervisor.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(run_supervisor.spy_scanner, "DiscordTracker", return_value=tracker),
             patch.object(
                 run_supervisor.strict_learning_order,
                 "enforce_learning_channel_order",
@@ -116,7 +116,7 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         write_state = Mock()
         post = Mock()
         with (
-            patch.object(run_supervisor.ford_scan, "DiscordTracker", return_value=tracker),
+            patch.object(run_supervisor.spy_scanner, "DiscordTracker", return_value=tracker),
             patch.object(
                 run_supervisor.strict_learning_order,
                 "enforce_learning_channel_order",

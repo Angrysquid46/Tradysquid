@@ -19,7 +19,7 @@ from flask import Flask, Response, abort, jsonify, request
 from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
 
-import ford_scan
+import spy_scanner
 import dynamic_universe
 import local_information_engine as info_engine
 import ticker_registry
@@ -186,27 +186,27 @@ def interaction_ticker(interaction: dict[str, Any]) -> str:
 
 
 def live_market_data(ticker: str, days: int = 120) -> tuple[float, list[dict[str, Any]]]:
-    quote = ford_scan.get_quote(ticker)
-    spot = ford_scan.as_float((quote or {}).get("last"))
-    history = ford_scan.get_daily_history(ticker, days=max(60, days))
+    quote = spy_scanner.get_quote(ticker)
+    spot = spy_scanner.as_float((quote or {}).get("last"))
+    history = spy_scanner.get_daily_history(ticker, days=max(60, days))
     if spot is None or not history:
-        raise ford_scan.TradierError(f"{ticker} quote or price history is unavailable")
+        raise spy_scanner.TradierError(f"{ticker} quote or price history is unavailable")
     return spot, history
 
 
 def chart_reply(ticker: str, days: int) -> tuple[str, Path]:
     with CHART_LOCK:
         spot, history = live_market_data(ticker, days)
-        context = ford_scan.directional_market_context(history, spot)
+        context = spy_scanner.directional_market_context(history, spot)
         closes = [
             value for day in history[-days:]
-            if (value := ford_scan.as_float(day.get("close"))) is not None
+            if (value := spy_scanner.as_float(day.get("close"))) is not None
         ]
         chart_path = (
             info_engine.TICKER_CHART_DIR
             / f"{ticker.lower()}-command-chart.png"
         )
-        ford_scan.render_market_chart_png(
+        spy_scanner.render_market_chart_png(
             history[-days:],
             spot,
             context,
@@ -228,10 +228,10 @@ def chart_reply(ticker: str, days: int) -> tuple[str, Path]:
 
 def levels_reply(ticker: str) -> str:
     spot, history = live_market_data(ticker)
-    context = ford_scan.directional_market_context(history, spot)
+    context = spy_scanner.directional_market_context(history, spot)
     closes = [
         value for day in history
-        if (value := ford_scan.as_float(day.get("close"))) is not None
+        if (value := spy_scanner.as_float(day.get("close"))) is not None
     ]
     support = min(closes[-20:])
     resistance = max(closes[-20:])
@@ -241,8 +241,8 @@ def levels_reply(ticker: str) -> str:
         f"🧭 **{ticker} levels**\n"
         f"Price: ${spot:.2f}\n"
         f"Regime: {context['regime']}\n"
-        f"SMA20: {ford_scan.fmt_money(context.get('sma20'))}\n"
-        f"SMA50: {ford_scan.fmt_money(context.get('sma50'))}\n"
+        f"SMA20: {spy_scanner.fmt_money(context.get('sma20'))}\n"
+        f"SMA50: {spy_scanner.fmt_money(context.get('sma50'))}\n"
         f"RSI14: {rsi_text}\n"
         f"20-day support: ${support:.2f}\n"
         f"20-day resistance: ${resistance:.2f}\n"
@@ -262,10 +262,10 @@ def events_reply(ticker: str) -> str:
         )
         lines.append("Verify the original publisher before acting on a headline.")
         return "\n".join(lines)
-    filings = ford_scan.fetch_recent_ford_filings()
+    filings = spy_scanner.fetch_recent_ford_filings()
     lines = [
         "🗓️ **Ford events and filings**",
-        f"[Ford investor events]({ford_scan.FORD_IR_EVENTS_URL})",
+        f"[Ford investor events]({spy_scanner.FORD_IR_EVENTS_URL})",
         "[Ford investor news](https://shareholder.ford.com/news/default.aspx)",
         "[Ford SEC filings](https://www.sec.gov/edgar/browse/?CIK=37996)",
     ]
@@ -275,7 +275,7 @@ def events_reply(ticker: str) -> str:
             lines.append(
                 f"• {filing['date']} · {filing['form']} · [Open]({filing['url']})"
             )
-    elif not ford_scan.SEC_USER_AGENT:
+    elif not spy_scanner.SEC_USER_AGENT:
         lines.append(
             "\nSEC detail is disabled until SEC_USER_AGENT is configured; "
             "official links remain available."
@@ -287,7 +287,7 @@ def why_reply(ticker: str, trade_id: str) -> str:
     trade_id = trade_id.strip().upper()
     row = next(
         (
-            item for item in ford_scan.read_log()
+            item for item in spy_scanner.read_log()
             if item.get("trade_id", "").upper() == trade_id
             and str(item.get("ticker") or "F").upper() == ticker
         ),
@@ -304,13 +304,13 @@ def why_reply(ticker: str, trade_id: str) -> str:
     if result != "OPEN":
         result_detail = (
             f"\nResult: **{result}** · "
-            f"{ford_scan.fmt_pct(ford_scan.as_float(row.get('pct_gain_loss')))}"
+            f"{spy_scanner.fmt_pct(spy_scanner.as_float(row.get('pct_gain_loss')))}"
         )
     return (
         f"🔎 **Why {trade_id}?**\n"
         f"Structure: {row.get('play_type')} {row.get('call_or_put')} "
         f"{row.get('strike')} · expires {row.get('expiration')}\n"
-        f"Entry: {ford_scan.fmt_money(ford_scan.as_float(row.get('entry_price')))}\n"
+        f"Entry: {spy_scanner.fmt_money(spy_scanner.as_float(row.get('entry_price')))}\n"
         f"Recorded regime: {row.get('market_regime') or 'Unavailable'}\n"
         f"Trade thesis: {row.get('thesis') or reason}\n"
         f"Entry confirmation: {row.get('entry_confirmation') or reason}\n"
@@ -324,7 +324,7 @@ def why_reply(ticker: str, trade_id: str) -> str:
 
 
 def value_text(value: Any, *, digits: int = 2, prefix: str = "", suffix: str = "") -> str:
-    number = ford_scan.as_float(value)
+    number = spy_scanner.as_float(value)
     if number is None:
         return "Unavailable"
     return f"{prefix}{number:.{digits}f}{suffix}"
@@ -487,7 +487,7 @@ def filters_reply() -> str:
         f"RSI bullish / bearish: **{num('regular_rsi_bullish', 60):.0f} / {num('regular_rsi_bearish', 40):.0f}**",
         f"15-min slope / daily trend threshold: **{num('regular_slope_threshold_pct', 0.35):.2f}% / {num('regular_daily_trend_threshold_pct', 0.2):.2f}%**",
         f"Qualifying score: **±{num('regular_score_threshold', 3):.0f}**",
-        f"Delta range: **{ford_scan.REGULAR_LEG_DELTA_MIN:.2f}–{ford_scan.REGULAR_LEG_DELTA_MAX:.2f}**",
+        f"Delta range: **{spy_scanner.REGULAR_LEG_DELTA_MIN:.2f}–{spy_scanner.REGULAR_LEG_DELTA_MAX:.2f}**",
         "",
         f"**Swing calls** ({status('swing_calls')}) **/ puts** ({status('swing_puts')})",
         f"20-day distance / trend threshold: **{num('swing_sma20_distance_threshold_pct', 0.25):.2f}% / {num('swing_trend_threshold_pct', 0.2):.2f}%**",
@@ -495,7 +495,7 @@ def filters_reply() -> str:
         f"Minimum volume ratio: **{num('swing_volume_ratio_min', 1.1):.2f}x**",
         f"Close-vs-high bullish / bearish: **{num('swing_close_vs_high_bullish_pct', -0.3):+.2f}% / {num('swing_close_vs_high_bearish_pct', -3.0):+.2f}%**",
         f"Qualifying score: **±{num('swing_score_threshold', 2):.0f}**",
-        f"Delta range: **{ford_scan.SWING_LEG_DELTA_MIN:.2f}–{ford_scan.SWING_LEG_DELTA_MAX:.2f}**",
+        f"Delta range: **{spy_scanner.SWING_LEG_DELTA_MIN:.2f}–{spy_scanner.SWING_LEG_DELTA_MAX:.2f}**",
         "",
         f"**Bull put spreads** ({status('bull_put_spreads')}) **/ bear call spreads** ({status('bear_call_spreads')})",
         f"Min IV/RV ratio / max trend strength: **{num('iv_rv_min_ratio', 1.15):.2f} / {num('spread_max_trend_strength', 0.02):.3f}**",
@@ -509,14 +509,14 @@ def filters_reply() -> str:
         f"Long profit target / stop: **+{num('single_leg_profit_target_pct', 0.2) * 100:.0f}% / -{num('single_leg_stop_pct', 0.15) * 100:.0f}%**",
         f"Breakeven trigger / trail giveback: **{num('single_leg_breakeven_trigger_pct', 10):.0f}% / {num('single_leg_trail_giveback_pct', 8):.0f}pt**",
         f"Delta erosion / IV crush ratio: **{num('single_leg_delta_erosion_ratio', 0.5):.2f} / {num('single_leg_iv_crush_ratio', 0.75):.2f}**",
-        f"Minimum OI/volume: **{ford_scan.MIN_OPEN_INTEREST} / {ford_scan.MIN_OPTION_VOLUME}**",
-        f"Maximum bid/ask width: **{ford_scan.MAX_BID_ASK_PCT * 100:.0f}%**",
+        f"Minimum OI/volume: **{spy_scanner.MIN_OPEN_INTEREST} / {spy_scanner.MIN_OPTION_VOLUME}**",
+        f"Maximum bid/ask width: **{spy_scanner.MAX_BID_ASK_PCT * 100:.0f}%**",
         "",
         f"**SPY 0DTE** ({status('spy_0dte')}) - standalone plan, shares nothing above",
-        f"Opening range window: **{ford_scan.SPY_0DTE_OPENING_RANGE_MINUTES}min**",
-        f"Delta range: **{ford_scan.SPY_0DTE_DELTA_MIN:.2f}–{ford_scan.SPY_0DTE_DELTA_MAX:.2f}**",
-        f"Stop / target: **-{ford_scan.SPY_0DTE_STOP_PCT * 100:.0f}% / +{ford_scan.SPY_0DTE_TARGET_PCT * 100:.0f}%**",
-        f"Max contract ask / position risk: **${ford_scan.SPY_0DTE_MAX_CONTRACT_ASK:.2f} / ${ford_scan.SPY_0DTE_MAX_RISK_PER_TRADE:.0f}**",
+        f"Opening range window: **{spy_scanner.SPY_0DTE_OPENING_RANGE_MINUTES}min**",
+        f"Delta range: **{spy_scanner.SPY_0DTE_DELTA_MIN:.2f}–{spy_scanner.SPY_0DTE_DELTA_MAX:.2f}**",
+        f"Stop / target: **-{spy_scanner.SPY_0DTE_STOP_PCT * 100:.0f}% / +{spy_scanner.SPY_0DTE_TARGET_PCT * 100:.0f}%**",
+        f"Max contract ask / position risk: **${spy_scanner.SPY_0DTE_MAX_CONTRACT_ASK:.2f} / ${spy_scanner.SPY_0DTE_MAX_RISK_PER_TRADE:.0f}**",
         "",
         "Paper trading only. Filters never place brokerage orders.",
         "Change these with /regular-set, /swing-set, /spread-set, /filter-set, or /trader-toggle.",
@@ -538,7 +538,7 @@ def _apply_filter_set(interaction: dict[str, Any], allowed: dict[str, tuple[floa
     dynamic_universe.SCANNER_CONFIG_PATH.write_text(
         json.dumps(config, indent=2) + "\n", encoding="utf-8"
     )
-    setattr(ford_scan, RUNTIME_FILTER_ATTRIBUTES[name], value)
+    setattr(spy_scanner, RUNTIME_FILTER_ATTRIBUTES[name], value)
     return (
         f"✅ **{name}** changed locally from **{old}** to **{value}**.\n"
         "The next local scan reads the reviewed value. No GitHub run or trade was triggered."
@@ -594,8 +594,8 @@ def reset_trading_data_reply(interaction: dict[str, Any]) -> str:
     archive = bool(option_value(interaction, "archive", False))
     if confirm != "RESET":
         raise ValueError('Type "RESET" exactly (all caps) in the confirm field to proceed.')
-    tracker = ford_scan.initialize_discord()
-    result = ford_scan.reset_all_trade_data(tracker, archive=archive)
+    tracker = spy_scanner.initialize_discord()
+    result = spy_scanner.reset_all_trade_data(tracker, archive=archive)
     lines = [
         "✅ **Trading data reset complete**",
         f"Cleared **{result['cleared_trades']}** tracked trade(s).",
@@ -620,7 +620,7 @@ def clear_chat_history_reply(interaction: dict[str, Any]) -> str:
     confirm = str(option_value(interaction, "confirm", "")).strip()
     if confirm != "CLEAR":
         raise ValueError('Type "CLEAR" exactly (all caps) in the confirm field to proceed.')
-    tracker = ford_scan.initialize_discord()
+    tracker = spy_scanner.initialize_discord()
     removed = tracker.wipe_channel_messages("general_chat", preserve_pinned=True)
     return (
         "✅ **Chat history cleared**\n"
@@ -656,9 +656,9 @@ def set_universe_symbol(symbol: str, active: bool) -> None:
 def universe_add_reply(interaction: dict[str, Any]) -> str:
     require_ticker_admin(interaction)
     ticker = dynamic_universe.normalize_symbol(str(option_value(interaction, "ticker", "")))
-    quote = ford_scan.get_quote(ticker) or {}
-    price = ford_scan.as_float(quote.get("last"))
-    if price is None or not ford_scan.get_expirations(ticker):
+    quote = spy_scanner.get_quote(ticker) or {}
+    price = spy_scanner.as_float(quote.get("last"))
+    if price is None or not spy_scanner.get_expirations(ticker):
         raise ValueError(f"Tradier could not verify optionable ticker {ticker}.")
     set_universe_symbol(ticker, True)
     dynamic_universe.upsert_candidates([
@@ -713,11 +713,11 @@ def ticker_add_reply(interaction: dict[str, Any]) -> str:
     ticker = ticker_registry.normalize_ticker(
         str(option_value(interaction, "ticker", ""))
     )
-    quote = ford_scan.get_quote(ticker) or {}
-    price = ford_scan.as_float(quote.get("last"))
+    quote = spy_scanner.get_quote(ticker) or {}
+    price = spy_scanner.as_float(quote.get("last"))
     if price is None:
         raise ValueError(f"Tradier could not verify stock ticker {ticker}.")
-    expirations = ford_scan.get_expirations(ticker)
+    expirations = spy_scanner.get_expirations(ticker)
     if not expirations:
         raise ValueError(f"{ticker} does not currently have a usable options chain.")
     dynamic_universe.upsert_candidates([
@@ -979,8 +979,8 @@ def risk_reply(ticker: str, premium: float, contracts: int, side: str) -> str:
     premium = max(0.0, float(premium))
     contracts = max(1, min(int(contracts), 100))
     capital = premium * 100 * contracts
-    target_value = premium * (1 + ford_scan.SINGLE_TAKE_PROFIT_PCT)
-    stop_value = premium * (1 - ford_scan.SINGLE_STOP_PCT)
+    target_value = premium * (1 + spy_scanner.SINGLE_TAKE_PROFIT_PCT)
+    stop_value = premium * (1 - spy_scanner.SINGLE_STOP_PCT)
     target_dollars = (target_value - premium) * 100 * contracts
     stop_dollars = (stop_value - premium) * 100 * contracts
     return "\n".join([
@@ -988,11 +988,11 @@ def risk_reply(ticker: str, premium: float, contracts: int, side: str) -> str:
         f"Example: {contracts} contract(s) at ${premium:.2f} · {side.lower()}",
         f"Premium committed / maximum long-option loss: **${capital:,.0f}**",
         (
-            f"Configured +{ford_scan.SINGLE_TAKE_PROFIT_PCT * 100:.0f}% target: "
+            f"Configured +{spy_scanner.SINGLE_TAKE_PROFIT_PCT * 100:.0f}% target: "
             f"${target_value:.2f} · approximately **+${target_dollars:,.0f}**"
         ),
         (
-            f"Configured -{ford_scan.SINGLE_STOP_PCT * 100:.0f}% stop reference: "
+            f"Configured -{spy_scanner.SINGLE_STOP_PCT * 100:.0f}% stop reference: "
             f"${stop_value:.2f} · approximately **${stop_dollars:,.0f}**"
         ),
         (
@@ -1006,7 +1006,7 @@ def risk_reply(ticker: str, premium: float, contracts: int, side: str) -> str:
 def performance_reply(ticker: str) -> str:
     snapshot = info_engine.performance_snapshot(ticker)
     metrics = snapshot["metrics"]
-    win_rate = ford_scan.as_float(metrics.get("win_rate"), 0.0) or 0.0
+    win_rate = spy_scanner.as_float(metrics.get("win_rate"), 0.0) or 0.0
     return "\n".join([
         f"📊 **Tracked {ticker} performance**",
         (
@@ -1017,7 +1017,7 @@ def performance_reply(ticker: str) -> str:
             f"Wins {int(metrics.get('wins', 0))} · losses {int(metrics.get('losses', 0))} · "
             f"scratches {int(metrics.get('scratches', 0))} · win rate {win_rate:.1f}%"
         ),
-        f"Recorded realized P/L: {ford_scan.fmt_money(metrics.get('total_pnl'))}",
+        f"Recorded realized P/L: {spy_scanner.fmt_money(metrics.get('total_pnl'))}",
         "Results are based only on recorded rows and may include incomplete legacy data.",
     ])
 
@@ -1031,17 +1031,17 @@ def status_reply(ticker: str) -> str:
         f"🩺 **{ticker} Tradysquids status**",
         f"Ticker strategy: **{ticker_state.get('status', 'UNKNOWN')}**",
         "Command service: **ONLINE**",
-        f"Tradier configured: **{'YES' if ford_scan.TRADIER_TOKEN else 'NO'}**",
+        f"Tradier configured: **{'YES' if spy_scanner.TRADIER_TOKEN else 'NO'}**",
         (
             "Scheduled Discord posting: **"
             + (
                 "ON"
-                if ford_scan.DISCORD_BOT_TOKEN or ford_scan.DISCORD_WEBHOOK_URL
+                if spy_scanner.DISCORD_BOT_TOKEN or spy_scanner.DISCORD_WEBHOOK_URL
                 else "WAITING FOR LOCAL BOT TOKEN OR WEBHOOK"
             )
             + "**"
         ),
-        f"SEC filing detail: **{'ON' if ford_scan.SEC_USER_AGENT else 'WAITING FOR SEC_USER_AGENT'}**",
+        f"SEC filing detail: **{'ON' if spy_scanner.SEC_USER_AGENT else 'WAITING FOR SEC_USER_AGENT'}**",
         (
             "Latest local market observation: **"
             + info_engine.data_age_text(
@@ -1167,7 +1167,7 @@ def ask_reply(question: str) -> str:
 def filings_reply(ticker: str) -> str:
     if ticker != "F":
         return events_reply(ticker)
-    filings = ford_scan.fetch_recent_ford_filings()
+    filings = spy_scanner.fetch_recent_ford_filings()
     if not filings:
         return (
             "No detailed SEC filing feed is available yet. Add a truthful "
@@ -1446,7 +1446,7 @@ def robinhood_scan_webhook() -> Response:
             continue
     inserted = dynamic_universe.import_robinhood_snapshot({
         "source": "robinhood_mcp",
-        "generated_at": ford_scan.now_ct().isoformat(),
+        "generated_at": spy_scanner.now_ct().isoformat(),
         "symbols": [
             {
                 "symbol": symbol,
@@ -1472,7 +1472,7 @@ def handle_message_component(interaction: dict[str, Any]) -> Response:
             "type": 4,
             "data": {"content": str(exc), "flags": 64},
         })
-    result = ford_scan.archive_trade_for_comparison(trade_id)
+    result = spy_scanner.archive_trade_for_comparison(trade_id)
     label = {
         "archived": "✅ Archived for comparison",
         "already archived": "✅ Already archived",

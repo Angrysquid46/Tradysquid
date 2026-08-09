@@ -11,11 +11,11 @@ from pathlib import Path
 from unittest import mock
 
 import discord_command_bot as bot
-import ford_scan
+import spy_scanner
 
 
 def _row(trade_id: str, thread_id: str = "", outcome: str = "OPEN") -> dict[str, str]:
-    row = {field: "" for field in ford_scan.LOG_HEADER}
+    row = {field: "" for field in spy_scanner.LOG_HEADER}
     row.update({"trade_id": trade_id, "discord_thread_id": thread_id, "outcome": outcome})
     return row
 
@@ -23,25 +23,25 @@ def _row(trade_id: str, thread_id: str = "", outcome: str = "OPEN") -> dict[str,
 def _with_temp_paths():
     class _Swap:
         def __enter__(self):
-            self.original_log = ford_scan.LOG_PATH
-            self.original_state_dir = ford_scan.STATE_DIR
-            self.original_report_state = ford_scan.REPORT_STATE_PATH
+            self.original_log = spy_scanner.LOG_PATH
+            self.original_state_dir = spy_scanner.STATE_DIR
+            self.original_report_state = spy_scanner.REPORT_STATE_PATH
             self.tmp = tempfile.TemporaryDirectory()
             root = Path(self.tmp.name)
-            ford_scan.LOG_PATH = root / "plays.csv"
-            ford_scan.STATE_DIR = root / "state"
+            spy_scanner.LOG_PATH = root / "plays.csv"
+            spy_scanner.STATE_DIR = root / "state"
             # REPORT_STATE_PATH is computed once from STATE_DIR at import
             # time, so it does not follow the STATE_DIR swap above on its
             # own - without this, tests in this file share and pollute one
             # real state file on disk instead of getting a clean, isolated
             # one each, which caused a real (if confusing) flaky failure.
-            ford_scan.REPORT_STATE_PATH = root / "state" / "discord-report-state.json"
+            spy_scanner.REPORT_STATE_PATH = root / "state" / "discord-report-state.json"
             return root
 
         def __exit__(self, *exc):
-            ford_scan.LOG_PATH = self.original_log
-            ford_scan.STATE_DIR = self.original_state_dir
-            ford_scan.REPORT_STATE_PATH = self.original_report_state
+            spy_scanner.LOG_PATH = self.original_log
+            spy_scanner.STATE_DIR = self.original_state_dir
+            spy_scanner.REPORT_STATE_PATH = self.original_report_state
             self.tmp.cleanup()
 
     return _Swap()
@@ -49,9 +49,9 @@ def _with_temp_paths():
 
 def test_reset_with_archive_saves_a_backup_before_clearing():
     with _with_temp_paths():
-        ford_scan.write_log([_row("T1"), _row("T2")])
-        tracker = ford_scan.DiscordTracker("", "")
-        result = ford_scan.reset_all_trade_data(tracker, archive=True)
+        spy_scanner.write_log([_row("T1"), _row("T2")])
+        tracker = spy_scanner.DiscordTracker("", "")
+        result = spy_scanner.reset_all_trade_data(tracker, archive=True)
 
         assert result["cleared_trades"] == 2
         assert result["backup_path"] is not None
@@ -61,18 +61,18 @@ def test_reset_with_archive_saves_a_backup_before_clearing():
             saved_ids = {row["trade_id"] for row in csv.DictReader(handle)}
         assert saved_ids == {"T1", "T2"}
         # The live log must actually be empty now, not just report a count.
-        assert ford_scan.read_log() == []
+        assert spy_scanner.read_log() == []
 
 
 def test_reset_without_archive_saves_nothing():
     with _with_temp_paths() as root:
-        ford_scan.write_log([_row("T1")])
-        tracker = ford_scan.DiscordTracker("", "")
-        result = ford_scan.reset_all_trade_data(tracker, archive=False)
+        spy_scanner.write_log([_row("T1")])
+        tracker = spy_scanner.DiscordTracker("", "")
+        result = spy_scanner.reset_all_trade_data(tracker, archive=False)
 
         assert result["backup_path"] is None
         assert not (root / "state" / "archive").exists()
-        assert ford_scan.read_log() == []
+        assert spy_scanner.read_log() == []
 
 
 def test_reset_deletes_every_thread_in_the_channel_directly():
@@ -82,8 +82,8 @@ def test_reset_deletes_every_thread_in_the_channel_directly():
     # and deleted, because this asks Discord what's actually there instead
     # of walking the log's trade IDs.
     with _with_temp_paths():
-        ford_scan.write_log([_row("T1", thread_id="thread-1", outcome="OPEN")])
-        tracker = ford_scan.DiscordTracker("fake-token", "fake-guild")
+        spy_scanner.write_log([_row("T1", thread_id="thread-1", outcome="OPEN")])
+        tracker = spy_scanner.DiscordTracker("fake-token", "fake-guild")
         tracker.ready = True
         tracker.channels = {"forum": "journal-channel-id"}
         calls: list[tuple[str, str]] = []
@@ -103,8 +103,8 @@ def test_reset_deletes_every_thread_in_the_channel_directly():
                 return {"threads": [{"id": "archived-thread-42"}], "has_more": False}
             return None
 
-        with mock.patch.object(ford_scan.DiscordTracker, "_request", side_effect=fake_request):
-            result = ford_scan.reset_all_trade_data(tracker, archive=False)
+        with mock.patch.object(spy_scanner.DiscordTracker, "_request", side_effect=fake_request):
+            result = spy_scanner.reset_all_trade_data(tracker, archive=False)
 
         assert result["deleted_threads"] == 3
         assert ("DELETE", "/channels/thread-1") in calls
@@ -118,8 +118,8 @@ def test_reset_deletes_every_thread_in_the_channel_directly():
 
 def test_reset_wipes_channel_messages_directly_not_by_trade_id():
     with _with_temp_paths():
-        ford_scan.write_log([])
-        tracker = ford_scan.DiscordTracker("fake-token", "fake-guild")
+        spy_scanner.write_log([])
+        tracker = spy_scanner.DiscordTracker("fake-token", "fake-guild")
         tracker.ready = True
         tracker.channels = {
             "qualified": "c-qualified", "entry": "c-entry", "updates": "c-updates",
@@ -144,8 +144,8 @@ def test_reset_wipes_channel_messages_directly_not_by_trade_id():
                 return []
             return {}
 
-        with mock.patch.object(ford_scan.DiscordTracker, "_request", side_effect=fake_request):
-            ford_scan.reset_all_trade_data(tracker, archive=False)
+        with mock.patch.object(spy_scanner.DiscordTracker, "_request", side_effect=fake_request):
+            spy_scanner.reset_all_trade_data(tracker, archive=False)
 
         assert ("DELETE", "/channels/c-wins/messages/orphan-card-1") in calls
         assert ("DELETE", "/channels/c-wins/messages/human-msg-1") not in calls
@@ -153,9 +153,9 @@ def test_reset_wipes_channel_messages_directly_not_by_trade_id():
 
 def test_reset_on_an_already_empty_log_does_not_crash_or_write_a_backup():
     with _with_temp_paths() as root:
-        ford_scan.write_log([])
-        tracker = ford_scan.DiscordTracker("", "")
-        result = ford_scan.reset_all_trade_data(tracker, archive=True)
+        spy_scanner.write_log([])
+        tracker = spy_scanner.DiscordTracker("", "")
+        result = spy_scanner.reset_all_trade_data(tracker, archive=True)
 
         assert result["cleared_trades"] == 0
         assert result["deleted_threads"] == 0
@@ -165,7 +165,7 @@ def test_reset_on_an_already_empty_log_does_not_crash_or_write_a_backup():
 
 def test_wrong_confirm_string_refuses_and_never_touches_data():
     with _with_temp_paths():
-        ford_scan.write_log([_row("T1")])
+        spy_scanner.write_log([_row("T1")])
         bot.ALLOWED_USER_ID = "owner-1"
         interaction = {
             "member": {"user": {"id": "owner-1"}},
@@ -180,12 +180,12 @@ def test_wrong_confirm_string_refuses_and_never_touches_data():
         except ValueError as exc:
             assert "RESET" in str(exc)
         # The whole point of the gate: nothing was touched.
-        assert len(ford_scan.read_log()) == 1
+        assert len(spy_scanner.read_log()) == 1
 
 
 def test_non_owner_cannot_reset_even_with_correct_confirm_string():
     with _with_temp_paths():
-        ford_scan.write_log([_row("T1")])
+        spy_scanner.write_log([_row("T1")])
         bot.ALLOWED_USER_ID = "owner-1"
         interaction = {
             "member": {"user": {"id": "someone-else"}},
@@ -199,12 +199,12 @@ def test_non_owner_cannot_reset_even_with_correct_confirm_string():
             assert False, "should have raised"
         except PermissionError:
             pass
-        assert len(ford_scan.read_log()) == 1
+        assert len(spy_scanner.read_log()) == 1
 
 
 def test_reset_refreshes_every_summary_dashboard_immediately():
     with _with_temp_paths():
-        ford_scan.write_log([])
+        spy_scanner.write_log([])
         calls = []
 
         class FakeTracker:
@@ -222,7 +222,7 @@ def test_reset_refreshes_every_summary_dashboard_immediately():
                 calls.append(("refresh_dashboard", logical_name))
                 return "msg-1", 0
 
-        ford_scan.reset_all_trade_data(FakeTracker(), archive=False)
+        spy_scanner.reset_all_trade_data(FakeTracker(), archive=False)
 
         # Every live-trading-desk channel gets wiped directly, not driven
         # by trade IDs still present in the log.

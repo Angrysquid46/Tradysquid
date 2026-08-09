@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import always_on_operations as operations
-import ford_scan
+import spy_scanner
 import local_information_engine as engine
 import trade_intelligence
 
@@ -97,7 +97,7 @@ def recent_receipt(row: dict[str, Any] | None, max_age_minutes: int) -> bool:
 
 
 def discord_channels_and_cards() -> dict[str, Any]:
-    tracker = ford_scan.DiscordTracker(ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID)
+    tracker = spy_scanner.DiscordTracker(spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID)
     if not tracker.enabled:
         raise OperationsAcceptanceFailure("Discord bot token and guild ID are required.")
     channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
@@ -108,7 +108,7 @@ def discord_channels_and_cards() -> dict[str, Any]:
     }
     result: dict[str, Any] = {}
     card_text: dict[str, str] = {}
-    report_messages = (ford_scan.read_report_state().get("messages") or {})
+    report_messages = (spy_scanner.read_report_state().get("messages") or {})
     for name, expected_title in REQUIRED_CHANNELS.items():
         channel = by_name.get(name.casefold())
         if not channel:
@@ -123,7 +123,7 @@ def discord_channels_and_cards() -> dict[str, Any]:
             (
                 message
                 for message in bot_messages
-                if expected_title.casefold() in ford_scan.message_search_text(message).casefold()
+                if expected_title.casefold() in spy_scanner.message_search_text(message).casefold()
             ),
             None,
         )
@@ -131,9 +131,9 @@ def discord_channels_and_cards() -> dict[str, Any]:
         if not matching and recorded_id:
             try:
                 recorded = tracker._request("GET", f"/channels/{channel['id']}/messages/{recorded_id}")
-                if expected_title.casefold() in ford_scan.message_search_text(recorded).casefold():
+                if expected_title.casefold() in spy_scanner.message_search_text(recorded).casefold():
                     matching = recorded
-            except ford_scan.DiscordError:
+            except spy_scanner.DiscordError:
                 matching = None
         if not matching:
             raise OperationsAcceptanceFailure(
@@ -143,10 +143,10 @@ def discord_channels_and_cards() -> dict[str, Any]:
             "channel_id": str(channel["id"]),
             "message_id": str(matching.get("id") or ""),
         }
-        card_text[name] = ford_scan.message_search_text(matching)
+        card_text[name] = spy_scanner.message_search_text(matching)
 
-    rows = ford_scan.read_log()
-    metrics = ford_scan.result_metrics(ford_scan.closed_rows(rows))
+    rows = spy_scanner.read_log()
+    metrics = spy_scanner.result_metrics(spy_scanner.closed_rows(rows))
     expected_closed = int(metrics["closed"])
     expected_wins = int(metrics["wins"])
     expected_losses = int(metrics["losses"])
@@ -191,7 +191,7 @@ def discord_channels_and_cards() -> dict[str, Any]:
         "strategy-results", "wins-losses", "play-style-results", "learning-results",
     )
     pending = trade_intelligence.pending_rows(
-        ford_scan.closed_rows(rows), synchronized_consumers
+        spy_scanner.closed_rows(rows), synchronized_consumers
     )
     if pending:
         raise OperationsAcceptanceFailure(
@@ -205,10 +205,10 @@ def discord_channels_and_cards() -> dict[str, Any]:
 
 def trade_journals(*, full: bool = False) -> dict[str, Any]:
     """Verify changed journals; retain an explicit full-audit option."""
-    tracker = ford_scan.DiscordTracker(ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID)
+    tracker = spy_scanner.DiscordTracker(spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID)
     if not tracker.enabled:
         raise OperationsAcceptanceFailure("Discord bot token and guild ID are required.")
-    rows = ford_scan.read_log()
+    rows = spy_scanner.read_log()
     missing_threads = [row.get("trade_id") or "unknown" for row in rows if not row.get("discord_thread_id")]
     if missing_threads:
         raise OperationsAcceptanceFailure(
@@ -233,7 +233,7 @@ def trade_journals(*, full: bool = False) -> dict[str, Any]:
         messages = tracker._request(
             "GET", f"/channels/{row['discord_thread_id']}/messages?limit=100"
         )
-        combined = "\n".join(ford_scan.message_search_text(message) for message in messages)
+        combined = "\n".join(spy_scanner.message_search_text(message) for message in messages)
         if "Applied Learning Center Analysis" not in combined:
             raise OperationsAcceptanceFailure(
                 f"Trade {trade_id} journal is missing applied Learning Center analysis."
@@ -311,7 +311,7 @@ def operations_ready() -> tuple[bool, dict[str, Any]]:
 
 def post_report(message: str) -> None:
     try:
-        tracker = ford_scan.DiscordTracker(ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID)
+        tracker = spy_scanner.DiscordTracker(spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID)
         channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
         channel = next(
             (

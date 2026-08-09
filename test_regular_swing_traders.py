@@ -13,7 +13,7 @@ import json
 import tempfile
 from pathlib import Path
 
-import ford_scan
+import spy_scanner
 
 
 def _daily_history(closes: list[float], volumes: list[float] | None = None) -> list[dict]:
@@ -43,7 +43,7 @@ def _flat_closes(days: int = 60, level: float = 100.0) -> list[float]:
 
 def test_regular_requires_same_session_confirmation_and_none_is_available():
     closes = _uptrend_closes()
-    context = ford_scan.regular_market_context(_daily_history(closes), closes[-1], intraday=[])
+    context = spy_scanner.regular_market_context(_daily_history(closes), closes[-1], intraday=[])
     assert context["qualified"] is False
     assert context["regime"] == "NO TRADE"
 
@@ -53,7 +53,7 @@ def test_regular_goes_bullish_on_strong_intraday_confirmation():
     spot = closes[-1]
     # Intraday: opens near yesterday's close, grinds up all day, closes strong.
     intraday_prices = [spot * (1 + 0.006 * i / 12) for i in range(13)]
-    context = ford_scan.regular_market_context(
+    context = spy_scanner.regular_market_context(
         _daily_history(closes), intraday_prices[-1], intraday=_intraday_bars(intraday_prices)
     )
     assert context["qualified"] is True, context["failures"]
@@ -64,7 +64,7 @@ def test_regular_goes_bearish_on_strong_intraday_breakdown():
     closes = _downtrend_closes()
     spot = closes[-1]
     intraday_prices = [spot * (1 - 0.006 * i / 12) for i in range(13)]
-    context = ford_scan.regular_market_context(
+    context = spy_scanner.regular_market_context(
         _daily_history(closes), intraday_prices[-1], intraday=_intraday_bars(intraday_prices)
     )
     assert context["qualified"] is True, context["failures"]
@@ -85,7 +85,7 @@ def test_regular_reason_text_includes_rsi_and_daily_trend_when_they_score():
         intraday_prices.append(
             intraday_prices[-1] * (0.994 if i % 4 == 0 else 1.004)
         )
-    context = ford_scan.regular_market_context(
+    context = spy_scanner.regular_market_context(
         _daily_history(closes), intraday_prices[-1], intraday=_intraday_bars(intraday_prices)
     )
     assert context["qualified"] is True, context["failures"]
@@ -104,7 +104,7 @@ def test_regular_extreme_rsi_is_excluded_not_counted_as_fresh_confirmation():
     closes = _uptrend_closes()
     spot = closes[-1]
     intraday_prices = [spot * (1 + 0.006 * i / 12) for i in range(13)]
-    context = ford_scan.regular_market_context(
+    context = spy_scanner.regular_market_context(
         _daily_history(closes), intraday_prices[-1], intraday=_intraday_bars(intraday_prices)
     )
     assert "RSI is bullish" not in context["reason"]
@@ -115,7 +115,7 @@ def test_regular_does_not_qualify_on_a_flat_choppy_intraday_tape():
     closes = _flat_closes()
     spot = closes[-1]
     intraday_prices = [spot + (0.02 if i % 2 == 0 else -0.02) for i in range(13)]
-    context = ford_scan.regular_market_context(
+    context = spy_scanner.regular_market_context(
         _daily_history(closes), spot, intraday=_intraday_bars(intraday_prices)
     )
     assert context["qualified"] is False
@@ -144,12 +144,12 @@ def _pullback_in_downtrend_closes() -> list[float]:
 
 
 def _with_ticker(ticker, fn):
-    original = ford_scan.TICKER
-    ford_scan.TICKER = ticker
+    original = spy_scanner.TICKER
+    spy_scanner.TICKER = ticker
     try:
         return fn()
     finally:
-        ford_scan.TICKER = original
+        spy_scanner.TICKER = original
 
 
 def test_swing_only_trades_the_backtest_validated_ticker_set():
@@ -159,7 +159,7 @@ def test_swing_only_trades_the_backtest_validated_ticker_set():
     # exit-rule simulation - not universally.
     closes = _pullback_in_uptrend_closes()
     context = _with_ticker(
-        "F", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+        "F", lambda: spy_scanner.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     )
     assert context["qualified"] is False
     assert "not in the validated swing ticker set" in context["failures"][0]
@@ -168,7 +168,7 @@ def test_swing_only_trades_the_backtest_validated_ticker_set():
 def test_swing_reads_bullish_on_a_confirmed_trend_pullback():
     closes = _pullback_in_uptrend_closes()
     context = _with_ticker(
-        "SOFI", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+        "SOFI", lambda: spy_scanner.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     )
     assert context["qualified"] is True, context["failures"]
     assert context["regime"] == "BULLISH / CONTROLLED"
@@ -178,7 +178,7 @@ def test_swing_reads_bullish_on_a_confirmed_trend_pullback():
 def test_swing_reads_bearish_on_a_confirmed_downtrend_bounce():
     closes = _pullback_in_downtrend_closes()
     context = _with_ticker(
-        "HL", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+        "HL", lambda: spy_scanner.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     )
     assert context["qualified"] is True, context["failures"]
     assert context["regime"] == "BEARISH / CONTROLLED"
@@ -190,7 +190,7 @@ def test_swing_does_not_qualify_without_a_confirmed_pullback():
     # to the 10-day average to buy - there's nothing to confirm.
     closes = _uptrend_closes()
     context = _with_ticker(
-        "SOFI", lambda: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+        "SOFI", lambda: spy_scanner.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
     )
     assert context["qualified"] is False
     assert "no confirmed pullback-to-trend setup" in context["failures"][0]
@@ -206,7 +206,7 @@ def test_swing_drops_tickers_that_failed_the_real_dollar_pnl_simulation():
     closes = _pullback_in_uptrend_closes()
     for ticker in ("SHOP", "META", "HIMS", "AMC"):
         context = _with_ticker(
-            ticker, lambda t=ticker: ford_scan.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
+            ticker, lambda t=ticker: spy_scanner.swing_market_context(_daily_history(closes), closes[-1], intraday=[])
         )
         assert context["qualified"] is False, f"{ticker} should not be validated"
 
@@ -216,39 +216,39 @@ def test_trade_types_enabled_defaults_true_when_config_missing_key():
     # trading decisions (e.g. everything paused pending backtest
     # validation) which is not what this test is checking. This checks
     # trade_types_enabled()'s own default behavior when a key is absent.
-    original_path = ford_scan.SCANNER_CONFIG_PATH
+    original_path = spy_scanner.SCANNER_CONFIG_PATH
     with tempfile.TemporaryDirectory() as tmp:
         temp_config = Path(tmp) / "scanner.json"
         temp_config.write_text(json.dumps({}), encoding="utf-8")
-        ford_scan.SCANNER_CONFIG_PATH = temp_config
+        spy_scanner.SCANNER_CONFIG_PATH = temp_config
         try:
-            enabled = ford_scan.trade_types_enabled()
+            enabled = spy_scanner.trade_types_enabled()
             assert enabled["regular_calls"] is True
             assert enabled["swing_puts"] is True
         finally:
-            ford_scan.SCANNER_CONFIG_PATH = original_path
+            spy_scanner.SCANNER_CONFIG_PATH = original_path
 
 
 def test_trade_types_enabled_honors_a_disabled_flag():
-    original_path = ford_scan.SCANNER_CONFIG_PATH
+    original_path = spy_scanner.SCANNER_CONFIG_PATH
     with tempfile.TemporaryDirectory() as tmp:
         temp_config = Path(tmp) / "scanner.json"
         temp_config.write_text(
             json.dumps({"trade_types_enabled": {"regular_calls": False}}), encoding="utf-8"
         )
-        ford_scan.SCANNER_CONFIG_PATH = temp_config
+        spy_scanner.SCANNER_CONFIG_PATH = temp_config
         try:
-            enabled = ford_scan.trade_types_enabled()
+            enabled = spy_scanner.trade_types_enabled()
             assert enabled["regular_calls"] is False
             # Untouched keys still default true.
             assert enabled["swing_calls"] is True
         finally:
-            ford_scan.SCANNER_CONFIG_PATH = original_path
+            spy_scanner.SCANNER_CONFIG_PATH = original_path
 
 
 def test_a_broken_context_never_raises_only_reports_unqualified():
     # Simulates what scan_candidates()'s try/except falls back to.
-    context = ford_scan._unavailable_context("swing trader errored: boom")
+    context = spy_scanner._unavailable_context("swing trader errored: boom")
     assert context["qualified"] is False
     assert context["regime"] == "NO TRADE"
     assert "boom" in context["failures"][0]
@@ -263,7 +263,7 @@ def test_regular_category_scoring_caps_the_maximum_possible_score():
     closes = _uptrend_closes()
     spot = closes[-1]
     intraday_prices = [spot * (1 + 0.006 * i / 12) for i in range(13)]
-    context = ford_scan.regular_market_context(
+    context = spy_scanner.regular_market_context(
         _daily_history(closes), intraday_prices[-1], intraday=_intraday_bars(intraday_prices)
     )
     assert abs(context["evidence_score"]) <= 4

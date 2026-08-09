@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dynamic_universe
-import ford_scan
+import spy_scanner
 
 LAST_RESULTS: dict[str, int] = {}
 
@@ -18,19 +18,19 @@ def main(tickers: list[str] | None = None) -> int:
     if not tickers:
         print("No active tickers are configured.")
         return 0
-    original_ticker = ford_scan.TICKER
+    original_ticker = spy_scanner.TICKER
     results: dict[str, int] = {}
     try:
         for index, ticker in enumerate(tickers):
-            ford_scan.TICKER = ticker
+            spy_scanner.TICKER = ticker
             # Every ticker publishes its own scan, chart, and new positions.
             # Only the final pass performs shared lifecycle/performance work so
             # open positions are repriced once and consolidated cards do not spam.
-            results[ticker] = ford_scan.main(
+            results[ticker] = spy_scanner.main(
                 publish_shared=index == len(tickers) - 1
             )
     finally:
-        ford_scan.TICKER = original_ticker
+        spy_scanner.TICKER = original_ticker
     LAST_RESULTS = dict(results)
     print(
         "Multi-ticker scan results: "

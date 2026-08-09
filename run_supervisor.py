@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Iterable
 
 import always_on_operations
-import ford_scan
+import spy_scanner
 import strict_learning_order
 import tradysquid_supervisor as supervisor
 
@@ -78,7 +78,7 @@ def information_engine_health() -> bool:
 
 def comprehensive_validate_checkout() -> tuple[bool, str]:
     compile_files = [
-        "ford_scan.py",
+        "spy_scanner.py",
         "local_information_engine.py",
         "local_information_engine_public.py",
         "always_on_operations.py",
@@ -269,9 +269,9 @@ def verify_and_repair_discord_integrity() -> bool:
     payload = supervisor.state_payload()
     previous_status = str(payload.get("discord_integrity_status") or "UNKNOWN")
     previous_detail = str(payload.get("discord_integrity_detail") or "")
-    tracker = ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN,
-        ford_scan.DISCORD_GUILD_ID,
+    tracker = spy_scanner.DiscordTracker(
+        spy_scanner.DISCORD_BOT_TOKEN,
+        spy_scanner.DISCORD_GUILD_ID,
     )
     if not tracker.enabled:
         return False

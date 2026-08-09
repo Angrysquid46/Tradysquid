@@ -8,11 +8,11 @@ from __future__ import annotations
 from unittest import mock
 
 import discord_command_bot as bot
-import ford_scan
+import spy_scanner
 
 
 def test_preserve_pinned_skips_pinned_bot_messages_but_deletes_the_rest():
-    tracker = ford_scan.DiscordTracker("fake-token", "fake-guild")
+    tracker = spy_scanner.DiscordTracker("fake-token", "fake-guild")
     tracker.ready = True
     tracker.channels = {"general_chat": "c-general"}
     calls: list[tuple[str, str]] = []
@@ -33,7 +33,7 @@ def test_preserve_pinned_skips_pinned_bot_messages_but_deletes_the_rest():
             remaining[:] = [item for item in remaining if item["id"] != message_id]
         return {}
 
-    with mock.patch.object(ford_scan.DiscordTracker, "_request", side_effect=fake_request):
+    with mock.patch.object(spy_scanner.DiscordTracker, "_request", side_effect=fake_request):
         removed = tracker.wipe_channel_messages("general_chat", preserve_pinned=True)
 
     assert removed == 1
@@ -45,7 +45,7 @@ def test_preserve_pinned_skips_pinned_bot_messages_but_deletes_the_rest():
 def test_without_preserve_pinned_a_pinned_bot_message_is_still_deleted():
     # Confirms the new keyword is opt-in and doesn't change existing callers
     # (reset_all_trade_data) that never asked for pin-awareness.
-    tracker = ford_scan.DiscordTracker("fake-token", "fake-guild")
+    tracker = spy_scanner.DiscordTracker("fake-token", "fake-guild")
     tracker.ready = True
     tracker.channels = {"general_chat": "c-general"}
     calls: list[tuple[str, str]] = []
@@ -60,7 +60,7 @@ def test_without_preserve_pinned_a_pinned_bot_message_is_still_deleted():
             remaining[:] = [item for item in remaining if item["id"] != message_id]
         return {}
 
-    with mock.patch.object(ford_scan.DiscordTracker, "_request", side_effect=fake_request):
+    with mock.patch.object(spy_scanner.DiscordTracker, "_request", side_effect=fake_request):
         removed = tracker.wipe_channel_messages("general_chat")
 
     assert removed == 1
@@ -74,7 +74,7 @@ def test_wrong_confirm_string_refuses_and_deletes_nothing():
         "member": {"user": {"id": "owner-1"}},
         "data": {"options": [{"name": "confirm", "value": "clear"}]},  # wrong case
     }
-    with mock.patch.object(ford_scan.DiscordTracker, "_request") as request:
+    with mock.patch.object(spy_scanner.DiscordTracker, "_request") as request:
         try:
             bot.clear_chat_history_reply(interaction)
             assert False, "should have raised"
@@ -89,7 +89,7 @@ def test_non_owner_cannot_clear_even_with_correct_confirm_string():
         "member": {"user": {"id": "someone-else"}},
         "data": {"options": [{"name": "confirm", "value": "CLEAR"}]},
     }
-    with mock.patch.object(ford_scan.DiscordTracker, "_request") as request:
+    with mock.patch.object(spy_scanner.DiscordTracker, "_request") as request:
         try:
             bot.clear_chat_history_reply(interaction)
             assert False, "should have raised"
@@ -105,7 +105,7 @@ def test_correct_confirm_and_owner_wipes_general_chat_preserving_pins():
         "data": {"options": [{"name": "confirm", "value": "CLEAR"}]},
     }
     with mock.patch.object(
-        ford_scan.DiscordTracker, "wipe_channel_messages", return_value=7
+        spy_scanner.DiscordTracker, "wipe_channel_messages", return_value=7
     ) as wipe:
         reply = bot.clear_chat_history_reply(interaction)
     wipe.assert_called_once_with("general_chat", preserve_pinned=True)

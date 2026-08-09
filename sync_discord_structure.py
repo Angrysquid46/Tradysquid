@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-import ford_scan
+import spy_scanner
 from run_with_env import load_env
 
 BOT_CHANNEL_ALLOW = (
@@ -501,8 +501,8 @@ def normalized(value: str) -> str:
 def main() -> int:
     load_env()
     apply = "--apply" in sys.argv
-    tracker = ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+    tracker = spy_scanner.DiscordTracker(
+        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
     )
     if not tracker.enabled:
         raise SystemExit("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required")
@@ -577,7 +577,7 @@ def main() -> int:
                         f"/channels/{item['id']}/permissions/{bot_role_id}",
                         {"type": 0, "allow": str(BOT_CHANNEL_ALLOW), "deny": "0"},
                     )
-                except ford_scan.DiscordError as exc:
+                except spy_scanner.DiscordError as exc:
                     warnings.append(f"TradeBot access to {name}: {exc}")
 
     for spec in CHANNELS:
@@ -606,7 +606,7 @@ def main() -> int:
                     f"/channels/{item['id']}/permissions/{bot_role_id}",
                     {"type": 0, "allow": str(BOT_CHANNEL_ALLOW), "deny": "0"},
                 )
-            except ford_scan.DiscordError as exc:
+            except spy_scanner.DiscordError as exc:
                 warnings.append(f"TradeBot access to #{spec.name}: {exc}")
         if category and str(item.get("parent_id") or "") != str(category["id"]):
             changes["parent_id"] = category["id"]
@@ -617,7 +617,7 @@ def main() -> int:
             if apply:
                 try:
                     tracker._request("PATCH", f"/channels/{item['id']}", changes)
-                except ford_scan.DiscordError as exc:
+                except spy_scanner.DiscordError as exc:
                     warnings.append(f"#{spec.name}: {exc}")
 
     for name in sorted(DELETE_CHANNELS):
@@ -627,7 +627,7 @@ def main() -> int:
             if apply:
                 try:
                     tracker._request("DELETE", f"/channels/{item['id']}")
-                except ford_scan.DiscordError as exc:
+                except spy_scanner.DiscordError as exc:
                     warnings.append(f"delete #{name}: {exc}")
 
     for category_name in sorted(DELETE_CATEGORIES):
@@ -645,7 +645,7 @@ def main() -> int:
             if apply:
                 try:
                     tracker._request("DELETE", f"/channels/{category['id']}")
-                except ford_scan.DiscordError as exc:
+                except spy_scanner.DiscordError as exc:
                     warnings.append(f"delete category {category_name}: {exc}")
 
     if apply:
@@ -660,7 +660,7 @@ def main() -> int:
                 )
                 if removed:
                     print(f"REMOVED {removed} duplicate guide card(s) from #{channel_name}")
-            except ford_scan.DiscordError as exc:
+            except spy_scanner.DiscordError as exc:
                 warnings.append(f"guide #{channel_name}: {exc}")
 
         for channel_name, schedule in CHANNEL_STARTERS.items():
@@ -684,7 +684,7 @@ def main() -> int:
                     f"/channels/{channel['id']}/messages",
                     {"content": content[:2000], "allowed_mentions": {"parse": []}},
                 )
-            except ford_scan.DiscordError as exc:
+            except spy_scanner.DiscordError as exc:
                 warnings.append(f"starter #{channel_name}: {exc}")
 
     print("Discord structure synchronized." if apply else "Dry run complete; no Discord changes made.")

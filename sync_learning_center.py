@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-import ford_scan
+import spy_scanner
 from discord_cards import message_has_source, style_message_payload
 from learning_center_catalog import LESSONS, LESSON_BY_CHANNEL, ORDERED_CHANNELS
 
@@ -123,7 +123,7 @@ def expected_messages(channel: str, lesson: str) -> list[str]:
 
 
 def _recent_messages(
-    tracker: ford_scan.DiscordTracker,
+    tracker: spy_scanner.DiscordTracker,
     channel_id: str,
 ) -> list[dict[str, Any]]:
     result = tracker._request("GET", f"/channels/{channel_id}/messages?limit=100")
@@ -139,7 +139,7 @@ def _marker_from_message(message: dict[str, Any], channel: str) -> str:
     if not _is_bot_message(message):
         return ""
     prefix = f"{MARKER_PREFIX} · #{channel} · Part "
-    for line in ford_scan.message_search_text(message).splitlines():
+    for line in spy_scanner.message_search_text(message).splitlines():
         marker = line.strip().strip("*").strip()
         if marker.startswith(prefix):
             return marker
@@ -156,7 +156,7 @@ def _message_id_value(message: dict[str, Any]) -> int:
 def _is_old_learning_message(message: dict[str, Any], channel: str) -> bool:
     if not _is_bot_message(message):
         return False
-    text = ford_scan.message_search_text(message).strip()
+    text = spy_scanner.message_search_text(message).strip()
     current_prefix = f"{MARKER_PREFIX} · #{channel} · Part "
     if MARKER_PREFIX in text and current_prefix not in text:
         return True
@@ -170,7 +170,7 @@ def _is_old_learning_message(message: dict[str, Any], channel: str) -> bool:
 
 
 def _delete_message(
-    tracker: ford_scan.DiscordTracker,
+    tracker: spy_scanner.DiscordTracker,
     channel_id: str,
     message: dict[str, Any],
 ) -> None:
@@ -178,7 +178,7 @@ def _delete_message(
 
 
 def synchronize_channel(
-    tracker: ford_scan.DiscordTracker,
+    tracker: spy_scanner.DiscordTracker,
     channel: dict[str, Any],
     channel_name: str,
     lesson: str,
@@ -242,7 +242,7 @@ def synchronize_channel(
                 tracker._request(
                     "PUT", f"/channels/{channel_id}/pins/{message['id']}"
                 )
-            except ford_scan.DiscordError as exc:
+            except spy_scanner.DiscordError as exc:
                 if "HTTP 403" not in str(exc):
                     raise
 
@@ -266,7 +266,7 @@ def synchronize_channel(
 
 
 def verify_channel_uniqueness(
-    tracker: ford_scan.DiscordTracker,
+    tracker: spy_scanner.DiscordTracker,
     channel: dict[str, Any],
     channel_name: str,
     lesson: str,
@@ -295,11 +295,11 @@ def verify_channel_uniqueness(
 
 
 def synchronize_curriculum(
-    tracker: ford_scan.DiscordTracker | None = None,
+    tracker: spy_scanner.DiscordTracker | None = None,
 ) -> dict[str, int]:
     lessons = load_lessons()
-    tracker = tracker or ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+    tracker = tracker or spy_scanner.DiscordTracker(
+        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
     )
     if not tracker.enabled:
         raise RuntimeError("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required.")

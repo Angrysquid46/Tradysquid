@@ -5,7 +5,7 @@ from __future__ import annotations
 # Historical modules remain compiled so stale code cannot silently rot, but only
 # the modules installed by run_with_env.py participate in the live runtime.
 COMPILE_MODULES = (
-    "ford_scan.py",
+    "spy_scanner.py",
     "discord_command_bot_public.py",
     "local_information_engine_bootstrap.py",
     "local_information_engine_public.py",
@@ -74,7 +74,7 @@ def validate_manifest() -> dict[str, object]:
     if len(FOCUSED_TEST_MODULES) != len(set(FOCUSED_TEST_MODULES)):
         raise RuntimeError("Deployment test manifest contains duplicates")
     required_modules = {
-        "ford_scan.py",
+        "spy_scanner.py",
         "run_with_env.py",
         "runtime_contract.py",
         "single_owner_runtime.py",

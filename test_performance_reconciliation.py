@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 
 import discord_reconciliation_safety as safety
-import ford_scan
+import spy_scanner
 import performance_channel_structure
 import performance_scorecards as scorecards
 import sync_discord_structure as structure
@@ -80,7 +80,7 @@ class PerformanceScorecardTests(unittest.TestCase):
 
     def make_rows(self, count: int = 100) -> list[dict[str, str]]:
         rows = []
-        monday = datetime(2026, 7, 27, 14, 30, tzinfo=ford_scan.MARKET_TZ)
+        monday = datetime(2026, 7, 27, 14, 30, tzinfo=spy_scanner.MARKET_TZ)
         strategies = (
             ("REGULAR", "call"),
             ("REGULAR", "put"),
@@ -93,7 +93,7 @@ class PerformanceScorecardTests(unittest.TestCase):
             closed_at = monday + timedelta(days=index % 5, minutes=index)
             play_type, side = strategies[index % len(strategies)]
             outcome = "WIN" if index % 3 else "LOSS"
-            row = ford_scan.blank_row()
+            row = spy_scanner.blank_row()
             row.update(
                 {
                     "trade_id": f"F-TEST-{index + 1:03d}",
@@ -116,13 +116,13 @@ class PerformanceScorecardTests(unittest.TestCase):
         return rows
 
     def test_four_distinct_discord_routes_are_installed(self) -> None:
-        self.assertEqual(ford_scan.CHANNEL_NAMES["daily_recap"], "daily-recap")
-        self.assertEqual(ford_scan.CHANNEL_NAMES["weekly_report"], "weekly-report")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["daily_recap"], "daily-recap")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["weekly_report"], "weekly-report")
         self.assertEqual(
-            ford_scan.CHANNEL_NAMES["performance_stats"], "performance-dashboard"
+            spy_scanner.CHANNEL_NAMES["performance_stats"], "performance-dashboard"
         )
         self.assertEqual(
-            ford_scan.CHANNEL_NAMES["strategy_breakdown"], "strategy-breakdown"
+            spy_scanner.CHANNEL_NAMES["strategy_breakdown"], "strategy-breakdown"
         )
 
     def test_structure_contains_each_scorecard_channel_once(self) -> None:
@@ -148,7 +148,7 @@ class PerformanceScorecardTests(unittest.TestCase):
             discord,
             state,
             rows,
-            datetime(2026, 8, 1, 21, 30, tzinfo=ford_scan.MARKET_TZ),
+            datetime(2026, 8, 1, 21, 30, tzinfo=spy_scanner.MARKET_TZ),
             market_open=False,
         )
 
@@ -190,7 +190,7 @@ class PerformanceScorecardTests(unittest.TestCase):
             discord,
             state,
             rows,
-            datetime(2026, 8, 3, 7, 0, tzinfo=ford_scan.MARKET_TZ),
+            datetime(2026, 8, 3, 7, 0, tzinfo=spy_scanner.MARKET_TZ),
             market_open=False,
         )
         self.assertEqual(len(discord.channel_cards["weekly"]), 2)
@@ -212,7 +212,7 @@ class PerformanceScorecardTests(unittest.TestCase):
         self.assertFalse(row["closed_at"])
         self.assertEqual(
             scorecards.base.effective_closed_at(row),
-            ford_scan.parse_iso(row["last_evaluated_at"]),
+            spy_scanner.parse_iso(row["last_evaluated_at"]),
         )
 
 

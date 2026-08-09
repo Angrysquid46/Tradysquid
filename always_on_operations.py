@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import dynamic_universe
-import ford_scan
+import spy_scanner
 import local_information_engine as engine
 
 
@@ -132,7 +132,7 @@ def latest_runs(connection: sqlite3.Connection) -> dict[str, dict[str, Any]]:
 
 def market_open_now() -> bool:
     try:
-        return bool(ford_scan.market_is_open_now()[0])
+        return bool(spy_scanner.market_is_open_now()[0])
     except Exception:
         return False
 
@@ -507,8 +507,8 @@ def separate_rotation_batch(
 
 def snapshot_score(snapshot: dict[str, Any]) -> float:
     score = float(snapshot.get("evidence_score") or 0)
-    relative_volume = ford_scan.as_float(snapshot.get("relative_volume"), 0.0) or 0.0
-    change = abs(ford_scan.as_float(snapshot.get("change_pct"), 0.0) or 0.0)
+    relative_volume = spy_scanner.as_float(snapshot.get("relative_volume"), 0.0) or 0.0
+    change = abs(spy_scanner.as_float(snapshot.get("change_pct"), 0.0) or 0.0)
     if snapshot.get("qualified"):
         score += 20
     score += min(relative_volume, 3.0) * 5
@@ -525,9 +525,9 @@ def option_reference(symbol: str, side: str) -> str:
         return f"{side}: no contract returned"
     item = rows[0]
     return (
-        f"{side} `{item.get('symbol')}` · Δ {ford_scan.as_float(item.get('delta'), 0) or 0:.2f} · "
-        f"IV {(ford_scan.as_float(item.get('iv'), 0) or 0) * 100:.0f}% · "
-        f"width {(ford_scan.as_float(item.get('width_pct'), 0) or 0) * 100:.0f}% · "
+        f"{side} `{item.get('symbol')}` · Δ {spy_scanner.as_float(item.get('delta'), 0) or 0:.2f} · "
+        f"IV {(spy_scanner.as_float(item.get('iv'), 0) or 0) * 100:.0f}% · "
+        f"width {(spy_scanner.as_float(item.get('width_pct'), 0) or 0) * 100:.0f}% · "
         f"{'liquid' if item.get('liquidity_pass') else 'fails liquidity'}"
     )
 
@@ -576,10 +576,10 @@ def off_hours_universe_screen_job(connection: sqlite3.Connection) -> str:
     ]
     for item in completed:
         lines.append(
-            f"• **{item['symbol']}** · {ford_scan.fmt_money(item.get('price'))} · "
+            f"• **{item['symbol']}** · {spy_scanner.fmt_money(item.get('price'))} · "
             f"score {item.get('score')} · {item.get('regime')} · RSI {item.get('rsi14')} · "
-            f"support {ford_scan.fmt_money(item.get('support20'))} · "
-            f"resistance {ford_scan.fmt_money(item.get('resistance20'))}"
+            f"support {spy_scanner.fmt_money(item.get('support20'))} · "
+            f"resistance {spy_scanner.fmt_money(item.get('resistance20'))}"
         )
     if failed:
         lines.extend(["### Data failures", *[f"• {item}" for item in failed]])

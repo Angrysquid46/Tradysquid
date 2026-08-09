@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
-import ford_scan
+import spy_scanner
 from discord_cards import message_is_backed, style_message_payload
 from learning_center_catalog import (
     AUXILIARY_CHANNELS,
@@ -34,7 +34,7 @@ def _normalized(value: str) -> str:
 
 
 def _learning_category_and_children(
-    tracker: ford_scan.DiscordTracker,
+    tracker: spy_scanner.DiscordTracker,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
     category = next(
@@ -57,7 +57,7 @@ def _learning_category_and_children(
     return category, children
 
 
-def migrate_legacy_learning_channels(tracker: ford_scan.DiscordTracker) -> int:
+def migrate_legacy_learning_channels(tracker: spy_scanner.DiscordTracker) -> int:
     """Rename old numbered channels before the structure sync creates replacements."""
     _, children = _learning_category_and_children(tracker)
     by_name = {_normalized(item.get("name")): item for item in children}
@@ -93,7 +93,7 @@ def _topic_identity(name: str) -> str:
 
 
 def cleanup_duplicate_learning_channels(
-    tracker: ford_scan.DiscordTracker,
+    tracker: spy_scanner.DiscordTracker,
 ) -> int:
     _, children = _learning_category_and_children(tracker)
     canonical_present = {
@@ -121,7 +121,7 @@ def cleanup_duplicate_learning_channels(
     return deleted
 
 
-def order_learning_channels(tracker: ford_scan.DiscordTracker) -> int:
+def order_learning_channels(tracker: spy_scanner.DiscordTracker) -> int:
     """Force index, 01..27, ask, and reviews into exact Discord order."""
     category, children = _learning_category_and_children(tracker)
     by_name = {_normalized(item.get("name")): item for item in children}
@@ -146,7 +146,7 @@ def order_learning_channels(tracker: ford_scan.DiscordTracker) -> int:
     return len(positions)
 
 
-def write_learning_channel_map(tracker: ford_scan.DiscordTracker) -> dict[str, str]:
+def write_learning_channel_map(tracker: spy_scanner.DiscordTracker) -> dict[str, str]:
     """Persist clickable channel IDs for TradeBot educational citations."""
     _, children = _learning_category_and_children(tracker)
     mapping = {
@@ -177,7 +177,7 @@ def write_learning_channel_map(tracker: ford_scan.DiscordTracker) -> dict[str, s
     return mapping
 
 
-def _message_channels(tracker: ford_scan.DiscordTracker) -> list[dict[str, Any]]:
+def _message_channels(tracker: spy_scanner.DiscordTracker) -> list[dict[str, Any]]:
     guild_channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
     channels = [
         item
@@ -186,7 +186,7 @@ def _message_channels(tracker: ford_scan.DiscordTracker) -> list[dict[str, Any]]
     ]
     try:
         active = tracker._request("GET", f"/guilds/{tracker.guild_id}/threads/active")
-    except ford_scan.DiscordError:
+    except spy_scanner.DiscordError:
         active = {}
     channels.extend((active or {}).get("threads") or [])
     unique: dict[str, dict[str, Any]] = {}
@@ -198,7 +198,7 @@ def _message_channels(tracker: ford_scan.DiscordTracker) -> list[dict[str, Any]]
 
 
 def _all_messages(
-    tracker: ford_scan.DiscordTracker,
+    tracker: spy_scanner.DiscordTracker,
     channel_id: str,
 ) -> Iterable[dict[str, Any]]:
     before = ""
@@ -218,14 +218,14 @@ def _all_messages(
 
 
 def migrate_existing_bot_messages(
-    tracker: ford_scan.DiscordTracker,
+    tracker: spy_scanner.DiscordTracker,
 ) -> dict[str, int]:
     totals = {"channels": 0, "messages": 0}
     for channel in _message_channels(tracker):
         changed = 0
         try:
             messages = list(_all_messages(tracker, str(channel["id"])))
-        except ford_scan.DiscordError:
+        except spy_scanner.DiscordError:
             continue
         for message in messages:
             authored_by_bot = (
@@ -286,8 +286,8 @@ def launch_background_migration() -> int:
 
 def main() -> int:
     load_env()
-    tracker = ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+    tracker = spy_scanner.DiscordTracker(
+        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
     )
     if not tracker.enabled:
         raise RuntimeError("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required.")

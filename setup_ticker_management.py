@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import ford_scan
+import spy_scanner
 
 CATEGORY_NAME = "Start Here"
 CHANNEL_NAME = "ticker-management"
@@ -57,8 +57,8 @@ only—not professional financial advice."""
 
 
 def main() -> int:
-    tracker = ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+    tracker = spy_scanner.DiscordTracker(
+        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
     )
     channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
     category = next(
@@ -95,7 +95,7 @@ def main() -> int:
         (
             item for item in recent
             if (item.get("author") or {}).get("bot")
-            and GUIDE_MARKER in ford_scan.message_search_text(item)
+            and GUIDE_MARKER in spy_scanner.message_search_text(item)
         ),
         None,
     )

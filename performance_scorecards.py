@@ -12,7 +12,7 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
-import ford_scan
+import spy_scanner
 import performance_reconciliation as base
 
 
@@ -110,7 +110,7 @@ def clean_period_scorecard(content: str) -> str:
 
 
 def play_type_scorecard(label: str, completed: list[dict[str, str]]) -> str:
-    metrics = ford_scan.result_metrics(completed)
+    metrics = spy_scanner.result_metrics(completed)
     lines = [
         f"## 🧭 Strategy Scorecard · {label}",
         f"**Closed trades:** **{len(completed)}**",
@@ -121,9 +121,9 @@ def play_type_scorecard(label: str, completed: list[dict[str, str]]) -> str:
         ),
         "### Money",
         (
-            f"Won **{ford_scan.fmt_metric_money(metrics, 'gross_won')}** · "
-            f"Lost **{ford_scan.fmt_metric_money(metrics, 'gross_lost')}** · "
-            f"Net **{ford_scan.fmt_metric_money(metrics, 'total_pnl')}**"
+            f"Won **{spy_scanner.fmt_metric_money(metrics, 'gross_won')}** · "
+            f"Lost **{spy_scanner.fmt_metric_money(metrics, 'gross_lost')}** · "
+            f"Net **{spy_scanner.fmt_metric_money(metrics, 'total_pnl')}**"
         ),
         "### Trade Quality",
         (
@@ -324,7 +324,7 @@ def sync_reports(
 
 def validate_reconciliation() -> dict[str, int]:
     rows: list[dict[str, str]] = []
-    monday = datetime(2026, 7, 27, 14, 30, tzinfo=ford_scan.MARKET_TZ)
+    monday = datetime(2026, 7, 27, 14, 30, tzinfo=spy_scanner.MARKET_TZ)
     strategies = (
         ("REGULAR", "call"),
         ("REGULAR", "put"),
@@ -337,7 +337,7 @@ def validate_reconciliation() -> dict[str, int]:
         closed_at = monday + timedelta(days=index % 5, minutes=index)
         play_type, side = strategies[index % len(strategies)]
         outcome = "WIN" if index % 3 else "LOSS"
-        row = ford_scan.blank_row()
+        row = spy_scanner.blank_row()
         row.update(
             {
                 "trade_id": f"TEST-{index + 1:03d}",
@@ -387,7 +387,7 @@ def install() -> None:
     )
     base.sync_reports = sync_reports
     base.validate_reconciliation = validate_reconciliation
-    ford_scan.sync_reports = sync_reports
+    spy_scanner.sync_reports = sync_reports
     _INSTALLED = True
 
 

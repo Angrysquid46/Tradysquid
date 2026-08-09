@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-import ford_scan
+import spy_scanner
 import trade_intelligence
 
 
@@ -49,9 +49,9 @@ REQUIRED_CLOSED_MARKERS = (
 )
 CLOSED_OUTCOMES = {"WIN", "LOSS", "SCRATCH", "EXPIRED"}
 
-_ORIGINAL_ENTRY_ALERT_TEXT = ford_scan.entry_alert_text
-_ORIGINAL_DISCORD_CARD = ford_scan.discord_card
-_ORIGINAL_SYNC_ALL_TRADE_JOURNALS = ford_scan.sync_all_trade_journals
+_ORIGINAL_ENTRY_ALERT_TEXT = spy_scanner.entry_alert_text
+_ORIGINAL_DISCORD_CARD = spy_scanner.discord_card
+_ORIGINAL_SYNC_ALL_TRADE_JOURNALS = spy_scanner.sync_all_trade_journals
 
 
 def _recorded_value(row: dict[str, str], key: str) -> str:
@@ -219,7 +219,7 @@ def complete_discord_card(content: str) -> dict[str, Any]:
             f"{DISCORD_EMBED_TEXT_LIMIT}."
         )
 
-    rendered = ford_scan.message_search_text({"embeds": [card]})
+    rendered = spy_scanner.message_search_text({"embeds": [card]})
     expected = [
         marker
         for marker in (*REQUIRED_ENTRY_MARKERS, *REQUIRED_CLOSED_MARKERS)
@@ -235,7 +235,7 @@ def complete_discord_card(content: str) -> dict[str, Any]:
 
 
 def _message_text(messages: list[dict[str, Any]]) -> str:
-    return "\n".join(ford_scan.message_search_text(message) for message in messages)
+    return "\n".join(spy_scanner.message_search_text(message) for message in messages)
 
 
 def _thread_messages(discord: Any, thread_id: str) -> list[dict[str, Any]]:
@@ -246,7 +246,7 @@ def _thread_messages(discord: Any, thread_id: str) -> list[dict[str, Any]]:
     # directly prevents a busy thread's starter from falling outside limit=100.
     try:
         starter = discord._request("GET", f"/channels/{thread_id}/messages/{thread_id}")
-    except ford_scan.DiscordError:
+    except spy_scanner.DiscordError:
         starter = None
     if isinstance(starter, dict):
         starter_id = str(starter.get("id") or "")
@@ -359,13 +359,13 @@ def sync_all_trade_journals(
                 )
             if str(row.get("outcome") or "OPEN").upper() in CLOSED_OUTCOMES:
                 token = (
-                    f"{str(row.get('ticker') or ford_scan.TICKER).upper()} "
-                    f"#{ford_scan.trade_sequence(row)} · {row.get('outcome')}"
+                    f"{str(row.get('ticker') or spy_scanner.TICKER).upper()} "
+                    f"#{spy_scanner.trade_sequence(row)} · {row.get('outcome')}"
                 )
                 discord.upsert_singleton_message(
                     thread_id,
-                    ford_scan.close_alert_text(
-                        row, ford_scan.stored_close_evaluation(row)
+                    spy_scanner.close_alert_text(
+                        row, spy_scanner.stored_close_evaluation(row)
                     ),
                     token,
                 )
@@ -400,7 +400,7 @@ def sync_all_trade_journals(
 
 
 def validate_contract() -> dict[str, Any]:
-    row = ford_scan.blank_row()
+    row = spy_scanner.blank_row()
     row.update(
         {
             "trade_id": "TEST-JOURNAL-001",
@@ -435,7 +435,7 @@ def validate_contract() -> dict[str, Any]:
     )
     content = complete_entry_alert_text(row)
     card = complete_discord_card(content)
-    rendered = ford_scan.message_search_text({"embeds": [card]})
+    rendered = spy_scanner.message_search_text({"embeds": [card]})
     missing = [marker for marker in REQUIRED_ENTRY_MARKERS if marker not in rendered]
     if missing:
         raise RuntimeError(
@@ -454,10 +454,10 @@ def install() -> None:
     global _INSTALLED
     if _INSTALLED:
         return
-    ford_scan.DISCORD_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
-    ford_scan.entry_alert_text = complete_entry_alert_text
-    ford_scan.discord_card = complete_discord_card
-    ford_scan.sync_all_trade_journals = sync_all_trade_journals
+    spy_scanner.DISCORD_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
+    spy_scanner.entry_alert_text = complete_entry_alert_text
+    spy_scanner.discord_card = complete_discord_card
+    spy_scanner.sync_all_trade_journals = sync_all_trade_journals
     _INSTALLED = True
 
 

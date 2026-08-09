@@ -35,10 +35,10 @@ A Discord bot handles entry/exit alerts, dashboards, and slash commands.
 
 ## Two parallel codebases — know which one you're touching
 
-- **Legacy flat-file scripts** (`ford_scan.py`, `local_information_engine.py`,
+- **Legacy flat-file scripts** (`spy_scanner.py`, `local_information_engine.py`,
   `discord_command_bot.py`, `tradysquid_supervisor.py`, and dozens of
   `test_*.py` files at the repo root): this is the code that is actually
-  committed to `main` and deployed. `ford_scan.py` (~6,700 lines) holds the
+  committed to `main` and deployed. `spy_scanner.py` (~6,700 lines) holds the
   entry scanners (`scan_single_legs`, `scan_credit_spreads`), the exit
   models (`single_leg_exit_signal`, `spread_exit_signal`,
   `check_time_efficiency_exit`, `check_thesis_invalidation`,
@@ -73,7 +73,7 @@ A Discord bot handles entry/exit alerts, dashboards, and slash commands.
   `test_greeks_persistence_gate.py`, `test_ticker_exposure_cap.py`,
   `test_entry_time_window.py`, `test_breakeven_expected_move.py`,
   `test_delta_bucket_split.py`, `test_directional_spreads.py`,
-  `test_regular_swing_traders.py`, etc.). When working on `ford_scan.py`,
+  `test_regular_swing_traders.py`, etc.). When working on `spy_scanner.py`,
   run those explicitly by naming the files, or you'll get a false-green
   baseline.
 - `.venv-tradysquid` needs `pip install -r requirements.txt -r requirements-dev.txt`
@@ -93,7 +93,7 @@ A Discord bot handles entry/exit alerts, dashboards, and slash commands.
     environment/data issue, not obviously a code bug.
   - `test_single_leg_exit_signal.py::test_breakeven_locks_in_after_a_real_peak_and_pullback`
     — asserts a peak-then-pullback-to-flat trade signals `"TAKE PROFIT"`,
-    but `single_leg_exit_signal` in `ford_scan.py` deliberately returns
+    but `single_leg_exit_signal` in `spy_scanner.py` deliberately returns
     `"BREAKEVEN STOP"` for that case now (the function's own docstring
     explains the rename is intentional). Test looks stale relative to the
     code, not the other way around.
@@ -101,7 +101,7 @@ A Discord bot handles entry/exit alerts, dashboards, and slash commands.
     and `::test_reporting_job_refreshes_all_closed_trade_views` — both fail
     with `TypeError: ...Tracker.upsert_singleton_message() got an unexpected
     keyword argument 'components'`. The real `DiscordTracker.upsert_singleton_message`
-    in `ford_scan.py` does accept `components` (added for the archive-button
+    in `spy_scanner.py` does accept `components` (added for the archive-button
     feature); the test's inline fake `Tracker` class was never updated to
     match. Code looks correct, test double is stale.
   - `test_reset_trading_data.py::test_reset_deletes_every_thread_in_the_channel_directly`
@@ -120,7 +120,7 @@ A Discord bot handles entry/exit alerts, dashboards, and slash commands.
 - Keep changes scoped and verified rather than large speculative rewrites.
 - `config/scanner.json` holds the tunable parameters (profit targets, stop
   percentages, delta bands, DTE windows, RSI thresholds, per-strategy
-  enable flags, liquidity minimums, schedules). Most of `ford_scan.py`'s
+  enable flags, liquidity minimums, schedules). Most of `spy_scanner.py`'s
   constants read from `configured(name, default)`, which layers an env var
   over this file over a hardcoded default — check here first before
   assuming a threshold is hardcoded.

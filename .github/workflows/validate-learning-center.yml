@@ -112,7 +112,7 @@ jobs:
       - name: Compile deployment modules
         run: |
           python -m py_compile \
-            ford_scan.py \
+            spy_scanner.py \
             local_information_engine.py \
             local_information_engine_public.py \
             local_information_engine_bootstrap.py \

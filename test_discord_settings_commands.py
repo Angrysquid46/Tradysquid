@@ -10,7 +10,7 @@ from pathlib import Path
 
 import discord_command_bot as bot
 import dynamic_universe
-import ford_scan
+import spy_scanner
 
 
 def _interaction(user_id: str, **options: object) -> dict:
@@ -24,17 +24,17 @@ def _with_temp_scanner_config(initial: dict):
     class _Swap:
         def __enter__(self):
             self.original_dynamic = dynamic_universe.SCANNER_CONFIG_PATH
-            self.original_ford = ford_scan.SCANNER_CONFIG_PATH
+            self.original_ford = spy_scanner.SCANNER_CONFIG_PATH
             self.tmp = tempfile.TemporaryDirectory()
             path = Path(self.tmp.name) / "scanner.json"
             path.write_text(json.dumps(initial), encoding="utf-8")
             dynamic_universe.SCANNER_CONFIG_PATH = path
-            ford_scan.SCANNER_CONFIG_PATH = path
+            spy_scanner.SCANNER_CONFIG_PATH = path
             return path
 
         def __exit__(self, *exc):
             dynamic_universe.SCANNER_CONFIG_PATH = self.original_dynamic
-            ford_scan.SCANNER_CONFIG_PATH = self.original_ford
+            spy_scanner.SCANNER_CONFIG_PATH = self.original_ford
             self.tmp.cleanup()
 
     return _Swap()
@@ -54,7 +54,7 @@ BASE_CONFIG = {
 
 
 def test_a_new_tonight_setting_is_now_reachable_through_filter_set():
-    original = ford_scan.BREAKEVEN_TRIGGER_PCT
+    original = spy_scanner.BREAKEVEN_TRIGGER_PCT
     try:
         with _with_temp_scanner_config(BASE_CONFIG):
             bot.ALLOWED_USER_ID = "owner-1"
@@ -63,14 +63,14 @@ def test_a_new_tonight_setting_is_now_reachable_through_filter_set():
             )
             reply = bot.filter_set_reply(interaction)
             assert "changed locally from **10.0** to **15.0**" in reply
-            saved = json.loads(ford_scan.SCANNER_CONFIG_PATH.read_text())
+            saved = json.loads(spy_scanner.SCANNER_CONFIG_PATH.read_text())
             assert saved["single_leg_breakeven_trigger_pct"] == 15.0
-            assert ford_scan.BREAKEVEN_TRIGGER_PCT == 15.0
+            assert spy_scanner.BREAKEVEN_TRIGGER_PCT == 15.0
     finally:
         # filter_set_reply intentionally mutates the live module constant -
         # that's the feature - so tests must put it back, or every other
         # test that reads BREAKEVEN_TRIGGER_PCT inherits this test's value.
-        ford_scan.BREAKEVEN_TRIGGER_PCT = original
+        spy_scanner.BREAKEVEN_TRIGGER_PCT = original
 
 
 def test_filter_set_still_rejects_a_value_outside_its_bounds():
@@ -101,7 +101,7 @@ def test_trader_toggle_turns_one_trader_off_without_touching_the_others():
         interaction = _interaction("owner-1", trader="bull_put_spreads", enabled=False)
         reply = bot.trader_toggle_reply(interaction)
         assert "bull_put_spreads** disabled" in reply
-        saved = json.loads(ford_scan.SCANNER_CONFIG_PATH.read_text())
+        saved = json.loads(spy_scanner.SCANNER_CONFIG_PATH.read_text())
         assert saved["trade_types_enabled"]["bull_put_spreads"] is False
         assert saved["trade_types_enabled"]["swing_calls"] is True
 
@@ -123,7 +123,7 @@ def test_toggling_off_via_discord_is_immediately_visible_to_the_scanner():
     with _with_temp_scanner_config(BASE_CONFIG):
         bot.ALLOWED_USER_ID = "owner-1"
         bot.trader_toggle_reply(_interaction("owner-1", trader="swing_puts", enabled=False))
-        enabled = ford_scan.trade_types_enabled()
+        enabled = spy_scanner.trade_types_enabled()
         assert enabled["swing_puts"] is False
         assert enabled["swing_calls"] is True
 
@@ -144,11 +144,11 @@ def test_filters_reply_shows_the_real_delta_ranges_not_the_dead_config_block():
     # currently-enforced ranges are split per strategy and much narrower.
     # BASE_CONFIG deliberately has no "single_leg_delta" key at all, so this
     # would fail loudly (empty values) if the old dead-config path were
-    # still in use instead of the real ford_scan constants.
+    # still in use instead of the real spy_scanner constants.
     with _with_temp_scanner_config(BASE_CONFIG):
         reply = bot.filters_reply()
-        regular_line = f"Delta range: **{ford_scan.REGULAR_LEG_DELTA_MIN:.2f}–{ford_scan.REGULAR_LEG_DELTA_MAX:.2f}**"
-        swing_line = f"Delta range: **{ford_scan.SWING_LEG_DELTA_MIN:.2f}–{ford_scan.SWING_LEG_DELTA_MAX:.2f}**"
+        regular_line = f"Delta range: **{spy_scanner.REGULAR_LEG_DELTA_MIN:.2f}–{spy_scanner.REGULAR_LEG_DELTA_MAX:.2f}**"
+        swing_line = f"Delta range: **{spy_scanner.SWING_LEG_DELTA_MIN:.2f}–{spy_scanner.SWING_LEG_DELTA_MAX:.2f}**"
         assert regular_line in reply
         assert swing_line in reply
         assert regular_line != swing_line
@@ -157,24 +157,24 @@ def test_filters_reply_shows_the_real_delta_ranges_not_the_dead_config_block():
 def test_filters_reply_shows_the_real_liquidity_thresholds_not_the_dead_config_block():
     # Same issue for "liquidity" - min OI/volume and max bid/ask width used
     # to read a config block nothing else reads. BASE_CONFIG has no
-    # "liquidity" key, so this proves the real ford_scan constants are used.
+    # "liquidity" key, so this proves the real spy_scanner constants are used.
     with _with_temp_scanner_config(BASE_CONFIG):
         reply = bot.filters_reply()
-        assert f"Minimum OI/volume: **{ford_scan.MIN_OPEN_INTEREST} / {ford_scan.MIN_OPTION_VOLUME}**" in reply
-        assert f"Maximum bid/ask width: **{ford_scan.MAX_BID_ASK_PCT * 100:.0f}%**" in reply
+        assert f"Minimum OI/volume: **{spy_scanner.MIN_OPEN_INTEREST} / {spy_scanner.MIN_OPTION_VOLUME}**" in reply
+        assert f"Maximum bid/ask width: **{spy_scanner.MAX_BID_ASK_PCT * 100:.0f}%**" in reply
 
 
 def test_regular_set_changes_a_regular_only_setting():
-    original = ford_scan.REGULAR_SCORE_THRESHOLD
+    original = spy_scanner.REGULAR_SCORE_THRESHOLD
     try:
         with _with_temp_scanner_config(BASE_CONFIG):
             bot.ALLOWED_USER_ID = "owner-1"
             interaction = _interaction("owner-1", filter="regular_score_threshold", value=4.0)
             reply = bot.regular_set_reply(interaction)
             assert "regular_score_threshold" in reply
-            assert ford_scan.REGULAR_SCORE_THRESHOLD == 4.0
+            assert spy_scanner.REGULAR_SCORE_THRESHOLD == 4.0
     finally:
-        ford_scan.REGULAR_SCORE_THRESHOLD = original
+        spy_scanner.REGULAR_SCORE_THRESHOLD = original
 
 
 def test_regular_set_refuses_a_swing_only_setting():
@@ -189,39 +189,39 @@ def test_regular_set_refuses_a_swing_only_setting():
 
 
 def test_swing_set_changes_a_swing_only_setting():
-    original = ford_scan.SWING_VOLUME_RATIO_MIN
+    original = spy_scanner.SWING_VOLUME_RATIO_MIN
     try:
         with _with_temp_scanner_config(BASE_CONFIG):
             bot.ALLOWED_USER_ID = "owner-1"
             interaction = _interaction("owner-1", filter="swing_volume_ratio_min", value=1.3)
             reply = bot.swing_set_reply(interaction)
             assert "swing_volume_ratio_min" in reply
-            assert ford_scan.SWING_VOLUME_RATIO_MIN == 1.3
+            assert spy_scanner.SWING_VOLUME_RATIO_MIN == 1.3
     finally:
-        ford_scan.SWING_VOLUME_RATIO_MIN = original
+        spy_scanner.SWING_VOLUME_RATIO_MIN = original
 
 
 def test_spread_set_changes_a_spread_only_setting():
-    original = ford_scan.SPREAD_EXTREME_BUFFER_PCT
+    original = spy_scanner.SPREAD_EXTREME_BUFFER_PCT
     try:
         with _with_temp_scanner_config(BASE_CONFIG):
             bot.ALLOWED_USER_ID = "owner-1"
             interaction = _interaction("owner-1", filter="spread_extreme_buffer_pct", value=2.0)
             reply = bot.spread_set_reply(interaction)
             assert "spread_extreme_buffer_pct" in reply
-            assert ford_scan.SPREAD_EXTREME_BUFFER_PCT == 2.0
+            assert spy_scanner.SPREAD_EXTREME_BUFFER_PCT == 2.0
     finally:
-        ford_scan.SPREAD_EXTREME_BUFFER_PCT = original
+        spy_scanner.SPREAD_EXTREME_BUFFER_PCT = original
 
 
-def test_every_editable_filter_has_a_matching_runtime_attribute_on_ford_scan():
+def test_every_editable_filter_has_a_matching_runtime_attribute_on_spy_scanner():
     # If a setting is Discord-editable, changing it has to actually be able
     # to reach a real constant - this catches a typo in either dict before
     # it ships as a command that silently does nothing.
     for key in bot.EDITABLE_FILTERS:
         attribute_name = bot.RUNTIME_FILTER_ATTRIBUTES.get(key)
         assert attribute_name is not None, f"{key} has no runtime attribute mapping"
-        assert hasattr(ford_scan, attribute_name), f"ford_scan has no attribute {attribute_name}"
+        assert hasattr(spy_scanner, attribute_name), f"spy_scanner has no attribute {attribute_name}"
 
 
 def test_the_four_setting_groups_do_not_overlap():

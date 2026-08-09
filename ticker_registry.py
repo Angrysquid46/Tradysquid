@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import ford_scan
+import spy_scanner
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "state" / "ticker-registry.db"
@@ -275,8 +275,8 @@ def refresh_daily_pauses() -> None:
 
 def provision_discord_desk(ticker: str) -> dict[str, Any]:
     ticker = normalize_ticker(ticker)
-    tracker = ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+    tracker = spy_scanner.DiscordTracker(
+        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
     )
     channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
     category_name = f"TICKER • {ticker}"
@@ -348,8 +348,8 @@ def rename_category(ticker: str, archived: bool) -> None:
     item = get(ticker)
     if not item or not item.get("category_id"):
         return
-    tracker = ford_scan.DiscordTracker(
-        ford_scan.DISCORD_BOT_TOKEN, ford_scan.DISCORD_GUILD_ID
+    tracker = spy_scanner.DiscordTracker(
+        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
     )
     tracker._request(
         "PATCH",

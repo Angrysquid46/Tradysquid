@@ -87,9 +87,9 @@ class TradeIntelligenceTests(unittest.TestCase):
         self.assertFalse(summary["play_style_suggestions"][0]["automatic_change"])
 
     def test_high_risk_upgrade_requires_tests(self):
-        self.assertEqual(upgrade_impact.report(["ford_scan.py"])["status"], "BLOCK")
+        self.assertEqual(upgrade_impact.report(["spy_scanner.py"])["status"], "BLOCK")
         self.assertEqual(
-            upgrade_impact.report(["ford_scan.py", "test_trade_intelligence.py"])["status"],
+            upgrade_impact.report(["spy_scanner.py", "test_trade_intelligence.py"])["status"],
             "PASS",
         )
 

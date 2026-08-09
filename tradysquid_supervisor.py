@@ -483,7 +483,7 @@ def discord_post(message: str, channel_name: str = "system-health") -> None:
 
 def validate_checkout() -> tuple[bool, str]:
     compile_files = [
-        "ford_scan.py",
+        "spy_scanner.py",
         "local_information_engine.py",
         "discord_command_bot.py",
         "register_discord_commands.py",

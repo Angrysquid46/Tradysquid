@@ -87,9 +87,9 @@ def public_ticker_add_reply(interaction: dict) -> str:
         )
 
     LAST_MEMBER_ADD[user_id] = now
-    quote = bot.ford_scan.get_quote(ticker) or {}
-    price = bot.ford_scan.as_float(quote.get("last"))
-    expirations = bot.ford_scan.get_expirations(ticker)
+    quote = bot.spy_scanner.get_quote(ticker) or {}
+    price = bot.spy_scanner.as_float(quote.get("last"))
+    expirations = bot.spy_scanner.get_expirations(ticker)
     if price is None or not expirations:
         raise ValueError(
             f"Tradier could not verify {ticker} as a currently optionable ticker."
@@ -167,9 +167,9 @@ def owner_ticker_resume_reply(interaction: dict) -> str:
             f"The shared universe is full at {maximum} active tickers. "
             "Remove one before resuming another."
         )
-    quote = bot.ford_scan.get_quote(ticker) or {}
-    price = bot.ford_scan.as_float(quote.get("last"))
-    if price is None or not bot.ford_scan.get_expirations(ticker):
+    quote = bot.spy_scanner.get_quote(ticker) or {}
+    price = bot.spy_scanner.as_float(quote.get("last"))
+    if price is None or not bot.spy_scanner.get_expirations(ticker):
         raise ValueError(f"Tradier could not verify optionable ticker {ticker}.")
     bot.dynamic_universe.add_member_symbol(
         ticker, user_id=bot.command_user_id(interaction)
