@@ -229,8 +229,8 @@ def pause(ticker: str, *, today_only: bool) -> dict[str, Any]:
     existing = get(ticker)
     if not existing:
         raise ValueError(f"{normalize_ticker(ticker)} is not integrated.")
-    if existing["ticker"] == "F":
-        raise ValueError("Ford is protected and cannot be paused from Discord.")
+    if existing["ticker"] == "SPY":
+        raise ValueError("SPY is protected and cannot be paused from Discord.")
     return save(
         ticker,
         status="PAUSED",
@@ -250,8 +250,8 @@ def archive(ticker: str) -> dict[str, Any]:
     existing = get(ticker)
     if not existing:
         raise ValueError(f"{normalize_ticker(ticker)} is not integrated.")
-    if existing["ticker"] == "F":
-        raise ValueError("Ford is protected and cannot be removed.")
+    if existing["ticker"] == "SPY":
+        raise ValueError("SPY is protected and cannot be removed.")
     return save(ticker, status="ARCHIVED", note="Archived through Discord")
 
 

@@ -5,7 +5,7 @@ information store, and frequent monitoring that does not use GitHub Actions.
 
 - Market: `/quote`, `/trend`, `/levels`, `/chart`
 - Options: `/chain`, `/option`, `/risk`
-- Research: `/events`, `/filings`, `/explain`
+- Research: `/events`, `/calendar`, `/explain`
 - Tracking: `/performance`, `/why`
 - Reliability: `/status`, `/dataage`, `/lastscan`, `/schedule`
 - Instructions: `/help`
@@ -38,7 +38,7 @@ In the Discord Developer Portal, open the existing TradeBot application:
 4. Optionally add your Discord user ID to `DISCORD_ALLOWED_USER_ID` to make
    commands usable only by you.
 5. Add the existing Tradier values.
-6. For SEC filing detail, use an identifiable value such as
+6. For news-feed identification, use an identifiable value such as
    `Tradysquids TradeBot your-email@example.com` for `SEC_USER_AGENT`.
 7. Configure ngrok once with `ngrok config add-authtoken`. The token is stored
    in ngrok's private per-user configuration, not this repository.
@@ -145,12 +145,11 @@ the launcher twice does not start a duplicate ngrok endpoint.
 
 `local_information_engine.py` performs frequent monitoring on the laptop:
 
-- Ford price and technical snapshots every five minutes.
-- Official SEC filing checks every 30 minutes when `SEC_USER_AGENT` is set.
+- SPY price and technical snapshots every five minutes.
 - Reliability snapshots every 15 minutes.
 - SQLite history in `state/local-information.db`.
-- Change-only alerts for regime changes, tracked-level crosses, unusual
-  relative volume, and new filings.
+- Change-only alerts for regime changes, tracked-level crosses, and unusual
+  relative volume.
 - Optional full options scans every 15 minutes during market hours when
   `LOCAL_FULL_SCAN_ENABLED=true` and the bot token is configured locally.
 
@@ -158,9 +157,9 @@ These jobs consume no GitHub Actions minutes. Scheduled Discord posts require
 either `DISCORD_BOT_TOKEN` or a channel-specific `DISCORD_WEBHOOK_URL` in the
 private local `.env`; commands and local storage still work without either.
 
-The GitHub Ford scan and intelligence workflows are manual backup buttons only.
-They no longer have recurring cron schedules, so routine monitoring does not
-consume GitHub Actions minutes.
+The GitHub SPY scan workflow is a manual backup button only. It has no
+recurring cron schedule, so routine monitoring does not consume GitHub
+Actions minutes.
 
 Run `CREATE-DESKTOP-SHORTCUT.cmd` once if you want a **Start Tradysquids**
 shortcut on the Windows desktop.

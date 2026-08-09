@@ -78,11 +78,11 @@ def configured(name: str, default: Any) -> Any:
 
 STATE_DIR = REPO_ROOT / "state"
 DOCS_DIR = REPO_ROOT / "docs"
-LOG_PATH = STATE_DIR / "ford-plays-log.csv"
+LOG_PATH = STATE_DIR / "spy-plays-log.csv"
 DASHBOARD_PATH = DOCS_DIR / "index.html"
 REPORT_STATE_PATH = STATE_DIR / "discord-report-state.json"
-CHART_PATH = DOCS_DIR / "ford-market-chart.svg"
-CHART_SCREENSHOT_PATH = DOCS_DIR / "ford-market-chart.png"
+CHART_PATH = DOCS_DIR / "spy-market-chart.svg"
+CHART_SCREENSHOT_PATH = DOCS_DIR / "spy-market-chart.png"
 TRADE_SNAPSHOT_DIR = DOCS_DIR / "trade-snapshots"
 # Tradier does not retain historical data for expired options - there is
 # no way to ever go back and ask "what did the chain look like when this
@@ -95,7 +95,7 @@ INTRADAY_SNAPSHOT_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 DAILY_SNAPSHOT_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 CHART_PUBLIC_URL = os.environ.get(
     "CHART_PUBLIC_URL",
-    "https://angrysquid46.github.io/Tradysquid/ford-market-chart.svg",
+    "https://angrysquid46.github.io/Tradysquid/spy-market-chart.svg",
 ).strip()
 
 MARKET_TZ = ZoneInfo("America/Chicago")
@@ -1723,7 +1723,7 @@ def render_market_chart(history: list[dict[str, Any]], spot_price: float) -> Non
     context = directional_market_context(history, spot_price)
     support = min(closes[-20:])
     resistance = max(closes[-20:])
-    display_name = "Ford (F)" if TICKER == "F" else TICKER
+    display_name = TICKER
     title = html.escape(
         f"{display_name} market map • {dates[-1]} • {context['regime']} • RSI {context['rsi14']:.1f}"
         if context.get("rsi14") is not None
@@ -1805,7 +1805,7 @@ def render_market_chart_png(
     draw_series(sma50, "#f59e0b", 3)
     rsi = context.get("rsi14")
     rsi_text = f"{rsi:.1f}" if rsi is not None else "Unavailable"
-    display_name = "Ford (F)" if symbol == "F" else symbol
+    display_name = symbol
     draw.text((left, 25), f"{display_name} Market Map | ${spot_price:.2f} | {context['regime']}", fill="#f4f7fb", font=title_font)
     draw.text((left, 55), f"RSI14 {rsi_text} | White: Price | Blue: SMA20 | Orange: SMA50", fill="#9fb0c3", font=small)
     draw.text((left, height - 66), f"20-day support ${support:.2f}  |  resistance ${resistance:.2f}", fill="#dbe7f3", font=font)
@@ -2073,7 +2073,7 @@ def market_map_text(history: list[dict[str, Any]], spot_price: float) -> str:
     support = min(closes[-20:]) if closes else spot_price
     resistance = max(closes[-20:]) if closes else spot_price
     rsi_text = f"{context['rsi14']:.1f}" if context.get("rsi14") is not None else "Unavailable"
-    display_name = "Ford (F)" if TICKER == "F" else TICKER
+    display_name = TICKER
     chart_line = f"[Open the current {TICKER} chart]({CHART_PUBLIC_URL})" if CHART_PUBLIC_URL else "Chart saved to the dashboard."
     return "\n".join([
         f"## 📈 {display_name} Market Map",
@@ -4959,9 +4959,9 @@ h1 {{ font-size:22px; margin:0 0 4px; }} .sub,.plsub,.muted,.footer {{ color:#9a
 .badge-win {{ background:#173d2e; color:#57e5a1; }} .badge-loss {{ background:#462328; color:#ff8a91; }} .badge-scratch {{ background:#343945; color:#c1c7d0; }}
 .footer {{ font-size:11px; margin-top:10px; }}
 </style></head><body>
-<h1>Tradysquids · Ford Options Desk</h1>
+<h1>Tradysquids · SPY Options Desk</h1>
 <div class='sub'>Tradier market data · refreshed every 15 minutes · last build {now_ct().strftime('%Y-%m-%d %H:%M %Z')}</div>
-<div class='card'><h2>Ford spot</h2>{spot_html}</div>
+<div class='card'><h2>SPY spot</h2>{spot_html}</div>
 <div class='tabs'>
 <button class='tab-btn active' data-tab='open'>Open ({len(open_items)})</button>
 <button class='tab-btn' data-tab='watch'>All plays ({len(watch_items)})</button>

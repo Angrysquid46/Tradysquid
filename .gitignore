@@ -22,7 +22,7 @@ state/diagnostics.db-wal
 state/supervisor-state.json
 state/supervisor-state.tmp
 state/discord-report-state.json
-state/ford-plays-log.csv
+state/spy-plays-log.csv
 state/supervisor-logs/
 state/supervisor-runtime-backup/
 state/supervisor-watchdog.log

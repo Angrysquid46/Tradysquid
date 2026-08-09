@@ -50,10 +50,6 @@ POSITION_SAFETY_POLL_SECONDS = int(
     # tuning further either direction.
     os.environ.get("POSITION_SAFETY_POLL_SECONDS", "60")
 )
-FORD_NEWS_URL = "https://shareholder.ford.com/news/default.aspx"
-FORD_NEWS_FEED_URL = (
-    "https://shareholder.ford.com/feed/PressRelease.svc/GetPressReleaseList"
-)
 GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
 TICKER_CHART_DIR = ROOT / "docs" / "tickers"
 POSITION_FILE_LOCK = threading.RLock()
@@ -787,39 +783,6 @@ def options_dashboard_text(
     return "\n".join(lines)
 
 
-def fetch_ford_news() -> list[dict[str, str]]:
-    response = requests.get(
-        FORD_NEWS_FEED_URL,
-        params={
-            "languageId": 1,
-            "bodyType": 0,
-            "pressReleaseDateFilter": 3,
-            "categoryId": "",
-            "includeTags": "true",
-            "pageSize": 20,
-            "pageNumber": 0,
-            "tagList": "",
-        },
-        headers={"User-Agent": spy_scanner.SEC_USER_AGENT or "Tradysquids local monitor"},
-        timeout=25,
-    )
-    response.raise_for_status()
-    rows = response.json().get("GetPressReleaseListResult") or []
-    items = []
-    for row in rows:
-        title = " ".join(str(row.get("Headline") or "").split())
-        href = str(row.get("LinkToDetailPage") or row.get("LinkToUrl") or "")
-        if not title or not href:
-            continue
-        items.append({
-            "id": str(row.get("PressReleaseId") or hashlib.sha256(href.encode()).hexdigest()[:20]),
-            "title": title,
-            "url": urljoin(FORD_NEWS_URL, href),
-            "date": str(row.get("PressReleaseDate") or ""),
-        })
-    return items
-
-
 def publish_change_only(
     connection: sqlite3.Connection,
     alert_key: str,
@@ -937,7 +900,7 @@ def options_job(connection: sqlite3.Connection) -> str:
     risk_lines = [
         "## Tradysquids Risk Desk",
         "The scanner does not remove risk and does not guarantee a profitable trade.",
-        f"Ford regime: **{snapshot.get('regime')}** · ATR14 **${float(snapshot.get('atr14') or 0):.2f}**.",
+        f"SPY regime: **{snapshot.get('regime')}** · ATR14 **${float(snapshot.get('atr14') or 0):.2f}**.",
         "Only consider contracts that pass configured liquidity, spread, DTE, and delta rules.",
         "Avoid chasing entries, use a defined maximum loss, and verify quotes before any order.",
         (
@@ -1022,118 +985,6 @@ def managed_ticker_information_job(connection: sqlite3.Connection) -> str:
     )
 
 
-def news_job(connection: sqlite3.Connection) -> str:
-    try:
-        items = fetch_ford_news()
-    except requests.HTTPError as exc:
-        if exc.response is None or exc.response.status_code != 429:
-            raise
-        cached = latest_observation("news")
-        items = list((cached or {}).get("payload", {}).get("items") or [])
-        if not items:
-            raise
-        upsert_dashboard(
-            connection,
-            "news_events",
-            "news-digest",
-            "\n".join([
-                "## Tradysquids Ford News & Events",
-                f"Official source: [Ford Investor Relations]({FORD_NEWS_URL})",
-                *[f"• [{item['title']}]({item['url']})" for item in items[:8]],
-                (
-                    f"Ford temporarily rate-limited this check at {iso_now()}; "
-                    "showing the last successful official results. The next scheduled check will retry."
-                ),
-            ]),
-        )
-        return f"Ford rate limited request · using {len(items)} cached official items"
-    previous_raw = get_state(connection, "seen_news", "")
-    previous = set(json.loads(previous_raw or "[]"))
-    fresh = [item for item in items if item["id"] not in previous]
-    if not previous_raw:
-        fresh = []
-    store_observation(connection, "news", {"items": items, "new": fresh})
-    for item in items:
-        trade_intelligence.store_research_source({
-            "source_name": "Ford Investor Relations",
-            "source_url": item["url"],
-            "published_at": item.get("date", ""),
-            "ticker": "F",
-            "claim": item["title"],
-            "confidence": "PRIMARY-SOURCE",
-            "quality": "OFFICIAL-COMPANY",
-            "learning_concepts": ["company-research", "news-events"],
-            "usage_terms": "Store citation and extracted metadata; link to the original source.",
-            "status": "REVIEW",
-        })
-    for item in reversed(fresh[:5]):
-        publish_change_only(
-            connection,
-            f"ford-news:{item['id']}",
-            "\n".join([
-                "## New official Ford news",
-                f"**[{item['title']}]({item['url']})**",
-                "News can move price outside market hours; trading availability is separate.",
-                "Review the source before treating it as material. Educational information only.",
-            ]),
-            logical_channel="news_events",
-            minimum_minutes=0,
-        )
-    digest = [
-        "## Tradysquids Ford News & Events",
-        f"Official source: [Ford Investor Relations]({FORD_NEWS_URL})",
-    ]
-    digest.extend(f"• [{item['title']}]({item['url']})" for item in items[:8])
-    digest.append(f"Checked {iso_now()}. New items are posted once; this digest updates in place.")
-    upsert_dashboard(connection, "news_events", "news-digest", "\n".join(digest))
-    set_state(connection, "seen_news", json.dumps([item["id"] for item in items]))
-    return f"{len(items)} official items · {len(fresh)} new"
-
-
-def filings_job(connection: sqlite3.Connection) -> str:
-    filings = spy_scanner.fetch_recent_ford_filings()
-    previous = set(json.loads(get_state(connection, "seen_filings", "[]")))
-    fresh = [item for item in filings if item["id"] not in previous]
-    store_observation(connection, "filings", {"filings": filings, "new": fresh})
-    for filing in filings:
-        trade_intelligence.store_research_source({
-            "source_name": "SEC EDGAR",
-            "source_url": filing["url"],
-            "published_at": filing.get("date", ""),
-            "ticker": "F",
-            "claim": f"{filing.get('form', 'filing')} filed {filing.get('date', '')}",
-            "confidence": "PRIMARY-SOURCE",
-            "quality": "REGULATORY-FILING",
-            "learning_concepts": ["sec-filings", "fundamental-research"],
-            "usage_terms": "Public regulatory filing; retain citation and filing date.",
-            "status": "REVIEW",
-        })
-    if fresh:
-        lines = ["## New Ford SEC filing"]
-        for filing in fresh[:5]:
-            lines.append(
-                f"**{filing['date']} · {filing['form']}** · [Open filing]({filing['url']})"
-            )
-        lines.append(
-            "A filing is an information event, not an automatic trade signal."
-        )
-        publish_change_only(
-            connection,
-            f"filings:{fresh[0]['id']}",
-            "\n".join(lines),
-            logical_channel="sec_filings",
-            minimum_minutes=0,
-        )
-    digest = ["## Tradysquids SEC Filing Monitor"]
-    digest.extend(
-        f"• **{item['date']} · {item['form']}** · [Open filing]({item['url']})"
-        for item in filings[:8]
-    )
-    digest.append(f"Checked {iso_now()}. New filings are posted once; this digest updates in place.")
-    upsert_dashboard(connection, "sec_filings", "sec-filings", "\n".join(digest))
-    set_state(connection, "seen_filings", json.dumps([item["id"] for item in filings]))
-    return f"{len(filings)} recent · {len(fresh)} new"
-
 
 def status_job(connection: sqlite3.Connection) -> str:
     market = latest_observation("market")
@@ -1146,7 +997,7 @@ def status_job(connection: sqlite3.Connection) -> str:
             (spy_scanner.DISCORD_BOT_TOKEN and spy_scanner.DISCORD_GUILD_ID)
             or spy_scanner.DISCORD_WEBHOOK_URL
         ),
-        "sec_monitor": bool(spy_scanner.SEC_USER_AGENT),
+        "news_feed_identified": bool(spy_scanner.SEC_USER_AGENT),
     }
     store_observation(connection, "status", status)
     upsert_dashboard(

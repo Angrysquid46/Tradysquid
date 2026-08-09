@@ -68,8 +68,8 @@ DISCORD_CHANNEL_CACHE: dict[str, str] = {}
 RUNTIME_MUTABLE_FILES = {
     "config/scanner.json",
     "docs/index.html",
-    "docs/ford-market-chart.svg",
-    "docs/ford-market-chart.png",
+    "docs/spy-market-chart.svg",
+    "docs/spy-market-chart.png",
 }
 RUNTIME_MUTABLE_PREFIXES = ("state/", "docs/trade-snapshots/", "docs/tickers/")
 RUNTIME_BACKUP_DIR = STATE_DIR / "supervisor-runtime-backup"

@@ -612,7 +612,7 @@ class InformationEngineTests(unittest.TestCase):
     def test_every_ticker_market_command_accepts_dynamic_ticker(self) -> None:
         ticker_commands = {
             "quote", "trend", "chart", "levels", "events", "chain",
-            "setup", "watchlist", "performance", "dataage", "filings", "calendar",
+            "setup", "watchlist", "performance", "dataage", "calendar",
             "why", "option", "risk", "status", "schedule", "lastscan",
         }
         commands = {
@@ -667,13 +667,13 @@ class InformationEngineTests(unittest.TestCase):
 
     def test_performance_snapshot_filters_each_ticker(self) -> None:
         rows = [
-            {"ticker": "F", "outcome": "OPEN"},
+            {"ticker": "SPY", "outcome": "OPEN"},
             {"ticker": "VALE", "outcome": "OPEN"},
         ]
         with patch.object(engine.spy_scanner, "read_log", return_value=rows):
-            ford = engine.performance_snapshot("F")
+            spy = engine.performance_snapshot("SPY")
             vale = engine.performance_snapshot("VALE")
-        self.assertEqual(ford["tracked"], 1)
+        self.assertEqual(spy["tracked"], 1)
         self.assertEqual(vale["tracked"], 1)
 
     def test_dynamic_market_replies_use_requested_ticker(self) -> None:

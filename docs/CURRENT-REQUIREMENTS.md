@@ -13,7 +13,7 @@ only a receipt from the owner computer can prove live deployment.
 | No shadow-trading feature | no active shadow command, route, scheduler job, status, table, or renderer | obsolete bot-authored message/channel cleanup only | full-audit regression tests | retired-message cleanup receipt |
 | Automatic paper-entry modes actually open selected candidates | `Application.scan_symbol`, `PaperBroker.open` | versioned `entry.selection_mode` | full-audit regression tests | paper-entry lifecycle receipt |
 | Stops and targets actually close positions | `Application.monitor_positions`, `PaperBroker.mark/close` | position marks, closed outcomes, lifecycle events | paper lifecycle tests | closed outcome and journal |
-| Existing legacy closed paper trades are preserved | `tradysquid/data/legacy_import.py` | ignored `state/ford-plays-log.csv` to canonical SQLite ledger | idempotent importer tests | import receipt and historical cards |
+| Existing legacy closed paper trades are preserved | `tradysquid/data/legacy_import.py` | ignored `state/spy-plays-log.csv` to canonical SQLite ledger | idempotent importer tests | import receipt and historical cards |
 | Original Discord dashboard plus Strategy Control | `tradysquid/discord/layout.py`, `structure.py` | `config/discord-schema.json`, saved channel IDs | Discord layout tests | Discord readiness receipt |
 | No SCANNING, PAPER TRADING, or LEARNING CENTER 2 dashboard | safe migration cleanup in `structure.py` | cleanup receipts | migration tests | live cleanup receipt |
 | Stable readable cards update in place | publishing and message reconciliation | Discord message state | publishing tests | acknowledged message IDs |

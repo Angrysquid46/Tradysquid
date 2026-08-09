@@ -99,7 +99,7 @@ def import_legacy_closed_trades(
             strategy_id = _strategy_id(row)
             strategy = deepcopy(strategy_configs[strategy_id])
             strategy["_legacy_import"] = {
-                "source": "state/ford-plays-log.csv",
+                "source": "state/spy-plays-log.csv",
                 "trade_id": trade_id,
                 "historical_configuration_exact": False,
             }
