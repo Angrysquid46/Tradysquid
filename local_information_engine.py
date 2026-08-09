@@ -1237,6 +1237,59 @@ def run_manual_scan(scope: str = "all") -> str:
         MANUAL_SCAN_LOCK.release()
 
 
+def publish_tradingview_signal(connection: sqlite3.Connection, event: dict[str, Any]) -> None:
+    """Turn a raw TradingView alert into a visible Discord card and durable
+    research evidence, instead of just a queue row nobody ever sees. This is
+    an independent, external read - it is never compared automatically or
+    used to gate a real trade; it exists so the owner (and eventually the
+    learning system) can see whether it agreed with the bot's own SPY 0DTE
+    opening-range signal for the same session."""
+    payload = event.get("payload") or {}
+    symbol = str(event.get("symbol") or "")
+    action = str(payload.get("action") or payload.get("event") or "alert").upper()
+    reason = str(payload.get("reason") or "No reason provided in the alert payload.")
+    price = spy_scanner.as_float(payload.get("price"))
+    event_key = str(event.get("event_key") or event.get("id") or "")
+
+    tracker = discord_tracker()
+    if tracker:
+        report_state = spy_scanner.read_report_state()
+        lines = [
+            f"## \U0001f4e1 TradingView Signal · {symbol} · {action}",
+            f"**Reason:** {reason}",
+            (
+                f"**Price at signal:** {spy_scanner.fmt_money(price)}"
+                if price is not None else "**Price at signal:** not provided"
+            ),
+            f"**Event key:** `{event_key}`",
+            (
+                f"Received {iso_now()}. External signal, independent of the bot's "
+                "own opening-range read - compare, do not assume agreement."
+            ),
+        ]
+        tracker.upsert_channel_message(
+            "breaking_alerts",
+            report_state,
+            f"tradingview:{event_key}",
+            "\n".join(lines),
+            search_token=f"TradingView Signal {symbol}",
+        )
+        spy_scanner.write_report_state(report_state)
+
+    trade_intelligence.store_research_source({
+        "source_name": "TradingView",
+        "source_url": "",
+        "published_at": iso_now(),
+        "ticker": symbol,
+        "claim": reason,
+        "confidence": "EXTERNAL-SIGNAL",
+        "quality": "THIRD-PARTY",
+        "learning_concepts": ["0dte-opening-range", "external-signal-comparison"],
+        "usage_terms": "Compare against the bot's own SPY 0DTE decision for the same session; never auto-applied.",
+        "status": "REVIEW",
+    })
+
+
 def provider_event_job(connection: sqlite3.Connection) -> str:
     events = dynamic_universe.claim_events(limit=25)
     completed = 0
@@ -1260,6 +1313,8 @@ def provider_event_job(connection: sqlite3.Connection) -> str:
                     "payload": event["payload"],
                 },
             )
+            if event["provider"] == "tradingview":
+                publish_tradingview_signal(connection, event)
             dynamic_universe.complete_event(event["id"])
             completed += 1
         except Exception as exc:
