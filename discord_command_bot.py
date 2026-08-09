@@ -591,23 +591,24 @@ def trader_toggle_reply(interaction: dict[str, Any]) -> str:
 def reset_trading_data_reply(interaction: dict[str, Any]) -> str:
     require_ticker_admin(interaction)
     confirm = str(option_value(interaction, "confirm", "")).strip()
-    archive = bool(option_value(interaction, "archive", False))
     if confirm != "RESET":
         raise ValueError('Type "RESET" exactly (all caps) in the confirm field to proceed.')
     tracker = ford_scan.initialize_discord()
-    result = ford_scan.reset_all_trade_data(tracker, archive=archive)
+    # Always archives now, regardless of the (legacy, now-ignored) archive
+    # option below - real trade history was permanently lost once to a
+    # reset that skipped the backup, and there's no real cost to always
+    # keeping one.
+    result = ford_scan.reset_all_trade_data(tracker, archive=True)
     lines = [
         "✅ **Trading data reset complete**",
         f"Cleared **{result['cleared_trades']}** tracked trade(s).",
         f"Deleted **{result['deleted_threads']}** trade-journal thread(s) - gone, not just archived.",
         f"Cleared **{result['cleared_cards']}** per-trade card(s) - held-positions, new-positions, and individual win/loss/scratch results - and zeroed out every summary dashboard immediately.",
     ]
-    if archive and result["backup_path"]:
+    if result["backup_path"]:
         lines.append(f"Backup saved locally: `{result['backup_path']}`")
-    elif archive:
-        lines.append("No backup file needed - there was nothing to save.")
     else:
-        lines.append("No backup was saved, as requested.")
+        lines.append("No backup file needed - there was nothing to save.")
     lines.append(
         "Held positions, wins, losses, and performance dashboards will show empty "
         "on their next refresh - they render from the live log, not a separate store."
