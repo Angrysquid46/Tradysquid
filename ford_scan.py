@@ -5087,7 +5087,7 @@ def refresh_all_summary_dashboards(
             print(f"Could not refresh {logical_name}: {exc}", file=sys.stderr)
 
 
-def reset_all_trade_data(discord: DiscordTracker, *, archive: bool) -> dict[str, Any]:
+def reset_all_trade_data(discord: DiscordTracker, *, archive: bool = True) -> dict[str, Any]:
     """Owner-triggered wipe of every tracked trade: paper data only, never
     touches a real account, but this is the one genuinely destructive action
     in the whole system, so it earns real care.
@@ -5105,12 +5105,17 @@ def reset_all_trade_data(discord: DiscordTracker, *, archive: bool) -> dict[str,
     Every trade-journal thread is deleted outright - not archived. An
     archived thread can still surface in Discord's own UI depending on how
     it's filtered, and "reset means zero, no scrollbar" means genuinely
-    gone. Data safety for a reset is handled separately: if archive=True,
-    the full pre-reset log is saved to a timestamped file first, so nothing
-    is lost even though every visible trace in Discord goes back to zero."""
+    gone. Data safety for a reset is handled separately: the full pre-reset
+    log is ALWAYS saved to a timestamped file first, regardless of the
+    archive parameter - a real week of trade history got permanently
+    destroyed by a reset that skipped this, and a small CSV backup costs
+    nothing next to that. The archive parameter is kept for backward
+    compatibility with existing callers but no longer gates whether the
+    backup happens - only real bugs (an empty log) can produce no backup
+    file now, never a caller's choice."""
     rows = read_log()
     backup_path: str | None = None
-    if archive and rows:
+    if rows:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         backup_dir = STATE_DIR / "archive"
         backup_dir.mkdir(parents=True, exist_ok=True)

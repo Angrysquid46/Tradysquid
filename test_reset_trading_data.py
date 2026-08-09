@@ -64,14 +64,17 @@ def test_reset_with_archive_saves_a_backup_before_clearing():
         assert ford_scan.read_log() == []
 
 
-def test_reset_without_archive_saves_nothing():
-    with _with_temp_paths() as root:
+def test_archive_false_no_longer_skips_the_backup():
+    # A real week of trade history was permanently destroyed by a reset
+    # that passed archive=False - there is no real cost to always keeping
+    # a small backup, so the parameter no longer gates whether it happens.
+    with _with_temp_paths():
         ford_scan.write_log([_row("T1")])
         tracker = ford_scan.DiscordTracker("", "")
         result = ford_scan.reset_all_trade_data(tracker, archive=False)
 
-        assert result["backup_path"] is None
-        assert not (root / "state" / "archive").exists()
+        assert result["backup_path"] is not None
+        assert Path(result["backup_path"]).exists()
         assert ford_scan.read_log() == []
 
 
@@ -200,6 +203,40 @@ def test_non_owner_cannot_reset_even_with_correct_confirm_string():
         except PermissionError:
             pass
         assert len(ford_scan.read_log()) == 1
+
+
+def test_reset_trading_data_reply_always_reports_a_backup():
+    # The archive option is now legacy/ignored - the reply must confirm a
+    # backup either way, never "no backup was saved, as requested," which
+    # is exactly the framing that let a real week of history vanish.
+    with _with_temp_paths():
+        ford_scan.write_log([_row("T1")])
+        bot.ALLOWED_USER_ID = "owner-1"
+
+        class FakeTracker:
+            ready = True
+
+            def wipe_channel_threads(self, logical_name):
+                return 0
+
+            def wipe_channel_messages(self, logical_name):
+                return 0
+
+            def upsert_channel_message(self, logical_name, state, token, content, search_token=""):
+                return "msg-1", 0
+
+        with mock.patch.object(ford_scan, "initialize_discord", return_value=FakeTracker()):
+            interaction = {
+                "member": {"user": {"id": "owner-1"}},
+                "data": {"options": [
+                    {"name": "confirm", "value": "RESET"},
+                    {"name": "archive", "value": False},
+                ]},
+            }
+            reply = bot.reset_trading_data_reply(interaction)
+
+        assert "No backup was saved, as requested" not in reply
+        assert "Backup saved locally" in reply
 
 
 def test_reset_refreshes_every_summary_dashboard_immediately():
