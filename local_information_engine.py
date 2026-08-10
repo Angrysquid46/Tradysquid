@@ -944,7 +944,7 @@ def briefing_job(connection: sqlite3.Connection) -> str:
         "### Broad Market Regime",
     ])
     benchmark_payload: dict[str, Any] = {}
-    for benchmark in ("SPY", "QQQ"):
+    for benchmark in (spy_scanner.TICKER,):
         try:
             snapshot = market_snapshot(benchmark)
             benchmark_payload[benchmark] = {
@@ -1111,7 +1111,7 @@ def manual_intelligence_job(connection: sqlite3.Connection) -> str:
         "## Manual Market-Regime Snapshot",
         f"**{session}**",
     ]
-    for benchmark in ("SPY", "QQQ"):
+    for benchmark in (spy_scanner.TICKER,):
         try:
             snapshot = market_snapshot(benchmark)
             benchmark_lines.append(
