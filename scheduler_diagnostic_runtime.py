@@ -26,7 +26,6 @@ REQUIRED_JOBS = (
     "system-activity",
     "active-market-regime",
     "intraday-chart-refresh",
-    "dynamic-universe-rotation",
 )
 
 

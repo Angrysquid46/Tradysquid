@@ -52,7 +52,6 @@ UPGRADED_JOB_NAMES = (
     "system-activity",
     "active-market-regime",
     "intraday-chart-refresh",
-    "dynamic-universe-rotation",
     "upgrade-request-migration",
 )
 
@@ -508,10 +507,14 @@ def _live_check(
             detail if _engine().latest_observation("active-market-regime") else "regime observation is not visible yet",
         )
     if number == 7:
-        status, detail = _job_live_status(connection, "dynamic-universe-rotation")
-        return (status, detail) if status != "PASS" else (
-            "PASS" if _engine().latest_observation("dynamic-universe-rotation") else "PENDING",
-            detail if _engine().latest_observation("dynamic-universe-rotation") else "rotation observation is not visible yet",
+        jobs = _job_map()
+        removed = "dynamic-universe-rotation" not in jobs and not hasattr(
+            upgrade_batch_44, "universe_rotation_job"
+        )
+        return (
+            "PASS" if removed else "FAIL",
+            "capability removed - no job, no callback, no candidate-pool machinery"
+            if removed else "dynamic-universe-rotation job or callback still present",
         )
     if number == 8:
         status, detail = _job_live_status(connection, "system-activity")
