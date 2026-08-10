@@ -5259,6 +5259,7 @@ def sync_closed_result_channels(
         if trade_id in routed:
             # A completed destination card may predate held-card cleanup.  Do
             # not repost the result, but keep enforcing the channel lifecycle.
+            discord.delete_trade_message("entry", report_state, "entry", trade_id)
             discord.delete_trade_message(
                 "updates", report_state, "position", trade_id
             )
@@ -5270,6 +5271,7 @@ def sync_closed_result_channels(
         link = thread_link(row.get("discord_thread_id", ""))
         content = close_alert_text(row, stored_close_evaluation(row), link)
         discord.upsert_trade_result(result_channel, report_state, trade_id, content)
+        discord.delete_trade_message("entry", report_state, "entry", trade_id)
         discord.delete_trade_message("updates", report_state, "position", trade_id)
         discord.delete_trade_message("exit", report_state, "exit", trade_id)
         mark_closed_result_routed(row, report_state)
@@ -5327,6 +5329,10 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     if result_channel:
         discord.upsert_trade_result(result_channel, report_state, row.get("trade_id", ""), content)
         mark_closed_result_routed(row, report_state)
+    # Once closed, the full record lives in this trade's own journal thread
+    # and the result channel above - the new-positions/held-positions
+    # channel cards have no reason to sit there permanently after that.
+    discord.delete_trade_message("entry", report_state, "entry", row.get("trade_id", ""))
     discord.delete_trade_message("updates", report_state, "position", row.get("trade_id", ""))
     discord.delete_trade_message("exit", report_state, "exit", row.get("trade_id", ""))
     row["discord_status"] = row["outcome"]
