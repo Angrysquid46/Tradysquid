@@ -1177,12 +1177,14 @@ class InformationEngineTests(unittest.TestCase):
             spy_scanner.write_log([row])
             engine.STREAM_QUOTES.clear()
             engine.STREAM_LAST_WRITTEN.clear()
+            engine._SPY_SPOT_CACHE = (None, 0.0)
             with (
                 patch.object(
                     engine.spy_scanner,
                     "market_is_open_now",
                     return_value=(True, spy_scanner.now_ct()),
                 ),
+                patch.object(spy_scanner, "get_quote", return_value={"last": "774.50"}),
                 patch.object(engine, "_route_stream_close") as route_close,
                 patch.object(spy_scanner.trade_intelligence, "record_event"),
             ):
@@ -1229,12 +1231,14 @@ class InformationEngineTests(unittest.TestCase):
             spy_scanner.write_log([row])
             engine.STREAM_QUOTES.clear()
             engine.STREAM_LAST_WRITTEN.clear()
+            engine._SPY_SPOT_CACHE = (None, 0.0)
             with (
                 patch.object(
                     engine.spy_scanner,
                     "market_is_open_now",
                     return_value=(True, spy_scanner.now_ct()),
                 ),
+                patch.object(spy_scanner, "get_quote", return_value={"last": "774.50"}),
                 patch.object(engine, "discord_tracker", return_value=FakeTracker()),
                 patch.object(spy_scanner, "read_report_state", return_value={}),
                 patch.object(spy_scanner, "write_report_state"),
@@ -1310,6 +1314,7 @@ class InformationEngineTests(unittest.TestCase):
             try:
                 with (
                     patch.object(spy_scanner, "get_quotes", return_value={}),
+                    patch.object(spy_scanner, "get_quote", return_value={"last": "774.50"}),
                     patch.object(
                         spy_scanner,
                         "evaluate_open_row",
@@ -1332,6 +1337,76 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIsInstance(calls[0][1], FakeTracker)
         self.assertEqual(calls[0][2]["pl_pct"], 5.0)
         self.assertIn("1 refreshed", result)
+
+    def test_position_tracker_job_passes_spy_spot_to_evaluate_open_row(self) -> None:
+        # Real bug caught live: SPY Key-Levels needs the underlying's own
+        # spot price to evaluate its stop/target (not just the option
+        # premium quote), and neither the fast paths fetched it before -
+        # every fast-path refresh for a Key-Levels row showed "SPY spot
+        # price unavailable" on the live held-positions card once those
+        # paths started actually pushing to Discord.
+        original_log = spy_scanner.LOG_PATH
+        original_db = engine.DB_PATH
+        received: dict = {}
+
+        class FakeTracker:
+            ready = True
+
+        with tempfile.TemporaryDirectory() as temp:
+            spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
+            engine.DB_PATH = Path(temp) / "local-information.db"
+            row = {field: "" for field in spy_scanner.LOG_HEADER}
+            row.update(
+                {
+                    "trade_id": "SPY-LIVE-002",
+                    "ticker": "SPY",
+                    "play_type": "SPY_KEY_LEVELS",
+                    "option_symbol": "SPY260821C00500000",
+                    "expiration": spy_scanner.now_ct().date().isoformat(),
+                    "entry_price": "0.50",
+                    "outcome": "OPEN",
+                }
+            )
+            spy_scanner.write_log([row])
+            connection = engine.connect_db()
+
+            def fake_evaluate(r, quotes, ts, *, underlying_spot_price=None):
+                received["underlying_spot_price"] = underlying_spot_price
+                return {"signal": "HOLD", "pl_pct": 1.0, "pl_dollars": 1.0}
+
+            try:
+                with (
+                    patch.object(spy_scanner, "get_quotes", return_value={}),
+                    patch.object(spy_scanner, "get_quote", return_value={"last": "774.50"}) as get_quote,
+                    patch.object(spy_scanner, "evaluate_open_row", side_effect=fake_evaluate),
+                    patch.object(engine, "discord_tracker", return_value=FakeTracker()),
+                    patch.object(spy_scanner, "read_report_state", return_value={}),
+                    patch.object(spy_scanner, "write_report_state"),
+                    patch.object(spy_scanner, "sync_open_trade_cards"),
+                ):
+                    engine.position_tracker_job(connection)
+            finally:
+                connection.close()
         spy_scanner.LOG_PATH = original_log
         engine.DB_PATH = original_db
+        get_quote.assert_called_with(spy_scanner.TICKER)
+        self.assertEqual(received["underlying_spot_price"], 774.50)
+
+    def test_cached_spy_spot_refreshes_after_two_seconds(self) -> None:
+        engine._SPY_SPOT_CACHE = (None, 0.0)
+        calls = []
+
+        def fake_get_quote(symbol):
+            calls.append(symbol)
+            return {"last": str(700.0 + len(calls))}
+
+        with patch.object(spy_scanner, "get_quote", side_effect=fake_get_quote):
+            first = engine._cached_spy_spot()
+            second = engine._cached_spy_spot()
+            self.assertEqual(first, second)
+            self.assertEqual(len(calls), 1)
+            engine._SPY_SPOT_CACHE = (engine._SPY_SPOT_CACHE[0], engine._SPY_SPOT_CACHE[1] - 3)
+            third = engine._cached_spy_spot()
+            self.assertEqual(len(calls), 2)
+            self.assertNotEqual(third, first)
 

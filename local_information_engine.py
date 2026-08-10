@@ -58,6 +58,11 @@ RUNNING_JOBS_LOCK = threading.Lock()
 STREAM_QUOTES: dict[str, dict[str, Any]] = {}
 STREAM_LAST_WRITTEN: dict[str, float] = {}
 POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
+# SPY's own spot price for Key-Levels' underlying-level stop/target check
+# (see _stream_quote_event) - cached rather than fetched on every option
+# tick, since ticks can arrive many times a second and this only needs to
+# be roughly as fresh as the 2s STREAM_LAST_WRITTEN debounce already is.
+_SPY_SPOT_CACHE: tuple[float | None, float] = (None, 0.0)
 
 
 def utc_now() -> datetime:
@@ -1331,6 +1336,20 @@ def _position_symbols() -> list[str]:
         return spy_scanner.symbols_for_rows(spy_scanner.open_rows(rows))
 
 
+def _cached_spy_spot() -> float | None:
+    global _SPY_SPOT_CACHE
+    price, fetched_at = _SPY_SPOT_CACHE
+    if time.monotonic() - fetched_at < 2:
+        return price
+    try:
+        quote = spy_scanner.get_quote(spy_scanner.TICKER)
+        price = spy_scanner.as_float(quote.get("last")) if quote else None
+    except Exception:
+        price = None
+    _SPY_SPOT_CACHE = (price, time.monotonic())
+    return price
+
+
 def _stream_quote_event(event: dict[str, Any]) -> None:
     """Evaluate exits immediately when a streamed option quote changes, and
     push the held-positions card on the same tick (debounced to once per
@@ -1355,7 +1374,9 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
             option_symbols = required - {row.get("ticker", "")}
             if symbol not in option_symbols or not option_symbols.issubset(STREAM_QUOTES):
                 continue
-            evaluation = spy_scanner.evaluate_open_row(row, STREAM_QUOTES, timestamp)
+            evaluation = spy_scanner.evaluate_open_row(
+                row, STREAM_QUOTES, timestamp, underlying_spot_price=_cached_spy_spot()
+            )
             if evaluation.get("pl_pct") is None:
                 continue
             signal = evaluation.get("signal")
@@ -1411,6 +1432,12 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
     quotes = spy_scanner.get_quotes(
         spy_scanner.symbols_for_rows(opened), include_greeks=True
     )
+    # SPY Key-Levels evaluates its stop/target off the underlying's own spot
+    # price, not just the option premium - without this, evaluate_open_row
+    # would report "SPY spot price unavailable" on every fast-path refresh
+    # for any Key-Levels row (option quote alone isn't enough for it).
+    spy_spot = spy_scanner.get_quote(spy_scanner.TICKER)
+    underlying_spot_price = spy_scanner.as_float(spy_spot.get("last")) if spy_spot else None
     tracker = discord_tracker()
     report_state = spy_scanner.read_report_state() if tracker else {}
     closed = 0
@@ -1418,7 +1445,9 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
     live_updated = 0
     with POSITION_FILE_LOCK:
         for row in list(opened):
-            evaluation = spy_scanner.evaluate_open_row(row, quotes, timestamp)
+            evaluation = spy_scanner.evaluate_open_row(
+                row, quotes, timestamp, underlying_spot_price=underlying_spot_price
+            )
             if evaluation.get("pl_pct") is None:
                 continue
             if evaluation.get("signal") in {
