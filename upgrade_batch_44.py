@@ -26,7 +26,6 @@ import outcome_learning
 import trade_intelligence
 
 ROOT = Path(__file__).resolve().parent
-ROTATION_STATE_PATH = ROOT / "state" / "automatic-universe-rotation.json"
 SUPPLEMENT_PATH = ROOT / "learning_center" / "APPLIED_DECISION_SUPPLEMENT.md"
 CHART_DIR = ROOT / "docs" / "tickers"
 BATCH_VERSION = "upgrade-batch-44-v1"
@@ -34,33 +33,10 @@ JOURNAL_FORMAT_VERSION = "16"
 
 MARKET_BATCH_SIZE = max(4, min(12, int(os.environ.get("ACTIVE_MARKET_BATCH_SIZE", "8"))))
 CHART_BATCH_SIZE = max(3, min(12, int(os.environ.get("INTRADAY_CHART_BATCH_SIZE", "6"))))
-ROTATION_BATCH_SIZE = max(4, min(16, int(os.environ.get("UNIVERSE_CANDIDATE_BATCH_SIZE", "10"))))
-ROTATION_COOLDOWN_HOURS = max(6, int(os.environ.get("UNIVERSE_ROTATION_COOLDOWN_HOURS", "24")))
-ROTATION_LIMIT = max(1, min(4, int(os.environ.get("UNIVERSE_ROTATION_LIMIT", "2"))))
-# Owner directive: the active universe is manually curated (owner-added
-# tickers only) while the system trades SPY exclusively - this job's own
-# purpose is to auto-promote OTHER tickers into that universe, which is
-# exactly what's paused here. ROTATION_LIMIT floors at 1 and can't reach
-# zero on its own, so this is a real, separate off-switch, not a repeat
-# of that setting. Defaults False; UNIVERSE_ROTATION_ENABLED=true (env)
-# or scanner.json's universe_rotation_enabled restores the old behavior.
-UNIVERSE_ROTATION_ENABLED = str(os.environ.get(
-    "UNIVERSE_ROTATION_ENABLED", spy_scanner.configured("universe_rotation_enabled", False)
-)).strip().lower() not in ("false", "0", "no", "")
-
-LIQUID_CANDIDATES = (
-    "AAPL", "MSFT", "NVDA", "AMZN", "META", "TSLA", "GOOGL", "NFLX",
-    "JPM", "C", "WFC", "XOM", "CVX", "WMT", "DIS", "BA", "GM", "UBER",
-    "LYFT", "PYPL", "SHOP", "COIN", "HOOD", "DKNG", "RBLX", "SNAP",
-    "PFE", "TSM", "MU", "ARM", "SMCI", "MARA", "RIOT", "GME", "AMC",
-    "DAL", "UAL", "X", "CLF", "KGC", "SLV", "GLD", "IWM", "DIA",
-    "SPY", "QQQ",
-)
 
 _ENGINE: Any | None = None
 _PUBLIC: Any | None = None
 _OPERATIONS: Any | None = None
-_ORIGINAL_UNIVERSE_CONFIG = dynamic_universe.universe_config
 _ORIGINAL_LEARNING_VERSION = trade_intelligence.learning_version
 _ORIGINAL_TRADE_LEARNING_ANALYSIS: Any | None = None
 _ORIGINAL_LIBRARY_SECTIONS: Any | None = None
@@ -103,43 +79,14 @@ def _parse_time(value: Any) -> datetime | None:
     return parsed
 
 
-def _rotation_state() -> dict[str, Any]:
-    payload = _json_file(ROTATION_STATE_PATH, {})
-    return payload if isinstance(payload, dict) else {}
-
-
-def _active_rotation_exclusions(payload: dict[str, Any] | None = None) -> set[str]:
-    state = payload or _rotation_state()
-    now = _now()
-    exclusions: set[str] = set()
-    rotated = state.get("rotated_out") if isinstance(state, dict) else {}
-    if not isinstance(rotated, dict):
-        return exclusions
-    member_additions = set(dynamic_universe.member_universe_state().get("additions") or [])
-    for symbol, record in rotated.items():
-        until = _parse_time((record or {}).get("until") if isinstance(record, dict) else "")
-        normalized = str(symbol or "").upper()
-        if normalized and normalized not in member_additions and until and until > now:
-            exclusions.add(normalized)
-    return exclusions
-
-
-def _patched_universe_config() -> dict[str, Any]:
-    config = dict(_ORIGINAL_UNIVERSE_CONFIG())
-    excluded = {str(item).upper() for item in config.get("exclude_symbols") or []}
-    excluded.update(_active_rotation_exclusions())
-    additions = set(dynamic_universe.member_universe_state().get("additions") or [])
-    excluded.difference_update(additions)
-    config["exclude_symbols"] = sorted(excluded)
-    return config
-
-
 def install_universe_policy() -> None:
-    """Make automated rotation exclusions visible to every runtime process."""
+    """No-op, kept for the frozen updater's call site (run_with_env.py calls
+    this directly). Used to patch dynamic_universe.universe_config with
+    automated ticker-rotation exclusions - removed along with the rest of
+    the ticker-rotation/universe-expansion capability, since this system
+    trades SPY exclusively and dynamic_universe.py no longer has a
+    universe_config to patch."""
     global _UNIVERSE_POLICY_INSTALLED
-    if _UNIVERSE_POLICY_INSTALLED:
-        return
-    dynamic_universe.universe_config = _patched_universe_config
     _UNIVERSE_POLICY_INSTALLED = True
 
 
@@ -442,7 +389,7 @@ def active_premarket_job(connection: Any) -> str:
     )
     overview = [
         "## Active-Universe Session Scanner",
-        f"**Session:** {session} · **Active tickers:** {len(symbols)}/{dynamic_universe.max_active_symbols()}",
+        f"**Session:** {session} · **Ticker:** {', '.join(symbols) or spy_scanner.TICKER}",
         "Cards below are generated only for the current universe and disappear when a ticker rotates out.",
         "### Largest current moves",
     ]
@@ -928,181 +875,6 @@ def intraday_chart_job(connection: Any) -> str:
     )
 
 
-def _ticker_performance() -> dict[str, dict[str, float]]:
-    buckets: dict[str, list[float]] = {}
-    wins: dict[str, int] = {}
-    for row in spy_scanner.closed_rows(spy_scanner.read_log()):
-        symbol = str(row.get("ticker") or "").upper()
-        if not symbol:
-            continue
-        buckets.setdefault(symbol, []).append(spy_scanner.realized_pl_dollars(row))
-        wins[symbol] = wins.get(symbol, 0) + int(str(row.get("outcome") or "").upper() == "WIN")
-    result: dict[str, dict[str, float]] = {}
-    for symbol, pnl in buckets.items():
-        result[symbol] = {
-            "samples": float(len(pnl)),
-            "average_pl": sum(pnl) / len(pnl),
-            "total_pl": sum(pnl),
-            "win_rate": wins.get(symbol, 0) / len(pnl) * 100,
-        }
-    return result
-
-
-def _candidate_score(symbol: str, quote: dict[str, Any], performance: dict[str, float] | None = None) -> float:
-    volume = max(0.0, spy_scanner.as_float(quote.get("volume"), 0.0) or 0.0)
-    price = max(0.01, spy_scanner.as_float(quote.get("last"), 0.01) or 0.01)
-    change = abs(_quote_change(quote) or 0.0)
-    liquidity = min(math.log10(volume + 1) * 12, 90)
-    movement = min(change * 4, 24)
-    affordability = max(0.0, min(20.0, (60.0 - price) / 3.0))
-    score = liquidity + movement + affordability
-    if performance and performance.get("samples", 0) >= 5:
-        score += max(-30.0, min(30.0, performance.get("average_pl", 0) / 2))
-    return round(score, 2)
-
-
-def universe_rotation_job(connection: Any) -> str:
-    if not UNIVERSE_ROTATION_ENABLED:
-        return "disabled - active universe is manually curated (UNIVERSE_ROTATION_ENABLED=false)"
-    state = _rotation_state()
-    state.setdefault("rotated_out", {})
-    now = _now()
-    for symbol, record in list(state["rotated_out"].items()):
-        until = _parse_time((record or {}).get("until") if isinstance(record, dict) else "")
-        if not until or until <= now:
-            state["rotated_out"].pop(symbol, None)
-    _write_json(ROTATION_STATE_PATH, state)
-
-    active = dynamic_universe.active_symbols()
-    member = dynamic_universe.member_universe_state()
-    protected = set(member.get("additions") or [])
-    protected.update(
-        str(row.get("ticker") or "").upper()
-        for row in spy_scanner.open_rows(spy_scanner.read_log())
-        if row.get("ticker")
-    )
-    excluded = set(member.get("removals") or [])
-    candidate_pool = [
-        symbol
-        for symbol in LIQUID_CANDIDATES
-        if symbol not in active and symbol not in excluded and symbol not in _active_rotation_exclusions(state)
-    ]
-    batch = _rotation_batch(connection, "universe-candidates", candidate_pool, ROTATION_BATCH_SIZE)
-    quotes = spy_scanner.get_quotes(batch, include_greeks=False) if batch else {}
-    performance = _ticker_performance()
-    candidates: list[tuple[float, str, dict[str, Any]]] = []
-    failures: list[str] = []
-    for symbol in batch:
-        try:
-            quote = quotes.get(symbol) or {}
-            price = spy_scanner.as_float(quote.get("last"))
-            volume = spy_scanner.as_float(quote.get("volume"), 0) or 0
-            if price is None or volume < 250_000:
-                continue
-            expirations = spy_scanner.get_expirations(symbol)
-            if not expirations:
-                continue
-            score = _candidate_score(symbol, quote)
-            candidates.append((score, symbol, quote))
-        except Exception as exc:
-            failures.append(f"{symbol}:{type(exc).__name__}")
-        time.sleep(0.1)
-    candidates.sort(reverse=True)
-
-    current_rows = _universe_rows()
-    active_quotes = spy_scanner.get_quotes(active, include_greeks=False) if active else {}
-    current_scores: list[tuple[float, str]] = []
-    for symbol in active:
-        score = _candidate_score(symbol, active_quotes.get(symbol) or current_rows.get(symbol) or {}, performance.get(symbol))
-        current_scores.append((score, symbol))
-    current_scores.sort()
-
-    promoted: list[str] = []
-    rotated: list[str] = []
-    maximum = dynamic_universe.max_active_symbols()
-    for score, symbol, quote in candidates:
-        if len(promoted) >= ROTATION_LIMIT:
-            break
-        if len(active) + len(promoted) < maximum:
-            replace_symbol = ""
-        else:
-            replace_symbol = next(
-                (
-                    current_symbol
-                    for current_score, current_symbol in current_scores
-                    if current_symbol not in protected
-                    and current_symbol not in rotated
-                    and score >= current_score + 8
-                ),
-                "",
-            )
-            if not replace_symbol:
-                continue
-        dynamic_universe.upsert_candidates(
-            [
-                dynamic_universe.Candidate(
-                    symbol,
-                    "automatic_rotation",
-                    score=score,
-                    last_price=spy_scanner.as_float(quote.get("last")),
-                    average_volume=spy_scanner.as_float(quote.get("volume")),
-                    options_available=True,
-                    reason="high-liquidity optionable candidate promoted by rotating universe",
-                    ttl_minutes=60 * 48,
-                )
-            ]
-        )
-        promoted.append(symbol)
-        if replace_symbol:
-            perf = performance.get(replace_symbol) or {}
-            state["rotated_out"][replace_symbol] = {
-                "until": (now + timedelta(hours=ROTATION_COOLDOWN_HOURS)).isoformat(),
-                "reason": (
-                    f"candidate {symbol} score {score:.1f} exceeded {replace_symbol}; "
-                    f"{int(perf.get('samples', 0))} closed trades, "
-                    f"average P/L {perf.get('average_pl', 0):.2f}"
-                ),
-                "replacement": symbol,
-                "rotated_at": _iso(now),
-            }
-            rotated.append(replace_symbol)
-
-    _write_json(ROTATION_STATE_PATH, state)
-    active_after = dynamic_universe.active_symbols()
-    lines = [
-        "## Dynamic Universe Rotation",
-        f"**Active:** {len(active_after)}/{maximum} · **Candidate batch:** {', '.join(batch) or 'none'}",
-        f"**Promoted:** {', '.join(promoted) or 'none this pass'}",
-        f"**Rotated out:** {', '.join(rotated) or 'none this pass'}",
-        "### Current active universe",
-        ", ".join(active_after) or "No active symbols.",
-        "### Rotation rules",
-        "Member-added tickers and tickers with open paper positions are protected. "
-        "Other names may rotate after a liquid optionable candidate materially outranks them. "
-        "Ticker outcome evidence is included only after at least five closed trades.",
-    ]
-    if failures:
-        lines.append("Provider checks skipped: " + ", ".join(failures[:10]))
-    lines.append(f"Updated **{_engine().iso_now()}**. Rotation changes research coverage, never brokerage orders.")
-    _require_dashboard(connection, "universe_watch", "dynamic-universe-rotation", "\n".join(lines))
-    _engine().store_observation(
-        connection,
-        "dynamic-universe-rotation",
-        {
-            "before": active,
-            "after": active_after,
-            "batch": batch,
-            "promoted": promoted,
-            "rotated": rotated,
-            "failures": failures,
-            "at": _engine().iso_now(),
-        },
-    )
-    return (
-        f"{len(batch)} candidates checked; {len(promoted)} promoted; "
-        f"{len(rotated)} rotated; {len(active_after)} active"
-    )
-
 
 def enhanced_activity_card(connection: Any, rows: list[dict[str, Any]]) -> str:
     active = dynamic_universe.active_symbols()
@@ -1126,7 +898,7 @@ def enhanced_activity_card(connection: Any, rows: list[dict[str, Any]]) -> str:
     lines = [
         "## Live Tradysquids System Activity",
         f"**Market:** {'OPEN' if spy_scanner.market_is_open_now()[0] else 'CLOSED'} · "
-        f"**Active universe:** {len(active)}/{dynamic_universe.max_active_symbols()}",
+        f"**Ticker:** {', '.join(active) or spy_scanner.TICKER}",
         f"**Needs attention:** {len(attention)} scheduled job(s)",
         "### What actually happened",
     ]
@@ -1480,15 +1252,6 @@ def install_engine() -> None:
             background=True,
             provider_heavy=True,
             retry_interval=timedelta(minutes=5),
-        ),
-        _ENGINE.Job(
-            "dynamic-universe-rotation",
-            timedelta(hours=6),
-            universe_rotation_job,
-            after_hours_interval=timedelta(hours=6),
-            background=True,
-            provider_heavy=True,
-            retry_interval=timedelta(minutes=30),
         ),
         _ENGINE.Job(
             "upgrade-request-migration",

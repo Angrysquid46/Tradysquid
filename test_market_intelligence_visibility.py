@@ -46,7 +46,6 @@ class MarketIntelligenceVisibilityTests(unittest.TestCase):
         }
         with (
             mock.patch.object(public.dynamic_universe, "claim_events", return_value=[event]),
-            mock.patch.object(public.dynamic_universe, "upsert_candidates", return_value=1),
             mock.patch.object(public.dynamic_universe, "complete_event") as complete,
             mock.patch.object(public.engine, "publish_change_only", return_value=True) as publish,
             mock.patch.object(public.engine, "upsert_dashboard", return_value=True) as dashboard,
@@ -84,7 +83,6 @@ class MarketIntelligenceVisibilityTests(unittest.TestCase):
             mock.patch.object(public.spy_scanner, "now_ct", return_value=saturday),
             mock.patch.object(public.spy_scanner, "market_is_open_now", return_value=(False, "weekend")),
             mock.patch.object(public.dynamic_universe, "active_symbols", return_value=["F", "AAL"]),
-            mock.patch.object(public.dynamic_universe, "max_active_symbols", return_value=25),
             mock.patch.object(public.spy_scanner, "get_quotes", return_value={
                 "F": {"last": 12.34, "change_percentage": 1.2, "volume": 1_500_000},
                 "AAL": {"last": 11.20, "change_percentage": -2.4, "volume": 2_000_000},

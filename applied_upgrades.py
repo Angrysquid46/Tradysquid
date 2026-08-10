@@ -91,16 +91,17 @@ BATCH_SPECS = (
     UpgradeSpec(
         "market-regime",
         "Active-universe market regime",
-        "Maintains one market-regime summary covering active symbols plus SPY and QQQ context.",
+        "Maintains one market-regime summary covering SPY, the only ticker this system trades.",
         "active-market-regime → upgrade_batch_44.market_regime_summary_job",
         ("market-regime",),
         6,
     ),
     UpgradeSpec(
         "universe-rotation",
-        "Dynamic universe rotation",
-        "Scores liquid optionable candidates while protecting member additions and open positions.",
-        "dynamic-universe-rotation → upgrade_batch_44.universe_rotation_job",
+        "Dynamic universe rotation (removed)",
+        "Removed entirely per later, overriding owner direction - this system trades SPY exclusively, "
+        "not a manually-curated universe with rotation merely paused.",
+        "removed - no job, no callback, no candidate-pool machinery remains",
         ("universe-watch",),
         7,
     ),

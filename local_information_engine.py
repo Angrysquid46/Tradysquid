@@ -25,10 +25,8 @@ from urllib.parse import quote, quote_plus, urljoin
 
 import spy_scanner
 import dynamic_universe
-import multi_ticker_scan
 import outcome_learning
 import requests
-import ticker_registry
 import tradier_stream
 import trade_intelligence
 from run_with_env import load_env
@@ -586,46 +584,6 @@ def upsert_dashboard(
     return True
 
 
-def upsert_ticker_dashboard(
-    connection: sqlite3.Connection,
-    ticker: str,
-    channel_key: str,
-    card_key: str,
-    content: str,
-) -> bool:
-    item = ticker_registry.get(ticker)
-    channel_id = str((item or {}).get("channels", {}).get(channel_key) or "")
-    tracker = discord_tracker()
-    if not tracker or not channel_id:
-        return False
-    state_name = "dynamic_ticker_discord_state"
-    try:
-        state = json.loads(get_state(connection, state_name, "{}"))
-    except json.JSONDecodeError:
-        state = {}
-    messages = state.setdefault("messages", {})
-    state_key = f"{ticker}:{channel_key}:{card_key}"
-    message_id = str(messages.get(state_key) or "")
-    payload = {
-        "content": "",
-        "embeds": [spy_scanner.discord_card(content[:6000])],
-        "allowed_mentions": {"parse": []},
-    }
-    if message_id:
-        try:
-            tracker._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
-        except spy_scanner.DiscordError as exc:
-            if "HTTP 404" not in str(exc):
-                raise
-            message_id = ""
-    if not message_id:
-        created = tracker._request("POST", f"/channels/{channel_id}/messages", payload)
-        message_id = str((created or {}).get("id") or "")
-        if message_id:
-            messages[state_key] = message_id
-    set_state(connection, state_name, json.dumps(state))
-    return bool(message_id)
-
 
 def send_ticker_chart(
     connection: sqlite3.Connection,
@@ -1021,53 +979,43 @@ def weekly_review_job(connection: sqlite3.Connection) -> str:
 
 
 def full_scanner_job(connection: sqlite3.Connection) -> str:
+    """This system trades SPY exclusively - a direct spy_scanner.main() call,
+    not a loop over a ticker universe. See multi_ticker_scan.py's removal:
+    that machinery existed only to support scanning tickers beyond SPY."""
     if not FULL_SCAN_ENABLED:
         return "disabled until LOCAL_FULL_SCAN_ENABLED=true"
     if not spy_scanner.DISCORD_BOT_TOKEN:
         return "waiting for local DISCORD_BOT_TOKEN"
-    tickers = multi_ticker_scan.configured_active_tickers()
     with POSITION_FILE_LOCK:
-        result = multi_ticker_scan.main(tickers)
-    results = dict(multi_ticker_scan.LAST_RESULTS)
+        exit_code = spy_scanner.main()
     store_observation(
         connection,
         "full-scan",
-        {"results": results, "completed_at": iso_now()},
+        {"results": {spy_scanner.TICKER: exit_code}, "completed_at": iso_now()},
     )
-    failed = [ticker for ticker, ticker_result in results.items() if ticker_result]
-    if failed:
-        raise RuntimeError(f"Scanner failed for: {', '.join(failed)}")
-    if result:
-        raise RuntimeError("Scanner returned failure without per-ticker results")
-    return f"Options scan completed for {', '.join(results) or 'no active tickers'}"
+    if exit_code:
+        raise RuntimeError(f"Scanner failed for {spy_scanner.TICKER}")
+    return f"Options scan completed for {spy_scanner.TICKER}"
 
 
 def manual_options_scan_job(connection: sqlite3.Connection) -> str:
-    """Scan every currently active symbol instead of the scheduled rotating batch."""
+    """Manual /scan-now trigger for the options scanner - SPY only."""
     if not FULL_SCAN_ENABLED:
         return "disabled until LOCAL_FULL_SCAN_ENABLED=true"
     if not spy_scanner.DISCORD_BOT_TOKEN:
         return "waiting for local DISCORD_BOT_TOKEN"
-    tickers = dynamic_universe.active_symbols()
     with POSITION_FILE_LOCK:
-        result = multi_ticker_scan.main(tickers)
-    results = dict(multi_ticker_scan.LAST_RESULTS)
+        exit_code = spy_scanner.main()
     store_observation(
         connection,
         "manual-full-scan",
-        {"results": results, "completed_at": iso_now()},
+        {"results": {spy_scanner.TICKER: exit_code}, "completed_at": iso_now()},
     )
-    failed = [ticker for ticker, exit_code in results.items() if exit_code]
-    if failed:
-        raise RuntimeError(f"Scanner failed for: {', '.join(failed)}")
-    if result:
-        raise RuntimeError("Scanner returned failure without per-ticker results")
+    if exit_code:
+        raise RuntimeError(f"Scanner failed for {spy_scanner.TICKER}")
     market_open, _ = spy_scanner.market_is_open_now()
     session = "live option chains" if market_open else "market-closed routing checks"
-    return (
-        f"{len(tickers)} active tickers processed using {session}: "
-        f"{', '.join(tickers) or 'none'}"
-    )
+    return f"{spy_scanner.TICKER} processed using {session}"
 
 
 def manual_intelligence_job(connection: sqlite3.Connection) -> str:
@@ -1202,7 +1150,7 @@ def _run_manual_step(
 def run_manual_scan(scope: str = "all") -> str:
     """Run one owner-requested local suite and return a Discord-ready summary."""
     normalized = str(scope or "all").strip().lower()
-    allowed = {"all", "discovery", "options", "intelligence", "positions", "health"}
+    allowed = {"all", "options", "intelligence", "positions", "health"}
     if normalized not in allowed:
         raise ValueError(f"Unknown manual scan scope: {normalized}")
     if not MANUAL_SCAN_LOCK.acquire(blocking=False):
@@ -1211,18 +1159,16 @@ def run_manual_scan(scope: str = "all") -> str:
         connection = connect_db()
         try:
             steps = {
-                "discovery": [
-                    ("provider events", provider_event_job),
-                    ("universe discovery", universe_refresh_job),
-                ],
                 "options": [("options scanner", manual_options_scan_job)],
-                "intelligence": [("market intelligence", manual_intelligence_job)],
+                "intelligence": [
+                    ("provider events", provider_event_job),
+                    ("market intelligence", manual_intelligence_job),
+                ],
                 "positions": [("open positions", position_tracker_job)],
                 "health": [("system health", status_job)],
             }
             selected = (
                 [
-                    *steps["discovery"],
                     *steps["intelligence"],
                     *steps["options"],
                     *steps["positions"],
@@ -1295,19 +1241,16 @@ def publish_tradingview_signal(connection: sqlite3.Connection, event: dict[str, 
 
 
 def provider_event_job(connection: sqlite3.Connection) -> str:
+    """Consume queued provider events (currently: TradingView alerts) and
+    route them to a visible Discord card + durable research evidence. This
+    used to also feed a ticker-universe candidate pool so a provider event
+    could grow which tickers got scanned - removed along with that pool,
+    since this system trades SPY exclusively regardless of what any
+    provider event names."""
     events = dynamic_universe.claim_events(limit=25)
     completed = 0
     for event in events:
         try:
-            dynamic_universe.upsert_candidates([
-                dynamic_universe.Candidate(
-                    event["symbol"],
-                    event["provider"],
-                    score=100 + float(event["priority"]),
-                    reason=f"{event['provider']} {event['event_type']}",
-                    ttl_minutes=240,
-                )
-            ])
             store_observation(
                 connection,
                 f"provider-event:{event['provider']}",
@@ -1325,37 +1268,6 @@ def provider_event_job(connection: sqlite3.Connection) -> str:
             dynamic_universe.complete_event(event["id"], error=str(exc))
     return f"{completed}/{len(events)} provider events processed"
 
-
-def universe_refresh_job(connection: sqlite3.Connection) -> str:
-    """Refresh stock liquidity for the full universe in one batched quote call."""
-    symbols = dynamic_universe.initialize()
-    if not symbols:
-        return "empty universe"
-    quotes = spy_scanner.get_quotes(symbols, include_greeks=False)
-    candidates: list[dynamic_universe.Candidate] = []
-    for symbol in symbols:
-        quote = quotes.get(symbol) or {}
-        price = spy_scanner.as_float(quote.get("last"))
-        volume = spy_scanner.as_float(quote.get("volume"))
-        if price is None:
-            continue
-        score = min((volume or 0) / 1_000_000, 20) * 5
-        candidates.append(dynamic_universe.Candidate(
-            symbol,
-            "tradier_liquidity",
-            score=score,
-            last_price=price,
-            average_volume=volume,
-            reason="batched Tradier liquidity refresh",
-            ttl_minutes=180,
-        ))
-    updated = dynamic_universe.upsert_candidates(candidates)
-    store_observation(
-        connection,
-        "universe-refresh",
-        {"symbols": len(symbols), "updated": updated, "at": iso_now()},
-    )
-    return f"{updated}/{len(symbols)} universe quotes refreshed"
 
 
 def _current_commit_sha() -> str:
@@ -1816,12 +1728,6 @@ JOBS = [
         timedelta(hours=24),
         intelligence_retention_job,
         retry_interval=timedelta(minutes=15),
-    ),
-    Job(
-        "dynamic-universe-refresh",
-        timedelta(minutes=60),
-        universe_refresh_job,
-        after_hours_interval=timedelta(hours=2),
     ),
     Job(
         "managed-ticker-information",

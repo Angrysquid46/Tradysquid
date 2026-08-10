@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+import dynamic_universe
 import journal_contract
 import upgrade_batch_44 as batch
 
@@ -92,15 +93,17 @@ class UpgradeBatch44Tests(unittest.TestCase):
             journal_contract.REQUIRED_ENTRY_MARKERS,
         )
 
-    def test_universe_rotation_is_a_noop_while_the_universe_is_manually_curated(self) -> None:
-        # Owner directive: the active universe is manually curated while
-        # SPY trades exclusively - this job's whole purpose is promoting
-        # OTHER tickers into that universe, which must stay off by
-        # default and must not touch dynamic_universe at all when it is.
-        self.assertFalse(batch.UNIVERSE_ROTATION_ENABLED)
-        result = batch.universe_rotation_job(None)
-        self.assertIn("disabled", result)
-        self.assertIn("manually curated", result)
+    def test_universe_rotation_capability_was_removed_not_merely_disabled(self) -> None:
+        # Owner directive: this system trades SPY exclusively. Ticker-
+        # rotation/universe-expansion used to exist but stay off by default
+        # (UNIVERSE_ROTATION_ENABLED=False) - a prior "erase this" request
+        # was only ever half-honored that way. This time the capability
+        # itself is gone: no job, no function, no candidate-pool constants.
+        self.assertFalse(hasattr(batch, "universe_rotation_job"))
+        self.assertFalse(hasattr(batch, "UNIVERSE_ROTATION_ENABLED"))
+        self.assertFalse(hasattr(batch, "LIQUID_CANDIDATES"))
+        self.assertFalse(hasattr(dynamic_universe, "upsert_candidates"))
+        self.assertFalse(hasattr(dynamic_universe, "max_active_symbols"))
 
     def test_engine_install_registers_batch_jobs_once(self) -> None:
         batch.install_engine()
@@ -108,10 +111,10 @@ class UpgradeBatch44Tests(unittest.TestCase):
         for expected in (
             "active-market-regime",
             "intraday-chart-refresh",
-            "dynamic-universe-rotation",
             "upgrade-request-migration",
         ):
             self.assertEqual(names.count(expected), 1)
+        self.assertNotIn("dynamic-universe-rotation", names)
 
 
 if __name__ == "__main__":

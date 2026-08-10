@@ -22,7 +22,6 @@ from nacl.signing import VerifyKey
 import spy_scanner
 import dynamic_universe
 import local_information_engine as info_engine
-import ticker_registry
 
 HOST = os.environ.get("COMMAND_BOT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("COMMAND_BOT_PORT", "8080"))
@@ -33,18 +32,9 @@ ALLOWED_USER_ID = os.environ.get("DISCORD_ALLOWED_USER_ID", "").strip()
 OWNER_ONLY_COMMANDS = {
     "reset-trading-data",
     "clear-chat-history",
-    "ticker-pause",
-    "ticker-resume",
-    "ticker-remove",
     "scan-now",
 }
 TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
-ROBINHOOD_SCAN_WEBHOOK_SECRET = os.environ.get("ROBINHOOD_SCAN_WEBHOOK_SECRET", "").strip()
-ROBINHOOD_SCAN_PRESETS = {
-    "HIGH_OPTIONS_VOLUME_IV",
-    "DAILY_GAINERS",
-    "DAILY_LOSERS",
-}
 
 APP = Flask(__name__)
 CHART_LOCK = threading.Lock()
@@ -163,21 +153,18 @@ def patch_original(
 
 
 def command_ticker(value: str | None) -> str:
-    active = dynamic_universe.initialize()
-    ticker = dynamic_universe.normalize_symbol(
-        value or (active[0] if active else "SPY")
-    )
-    if ticker not in active:
-        raise ValueError(f"{ticker} is not active in the scanner universe.")
-    return ticker
+    """This system trades SPY exclusively - defaults to it, and any
+    explicit symbol is just a read-only informational lookup (a live
+    quote/chart/technical read), never a scan or trade target. There is no
+    more "active universe" to validate against - that concept, and the
+    Discord commands that grew it, were removed entirely."""
+    return dynamic_universe.normalize_symbol(value or spy_scanner.TICKER)
 
 
 def interaction_ticker(interaction: dict[str, Any]) -> str:
-    """Use the requested ticker or the highest-ranked active universe symbol."""
+    """Use the requested ticker or default to SPY."""
     explicit = str(option_value(interaction, "ticker", "") or "").strip()
-    if explicit:
-        return command_ticker(explicit)
-    return command_ticker(None)
+    return command_ticker(explicit or None)
 
 
 def live_market_data(ticker: str, days: int = 120) -> tuple[float, list[dict[str, Any]]]:
@@ -319,11 +306,8 @@ def help_reply() -> str:
         "`/performance` — tracked trade results and open-position count",
         "`/why trade_id:` — show the recorded rationale for a tracked trade",
         "`/status`, `/dataage`, `/lastscan`, `/schedule` — system reliability",
-        "`/scan-now scope:` — owner-only manual discovery, options, intelligence, positions, health, or everything",
+        "`/scan-now scope:` — owner-only manual options, intelligence, positions, health, or everything",
         "`/explain topic:` — plain-language options education",
-        "`/ticker-add ticker:` — add a verified optionable symbol to the shared universe",
-        "`/ticker-pause`, `/ticker-resume`, `/ticker-remove` — owner-only universe controls",
-        "`/ticker-list` and `/ticker-status` — integrated strategy status",
         "",
         "Select a command after typing `/`, complete its fields, then press Send.",
         "Educational information only—not professional financial advice.",
@@ -430,197 +414,6 @@ def clear_chat_history_reply(interaction: dict[str, Any]) -> str:
         "were never touched either way - this only ever removes command "
         "replies and other bot-authored messages."
     )
-
-
-def publish_ticker_configuration() -> str:
-    """Legacy compatibility: configuration changes stay local until reviewed."""
-    return "Saved locally; no GitHub commit, workflow, or push was triggered."
-
-
-def set_universe_symbol(symbol: str, active: bool) -> None:
-    symbol = dynamic_universe.normalize_symbol(symbol)
-    payload = dynamic_universe.universe_config()
-    seeds = {str(item).upper() for item in payload.get("seed_symbols") or []}
-    excluded = {str(item).upper() for item in payload.get("exclude_symbols") or []}
-    seeds.add(symbol)
-    if active:
-        excluded.discard(symbol)
-    else:
-        excluded.add(symbol)
-    payload["seed_symbols"] = sorted(seeds)
-    payload["exclude_symbols"] = sorted(excluded)
-    dynamic_universe.CONFIG_PATH.write_text(
-        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
-    )
-
-
-def universe_add_reply(interaction: dict[str, Any]) -> str:
-    require_ticker_admin(interaction)
-    ticker = dynamic_universe.normalize_symbol(str(option_value(interaction, "ticker", "")))
-    quote = spy_scanner.get_quote(ticker) or {}
-    price = spy_scanner.as_float(quote.get("last"))
-    if price is None or not spy_scanner.get_expirations(ticker):
-        raise ValueError(f"Tradier could not verify optionable ticker {ticker}.")
-    set_universe_symbol(ticker, True)
-    dynamic_universe.upsert_candidates([
-        dynamic_universe.Candidate(
-            ticker, "owner", 200, price, options_available=True,
-            reason="owner-added universe symbol",
-        )
-    ])
-    return (
-        f"✅ **{ticker} added to the shared scanner universe** at ${price:.2f}.\n"
-        "It will enter the rotating scan pool. No channel, GitHub run, or trade was created."
-    )
-
-
-def universe_pause_reply(interaction: dict[str, Any]) -> str:
-    require_ticker_admin(interaction)
-    ticker = dynamic_universe.normalize_symbol(str(option_value(interaction, "ticker", "")))
-    set_universe_symbol(ticker, False)
-    return (
-        f"⏸️ **{ticker} removed from new scans.** Existing positions remain tracked."
-    )
-
-
-def universe_resume_reply(interaction: dict[str, Any]) -> str:
-    require_ticker_admin(interaction)
-    ticker = dynamic_universe.normalize_symbol(str(option_value(interaction, "ticker", "")))
-    set_universe_symbol(ticker, True)
-    return f"▶️ **{ticker} restored to the rotating scanner universe.**"
-
-
-def universe_list_reply() -> str:
-    active = dynamic_universe.initialize()
-    excluded = dynamic_universe.universe_config().get("exclude_symbols") or []
-    return "\n".join([
-        "📚 **Dynamic scanner universe**",
-        f"**Active ({len(active)}):** {', '.join(active) if active else 'None'}",
-        f"**Excluded:** {', '.join(excluded) if excluded else 'None'}",
-        "Open positions remain tracked even after a ticker is excluded.",
-    ])
-
-
-def universe_status_reply(ticker: str) -> str:
-    symbol = dynamic_universe.normalize_symbol(ticker)
-    active = symbol in dynamic_universe.initialize()
-    return (
-        f"🧩 **{symbol}** · **{'ACTIVE' if active else 'NOT ACTIVE'}**\n"
-        "Shared filters, lifecycle channels, and performance tracking apply."
-    )
-
-
-def ticker_add_reply(interaction: dict[str, Any]) -> str:
-    ticker = ticker_registry.normalize_ticker(
-        str(option_value(interaction, "ticker", ""))
-    )
-    quote = spy_scanner.get_quote(ticker) or {}
-    price = spy_scanner.as_float(quote.get("last"))
-    if price is None:
-        raise ValueError(f"Tradier could not verify stock ticker {ticker}.")
-    expirations = spy_scanner.get_expirations(ticker)
-    if not expirations:
-        raise ValueError(f"{ticker} does not currently have a usable options chain.")
-    dynamic_universe.upsert_candidates([
-        dynamic_universe.Candidate(
-            ticker,
-            "discord_member",
-            score=25,
-            last_price=price,
-            options_available=True,
-            reason=f"Added through Discord by user {command_user_id(interaction)}",
-        )
-    ])
-    ticker_registry.save(
-        ticker,
-        status="ACTIVE",
-        note="Added to the shared scanner universe through Discord",
-    )
-    sync_status = publish_ticker_configuration()
-    return "\n".join([
-        f"✅ **{ticker} added to the shared scanner universe**",
-        f"Verified price: **${price:.2f}** · listed expirations: **{len(expirations)}**",
-        "No ticker category or ticker-specific channels were created.",
-        "Scheduled research, charts, news, and eligible options scans are enabled.",
-        "Results use the shared scanner, intelligence, lifecycle, and performance channels.",
-        sync_status,
-    ])
-
-
-def ticker_pause_reply(interaction: dict[str, Any]) -> str:
-    require_ticker_admin(interaction)
-    ticker = str(option_value(interaction, "ticker", ""))
-    duration = str(option_value(interaction, "duration", "today"))
-    item = ticker_registry.pause(ticker, today_only=duration == "today")
-    sync_status = publish_ticker_configuration()
-    resume = (
-        f" It will resume automatically on **{item['resume_on']}**."
-        if item.get("resume_on") else " Use `/ticker-resume` to enable it again."
-    )
-    return (
-        f"⏸️ **{item['ticker']} paused.** No new positions will be generated."
-        f"{resume} Existing positions continue to be tracked. {sync_status}"
-    )
-
-
-def ticker_resume_reply(interaction: dict[str, Any]) -> str:
-    require_ticker_admin(interaction)
-    ticker = str(option_value(interaction, "ticker", ""))
-    item = ticker_registry.resume(ticker)
-    dynamic_universe.upsert_candidates([
-        dynamic_universe.Candidate(
-            item["ticker"], "owner_resume", score=25, reason="Restored by owner"
-        )
-    ])
-    sync_status = publish_ticker_configuration()
-    return (
-        f"▶️ **{item['ticker']} resumed.** Scheduled research and eligible "
-        f"trade generation are active. {sync_status}"
-    )
-
-
-def ticker_remove_reply(interaction: dict[str, Any]) -> str:
-    require_ticker_admin(interaction)
-    ticker = str(option_value(interaction, "ticker", ""))
-    item = ticker_registry.archive(ticker)
-    set_universe_symbol(item["ticker"], False)
-    sync_status = publish_ticker_configuration()
-    return "\n".join([
-        f"📦 **{item['ticker']} archived.**",
-        "No new positions will be generated.",
-        "Trade history, performance, and filters were preserved.",
-        "Any existing position will continue through the shared lifecycle until closed.",
-        "Use `/ticker-resume` to restore it.",
-        sync_status,
-    ])
-
-
-def ticker_list_reply() -> str:
-    groups: dict[str, list[str]] = {"ACTIVE": [], "PAUSED": [], "ARCHIVED": []}
-    for item in ticker_registry.all_tickers():
-        groups.setdefault(str(item["status"]), []).append(str(item["ticker"]))
-    lines = ["📚 **Integrated ticker strategies**"]
-    for status in ("ACTIVE", "PAUSED", "ARCHIVED"):
-        values = groups.get(status) or []
-        lines.append(f"**{status.title()}:** {', '.join(values) if values else 'None'}")
-    lines.append(
-        "SPY is protected. Pausing or archiving never stops existing-position tracking."
-    )
-    return "\n".join(lines)
-
-
-def ticker_status_reply(ticker: str) -> str:
-    item = ticker_registry.get(ticker)
-    if not item:
-        return f"❌ `{ticker.upper()}` is not integrated."
-    return "\n".join([
-        f"🧩 **{item['ticker']} ticker strategy**",
-        f"Status: **{item['status']}**",
-        f"Resume date: **{item.get('resume_on') or 'manual / not applicable'}**",
-        "Discord routing: **shared universe channels**",
-        f"Last registry update: {item['updated_at']}",
-        f"Note: {item.get('note') or 'None'}",
-    ])
 
 
 def quote_reply(ticker: str) -> str:
@@ -824,13 +617,17 @@ def performance_reply(ticker: str) -> str:
 
 
 def status_reply(ticker: str) -> str:
-    market_kind = "market" if ticker == "F" else f"ticker-market:{ticker}"
+    market_kind = "market" if ticker == spy_scanner.TICKER else f"ticker-market:{ticker}"
     latest_market = info_engine.latest_observation(market_kind)
     latest_status = info_engine.latest_observation("status")
-    ticker_state = ticker_registry.get(ticker) or {}
+    enabled = spy_scanner.trade_types_enabled()
+    live_strategies = ", ".join(
+        name for name in ("spy_0dte_1m", "spy_0dte_5m", "spy_key_levels", "spy_expansion_level")
+        if enabled.get(name)
+    ) or "none"
     return "\n".join([
         f"🩺 **{ticker} Tradysquids status**",
-        f"Ticker strategy: **{ticker_state.get('status', 'UNKNOWN')}**",
+        f"Live strategies: **{live_strategies}**",
         "Command service: **ONLINE**",
         f"Tradier configured: **{'YES' if spy_scanner.TRADIER_TOKEN else 'NO'}**",
         (
@@ -984,22 +781,6 @@ def process_command(interaction: dict[str, Any]) -> None:
             patch_original(
                 application_id, token, content=clear_chat_history_reply(interaction)
             )
-        elif name == "ticker-add":
-            patch_original(application_id, token, content=universe_add_reply(interaction))
-        elif name == "ticker-pause":
-            patch_original(application_id, token, content=universe_pause_reply(interaction))
-        elif name == "ticker-resume":
-            patch_original(application_id, token, content=universe_resume_reply(interaction))
-        elif name == "ticker-remove":
-            patch_original(application_id, token, content=universe_pause_reply(interaction))
-        elif name == "ticker-list":
-            patch_original(application_id, token, content=universe_list_reply())
-        elif name == "ticker-status":
-            patch_original(
-                application_id,
-                token,
-                content=universe_status_reply(str(option_value(interaction, "ticker", ""))),
-            )
         elif name == "chart":
             days = int(option_value(interaction, "days", 90))
             ticker = interaction_ticker(interaction)
@@ -1114,7 +895,6 @@ def health() -> Response:
         "ok": True,
         "service": "Tradysquids local command and signal gateway",
         "tradingview_ready": bool(TRADINGVIEW_WEBHOOK_SECRET),
-        "robinhood_scan_ready": bool(ROBINHOOD_SCAN_WEBHOOK_SECRET),
         "paper_trading_only": True,
     })
 
@@ -1150,63 +930,7 @@ def tradingview_webhook() -> Response:
         priority=100,
         event_key=event_key,
     )
-    dynamic_universe.upsert_candidates([
-        dynamic_universe.Candidate(
-            symbol,
-            "tradingview",
-            score=100,
-            reason=f"TradingView {event_type}",
-            ttl_minutes=240,
-        )
-    ])
     return jsonify({"ok": True, "queued": inserted, "symbol": symbol}), 202
-
-
-@APP.post("/robinhood-scan")
-def robinhood_scan_webhook() -> Response:
-    """Accept a batch of tickers a Robinhood MCP scan surfaced (run by a
-    scheduled Claude routine, since the scan tools only work through an
-    active session - not something this always-on local process can call
-    itself). Read-only discovery only: import_robinhood_snapshot rejects
-    any order/trade/transfer-shaped field structurally, so this can never
-    become a trading pathway no matter what a caller sends."""
-    if not ROBINHOOD_SCAN_WEBHOOK_SECRET:
-        abort(503, "ROBINHOOD_SCAN_WEBHOOK_SECRET is not configured")
-    supplied = (
-        request.headers.get("X-Tradysquids-Secret", "")
-        or request.args.get("secret", "")
-    )
-    if supplied != ROBINHOOD_SCAN_WEBHOOK_SECRET:
-        abort(401, "invalid webhook secret")
-    if request.content_length and request.content_length > 32_768:
-        abort(413, "payload too large")
-    payload = request.get_json(force=True)
-    scan = str(payload.get("scan") or "").strip().upper()
-    if scan not in ROBINHOOD_SCAN_PRESETS:
-        abort(400, f"scan must be one of {sorted(ROBINHOOD_SCAN_PRESETS)}")
-    raw_symbols = payload.get("symbols") or []
-    if not isinstance(raw_symbols, list):
-        abort(400, "symbols must be a list")
-    symbols: list[str] = []
-    for value in raw_symbols[:100]:
-        try:
-            symbols.append(dynamic_universe.normalize_symbol(str(value)))
-        except ValueError:
-            continue
-    inserted = dynamic_universe.import_robinhood_snapshot({
-        "source": "robinhood_mcp",
-        "generated_at": spy_scanner.now_ct().isoformat(),
-        "symbols": [
-            {
-                "symbol": symbol,
-                "score": 60,
-                "options_available": True,
-                "reason": f"Robinhood {scan} scan",
-            }
-            for symbol in symbols
-        ],
-    })
-    return jsonify({"ok": True, "queued": inserted, "scan": scan, "symbols": symbols}), 202
 
 
 def handle_message_component(interaction: dict[str, Any]) -> Response:

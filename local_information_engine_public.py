@@ -168,7 +168,7 @@ def premarket_visibility_job(connection) -> str:
     lines = [
         "## Tradysquids Session Preparation",
         f"**Session:** {session} · **Market:** {'OPEN' if market_open else 'CLOSED'}",
-        f"**Active rotating universe:** {len(symbols)}/{dynamic_universe.max_active_symbols()} symbols",
+        f"**Ticker:** {', '.join(symbols) or spy_scanner.TICKER}",
         "### Current universe movement",
     ]
     visible = 0
@@ -284,8 +284,7 @@ def _provider_alert_text(event: dict[str, Any]) -> str:
             f"Provider **{provider}** · priority **{priority}**",
             f"**Details:** {_payload_summary(event.get('payload'))}",
             f"Received **{event.get('received_at') or engine.iso_now()}**.",
-            "The ticker was moved forward in the research universe. This event is "
-            "informational and is not an automatic trade entry.",
+            "This event is informational and is not an automatic trade entry.",
         ]
     )
 
@@ -370,17 +369,6 @@ def visible_provider_event_job(connection) -> str:
     for event in events:
         event_id = int(event["id"])
         try:
-            dynamic_universe.upsert_candidates(
-                [
-                    dynamic_universe.Candidate(
-                        event["symbol"],
-                        event["provider"],
-                        score=100 + float(event["priority"]),
-                        reason=f"{event['provider']} {event['event_type']}",
-                        ttl_minutes=240,
-                    )
-                ]
-            )
             payload = {
                 "id": event_id,
                 "event_key": event.get("event_key"),

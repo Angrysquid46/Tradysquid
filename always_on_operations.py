@@ -358,12 +358,6 @@ def activity_card(
     connection: sqlite3.Connection,
     rows: list[dict[str, Any]],
 ) -> str:
-    active = dynamic_universe.initialize()
-    scan_cursor_path = ROOT / "state" / "universe-scan-cursor.json"
-    try:
-        cursor_state = json.loads(scan_cursor_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        cursor_state = {}
     latest_off_hours = engine.latest_observation("off-hours-universe-screen")
     latest_events = engine.latest_observation("rotating-event-sweep")
     latest_positions = engine.latest_observation("position-tracker")
@@ -387,7 +381,6 @@ def activity_card(
         "managed-ticker-information",
         "managed-ticker-news",
         "rotating-event-sweep",
-        "dynamic-universe-refresh",
         "discord-reporting",
         "health-snapshot",
     }
@@ -396,8 +389,7 @@ def activity_card(
         "## Always-On Tradysquids Activity",
         f"**Market:** {'OPEN · trade scanner enabled' if market_open_now() else 'CLOSED · research-only screening enabled'}",
         stream_line,
-        f"**Active universe:** {len(active)}/{dynamic_universe.max_active_symbols()} symbols",
-        f"**Last live scanner rotation:** {', '.join(cursor_state.get('last_batch') or []) or 'not recorded yet'}",
+        f"**Ticker:** {spy_scanner.TICKER} (the only ticker this system trades)",
         f"**Last off-hours research batch:** {', '.join(((latest_off_hours or {}).get('payload') or {}).get('batch') or []) or 'not recorded yet'}",
         "### Interval receipts",
     ]
@@ -610,7 +602,7 @@ def off_hours_universe_screen_job(connection: sqlite3.Connection) -> str:
     )
     universe_lines = [
         "## Rotating Universe Status",
-        f"Active **{len(dynamic_universe.active_symbols())}/{dynamic_universe.max_active_symbols()}**",
+        f"Active ticker: **{spy_scanner.TICKER}**",
         f"Current off-hours batch: **{', '.join(batch)}**",
         f"Completed: **{', '.join(item['symbol'] for item in completed) or 'none'}**",
         f"Failures: **{', '.join(failed) or 'none'}**",

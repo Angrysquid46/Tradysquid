@@ -1,8 +1,16 @@
-"""Local dynamic universe and provider-event queue.
+"""Provider-event queue for this SPY-exclusive system.
 
-This module deliberately contains no brokerage order capability. Provider data
-is normalized into a small SQLite queue, ranked, deduplicated, and consumed by
-the local scanner.
+This module used to also track a growable "universe" of tickers to scan
+beyond SPY (candidate discovery/scoring, member/owner ticker-add commands,
+Robinhood-scan ingestion, a rotating multi-ticker scan batch) - all of that
+was removed per explicit owner direction: this system trades SPY
+exclusively, and that capability existed only to expand scanning beyond it.
+What remains is purely the provider-event queue, still legitimately used to
+route TradingView webhook alerts to a visible Discord card (see
+local_information_engine.py's provider_event_job / publish_tradingview_signal)
+- an unrelated concern from "which tickers get scanned."
+
+This module deliberately contains no brokerage order capability.
 """
 
 from __future__ import annotations
@@ -11,18 +19,21 @@ import hashlib
 import json
 import re
 import sqlite3
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent
-CONFIG_PATH = ROOT / "config" / "universe.json"
 SCANNER_CONFIG_PATH = ROOT / "config" / "scanner.json"
 DB_PATH = ROOT / "state" / "dynamic-universe.db"
-MEMBER_STATE_PATH = ROOT / "state" / "member-universe.json"
 SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,9}$")
-HARD_MAX_ACTIVE_SYMBOLS = 25
+
+# The only ticker this system trades. active_symbols()/initialize()/
+# next_scan_batch() below all resolve to exactly this - kept as functions
+# (not inlined at every call site) so the several jobs that loop
+# "for ticker in dynamic_universe.active_symbols()" keep working unchanged,
+# now as a single-ticker loop instead of a rotating multi-ticker one.
+FIXED_TICKER = "SPY"
 
 
 def now_iso() -> str:
@@ -44,103 +55,16 @@ def scanner_config() -> dict[str, Any]:
     return load_json(SCANNER_CONFIG_PATH)
 
 
-def member_universe_state() -> dict[str, Any]:
-    try:
-        payload = load_json(MEMBER_STATE_PATH)
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        payload = {}
-    additions = []
-    removals = []
-    for value in payload.get("additions") or []:
-        try:
-            additions.append(normalize_symbol(value))
-        except ValueError:
-            continue
-    for value in payload.get("removals") or []:
-        try:
-            removals.append(normalize_symbol(value))
-        except ValueError:
-            continue
-    return {
-        "version": 1,
-        "additions": sorted(set(additions)),
-        "removals": sorted(set(removals)),
-        "updated_at": str(payload.get("updated_at") or ""),
-        "updated_by": str(payload.get("updated_by") or ""),
-    }
+def active_symbols(*_args: Any, **_kwargs: Any) -> list[str]:
+    return [FIXED_TICKER]
 
 
-def write_member_universe_state(payload: dict[str, Any]) -> None:
-    MEMBER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    normalized = {
-        "version": 1,
-        "additions": sorted({normalize_symbol(value) for value in payload.get("additions") or []}),
-        "removals": sorted({normalize_symbol(value) for value in payload.get("removals") or []}),
-        "updated_at": now_iso(),
-        "updated_by": str(payload.get("updated_by") or "")[:100],
-    }
-    temporary = MEMBER_STATE_PATH.with_suffix(".tmp")
-    temporary.write_text(json.dumps(normalized, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(MEMBER_STATE_PATH)
+def initialize() -> list[str]:
+    return [FIXED_TICKER]
 
 
-def universe_config() -> dict[str, Any]:
-    config = load_json(CONFIG_PATH)
-    member_state = member_universe_state()
-    seeds = {
-        normalize_symbol(item) for item in config.get("seed_symbols") or []
-    }
-    excluded = {
-        normalize_symbol(item) for item in config.get("exclude_symbols") or []
-    }
-    additions = set(member_state["additions"])
-    removals = set(member_state["removals"])
-    seeds.update(additions)
-    excluded.update(removals)
-    excluded.difference_update(additions)
-    configured_maximum = int(config.get("max_active_symbols") or HARD_MAX_ACTIVE_SYMBOLS)
-    config["seed_symbols"] = sorted(seeds)
-    config["exclude_symbols"] = sorted(excluded)
-    config["max_active_symbols"] = max(
-        1, min(configured_maximum, HARD_MAX_ACTIVE_SYMBOLS)
-    )
-    return config
-
-
-def max_active_symbols() -> int:
-    return int(universe_config().get("max_active_symbols") or HARD_MAX_ACTIVE_SYMBOLS)
-
-
-def add_member_symbol(symbol: str, *, user_id: str = "") -> None:
-    symbol = normalize_symbol(symbol)
-    state = member_universe_state()
-    additions = set(state["additions"])
-    removals = set(state["removals"])
-    additions.add(symbol)
-    removals.discard(symbol)
-    write_member_universe_state(
-        {
-            "additions": additions,
-            "removals": removals,
-            "updated_by": user_id,
-        }
-    )
-
-
-def remove_member_symbol(symbol: str, *, user_id: str = "") -> None:
-    symbol = normalize_symbol(symbol)
-    state = member_universe_state()
-    additions = set(state["additions"])
-    removals = set(state["removals"])
-    additions.discard(symbol)
-    removals.add(symbol)
-    write_member_universe_state(
-        {
-            "additions": additions,
-            "removals": removals,
-            "updated_by": user_id,
-        }
-    )
+def next_scan_batch(*_args: Any, **_kwargs: Any) -> list[str]:
+    return [FIXED_TICKER]
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -150,22 +74,6 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.executescript(
         """
-        CREATE TABLE IF NOT EXISTS universe (
-            symbol TEXT PRIMARY KEY,
-            status TEXT NOT NULL DEFAULT 'ACTIVE',
-            source TEXT NOT NULL,
-            score REAL NOT NULL DEFAULT 0,
-            last_price REAL,
-            average_volume REAL,
-            options_available INTEGER NOT NULL DEFAULT 0,
-            reason TEXT NOT NULL DEFAULT '',
-            discovered_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            expires_at TEXT
-        );
-        CREATE INDEX IF NOT EXISTS universe_rank
-            ON universe(status, score DESC, symbol);
-
         CREATE TABLE IF NOT EXISTS provider_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_key TEXT UNIQUE NOT NULL,
@@ -186,174 +94,6 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     )
     connection.commit()
     return connection
-
-
-@dataclass(frozen=True)
-class Candidate:
-    symbol: str
-    source: str
-    score: float = 0
-    last_price: float | None = None
-    average_volume: float | None = None
-    options_available: bool = False
-    reason: str = ""
-    ttl_minutes: int | None = None
-
-
-def upsert_candidates(
-    candidates: Iterable[Candidate], connection: sqlite3.Connection | None = None
-) -> int:
-    owned = connection is None
-    db = connection or connect()
-    count = 0
-    try:
-        for item in candidates:
-            symbol = normalize_symbol(item.symbol)
-            timestamp = now_iso()
-            expires_at = (
-                (datetime.now().astimezone() + timedelta(minutes=item.ttl_minutes))
-                .isoformat(timespec="seconds")
-                if item.ttl_minutes
-                else None
-            )
-            db.execute(
-                """
-                INSERT INTO universe(
-                    symbol, status, source, score, last_price, average_volume,
-                    options_available, reason, discovered_at, updated_at, expires_at
-                ) VALUES (?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol) DO UPDATE SET
-                    status='ACTIVE',
-                    source=CASE
-                        WHEN excluded.score >= universe.score THEN excluded.source
-                        ELSE universe.source
-                    END,
-                    score=MAX(universe.score, excluded.score),
-                    last_price=COALESCE(excluded.last_price, universe.last_price),
-                    average_volume=COALESCE(excluded.average_volume, universe.average_volume),
-                    options_available=MAX(universe.options_available, excluded.options_available),
-                    reason=CASE
-                        WHEN excluded.score >= universe.score THEN excluded.reason
-                        ELSE universe.reason
-                    END,
-                    updated_at=excluded.updated_at,
-                    expires_at=excluded.expires_at
-                """,
-                (
-                    symbol,
-                    item.source,
-                    float(item.score),
-                    item.last_price,
-                    item.average_volume,
-                    int(item.options_available),
-                    item.reason,
-                    timestamp,
-                    timestamp,
-                    expires_at,
-                ),
-            )
-            count += 1
-        db.commit()
-        return count
-    finally:
-        if owned:
-            db.close()
-
-
-def seed_universe(connection: sqlite3.Connection | None = None) -> int:
-    config = universe_config()
-    return upsert_candidates(
-        (
-            Candidate(symbol=symbol, source="seed", score=10, reason="baseline liquid universe")
-            for symbol in config.get("seed_symbols") or []
-        ),
-        connection,
-    )
-
-
-def _effective_score(
-    score: float, updated_at: str, expires_at: str | None, now: datetime
-) -> float:
-    """Time-limited candidates (a TradingView alert, a Robinhood scan hit) decay
-    linearly from their assigned score down to 0 as they approach expires_at,
-    instead of holding a flat score for their whole TTL. Without this, a
-    ticker that fired once and went quiet would keep blocking a slot at near
-    its original score for hours, and could only ever be displaced by the
-    hard expiry cutoff - never by something more current showing up first.
-    Permanent entries (expires_at is None - an owner or member explicitly
-    asked for this ticker) never decay; that's a deliberate human choice, not
-    a discovery hit going stale."""
-    if not expires_at:
-        return score
-    try:
-        started = datetime.fromisoformat(updated_at)
-        ends = datetime.fromisoformat(expires_at)
-    except ValueError:
-        return score
-    total_seconds = (ends - started).total_seconds()
-    if total_seconds <= 0:
-        return 0.0
-    elapsed_seconds = (now - started).total_seconds()
-    remaining_fraction = max(0.0, min(1.0, 1 - elapsed_seconds / total_seconds))
-    return score * remaining_fraction
-
-
-def active_symbols(
-    connection: sqlite3.Connection | None = None, *, limit: int | None = None
-) -> list[str]:
-    owned = connection is None
-    db = connection or connect()
-    try:
-        config = universe_config()
-        excluded = {
-            normalize_symbol(item) for item in config.get("exclude_symbols") or []
-        }
-        maximum = min(
-            int(limit or config.get("max_active_symbols") or HARD_MAX_ACTIVE_SYMBOLS),
-            HARD_MAX_ACTIVE_SYMBOLS,
-        )
-        now_dt = datetime.now().astimezone()
-        rows = db.execute(
-            """
-            SELECT symbol, score, updated_at, expires_at FROM universe
-            WHERE status='ACTIVE' AND (expires_at IS NULL OR expires_at > ?)
-            """,
-            (now_iso(),),
-        ).fetchall()
-        ranked = sorted(
-            (row for row in rows if row["symbol"] not in excluded),
-            key=lambda row: (
-                -_effective_score(row["score"], row["updated_at"], row["expires_at"], now_dt),
-                row["symbol"],
-            ),
-        )
-        return [row["symbol"] for row in ranked[:maximum]]
-    finally:
-        if owned:
-            db.close()
-
-
-def next_scan_batch(
-    batch_size: int = 12, connection: sqlite3.Connection | None = None
-) -> list[str]:
-    """Return a rotating slice so a large universe stays inside provider limits."""
-    symbols = active_symbols(connection)
-    if not symbols:
-        return []
-    size = max(1, min(int(batch_size), len(symbols), 12))
-    state_path = ROOT / "state" / "universe-scan-cursor.json"
-    try:
-        cursor = int(json.loads(state_path.read_text(encoding="utf-8")).get("cursor", 0))
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        cursor = 0
-    chosen = [symbols[(cursor + index) % len(symbols)] for index in range(size)]
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(
-        json.dumps({"cursor": (cursor + size) % len(symbols), "updated_at": now_iso()}, indent=2)
-        + "\n",
-        encoding="utf-8",
-    )
-    return chosen
 
 
 def enqueue_event(
@@ -443,70 +183,3 @@ def complete_event(
     finally:
         if owned:
             db.close()
-
-
-def import_robinhood_snapshot(payload: dict[str, Any]) -> int:
-    """Import read-only discovery data; order-like fields are rejected."""
-    forbidden = {"order", "orders", "trade", "trades", "transfer", "buy", "sell"}
-    allowed_top_level = {"symbols", "watchlist", "generated_at", "source"}
-
-    def keys(value: Any) -> set[str]:
-        found: set[str] = set()
-        if isinstance(value, dict):
-            for key, item in value.items():
-                found.add(str(key).lower())
-                found.update(keys(item))
-        elif isinstance(value, list):
-            for item in value:
-                found.update(keys(item))
-        return found
-
-    unknown = {str(key) for key in payload if str(key) not in allowed_top_level}
-    if unknown:
-        raise ValueError(
-            "Robinhood snapshot contains unsupported top-level fields: "
-            + ", ".join(sorted(unknown))
-        )
-    if forbidden.intersection(keys(payload)):
-        raise ValueError("Robinhood adapter accepts read-only market discovery data only.")
-    source = str(payload.get("source") or "robinhood_read_only")
-    if source not in {"robinhood_mcp", "robinhood_read_only"}:
-        raise ValueError("Robinhood snapshot source is not allowlisted.")
-    rows = payload.get("symbols") or payload.get("watchlist") or []
-    candidates = []
-    for row in rows:
-        if isinstance(row, str):
-            candidates.append(Candidate(row, source, 30, reason="read-only discovery"))
-            continue
-        candidates.append(
-            Candidate(
-                symbol=row.get("symbol", ""),
-                source=source,
-                score=float(row.get("score") or 30),
-                last_price=row.get("last_price"),
-                average_volume=row.get("average_volume"),
-                options_available=bool(row.get("options_available")),
-                # A specific reason ("Robinhood HIGH_OPTIONS_VOLUME_IV scan")
-                # is real, checkable evidence a member can act on; the old
-                # flat "read-only discovery" for every row told you nothing
-                # about why this name showed up over any other. Falls back
-                # to the old text so a caller that never sends "reason"
-                # still gets something rather than an empty string.
-                reason=str(row.get("reason") or "read-only discovery")[:200],
-                ttl_minutes=1440,
-            )
-        )
-    return upsert_candidates(candidates)
-
-
-def initialize() -> list[str]:
-    """Return the current active universe without force-including the static
-    seed list. Every slot is earned by score from a real source (owner add,
-    member add, TradingView alert, liquidity/screener hit) - nothing gets a
-    permanent free pass just for being in config/universe.json. Call
-    seed_universe() explicitly if a one-time bootstrap is genuinely wanted."""
-    connection = connect()
-    try:
-        return active_symbols(connection)
-    finally:
-        connection.close()
