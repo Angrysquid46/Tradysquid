@@ -50,6 +50,7 @@ from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 import requests
+import dynamic_universe
 import economic_calendar
 import trade_intelligence
 
@@ -145,6 +146,17 @@ def is_spy_0dte_play_type(play_type: str | None) -> bool:
 SPY_0DTE_OPENING_RANGE_MINUTES = int(os.environ.get(
     "SPY_0DTE_OPENING_RANGE_MINUTES", configured("spy_0dte_opening_range_minutes", 30)
 ))
+# SPY_0DTE_1M is the variant this system's TradingView webhook was actually
+# built for: its own Pine indicator (the one behind the 66.8% backtest) is
+# the live entry trigger, not the Python opening-range breakout below - that
+# math stays in place only for SPY_0DTE_5M. A fresh TradingView alert for
+# SPY older than this many seconds no longer counts as a live signal, so a
+# position doesn't reopen off a stale alert well after the fact.
+SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS = int(os.environ.get(
+    "SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS",
+    configured("spy_0dte_1m_tradingview_max_age_seconds", 180),
+))
+SPY_0DTE_1M_CONSUMED_EVENT_PATH = STATE_DIR / "spy-0dte-1m-tradingview-consumed.json"
 SPY_0DTE_DELTA_MIN = float(os.environ.get(
     "SPY_0DTE_DELTA_MIN", configured("spy_0dte_delta_min", 0.40)
 ))
@@ -1653,6 +1665,106 @@ def spy_0dte_opening_range_signal(
             f"broke {direction} the opening range (${range_low:.2f}-${range_high:.2f}) at ${price:.2f}"
         ),
         "failures": [],
+    }
+
+
+SPY_0DTE_TRADINGVIEW_BULLISH_WORDS = ("buy", "long", "call", "bull")
+SPY_0DTE_TRADINGVIEW_BEARISH_WORDS = ("sell", "short", "put", "bear")
+
+
+def spy_0dte_tradingview_direction(event: dict[str, Any]) -> str | None:
+    """Parse a raw TradingView provider_events row into BULLISH/BEARISH,
+    or None if the alert doesn't say. Checks the event_type column first
+    (what the /tradingview webhook extracted from payload["event"]/
+    ["action"]), then falls back to scanning common payload fields
+    directly, since alert message conventions vary per Pine script."""
+    haystacks: list[str] = [str(event.get("event_type") or "")]
+    payload = event.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payload = {}
+    if isinstance(payload, dict):
+        for key in ("action", "event", "side", "direction", "signal", "strategy_action", "message"):
+            value = payload.get(key)
+            if value:
+                haystacks.append(str(value))
+    text = " ".join(haystacks).casefold()
+    is_bullish = any(word in text for word in SPY_0DTE_TRADINGVIEW_BULLISH_WORDS)
+    is_bearish = any(word in text for word in SPY_0DTE_TRADINGVIEW_BEARISH_WORDS)
+    if is_bullish and not is_bearish:
+        return "BULLISH"
+    if is_bearish and not is_bullish:
+        return "BEARISH"
+    return None
+
+
+def _spy_0dte_1m_already_consumed(event_id: int) -> bool:
+    try:
+        stored = json.loads(SPY_0DTE_1M_CONSUMED_EVENT_PATH.read_text(encoding="utf-8"))
+        return int(stored.get("event_id", -1)) == event_id
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return False
+
+
+def _spy_0dte_1m_mark_consumed(event_id: int) -> None:
+    try:
+        SPY_0DTE_1M_CONSUMED_EVENT_PATH.write_text(
+            json.dumps({"event_id": event_id, "at": datetime.now().astimezone().isoformat(timespec="seconds")}),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def spy_0dte_tradingview_signal(symbol: str = SPY_0DTE_TICKER) -> dict[str, Any]:
+    """SPY_0DTE_1M's actual entry signal - this is the strategy the
+    TradingView webhook was built for (the Pine indicator behind the
+    66.8% backtest fires the live alert here), not the Python opening-
+    range breakout used by SPY_0DTE_5M below. A fresh, direction-
+    parseable TradingView alert for `symbol` is the only thing that
+    qualifies an entry; no alert means no trade, regardless of what any
+    other price math says. Each alert can only qualify one entry (tracked
+    by event id in SPY_0DTE_1M_CONSUMED_EVENT_PATH) so a position that
+    opens and closes quickly can't reopen off the same stale alert."""
+    try:
+        event = dynamic_universe.recent_tradingview_signal(
+            symbol, SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS
+        )
+    except Exception as exc:
+        return _unavailable_context(f"tradingview signal lookup failed: {exc}")
+    if not event:
+        return {
+            "qualified": False,
+            "regime": "NO TRADE",
+            "reason": "no TradingView alert received in the last "
+            f"{SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS}s",
+            "failures": ["no fresh TradingView alert"],
+        }
+    if _spy_0dte_1m_already_consumed(int(event["id"])):
+        return {
+            "qualified": False,
+            "regime": "NO TRADE",
+            "reason": "the latest TradingView alert already opened a trade",
+            "failures": ["TradingView alert already consumed"],
+        }
+    direction = spy_0dte_tradingview_direction(event)
+    if direction is None:
+        return {
+            "qualified": False,
+            "regime": "NO TRADE",
+            "reason": f"TradingView alert received but direction was not recognized: {event.get('event_type')!r}",
+            "failures": ["TradingView alert direction unrecognized"],
+        }
+    _spy_0dte_1m_mark_consumed(int(event["id"]))
+    regime = "BULLISH / CONTROLLED" if direction == "BULLISH" else "BEARISH / CONTROLLED"
+    return {
+        "qualified": True,
+        "regime": regime,
+        "reason": f"TradingView alert ({event.get('event_type')}) at {event.get('received_at')}",
+        "failures": [],
+        "tradingview_event_id": event["id"],
     }
 
 
@@ -6228,9 +6340,19 @@ def _run_spy_0dte_variant(
     read, its own chain fetch, its own candidates tagged with its own
     play_type, and neither one's failure or signal state can affect the
     other's. They trade fully independently: both can be open at once,
-    each under its own $500/trade risk cap, by owner decision."""
+    each under its own $500/trade risk cap, by owner decision.
+
+    SPY_0DTE_1M's entry signal is the live TradingView alert (see
+    spy_0dte_tradingview_signal) - the strategy this system's TradingView
+    webhook was actually built for. SPY_0DTE_5M keeps the Python
+    opening-range breakout below; the two variants are not required to
+    use the same signal source, only the same contract selection, risk
+    cap, and exit rules."""
     try:
-        context = spy_0dte_opening_range_signal(intraday_history, bar_minutes=bar_minutes)
+        if play_type == "SPY_0DTE_1M":
+            context = spy_0dte_tradingview_signal(TICKER)
+        else:
+            context = spy_0dte_opening_range_signal(intraday_history, bar_minutes=bar_minutes)
     except Exception as exc:
         context = _unavailable_context(f"spy 0dte ({play_type}) signal errored: {exc}")
     if not context.get("qualified"):
