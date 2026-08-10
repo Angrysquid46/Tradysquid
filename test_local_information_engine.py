@@ -767,6 +767,7 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(
             calls,
             [
+                ("entry", state, "entry", "VALE-20260731-001"),
                 ("updates", state, "position", "VALE-20260731-001"),
                 ("exit", state, "exit", "VALE-20260731-001"),
             ],
@@ -901,7 +902,34 @@ class InformationEngineTests(unittest.TestCase):
         }
         state: dict = {}
         self.assertEqual(spy_scanner.sync_closed_result_channels([row], Tracker(), state), 1)
-        self.assertEqual([call[0] for call in calls], ["result", "delete", "delete"])
+        self.assertEqual([call[0] for call in calls], ["result", "delete", "delete", "delete"])
+
+    def test_post_close_removes_the_entry_card_along_with_updates_and_exit(self) -> None:
+        # Owner ask: once a trade closes, the shared new-positions channel
+        # has no reason to keep its entry card around forever - the full
+        # record lives in the trade's own journal thread and the result
+        # channel, so entry gets deleted here the same way updates/exit
+        # already did.
+        deleted: list[str] = []
+
+        class Tracker:
+            ready = True
+
+            def upsert_trade_result(self, *args):
+                pass
+
+            def delete_trade_message(self, logical_name, *args):
+                deleted.append(logical_name)
+
+        row = {
+            "trade_id": "SPY-20260810-003",
+            "ticker": "SPY",
+            "outcome": "WIN",
+            "closed_at": "2026-08-10T14:00:00-05:00",
+            "pct_gain_loss": "10",
+        }
+        spy_scanner.post_close(row, spy_scanner.stored_close_evaluation(row), Tracker(), {})
+        self.assertEqual(set(deleted), {"entry", "updates", "exit"})
 
     def test_entry_snapshot_is_sent_to_trade_thread_not_chart_channel(self) -> None:
         calls: list[tuple[str, str]] = []

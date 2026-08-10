@@ -203,6 +203,29 @@ class JournalContractTests(unittest.TestCase):
         content = spy_scanner.qualified_trade_text(row)
         self.assertIn("SPY_0DTE_5M LONG CALL", content)
 
+    def test_summary_entry_card_stops_at_break_even(self) -> None:
+        # Owner ask: the shared new-positions channel card only needs to
+        # show from the top down through break-even - everything past that
+        # (Market Data, Why This Qualified, the learning-center analysis)
+        # belongs in the trade's own journal thread instead.
+        row = self.make_row()
+        content = spy_scanner.entry_alert_text(row, summary_only=True)
+        self.assertIn("### Risk", content)
+        self.assertIn("Break-even", content)
+        self.assertNotIn("### Market Data", content)
+        self.assertNotIn("### Why This Qualified", content)
+        self.assertNotIn("Applied Learning Center Analysis", content)
+
+    def test_full_entry_card_still_has_everything_for_the_journal_thread(self) -> None:
+        # The trimmed summary_only path must not have quietly become the
+        # only path - the trade's own journal thread still needs the full
+        # detail, which is what the default (summary_only=False) returns.
+        row = self.make_row()
+        content = spy_scanner.entry_alert_text(row)
+        self.assertIn("### Market Data", content)
+        self.assertIn("### Why This Qualified", content)
+        self.assertIn("Applied Learning Center Analysis", content)
+
 
 if __name__ == "__main__":
     unittest.main()
