@@ -1200,6 +1200,64 @@ class InformationEngineTests(unittest.TestCase):
             route_close.assert_called_once()
         spy_scanner.LOG_PATH = original_log
 
+    def test_streamed_quote_pushes_a_live_held_card_on_the_same_tick(self) -> None:
+        # Owner ask: held-positions must be genuinely live for a 0DTE desk,
+        # not just refreshed every ~90s by position_tracker_job's REST
+        # poll. The real-time path is the streamed quote tick itself -
+        # this must push the Discord card on the same tick that updates
+        # the P/L, not wait for a separate periodic job to catch up.
+        original_log = spy_scanner.LOG_PATH
+        calls: list[tuple] = []
+
+        class FakeTracker:
+            ready = True
+
+        with tempfile.TemporaryDirectory() as temp:
+            spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
+            row = {field: "" for field in spy_scanner.LOG_HEADER}
+            row.update(
+                {
+                    "trade_id": "SPY-STREAM-002",
+                    "ticker": "SPY",
+                    "play_type": "SPY_0DTE_1M",
+                    "option_symbol": "SPY260821C00500001",
+                    "expiration": spy_scanner.now_ct().date().isoformat(),
+                    "entry_price": "0.50",
+                    "outcome": "OPEN",
+                }
+            )
+            spy_scanner.write_log([row])
+            engine.STREAM_QUOTES.clear()
+            engine.STREAM_LAST_WRITTEN.clear()
+            with (
+                patch.object(
+                    engine.spy_scanner,
+                    "market_is_open_now",
+                    return_value=(True, spy_scanner.now_ct()),
+                ),
+                patch.object(engine, "discord_tracker", return_value=FakeTracker()),
+                patch.object(spy_scanner, "read_report_state", return_value={}),
+                patch.object(spy_scanner, "write_report_state"),
+                patch.object(
+                    spy_scanner,
+                    "sync_open_trade_cards",
+                    side_effect=lambda r, t, s, e: calls.append((r["trade_id"], e["pl_pct"])),
+                ),
+            ):
+                engine._stream_quote_event(
+                    {
+                        "type": "quote",
+                        "symbol": "SPY260821C00500001",
+                        "bid": 0.52,
+                        "ask": 0.54,
+                    }
+                )
+            updated = spy_scanner.read_log()[0]
+            self.assertEqual(updated["outcome"], "OPEN")
+        spy_scanner.LOG_PATH = original_log
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "SPY-STREAM-002")
+
     def test_trade_log_writes_atomically_and_rejects_zero_byte_history(self) -> None:
         original_log = spy_scanner.LOG_PATH
         original_state = spy_scanner.STATE_DIR
