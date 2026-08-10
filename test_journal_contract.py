@@ -173,6 +173,36 @@ class JournalContractTests(unittest.TestCase):
         self.assertGreater(result["rendered_fields"], 0)
         self.assertEqual(result["missing"], 0)
 
+    def test_entry_card_title_names_which_strategy_opened_it(self) -> None:
+        # Owner ask: every position card must show which strategy/trader
+        # opened it, not just "LONG CALL" with no indication of which of
+        # the several live strategies is responsible for the position.
+        row = self.make_row()
+        row["play_type"] = "SPY_KEY_LEVELS"
+        content = spy_scanner.entry_alert_text(row)
+        self.assertIn("SPY_KEY_LEVELS LONG CALL", content)
+
+    def test_held_position_card_title_names_which_strategy_opened_it(self) -> None:
+        row = self.make_row()
+        row["play_type"] = "SPY_0DTE_1M"
+        content = spy_scanner.position_update_text(row, spy_scanner.stored_open_evaluation(row))
+        self.assertIn("SPY_0DTE_1M LONG CALL", content)
+
+    def test_closed_position_card_title_names_which_strategy_opened_it(self) -> None:
+        row = self.make_row(outcome="WIN")
+        row["play_type"] = "SPY_EXPANSION_LEVEL"
+        content = spy_scanner.close_alert_text(row, spy_scanner.stored_close_evaluation(row))
+        self.assertIn("SPY_EXPANSION_LEVEL LONG CALL", content)
+
+    def test_qualified_card_title_still_names_the_strategy(self) -> None:
+        # qualified_trade_text already did this correctly - regression
+        # guard so a future edit can't quietly drop it while touching the
+        # other three card functions to match.
+        row = self.make_row()
+        row["play_type"] = "SPY_0DTE_5M"
+        content = spy_scanner.qualified_trade_text(row)
+        self.assertIn("SPY_0DTE_5M LONG CALL", content)
+
 
 if __name__ == "__main__":
     unittest.main()

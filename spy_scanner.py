@@ -824,7 +824,7 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
-        strategy = f"{kind} CREDIT SPREAD"
+        strategy = f"{play_type} {kind} CREDIT SPREAD"
         setup = (
             f"🔴 SELL 1 {ticker} {fmt_strike(sell_strike)} {kind}\n"
             f"🟢 BUY 1 {ticker} {fmt_strike(buy_strike)} {kind}"
@@ -845,7 +845,7 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
         )
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
-        strategy = f"LONG {kind}"
+        strategy = f"{play_type} LONG {kind}"
         setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
         stop_pct = SPY_0DTE_STOP_PCT if is_spy_0dte_play_type(play_type) else SINGLE_STOP_PCT
         target_pct = SPY_0DTE_TARGET_PCT if is_spy_0dte_play_type(play_type) else SINGLE_TAKE_PROFIT_PCT
@@ -914,7 +914,7 @@ def position_update_text(
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
-        strategy = f"{kind} CREDIT SPREAD"
+        strategy = f"{play_type} {kind} CREDIT SPREAD"
         setup = (
             f"🔴 SELL 1 {ticker} {fmt_strike(sell_strike)} {kind}\n"
             f"🟢 BUY 1 {ticker} {fmt_strike(buy_strike)} {kind}"
@@ -925,7 +925,7 @@ def position_update_text(
         )
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
-        strategy = f"LONG {kind}"
+        strategy = f"{play_type} LONG {kind}"
         setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
         price_labels = (
             f"**Entry debit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})\n"
@@ -976,7 +976,7 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
 
     if play_type == "SPREAD":
         sell_strike, buy_strike = parse_spread_strikes(row.get("strike", ""))
-        strategy = f"{kind} CREDIT SPREAD"
+        strategy = f"{play_type} {kind} CREDIT SPREAD"
         setup = (
             f"🔴 SELL 1 {ticker} {fmt_strike(sell_strike)} {kind}\n"
             f"🟢 BUY 1 {ticker} {fmt_strike(buy_strike)} {kind}"
@@ -985,7 +985,7 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
         exit_line = f"**Exit debit:** {fmt_option_price(closing, approximate=approx)} ({'≈' if approx else ''}{fmt_money(exit_contract_value(row))})"
     else:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
-        strategy = f"LONG {kind}"
+        strategy = f"{play_type} LONG {kind}"
         setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
         entry_line = f"**Entry debit:** {fmt_option_price(entry)} ({fmt_money(entry * 100)})"
         exit_line = f"**Exit credit:** {fmt_option_price(closing, approximate=approx)} ({'≈' if approx else ''}{fmt_money(exit_contract_value(row))})"
@@ -4658,13 +4658,18 @@ class DiscordTracker:
         if not self.ready:
             return ""
         tag_id = self.tag_ids.get(status) or self.tag_ids.get("OPEN")
+        # Opens with why the setup qualified, not the entry confirmation -
+        # the qualification reasoning belongs in this trade's own journal
+        # thread, not as a separate standalone card in a shared channel.
+        # post_new_trade() follows this with an entry_alert_text message in
+        # the same thread once the trade is actually opened.
         payload = {
             "name": trade_title(row)[:100],
             "auto_archive_duration": 1440,
             "applied_tags": [tag_id] if tag_id else [],
             "message": {
                 "content": "",
-                "embeds": [discord_card(entry_alert_text(row))],
+                "embeds": [discord_card(qualified_trade_text(row))],
                 "allowed_mentions": {"parse": []},
             },
         }
@@ -4687,7 +4692,7 @@ class DiscordTracker:
         self._request(
             "PATCH",
             f"/channels/{thread_id}/messages/{thread_id}",
-            {"content": "", "embeds": [discord_card(entry_alert_text(row))], "allowed_mentions": {"parse": []}},
+            {"content": "", "embeds": [discord_card(qualified_trade_text(row))], "allowed_mentions": {"parse": []}},
         )
         row["discord_format_version"] = DISCORD_FORMAT_VERSION
 
@@ -4803,6 +4808,7 @@ def sync_existing_open_threads(
             thread_id = discord.create_trade_thread(row, "OPEN")
             if thread_id:
                 created += 1
+                discord.send_thread(thread_id, entry_alert_text(row))
         except DiscordError as exc:
             print(f"Could not sync Discord thread for {row.get('trade_id')}: {exc}", file=sys.stderr)
     return created
@@ -5006,6 +5012,7 @@ def sync_all_trade_journals(
                 created_now = bool(thread_id)
                 if thread_id:
                     counts["created"] += 1
+                    discord.send_thread(thread_id, entry_alert_text(row))
             elif row.get("discord_format_version") != DISCORD_FORMAT_VERSION:
                 discord._request("PATCH", f"/channels/{thread_id}", {"archived": False})
                 discord.refresh_trade_thread(row)
@@ -5152,13 +5159,9 @@ def sync_open_trade_cards(
     link = thread_link(thread_id)
     current = evaluation or stored_open_evaluation(row)
     if include_entry:
-        discord.upsert_trade_message(
-            "qualified",
-            report_state,
-            "qualified",
-            trade_id,
-            qualified_trade_text(row, link),
-        )
+        # Qualification reasoning lives in the trade's own journal thread
+        # (posted as its opening message by create_trade_thread), not as a
+        # separate standalone card in the shared new-positions channel.
         discord.upsert_trade_message(
             "entry",
             report_state,
@@ -5192,13 +5195,6 @@ def sync_all_open_trade_cards(
         if not trade_id:
             continue
         link = thread_link(row.get("discord_thread_id", ""))
-        discord.upsert_trade_message(
-            "qualified",
-            report_state,
-            "qualified",
-            trade_id,
-            qualified_trade_text(row, link),
-        )
         discord.upsert_trade_message(
             "entry",
             report_state,
@@ -5337,6 +5333,10 @@ def post_new_trade(
         return
     if not row.get("discord_thread_id"):
         discord.create_trade_thread(row, "OPEN")
+        # The thread opened with the qualification card; follow it with the
+        # entry confirmation in the same thread so the journal reads
+        # qualified -> entered in order, not just qualified alone.
+        discord.send_thread(row.get("discord_thread_id", ""), entry_alert_text(row))
     sync_open_trade_cards(row, discord, report_state, include_entry=True)
     thread_id = row.get("discord_thread_id", "")
     snapshot = build_trade_snapshot(row, "entry")

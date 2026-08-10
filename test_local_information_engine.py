@@ -847,6 +847,9 @@ class InformationEngineTests(unittest.TestCase):
                 row["discord_thread_id"] = "thread-1"
                 return "thread-1"
 
+            def send_thread(self, thread_id, content):
+                calls.append(("thread", thread_id))
+
             def _request(self, method, path, payload=None):
                 calls.append((method, path))
                 return {}
@@ -910,6 +913,9 @@ class InformationEngineTests(unittest.TestCase):
                 row["discord_thread_id"] = "thread-1"
                 return "thread-1"
 
+            def send_thread(self, thread_id: str, content: str) -> None:
+                pass
+
             def send_thread_file(self, thread_id: str, path: Path, *, content: str):
                 calls.append((thread_id, content))
 
@@ -936,6 +942,79 @@ class InformationEngineTests(unittest.TestCase):
                 spy_scanner.post_new_trade(row, Tracker(), {})
         self.assertEqual(calls[0][0], "thread-1")
         self.assertIn("5-minute underlying session", calls[0][1])
+
+    def test_new_trade_thread_opens_with_qualification_not_entry_confirmation(self) -> None:
+        # Owner ask: the "why this qualified" reasoning belongs in the
+        # trade's own journal thread, not as a separate standalone card in
+        # a shared channel - so the thread itself must open with the
+        # qualified card, and the entry confirmation must follow inside
+        # that same thread, not replace it.
+        thread_messages: list[dict] = []
+
+        class Tracker:
+            ready = True
+
+            def create_trade_thread(self, row, status):
+                thread_messages.append({"kind": "opening", "content": spy_scanner.qualified_trade_text(row)})
+                row["discord_thread_id"] = "thread-1"
+                return "thread-1"
+
+            def send_thread(self, thread_id, content):
+                thread_messages.append({"kind": "followup", "thread_id": thread_id, "content": content})
+
+            def send_thread_file(self, *args, **kwargs):
+                pass
+
+        row = {
+            "trade_id": "SPY-20260810-001",
+            "ticker": "SPY",
+            "play_type": "SPY_KEY_LEVELS",
+            "call_or_put": "call",
+            "strike": "775",
+            "entry_price": "4.28",
+            "discord_thread_id": "",
+        }
+        with (
+            patch.object(spy_scanner, "sync_open_trade_cards"),
+            patch.object(spy_scanner, "build_trade_snapshot", return_value=None),
+        ):
+            spy_scanner.post_new_trade(row, Tracker(), {})
+        self.assertEqual(len(thread_messages), 2)
+        self.assertEqual(thread_messages[0]["kind"], "opening")
+        self.assertIn("SPY_KEY_LEVELS", thread_messages[0]["content"])
+        self.assertEqual(thread_messages[1]["kind"], "followup")
+        self.assertEqual(thread_messages[1]["thread_id"], "thread-1")
+        self.assertIn("ENTRY", thread_messages[1]["content"])
+
+    def test_qualified_card_is_not_posted_as_a_standalone_new_positions_message(self) -> None:
+        # The qualification reasoning now lives only in the trade's own
+        # journal thread (see create_trade_thread) - it must not also be
+        # upserted as its own message under the "qualified" logical
+        # channel, which maps to the shared new-positions channel.
+        calls: list[str] = []
+
+        class Tracker:
+            ready = True
+
+            def upsert_trade_message(self, logical_name, state, namespace, trade_id, content):
+                calls.append(logical_name)
+
+            def set_thread_status(self, *args, **kwargs):
+                pass
+
+        row = {
+            "trade_id": "SPY-20260810-002",
+            "ticker": "SPY",
+            "play_type": "SPY_0DTE_1M",
+            "call_or_put": "call",
+            "strike": "775",
+            "entry_price": "4.28",
+            "outcome": "OPEN",
+            "discord_thread_id": "thread-2",
+        }
+        spy_scanner.sync_open_trade_cards(row, Tracker(), {}, include_entry=True)
+        self.assertNotIn("qualified", calls)
+        self.assertIn("entry", calls)
 
     def test_health_probe_queue_is_drained(self) -> None:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
