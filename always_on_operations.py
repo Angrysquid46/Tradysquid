@@ -3,8 +3,7 @@
 This module extends the local information engine without adding brokerage-order
 capability. It keeps visible Discord activity alive around the clock, verifies
 that scheduled jobs actually fire, retries failed or overdue jobs, records every
-repair attempt, and runs read-only rotating-universe research while markets are
-closed.
+repair attempt, and runs read-only SPY research while markets are closed.
 """
 
 from __future__ import annotations
@@ -533,7 +532,7 @@ def off_hours_universe_screen_job(connection: sqlite3.Connection) -> str:
         OFF_HOURS_BATCH_SIZE,
     )
     if not batch:
-        raise RuntimeError("rotating universe is empty")
+        raise RuntimeError("active ticker batch is empty")
     completed: list[dict[str, Any]] = []
     failed: list[str] = []
     for symbol in batch:
@@ -561,8 +560,8 @@ def off_hours_universe_screen_job(connection: sqlite3.Connection) -> str:
     completed.sort(key=lambda item: float(item.get("score") or 0), reverse=True)
 
     lines = [
-        "## Off-Hours Rotating Universe Screen",
-        f"**Research-only batch:** {', '.join(batch)}",
+        "## SPY Off-Hours Screen",
+        f"**Research-only pass:** {', '.join(batch)}",
         "The market is closed. This pass ranks closing/last-known evidence and opens no paper position.",
         "### Ranked observations",
     ]
@@ -601,17 +600,16 @@ def off_hours_universe_screen_job(connection: sqlite3.Connection) -> str:
         "\n".join(lines),
     )
     universe_lines = [
-        "## Rotating Universe Status",
+        "## SPY Off-Hours Status",
         f"Active ticker: **{spy_scanner.TICKER}**",
-        f"Current off-hours batch: **{', '.join(batch)}**",
         f"Completed: **{', '.join(item['symbol'] for item in completed) or 'none'}**",
         f"Failures: **{', '.join(failed) or 'none'}**",
-        f"Next batch advances automatically in {OFF_HOURS_SCREEN_MINUTES} minutes while markets remain closed.",
+        f"Next pass runs automatically in {OFF_HOURS_SCREEN_MINUTES} minutes while markets remain closed.",
     ]
     engine.upsert_dashboard(
         connection,
         "universe_watch",
-        "rotating-universe-status",
+        "spy-off-hours-status",
         "\n".join(universe_lines),
     )
     if failed and not completed:
@@ -622,7 +620,7 @@ def off_hours_universe_screen_job(connection: sqlite3.Connection) -> str:
 def rotating_event_sweep_job(connection: sqlite3.Connection) -> str:
     batch = separate_rotation_batch(connection, "event-sweep", EVENT_BATCH_SIZE)
     if not batch:
-        raise RuntimeError("rotating universe is empty")
+        raise RuntimeError("active ticker batch is empty")
     results: dict[str, list[dict[str, str]]] = {}
     failed: list[str] = []
     for symbol in batch:

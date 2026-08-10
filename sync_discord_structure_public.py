@@ -77,7 +77,7 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
                 sync.ChannelSpec(
                     "SYSTEM",
                     "system-activity",
-                    "Always-on interval receipts, rotating-universe batches, off-hours research, event sweeps, and data freshness.",
+                    "Always-on interval receipts, off-hours SPY research, event sweeps, and data freshness.",
                 )
             )
             inserted_activity = True
@@ -97,7 +97,7 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
             sync.ChannelSpec(
                 "SYSTEM",
                 "system-activity",
-                "Always-on interval receipts, rotating-universe batches, off-hours research, event sweeps, and data freshness.",
+                "Always-on interval receipts, off-hours SPY research, event sweeps, and data freshness.",
             )
         )
     if not inserted_diagnostics:
@@ -116,10 +116,10 @@ sync.CHANNEL_STARTERS.update(
     {
         "scanner-feed": (
             "Live options scans run during regular market hours. When markets are closed, "
-            "a research-only rotating-universe screen updates this channel without opening positions."
+            "a research-only SPY screen updates this channel without opening positions."
         ),
         "universe-watch": (
-            "Shows the active capped universe and the latest market-hours and off-hours rotation batches."
+            "Shows the latest SPY off-hours screen and on-demand snapshot."
         ),
         "news-and-events": (
             "News and event sweeps continue during market hours, evenings, overnight periods, and weekends."

@@ -1019,9 +1019,9 @@ def manual_options_scan_job(connection: sqlite3.Connection) -> str:
 
 
 def manual_intelligence_job(connection: sqlite3.Connection) -> str:
-    """Publish a timestamped broad-market and universe snapshot on demand."""
-    symbols = dynamic_universe.active_symbols()
-    quotes = spy_scanner.get_quotes(symbols, include_greeks=False) if symbols else {}
+    """Publish a timestamped SPY market snapshot on demand."""
+    ticker = spy_scanner.TICKER
+    quote = spy_scanner.get_quotes([ticker], include_greeks=False).get(ticker, {})
     tracker = discord_tracker()
     if not tracker:
         return "Discord tracker is unavailable"
@@ -1029,49 +1029,32 @@ def manual_intelligence_job(connection: sqlite3.Connection) -> str:
     market_open, _ = spy_scanner.market_is_open_now()
     session = "MARKET OPEN" if market_open else "MARKET CLOSED / LAST QUOTES"
 
-    ranked = sorted(
-        symbols,
-        key=lambda symbol: spy_scanner.as_float((quotes.get(symbol) or {}).get("volume"), 0)
-        or 0,
-        reverse=True,
-    )
-    universe_lines = [
-        "## Manual Universe Discovery",
-        f"**{session}** · **{len(symbols)} active symbols**",
+    price = spy_scanner.as_float(quote.get("last"))
+    volume = int(spy_scanner.as_float(quote.get("volume"), 0) or 0)
+    watch_lines = [
+        "## Manual SPY Snapshot",
+        f"**{session}**",
+        f"• **{ticker}** · "
+        f"{spy_scanner.fmt_money(price) if price is not None else 'quote unavailable'} "
+        f"· volume {volume:,}",
+        f"Updated {observed_at}.",
     ]
-    for symbol in ranked[:30]:
-        quote = quotes.get(symbol) or {}
-        price = spy_scanner.as_float(quote.get("last"))
-        volume = int(spy_scanner.as_float(quote.get("volume"), 0) or 0)
-        universe_lines.append(
-            f"• **{symbol}** · "
-            f"{spy_scanner.fmt_money(price) if price is not None else 'quote unavailable'} "
-            f"· volume {volume:,}"
-        )
-    if len(ranked) > 30:
-        universe_lines.append(f"• …and {len(ranked) - 30} more active symbols")
-    universe_lines.append(
-        f"Updated {observed_at}. Discovery ranking is informational only."
-    )
-    upsert_dashboard(connection, "universe_watch", "manual-universe-discovery", "\n".join(universe_lines))
+    upsert_dashboard(connection, "universe_watch", "manual-universe-discovery", "\n".join(watch_lines))
 
     benchmark_lines = [
         "## Manual Market-Regime Snapshot",
         f"**{session}**",
     ]
-    for benchmark in (spy_scanner.TICKER,):
-        try:
-            snapshot = market_snapshot(benchmark)
-            benchmark_lines.append(
-                f"• **{benchmark}** {spy_scanner.fmt_money(snapshot['price'])} · "
-                f"{snapshot['regime']} · RSI {float(snapshot.get('rsi14') or 0):.1f} · "
-                f"support {spy_scanner.fmt_money(snapshot.get('support20'))} · "
-                f"resistance {spy_scanner.fmt_money(snapshot.get('resistance20'))}"
-            )
-        except Exception as exc:
-            benchmark_lines.append(
-                f"• **{benchmark}** unavailable · {type(exc).__name__}"
-            )
+    try:
+        snapshot = market_snapshot(ticker)
+        benchmark_lines.append(
+            f"• **{ticker}** {spy_scanner.fmt_money(snapshot['price'])} · "
+            f"{snapshot['regime']} · RSI {float(snapshot.get('rsi14') or 0):.1f} · "
+            f"support {spy_scanner.fmt_money(snapshot.get('support20'))} · "
+            f"resistance {spy_scanner.fmt_money(snapshot.get('resistance20'))}"
+        )
+    except Exception as exc:
+        benchmark_lines.append(f"• **{ticker}** unavailable · {type(exc).__name__}")
     benchmark_lines.append(
         f"Updated {observed_at}. Conditions are not an automatic trade entry."
     )
@@ -1084,23 +1067,18 @@ def manual_intelligence_job(connection: sqlite3.Connection) -> str:
         "\n".join([
             "## Manual Session Briefing",
             f"**{session}**",
-            f"Universe refreshed: **{len(symbols)} symbols**.",
-            f"Highest current stock-volume names: **{', '.join(ranked[:10]) or 'none'}**.",
-            "The options scanner reports each ticker separately in #scanner-feed.",
+            f"**{ticker}** {spy_scanner.fmt_money(price) if price is not None else 'quote unavailable'}.",
+            "The options scanner reports SPY plays in #scanner-feed.",
             f"Generated {observed_at}. Quotes may be stale while markets are closed.",
         ]),
     )
 
     headlines: list[str] = []
-    for symbol in ranked[:8]:
-        try:
-            items = fetch_ticker_news(symbol, limit=1)
-            if items:
-                headlines.append(
-                    f"• **{symbol}** · [{items[0]['title']}]({items[0]['url']})"
-                )
-        except Exception:
-            continue
+    try:
+        items = fetch_ticker_news(ticker, limit=3)
+        headlines = [f"• [{item['title']}]({item['url']})" for item in items]
+    except Exception:
+        pass
     upsert_dashboard(
         connection,
         "news_events",
@@ -1114,10 +1092,10 @@ def manual_intelligence_job(connection: sqlite3.Connection) -> str:
     store_observation(
         connection,
         "manual-intelligence",
-        {"symbols": symbols, "ranked": ranked, "observed_at": observed_at},
+        {"ticker": ticker, "observed_at": observed_at},
     )
     return (
-        f"market regime, session briefing, universe watch, and "
+        f"market regime, session briefing, SPY snapshot, and "
         f"{len(headlines)} headlines published"
     )
 
