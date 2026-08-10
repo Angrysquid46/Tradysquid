@@ -1332,13 +1332,20 @@ def _position_symbols() -> list[str]:
 
 
 def _stream_quote_event(event: dict[str, Any]) -> None:
-    """Evaluate exits immediately when a streamed option quote changes."""
+    """Evaluate exits immediately when a streamed option quote changes, and
+    push the held-positions card on the same tick (debounced to once per
+    2s per trade - STREAM_LAST_WRITTEN already gated the CSV write at that
+    cadence; Discord now rides the same gate instead of waiting for
+    position_tracker_job's separate ~90s cycle). This is the actual
+    real-time path - position_tracker_job is the REST fallback for a
+    missed or disconnected tick, not the live path itself."""
     symbol = str(event.get("symbol") or "")
     if not symbol or not spy_scanner.market_is_open_now()[0]:
         return
     STREAM_QUOTES.setdefault(symbol, {}).update(event)
     timestamp = spy_scanner.now_ct()
     now_monotonic = time.monotonic()
+    live_updates: list[tuple[dict[str, str], dict[str, Any]]] = []
     with POSITION_FILE_LOCK:
         rows = spy_scanner.read_log()
         changed = False
@@ -1362,10 +1369,24 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
                 if now_monotonic - last_write >= 2:
                     STREAM_LAST_WRITTEN[trade_id] = now_monotonic
                     changed = True
+                    row["current_pl_pct"] = spy_scanner.round_or_blank(
+                        evaluation.get("pl_pct"), 1
+                    )
+                    row["current_pl_dollars"] = spy_scanner.round_or_blank(
+                        evaluation.get("pl_dollars"), 0
+                    )
+                    live_updates.append((row, evaluation))
         if changed:
             spy_scanner.write_log(rows)
         for row, evaluation in closed_events:
             _route_stream_close(row, evaluation)
+    if live_updates:
+        tracker = discord_tracker()
+        if tracker:
+            report_state = spy_scanner.read_report_state()
+            for row, evaluation in live_updates:
+                spy_scanner.sync_open_trade_cards(row, tracker, report_state, evaluation)
+            spy_scanner.write_report_state(report_state)
 
 
 def position_tracker_job(connection: sqlite3.Connection) -> str:
