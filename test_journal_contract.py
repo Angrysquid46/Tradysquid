@@ -143,16 +143,24 @@ class JournalContractTests(unittest.TestCase):
         self.assertEqual(journal_contract.missing_markers(row, messages), [])
 
     def test_partial_journal_is_rejected(self) -> None:
+        # REQUIRED_ENTRY_MARKERS was trimmed to match the now-simplified
+        # single card (Position/Entry Plan/Risk only, per the owner's "1
+        # card... trade scope and exit price" direction) - a message
+        # missing any of those three still fails verification.
         row = self.make_row()
         missing = journal_contract.missing_markers(
             row,
-            [{"content": "## Entry\nApplied Learning Center Analysis\nLearning Center version"}],
+            [{"content": "## Entry\nSomething unrelated"}],
         )
-        self.assertIn("Trade thesis", missing)
-        self.assertIn("Entry confirmation", missing)
-        self.assertIn("Invalidation", missing)
-        self.assertIn("Risk plan", missing)
-        self.assertIn("Data confidence", missing)
+        self.assertIn("Position", missing)
+        self.assertIn("Entry Plan", missing)
+        self.assertIn("Risk", missing)
+
+    def test_complete_summary_journal_is_accepted(self) -> None:
+        row = self.make_row()
+        content = spy_scanner.entry_alert_text(row, summary_only=True)
+        missing = journal_contract.missing_markers(row, [{"content": content}])
+        self.assertEqual(missing, [])
 
     def test_pending_batch_prioritizes_open_trades(self) -> None:
         rows = []
