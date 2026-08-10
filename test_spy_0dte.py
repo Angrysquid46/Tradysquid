@@ -4,17 +4,23 @@ specifically to confirm it doesn't quietly borrow the old system's
 constants (delta bands, contract caps, stop/target) anywhere.
 
 SPY 0DTE is split into two independently-tracked, independently-live-traded
-strategies - SPY_0DTE_1M and SPY_0DTE_5M - that differ ONLY in the intraday
-bar interval their opening-range signal reads. Everything else (delta band,
-risk cap, stop/target/floor/EOD exit rules) is identical and shared. Several
-tests below exist specifically to prove the two variants stay isolated from
-each other (own cooldown, own exposure accounting, own play_type tag) rather
-than silently sharing state, since "both trade fully independently" was an
+strategies - SPY_0DTE_1M and SPY_0DTE_5M. SPY_0DTE_1M's entry signal is a
+live TradingView alert (spy_0dte_tradingview_signal) - the strategy this
+system's TradingView webhook was actually built to drive, tied to the Pine
+indicator behind the 66.8% backtest. SPY_0DTE_5M keeps the Python
+opening-range breakout (spy_0dte_opening_range_signal). Contract selection,
+delta band, risk cap, and stop/target/floor/EOD exit rules are identical and
+shared between both regardless of entry-signal source. Several tests below
+exist specifically to prove the two variants stay isolated from each other
+(own cooldown, own exposure accounting, own play_type tag) rather than
+silently sharing state, since "both trade fully independently" was an
 explicit owner decision, not an incidental default.
 """
 
 from __future__ import annotations
+from unittest import mock
 
+import dynamic_universe
 import spy_scanner
 
 
@@ -362,3 +368,213 @@ def test_recently_tracked_cooldown_does_not_cross_contaminate_the_two_variants()
     }
     assert spy_scanner.recently_tracked(rows, candidate_5m, now) is False
     assert spy_scanner.recently_tracked(rows, candidate_1m, now) is True
+
+
+def _tradingview_event(event_type: str, event_id: int = 1, payload: dict | None = None, received_at: str | None = None) -> dict:
+    return {
+        "id": event_id,
+        "event_type": event_type,
+        "received_at": received_at or spy_scanner.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "payload": payload or {},
+    }
+
+
+def test_tradingview_direction_recognizes_common_buy_conventions():
+    for event_type in ("buy", "BUY", "long", "Call"):
+        assert spy_scanner.spy_0dte_tradingview_direction(_tradingview_event(event_type)) == "BULLISH"
+
+
+def test_tradingview_direction_recognizes_common_sell_conventions():
+    for event_type in ("sell", "SELL", "short", "Put"):
+        assert spy_scanner.spy_0dte_tradingview_direction(_tradingview_event(event_type)) == "BEARISH"
+
+
+def test_tradingview_direction_falls_back_to_payload_action_field():
+    event = _tradingview_event("alert", payload={"action": "buy", "price": 774.5})
+    assert spy_scanner.spy_0dte_tradingview_direction(event) == "BULLISH"
+
+
+def test_tradingview_direction_falls_back_to_json_encoded_payload():
+    import json
+    event = _tradingview_event("alert", payload=json.dumps({"strategy_action": "sell"}))
+    assert spy_scanner.spy_0dte_tradingview_direction(event) == "BEARISH"
+
+
+def test_tradingview_direction_returns_none_when_unrecognized():
+    assert spy_scanner.spy_0dte_tradingview_direction(_tradingview_event("breakout")) is None
+
+
+def test_tradingview_direction_returns_none_when_both_sides_mentioned():
+    # A message like "buy/sell zone" that mentions both conventions is
+    # genuinely ambiguous - must not guess a direction from it.
+    assert spy_scanner.spy_0dte_tradingview_direction(_tradingview_event("buy or sell")) is None
+
+
+def test_tradingview_signal_does_not_qualify_with_no_recent_alert():
+    with mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=None):
+        context = spy_scanner.spy_0dte_tradingview_signal("SPY")
+    assert context["qualified"] is False
+    assert "no TradingView alert" in context["reason"]
+
+
+def test_tradingview_signal_qualifies_bullish_on_a_fresh_buy_alert():
+    event = _tradingview_event("buy", event_id=101)
+    with (
+        mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
+        mock.patch.object(spy_scanner, "_spy_0dte_1m_already_consumed", return_value=False),
+        mock.patch.object(spy_scanner, "_spy_0dte_1m_mark_consumed"),
+    ):
+        context = spy_scanner.spy_0dte_tradingview_signal("SPY")
+    assert context["qualified"] is True
+    assert context["regime"] == "BULLISH / CONTROLLED"
+    assert context["tradingview_event_id"] == 101
+
+
+def test_tradingview_signal_qualifies_bearish_on_a_fresh_sell_alert():
+    event = _tradingview_event("sell", event_id=102)
+    with (
+        mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
+        mock.patch.object(spy_scanner, "_spy_0dte_1m_already_consumed", return_value=False),
+        mock.patch.object(spy_scanner, "_spy_0dte_1m_mark_consumed"),
+    ):
+        context = spy_scanner.spy_0dte_tradingview_signal("SPY")
+    assert context["qualified"] is True
+    assert context["regime"] == "BEARISH / CONTROLLED"
+
+
+def test_tradingview_signal_does_not_qualify_on_unrecognized_direction():
+    event = _tradingview_event("breakout", event_id=103)
+    with (
+        mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
+        mock.patch.object(spy_scanner, "_spy_0dte_1m_already_consumed", return_value=False),
+    ):
+        context = spy_scanner.spy_0dte_tradingview_signal("SPY")
+    assert context["qualified"] is False
+    assert "direction was not recognized" in context["reason"]
+
+
+def test_tradingview_signal_does_not_reopen_off_an_already_consumed_alert():
+    # A position opens and closes quickly, but the same alert is still
+    # inside the freshness window on the next scan pass - must not fire
+    # a second entry off the identical alert.
+    event = _tradingview_event("buy", event_id=104)
+    with (
+        mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
+        mock.patch.object(spy_scanner, "_spy_0dte_1m_already_consumed", return_value=True),
+    ):
+        context = spy_scanner.spy_0dte_tradingview_signal("SPY")
+    assert context["qualified"] is False
+    assert "already opened a trade" in context["reason"]
+
+
+def test_tradingview_signal_lookup_failure_reports_unavailable_not_a_crash():
+    with mock.patch.object(dynamic_universe, "recent_tradingview_signal", side_effect=RuntimeError("db locked")):
+        context = spy_scanner.spy_0dte_tradingview_signal("SPY")
+    assert context["qualified"] is False
+    assert "tradingview signal lookup failed" in context["reason"]
+
+
+def test_consumed_event_tracking_round_trips_through_the_state_file():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        original = spy_scanner.SPY_0DTE_1M_CONSUMED_EVENT_PATH
+        spy_scanner.SPY_0DTE_1M_CONSUMED_EVENT_PATH = Path(tmp) / "consumed.json"
+        try:
+            assert spy_scanner._spy_0dte_1m_already_consumed(55) is False
+            spy_scanner._spy_0dte_1m_mark_consumed(55)
+            assert spy_scanner._spy_0dte_1m_already_consumed(55) is True
+            assert spy_scanner._spy_0dte_1m_already_consumed(56) is False
+        finally:
+            spy_scanner.SPY_0DTE_1M_CONSUMED_EVENT_PATH = original
+
+
+def test_run_spy_0dte_variant_1m_uses_the_tradingview_signal_not_the_breakout():
+    calls = []
+    with (
+        mock.patch.object(spy_scanner, "spy_0dte_tradingview_signal", side_effect=lambda *a, **k: calls.append("tradingview") or {"qualified": False, "regime": "NO TRADE", "reason": "x", "failures": []}),
+        mock.patch.object(spy_scanner, "spy_0dte_opening_range_signal", side_effect=lambda *a, **k: calls.append("breakout") or {"qualified": False, "regime": "NO TRADE", "reason": "x", "failures": []}),
+    ):
+        spy_scanner._run_spy_0dte_variant(
+            play_type="SPY_0DTE_1M", bar_minutes=1, intraday_history=[],
+            today_str="2026-08-10", spot_price=600.0, candidates=[],
+            quote_map={}, add_candidates=lambda *a: None,
+        )
+    assert calls == ["tradingview"]
+
+
+def test_run_spy_0dte_variant_5m_still_uses_the_opening_range_breakout():
+    calls = []
+    with (
+        mock.patch.object(spy_scanner, "spy_0dte_tradingview_signal", side_effect=lambda *a, **k: calls.append("tradingview") or {"qualified": False, "regime": "NO TRADE", "reason": "x", "failures": []}),
+        mock.patch.object(spy_scanner, "spy_0dte_opening_range_signal", side_effect=lambda *a, **k: calls.append("breakout") or {"qualified": False, "regime": "NO TRADE", "reason": "x", "failures": []}),
+    ):
+        spy_scanner._run_spy_0dte_variant(
+            play_type="SPY_0DTE_5M", bar_minutes=5, intraday_history=_opening_range_bars(),
+            today_str="2026-08-10", spot_price=600.0, candidates=[],
+            quote_map={}, add_candidates=lambda *a: None,
+        )
+    assert calls == ["breakout"]
+
+
+def test_recent_tradingview_signal_reads_without_claiming_the_event():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dynamic-universe-test.db"
+        connection = dynamic_universe.connect(db_path)
+        try:
+            dynamic_universe.enqueue_event(
+                "tradingview", "buy", "SPY", {"action": "buy"}, connection=connection
+            )
+            found = dynamic_universe.recent_tradingview_signal("SPY", 3600, connection=connection)
+            assert found is not None
+            assert found["event_type"] == "buy"
+            # Still PENDING - a read-only lookup must not claim/consume the
+            # row, since the existing provider-event-queue job owns that
+            # lifecycle for posting the Discord research card.
+            assert found["status"] == "PENDING"
+            row = connection.execute(
+                "SELECT status FROM provider_events WHERE id=?", (found["id"],)
+            ).fetchone()
+            assert row["status"] == "PENDING"
+        finally:
+            connection.close()
+
+
+def test_recent_tradingview_signal_ignores_events_outside_the_freshness_window():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dynamic-universe-test.db"
+        connection = dynamic_universe.connect(db_path)
+        try:
+            stale_time = (spy_scanner.datetime.now().astimezone() - spy_scanner.timedelta(hours=1)).isoformat(timespec="seconds")
+            connection.execute(
+                """
+                INSERT INTO provider_events(event_key, provider, event_type, symbol, priority, received_at, available_at, payload_json)
+                VALUES ('stale-key', 'tradingview', 'buy', 'SPY', 0, ?, ?, '{}')
+                """,
+                (stale_time, stale_time),
+            )
+            connection.commit()
+            found = dynamic_universe.recent_tradingview_signal("SPY", 180, connection=connection)
+            assert found is None
+        finally:
+            connection.close()
+
+
+def test_recent_tradingview_signal_ignores_a_different_symbol():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "dynamic-universe-test.db"
+        connection = dynamic_universe.connect(db_path)
+        try:
+            dynamic_universe.enqueue_event(
+                "tradingview", "buy", "QQQ", {"action": "buy"}, connection=connection
+            )
+            found = dynamic_universe.recent_tradingview_signal("SPY", 3600, connection=connection)
+            assert found is None
+        finally:
+            connection.close()

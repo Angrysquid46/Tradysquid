@@ -19,7 +19,7 @@ import hashlib
 import json
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -160,6 +160,37 @@ def claim_events(
             }
             for row in rows
         ]
+    finally:
+        if owned:
+            db.close()
+
+
+def recent_tradingview_signal(
+    symbol: str, max_age_seconds: int, connection: sqlite3.Connection | None = None
+) -> dict[str, Any] | None:
+    """Read-only lookup for the most recent TradingView alert for `symbol`
+    received within the last `max_age_seconds`, used to gate a live trade
+    entry (see spy_scanner.spy_0dte_tradingview_signal). Deliberately does
+    NOT claim/consume the row via claim_events()/complete_event() - the
+    existing provider-event-queue job still owns that lifecycle for posting
+    the Discord research card, and this needs to read the same row without
+    racing or stealing it from that consumer."""
+    symbol = normalize_symbol(symbol)
+    cutoff = (datetime.now().astimezone() - timedelta(seconds=max(0, max_age_seconds))).isoformat(
+        timespec="seconds"
+    )
+    owned = connection is None
+    db = connection or connect()
+    try:
+        row = db.execute(
+            """
+            SELECT * FROM provider_events
+            WHERE provider='tradingview' AND symbol=? AND received_at >= ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (symbol, cutoff),
+        ).fetchone()
+        return dict(row) if row else None
     finally:
         if owned:
             db.close()
