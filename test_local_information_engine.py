@@ -971,24 +971,25 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(calls[0][0], "thread-1")
         self.assertIn("5-minute underlying session", calls[0][1])
 
-    def test_new_trade_thread_opens_with_qualification_not_entry_confirmation(self) -> None:
-        # Owner ask: the "why this qualified" reasoning belongs in the
-        # trade's own journal thread, not as a separate standalone card in
-        # a shared channel - so the thread itself must open with the
-        # qualified card, and the entry confirmation must follow inside
-        # that same thread, not replace it.
+    def test_new_trade_thread_opens_with_exactly_one_summary_card(self) -> None:
+        # Owner ask: only need 1 card for each open trade in the journal -
+        # just the trade scope and exit price (Position/Entry Plan/Risk
+        # through Break-even), not a separate qualified card followed by a
+        # second, fuller entry card in the same thread.
         thread_messages: list[dict] = []
 
         class Tracker:
             ready = True
 
             def create_trade_thread(self, row, status):
-                thread_messages.append({"kind": "opening", "content": spy_scanner.qualified_trade_text(row)})
+                thread_messages.append(
+                    spy_scanner.entry_alert_text(row, summary_only=True)
+                )
                 row["discord_thread_id"] = "thread-1"
                 return "thread-1"
 
             def send_thread(self, thread_id, content):
-                thread_messages.append({"kind": "followup", "thread_id": thread_id, "content": content})
+                thread_messages.append(content)
 
             def send_thread_file(self, *args, **kwargs):
                 pass
@@ -1007,12 +1008,11 @@ class InformationEngineTests(unittest.TestCase):
             patch.object(spy_scanner, "build_trade_snapshot", return_value=None),
         ):
             spy_scanner.post_new_trade(row, Tracker(), {})
-        self.assertEqual(len(thread_messages), 2)
-        self.assertEqual(thread_messages[0]["kind"], "opening")
-        self.assertIn("SPY_KEY_LEVELS", thread_messages[0]["content"])
-        self.assertEqual(thread_messages[1]["kind"], "followup")
-        self.assertEqual(thread_messages[1]["thread_id"], "thread-1")
-        self.assertIn("ENTRY", thread_messages[1]["content"])
+        self.assertEqual(len(thread_messages), 1)
+        self.assertIn("SPY_KEY_LEVELS", thread_messages[0])
+        self.assertIn("Break-even", thread_messages[0])
+        self.assertNotIn("### Market Data", thread_messages[0])
+        self.assertNotIn("### Why This Qualified", thread_messages[0])
 
     def test_qualified_card_is_not_posted_as_a_standalone_new_positions_message(self) -> None:
         # The qualification reasoning now lives only in the trade's own
@@ -1218,4 +1218,62 @@ class InformationEngineTests(unittest.TestCase):
         finally:
             spy_scanner.LOG_PATH = original_log
             spy_scanner.STATE_DIR = original_state
+
+    def test_position_tracker_job_pushes_a_live_held_position_card(self) -> None:
+        # Owner ask: held-positions must be live for a 0DTE desk, not stale
+        # for most of the ~15-16 minutes between full-options-scan cycles.
+        # position_tracker_job runs far more often (~90s) and now has to be
+        # the thing that actually keeps the Discord card current, not just
+        # the internal CSV's current_pl_pct/current_pl_dollars fields.
+        original_log = spy_scanner.LOG_PATH
+        original_db = engine.DB_PATH
+        calls: list[tuple] = []
+
+        class FakeTracker:
+            ready = True
+
+        with tempfile.TemporaryDirectory() as temp:
+            spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
+            engine.DB_PATH = Path(temp) / "local-information.db"
+            row = {field: "" for field in spy_scanner.LOG_HEADER}
+            row.update(
+                {
+                    "trade_id": "SPY-LIVE-001",
+                    "ticker": "SPY",
+                    "play_type": "SPY_0DTE_1M",
+                    "option_symbol": "SPY260821C00500000",
+                    "expiration": spy_scanner.now_ct().date().isoformat(),
+                    "entry_price": "0.50",
+                    "outcome": "OPEN",
+                }
+            )
+            spy_scanner.write_log([row])
+            connection = engine.connect_db()
+            try:
+                with (
+                    patch.object(spy_scanner, "get_quotes", return_value={}),
+                    patch.object(
+                        spy_scanner,
+                        "evaluate_open_row",
+                        return_value={"signal": "HOLD", "pl_pct": 5.0, "pl_dollars": 2.5},
+                    ),
+                    patch.object(engine, "discord_tracker", return_value=FakeTracker()),
+                    patch.object(spy_scanner, "read_report_state", return_value={}),
+                    patch.object(spy_scanner, "write_report_state"),
+                    patch.object(
+                        spy_scanner,
+                        "sync_open_trade_cards",
+                        side_effect=lambda r, t, s, e: calls.append((r["trade_id"], t, e)),
+                    ),
+                ):
+                    result = engine.position_tracker_job(connection)
+            finally:
+                connection.close()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "SPY-LIVE-001")
+        self.assertIsInstance(calls[0][1], FakeTracker)
+        self.assertEqual(calls[0][2]["pl_pct"], 5.0)
+        self.assertIn("1 refreshed", result)
+        spy_scanner.LOG_PATH = original_log
+        engine.DB_PATH = original_db
 

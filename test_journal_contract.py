@@ -194,13 +194,13 @@ class JournalContractTests(unittest.TestCase):
         content = spy_scanner.close_alert_text(row, spy_scanner.stored_close_evaluation(row))
         self.assertIn("SPY_EXPANSION_LEVEL LONG CALL", content)
 
-    def test_qualified_card_title_still_names_the_strategy(self) -> None:
-        # qualified_trade_text already did this correctly - regression
-        # guard so a future edit can't quietly drop it while touching the
-        # other three card functions to match.
+    def test_summary_card_title_still_names_the_strategy(self) -> None:
+        # The trimmed summary_only card (now the only card posted at open,
+        # in both the shared channel and the trade's own journal thread)
+        # must still name which strategy opened it.
         row = self.make_row()
         row["play_type"] = "SPY_0DTE_5M"
-        content = spy_scanner.qualified_trade_text(row)
+        content = spy_scanner.entry_alert_text(row, summary_only=True)
         self.assertIn("SPY_0DTE_5M LONG CALL", content)
 
     def test_summary_entry_card_stops_at_break_even(self) -> None:
