@@ -43,7 +43,8 @@
     "bear_call_spreads": false,
     "spy_0dte_1m": true,
     "spy_0dte_5m": true,
-    "spy_key_levels": true
+    "spy_key_levels": true,
+    "spy_expansion_level": false
   },
   "spy_key_levels_opening_range_minutes": 15,
   "spy_key_levels_level_proximity_pct": 0.10,
@@ -53,6 +54,21 @@
   "spy_key_levels_max_risk_per_trade": 500.0,
   "spy_key_levels_target_r_multiple": 2.0,
   "spy_key_levels_stop_buffer_pct": 0.15,
+  "spy_expansion_level_tolerance": 0.50,
+  "spy_expansion_ema_fast_period": 20,
+  "spy_expansion_ema_slow_period": 200,
+  "spy_expansion_macd_fast_period": 12,
+  "spy_expansion_macd_slow_period": 26,
+  "spy_expansion_macd_signal_period": 9,
+  "spy_expansion_delta_min": 0.40,
+  "spy_expansion_delta_max": 0.60,
+  "spy_expansion_max_contract_ask": 5.0,
+  "spy_expansion_max_risk_per_trade": 500.0,
+  "spy_expansion_stop_pct": 0.50,
+  "spy_expansion_target_pct": 0.50,
+  "spy_expansion_floor_trigger_pct": 30.0,
+  "spy_expansion_floor_pct": -15.0,
+  "spy_expansion_history_days": 50,
   "providers": {
     "tradier": {
       "enabled": true,

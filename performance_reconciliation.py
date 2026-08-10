@@ -29,10 +29,11 @@ SPY_0DTE_VARIANTS = (
 )
 
 # Every independently-tracked live strategy that gets its own paginated
-# performance/results ledger - the two SPY_0DTE variants plus SPY
-# Key-Levels/ORB/VWAP, which is otherwise unrelated to either of them.
+# performance/results ledger - the two SPY_0DTE variants, SPY Key-Levels/
+# ORB/VWAP, and SPY Expansion-Level, none of which read each other's rows.
 STRATEGY_VARIANTS = SPY_0DTE_VARIANTS + (
     (spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels", "results_key_levels", "Key-Levels Strategy"),
+    (spy_scanner.SPY_EXPANSION_PLAY_TYPE, "performance_expansion", "results_expansion", "Expansion-Level Strategy"),
 )
 
 REPORT_ROUTES = {
@@ -44,6 +45,8 @@ REPORT_ROUTES = {
     "results_5m": "5m-results",
     "performance_key_levels": "key-levels-performance",
     "results_key_levels": "key-levels-results",
+    "performance_expansion": "expansion-performance",
+    "results_expansion": "expansion-results",
 }
 
 REPORT_MARKERS = {
@@ -85,6 +88,15 @@ REPORT_MARKERS = {
         "Key-Levels Strategy Results",
         "Key-Levels Strategy Trade History ·",
     ),
+    "performance_expansion": (
+        "Expansion-Level Strategy Monthly Performance Index",
+        "Expansion-Level Strategy Monthly Performance ·",
+        "Expansion-Level Strategy Monthly Trade History ·",
+    ),
+    "results_expansion": (
+        "Expansion-Level Strategy Results",
+        "Expansion-Level Strategy Trade History ·",
+    ),
 }
 
 STATE_PREFIXES = (
@@ -97,6 +109,8 @@ STATE_PREFIXES = (
     "5m-results",
     "key-levels-performance",
     "key-levels-results",
+    "expansion-performance",
+    "expansion-results",
 )
 
 
