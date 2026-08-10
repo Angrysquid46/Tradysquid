@@ -50,6 +50,7 @@ from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 import requests
+import economic_calendar
 import trade_intelligence
 
 # ---------------------------------------------------------------------------
@@ -291,6 +292,14 @@ LOG_HEADER = [
     "last_discord_signal",
     "last_discord_pl_pct",
     "last_discord_update_at",
+    # SPY Key-Levels/ORB/VWAP strategy only - underlying-price-level stop/
+    # target (not a % of option premium) plus which tracked level and DTE
+    # tier the trade was built around. Blank for every other play type.
+    "underlying_entry_price",
+    "underlying_stop_price",
+    "underlying_target_price",
+    "active_level_name",
+    "expiration_tier",
 ]
 
 CHANNEL_NAMES = {
@@ -324,6 +333,11 @@ CHANNEL_NAMES = {
     "results_1m": "1m-results",
     "performance_5m": "5m-performance",
     "results_5m": "5m-results",
+    # SPY Key-Levels/ORB/VWAP - a second, independent SPY strategy. See
+    # SPY_KEY_LEVELS_PLAY_TYPE. Owned live by performance_reconciliation.py's
+    # sync_reports, same as the two SPY_0DTE channel pairs above.
+    "performance_key_levels": "key-levels-performance",
+    "results_key_levels": "key-levels-results",
     "ticker_results": "ticker-results",
     "learning_results": "learning-results",
     "examples_reviews": "examples-and-reviews",
@@ -1312,6 +1326,30 @@ def get_intraday_history(
     return [values] if isinstance(values, dict) else list(values)
 
 
+def get_premarket_history(symbol: str, interval: str = "5min") -> list[dict[str, Any]]:
+    """Return today's premarket bars (3:00-8:30 CT / 4:00-9:30 ET). Separate
+    from get_intraday_history because that function is hardcoded to
+    session_filter=open starting at the regular 8:30 CT bell - premarket
+    needs session_filter=all and an earlier start, which would change
+    behavior for every existing caller if bolted onto the same function."""
+    today = now_ct().date().isoformat()
+    data = tradier_get(
+        "/markets/timesales",
+        {
+            "symbol": symbol,
+            "interval": interval,
+            "start": f"{today} 03:00",
+            "end": f"{today} 08:30",
+            "session_filter": "all",
+        },
+    )
+    series = data.get("series") or {}
+    values = series.get("data") if isinstance(series, dict) else None
+    if not values:
+        return []
+    return [values] if isinstance(values, dict) else list(values)
+
+
 def simple_moving_average(values: list[float], period: int) -> float | None:
     if len(values) < period:
         return None
@@ -1664,6 +1702,439 @@ def scan_spy_0dte_candidates(
     return candidates
 
 
+# ---------------------------------------------------------------------------
+# SPY Key-Levels / ORB / VWAP strategy - a second, fully independent SPY
+# strategy family. Built entirely standalone per explicit owner direction:
+# no constant, delta band, risk cap, stop model, or exit rule below is read
+# from or shared with SPY_0DTE. It only reuses genuinely generic, already-
+# shared plumbing that every play type depends on (get_chain/get_strikes/
+# get_expirations/get_daily_history, simple_moving_average, option_has_
+# liquidity, candidate_to_row, evaluate_open_row's dispatch, close_row) -
+# the same plumbing SPY_0DTE itself sits on top of.
+#
+# Source strategy: premarket/prior-day/prior-week high-low, a 9:30-9:45 ET
+# opening range (wick high/low), session VWAP, and the 200-day SMA are
+# tracked as ten reference levels. A trade qualifies when SPY's 1m/3m/5m
+# direction agrees (Bullish or Bearish, not Mixed) AND spot is currently
+# interacting with one of the ten levels. Everything else (exact indicator
+# math for "bullish/bearish" per timeframe, the level-interaction proximity
+# band, the profit-target R-multiple, and the DTE-selection rule) is not
+# specified by the source strategy and was improvised - see each function's
+# docstring for the specific choice made.
+# ---------------------------------------------------------------------------
+
+SPY_KEY_LEVELS_TICKER = "SPY"
+SPY_KEY_LEVELS_PLAY_TYPE = "SPY_KEY_LEVELS"
+
+SPY_KEY_LEVELS_OPENING_RANGE_MINUTES = int(os.environ.get(
+    "SPY_KEY_LEVELS_OPENING_RANGE_MINUTES", configured("spy_key_levels_opening_range_minutes", 15)
+))
+# Improvised: how close SPY has to be to a tracked level to count as
+# "interacting with" it. 0.10% of a ~$600 SPY print is about $0.60.
+SPY_KEY_LEVELS_LEVEL_PROXIMITY_PCT = float(os.environ.get(
+    "SPY_KEY_LEVELS_LEVEL_PROXIMITY_PCT", configured("spy_key_levels_level_proximity_pct", 0.10)
+))
+SPY_KEY_LEVELS_DELTA_MIN = float(os.environ.get(
+    "SPY_KEY_LEVELS_DELTA_MIN", configured("spy_key_levels_delta_min", 0.40)
+))
+SPY_KEY_LEVELS_DELTA_MAX = float(os.environ.get(
+    "SPY_KEY_LEVELS_DELTA_MAX", configured("spy_key_levels_delta_max", 0.60)
+))
+SPY_KEY_LEVELS_MAX_CONTRACT_ASK = float(os.environ.get(
+    "SPY_KEY_LEVELS_MAX_CONTRACT_ASK", configured("spy_key_levels_max_contract_ask", 5.0)
+))
+SPY_KEY_LEVELS_MAX_RISK_PER_TRADE = float(os.environ.get(
+    "SPY_KEY_LEVELS_MAX_RISK_PER_TRADE", configured("spy_key_levels_max_risk_per_trade", 500.0)
+))
+# Improvised: the spec gives an entry + stop but no profit target. A stop
+# is defined in underlying terms (the active level, past the point where
+# the trade's own premise is proven wrong); the target is set as a fixed
+# multiple of that same underlying-terms risk distance - a standard
+# risk-defined-target convention, not something read off the source text.
+SPY_KEY_LEVELS_TARGET_R_MULTIPLE = float(os.environ.get(
+    "SPY_KEY_LEVELS_TARGET_R_MULTIPLE", configured("spy_key_levels_target_r_multiple", 2.0)
+))
+# Improvised: how far past the active level (in underlying %) counts as
+# "broke the level" for the stop, rather than normal noise around it.
+SPY_KEY_LEVELS_STOP_BUFFER_PCT = float(os.environ.get(
+    "SPY_KEY_LEVELS_STOP_BUFFER_PCT", configured("spy_key_levels_stop_buffer_pct", 0.15)
+))
+
+
+def spy_key_levels_wick_range(bars: list[dict[str, Any]]) -> tuple[float | None, float | None]:
+    """Highest high / lowest low across a set of bars, using full wicks
+    (not just closes) - shared math for every "high/low over a window"
+    level this strategy tracks (premarket, prior day, prior week, opening
+    range)."""
+    highs = [value for bar in bars if (value := as_float(bar.get("high"))) is not None]
+    lows = [value for bar in bars if (value := as_float(bar.get("low"))) is not None]
+    if not highs or not lows:
+        return None, None
+    return max(highs), min(lows)
+
+
+def spy_key_levels_premarket_range(premarket_bars: list[dict[str, Any]]) -> tuple[float | None, float | None]:
+    return spy_key_levels_wick_range(premarket_bars)
+
+
+def spy_key_levels_prior_day_range(
+    daily_bars: list[dict[str, Any]], today_str: str
+) -> tuple[float | None, float | None]:
+    """daily_bars is get_daily_history()'s output, oldest-first. The most
+    recent bar dated strictly before today is "previous trading day" -
+    skips today's own partial bar if the provider ever includes it."""
+    prior = [bar for bar in daily_bars if str(bar.get("date", ""))[:10] < today_str]
+    if not prior:
+        return None, None
+    last = prior[-1]
+    return as_float(last.get("high")), as_float(last.get("low"))
+
+
+def spy_key_levels_prior_week_range(
+    daily_bars: list[dict[str, Any]], today_str: str
+) -> tuple[float | None, float | None]:
+    """Highest high / lowest low across every daily bar that falls in the
+    ISO calendar week immediately before today's ISO calendar week."""
+    today = date.fromisoformat(today_str)
+    this_week = today.isocalendar()[:2]
+    prior_week_bars = []
+    for bar in daily_bars:
+        raw_date = str(bar.get("date", ""))[:10]
+        try:
+            bar_date = date.fromisoformat(raw_date)
+        except ValueError:
+            continue
+        year, week, _ = bar_date.isocalendar()
+        if (year, week) != this_week and bar_date < today:
+            candidate_key = (year, week)
+            # Only keep bars from the single ISO week immediately prior -
+            # recomputed against the running max below rather than assumed,
+            # since isocalendar() week numbers don't subtract cleanly across
+            # a year boundary.
+            prior_week_bars.append((candidate_key, bar))
+    if not prior_week_bars:
+        return None, None
+    latest_prior_week = max(key for key, _ in prior_week_bars)
+    bars_in_week = [bar for key, bar in prior_week_bars if key == latest_prior_week]
+    return spy_key_levels_wick_range(bars_in_week)
+
+
+def spy_key_levels_opening_range(
+    session_bars: list[dict[str, Any]], bar_minutes: int = 1, window_minutes: int = 15
+) -> tuple[float | None, float | None]:
+    """Wick high/low of the complete first window_minutes of the regular
+    session (9:30-9:45 ET by default), built from whatever intraday bar
+    interval was fetched - matches the source spec's "use the complete
+    candlestick and its wicks" instruction by taking the max high / min low
+    across every bar inside that window rather than only its closes."""
+    bars_needed = max(window_minutes // bar_minutes, 1)
+    if len(session_bars) < bars_needed:
+        return None, None
+    return spy_key_levels_wick_range(session_bars[:bars_needed])
+
+
+def spy_key_levels_vwap(session_bars: list[dict[str, Any]]) -> float | None:
+    """Session VWAP using typical price (H+L+C)/3, standard VWAP
+    convention - a separate implementation from the retired
+    directional_market_context's close-only VWAP proxy, per explicit
+    owner direction not to reuse other strategies' logic."""
+    numerator = 0.0
+    denominator = 0.0
+    for bar in session_bars:
+        high = as_float(bar.get("high"))
+        low = as_float(bar.get("low"))
+        close = as_float(bar.get("close") or bar.get("price"))
+        volume = as_float(bar.get("volume"), 0.0) or 0.0
+        if high is None or low is None or close is None or volume <= 0:
+            continue
+        typical_price = (high + low + close) / 3
+        numerator += typical_price * volume
+        denominator += volume
+    if denominator <= 0:
+        return None
+    return numerator / denominator
+
+
+def spy_key_levels_sma200(daily_bars: list[dict[str, Any]]) -> float | None:
+    closes = [value for bar in daily_bars if (value := as_float(bar.get("close"))) is not None]
+    return simple_moving_average(closes, 200)
+
+
+def spy_key_levels_timeframe_direction(bars: list[dict[str, Any]], average_period: int = 5) -> str:
+    """Improvised: a single timeframe reads Bullish when its latest close is
+    above a short simple moving average of its own closes, Bearish when
+    below, Mixed when exactly on it or too little data exists yet. The
+    source spec names 1m/3m/5m as the inputs but never defines what makes
+    one of them bullish vs bearish - this is that missing definition."""
+    closes = [value for bar in bars if (value := as_float(bar.get("close") or bar.get("price"))) is not None]
+    average = simple_moving_average(closes, average_period)
+    if average is None or not closes:
+        return "MIXED"
+    last = closes[-1]
+    if last > average:
+        return "BULLISH"
+    if last < average:
+        return "BEARISH"
+    return "MIXED"
+
+
+def spy_key_levels_combined_direction(dir_1m: str, dir_3m: str, dir_5m: str) -> str:
+    """All three timeframes must agree for a directional (non-Mixed) read -
+    matches the spec's "read the three timeframes together" instruction."""
+    directions = {dir_1m, dir_3m, dir_5m}
+    if directions == {"BULLISH"}:
+        return "BULLISH"
+    if directions == {"BEARISH"}:
+        return "BEARISH"
+    return "MIXED"
+
+
+def spy_key_levels_active_level(
+    spot_price: float, levels: dict[str, float | None]
+) -> tuple[str | None, float | None]:
+    """Returns the name/price of the tracked level SPY is currently closest
+    to, if any level is within SPY_KEY_LEVELS_LEVEL_PROXIMITY_PCT of spot -
+    that's this strategy's definition of "interacting with" a level."""
+    best_name: str | None = None
+    best_price: float | None = None
+    best_distance_pct: float | None = None
+    for name, level in levels.items():
+        if level is None or level <= 0 or spot_price <= 0:
+            continue
+        distance_pct = abs(spot_price - level) / level * 100
+        if distance_pct <= SPY_KEY_LEVELS_LEVEL_PROXIMITY_PCT:
+            if best_distance_pct is None or distance_pct < best_distance_pct:
+                best_name, best_price, best_distance_pct = name, level, distance_pct
+    return best_name, best_price
+
+
+def spy_key_levels_choose_expiration(
+    expirations: list[str], today_str: str, catalyst_active: bool
+) -> tuple[str, str] | None:
+    """Improvised DTE-selection rule - the spec lists 0DTE/1-3DTE/weekly as
+    the choices but never says how to pick one automatically. Default is
+    0DTE (matches the spec's "use strict risk management with 0DTE"
+    framing of it as the normal case); step up to the nearest weekly
+    expiration instead when a high-impact catalyst is active, trading
+    through the extra event risk with more time cushion rather than 0DTE
+    gamma. Falls back to the nearest 1-3 DTE listing, then any weekly
+    listing, if the preferred tier isn't actually available today."""
+    if not expirations:
+        return None
+    today = date.fromisoformat(today_str)
+    days_out = {}
+    for expiration in expirations:
+        try:
+            days_out[expiration] = (date.fromisoformat(expiration) - today).days
+        except ValueError:
+            continue
+
+    def _nearest_in_range(low: int, high: int) -> str | None:
+        in_range = sorted(
+            (expiration for expiration, days in days_out.items() if low <= days <= high),
+            key=lambda expiration: days_out[expiration],
+        )
+        return in_range[0] if in_range else None
+
+    if catalyst_active:
+        weekly = _nearest_in_range(5, 9)
+        if weekly:
+            return "WEEKLY", weekly
+    if today_str in days_out and days_out[today_str] == 0:
+        return "0DTE", today_str
+    near = _nearest_in_range(1, 3)
+    if near:
+        return "1-3DTE", near
+    weekly = _nearest_in_range(5, 9)
+    if weekly:
+        return "WEEKLY", weekly
+    return None
+
+
+def spy_key_levels_entry_signal(
+    *,
+    spot_price: float,
+    direction: str,
+    levels: dict[str, float | None],
+    catalyst: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Combines direction + level-interaction into a qualify/reject read.
+
+    catalyst is informational only, never a hard block - the source spec
+    says to "display an alert when an important event or catalyst is
+    active or approaching" before entering, not to refuse to trade. It's
+    carried through on the result (surfaced as the spec's "Current event or
+    catalyst" signal-output field) and used by spy_key_levels_choose_
+    expiration to prefer a longer DTE instead of 0DTE gamma risk when one
+    is active - that's the actual risk response, not blocking the trade."""
+    active_level_name, active_level_price = spy_key_levels_active_level(spot_price, levels)
+    if direction == "MIXED":
+        return {
+            "qualified": False,
+            "direction": direction,
+            "reason": "1m/3m/5m direction is mixed; no aligned edge",
+            "active_level_name": active_level_name,
+            "active_level_price": active_level_price,
+            "catalyst": catalyst,
+        }
+    if active_level_name is None:
+        return {
+            "qualified": False,
+            "direction": direction,
+            "reason": "SPY is not currently interacting with any tracked level",
+            "active_level_name": None,
+            "active_level_price": None,
+            "catalyst": catalyst,
+        }
+    side = "call" if direction == "BULLISH" else "put"
+    reason = (
+        f"{direction.title()} across 1m/3m/5m while interacting with "
+        f"{active_level_name.replace('_', ' ')} (${active_level_price:.2f})"
+    )
+    if catalyst is not None:
+        reason += f"; catalyst alert: {catalyst.get('title', 'unnamed event')}"
+    return {
+        "qualified": True,
+        "direction": direction,
+        "side": side,
+        "active_level_name": active_level_name,
+        "active_level_price": active_level_price,
+        "reason": reason,
+        "catalyst": catalyst,
+    }
+
+
+def spy_key_levels_stop_and_target(
+    side: str, entry_underlying_price: float, active_level_price: float
+) -> tuple[float, float]:
+    """Underlying-price-level stop (the spec's own design: exit when SPY
+    breaks back through the level being traded, not a % of premium), plus
+    an R-multiple target off the same underlying-terms risk distance."""
+    if side == "call":
+        stop = active_level_price * (1 - SPY_KEY_LEVELS_STOP_BUFFER_PCT / 100)
+        risk_distance = max(entry_underlying_price - stop, 0.01)
+        target = entry_underlying_price + SPY_KEY_LEVELS_TARGET_R_MULTIPLE * risk_distance
+    else:
+        stop = active_level_price * (1 + SPY_KEY_LEVELS_STOP_BUFFER_PCT / 100)
+        risk_distance = max(stop - entry_underlying_price, 0.01)
+        target = entry_underlying_price - SPY_KEY_LEVELS_TARGET_R_MULTIPLE * risk_distance
+    return round(stop, 2), round(target, 2)
+
+
+def spy_key_levels_exit_signal(
+    *,
+    side: str,
+    stop_underlying_price: float,
+    target_underlying_price: float,
+    current_underlying_price: float,
+    expiration_tier: str,
+    is_expiration_day: bool,
+    minutes_remaining: float,
+) -> tuple[str, str]:
+    """Underlying-price-based stop/target - this strategy's own exit model,
+    not the %-of-premium model the SPY_0DTE strategies use. Only forces a
+    same-day close on the actual expiration date; a 1-3DTE/weekly position
+    holds overnight until it hits its stop, target, or its own expiration
+    day, per the spec's "additional time, flexibility, and room for error"
+    framing of the longer-dated tiers."""
+    if side == "call":
+        if current_underlying_price <= stop_underlying_price:
+            return "STOP OUT", (
+                f"SPY broke back through the traded level to ${current_underlying_price:.2f}, "
+                f"past the ${stop_underlying_price:.2f} stop"
+            )
+        if current_underlying_price >= target_underlying_price:
+            return "TAKE PROFIT", (
+                f"SPY reached ${current_underlying_price:.2f}, past the "
+                f"${target_underlying_price:.2f} target"
+            )
+    else:
+        if current_underlying_price >= stop_underlying_price:
+            return "STOP OUT", (
+                f"SPY broke back through the traded level to ${current_underlying_price:.2f}, "
+                f"past the ${stop_underlying_price:.2f} stop"
+            )
+        if current_underlying_price <= target_underlying_price:
+            return "TAKE PROFIT", (
+                f"SPY reached ${current_underlying_price:.2f}, past the "
+                f"${target_underlying_price:.2f} target"
+            )
+    if is_expiration_day and minutes_remaining <= 15:
+        # Named "EXPIRATION CLOSE" (not SPY_0DTE's "EOD CLOSE" string) so
+        # this strategy's forced-close signal is its own distinct value in
+        # the shared close-trigger set main() checks - adding "EOD CLOSE"
+        # there would also change SPY_0DTE_1M/5M's own closing behavior,
+        # which is explicitly out of scope for this strategy's changes.
+        return "EXPIRATION CLOSE", "closing ahead of same-day expiration"
+    return "HOLD", "no exit condition met"
+
+
+def scan_spy_key_levels_candidates(
+    chain: list[dict[str, Any]],
+    entry: dict[str, Any],
+    expiration: str,
+    expiration_tier: str,
+    spot_price: float,
+) -> list[dict[str, Any]]:
+    """Candidate builder for SPY Key-Levels - its own delta band and risk
+    cap (SPY_KEY_LEVELS_*), independent of SPY_0DTE's. entry is a qualified
+    result from spy_key_levels_entry_signal (side/active_level_name/
+    active_level_price already resolved)."""
+    kind = entry["side"]
+    active_level_price = entry["active_level_price"]
+    stop_underlying, target_underlying = spy_key_levels_stop_and_target(
+        kind, spot_price, active_level_price
+    )
+    candidates: list[dict[str, Any]] = []
+    for option in chain:
+        if option.get("option_type") != kind:
+            continue
+        if not option_has_liquidity(option):
+            continue
+        delta = abs(greek(option, "delta") or 0.0)
+        if not SPY_KEY_LEVELS_DELTA_MIN <= delta <= SPY_KEY_LEVELS_DELTA_MAX:
+            continue
+        ask = as_float(option.get("ask"), 0.0) or 0.0
+        bid = as_float(option.get("bid"), 0.0) or 0.0
+        if ask <= 0:
+            continue
+        if ask > SPY_KEY_LEVELS_MAX_CONTRACT_ASK or ask * 100 > SPY_KEY_LEVELS_MAX_RISK_PER_TRADE:
+            continue
+        strike = float(option["strike"])
+        max_profit: str | float = "UNLIMITED" if kind == "call" else round(max((strike - ask) * 100, 0), 2)
+        breakeven = round(strike + ask if kind == "call" else strike - ask, 2)
+        candidates.append(
+            {
+                "play_type": SPY_KEY_LEVELS_PLAY_TYPE,
+                "call_or_put": kind,
+                "strike": fmt_strike(strike),
+                "expiration": expiration,
+                "entry_price": round(ask, 2),
+                "cost_or_credit": str(round(ask, 2)),
+                "delta": round(delta, 4),
+                "theta": round(greek(option, "theta") or 0.0, 4),
+                "iv": round(iv_value(option), 4) if iv_value(option) is not None else "",
+                "pop": round(delta * 100, 1),
+                "max_profit": max_profit,
+                "max_risk": round(ask * 100, 2),
+                "breakeven": breakeven,
+                "open_interest": open_interest_value(option),
+                "option_volume": option_volume_value(option),
+                "bid_ask_width": round(max(ask - bid, 0), 2),
+                "option_symbol": option.get("symbol") or option_symbol(SPY_KEY_LEVELS_TICKER, expiration, kind, strike),
+                "spot_at_entry": spot_price,
+                "score": round(delta * 100, 1),
+                "setup_reason": entry.get("reason", ""),
+                "market_regime": entry.get("direction", ""),
+                "underlying_entry_price": round(spot_price, 2),
+                "underlying_stop_price": stop_underlying,
+                "underlying_target_price": target_underlying,
+                "active_level_name": entry.get("active_level_name", ""),
+                "expiration_tier": expiration_tier,
+            }
+        )
+    candidates.sort(key=lambda c: c["entry_price"])
+    return candidates
 
 
 def rolling_average(values: list[float], period: int) -> list[float | None]:
@@ -2529,6 +3000,14 @@ def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], time
             "last_signal": "HOLD",
             "last_evaluated_at": timestamp.isoformat(),
             "discord_status": "OPEN",
+            # SPY Key-Levels only - blank string (harmless, matches
+            # blank_row()'s default) for every other play type that
+            # doesn't set these candidate keys.
+            "underlying_entry_price": round_or_blank(as_float(candidate.get("underlying_entry_price")), 2),
+            "underlying_stop_price": round_or_blank(as_float(candidate.get("underlying_stop_price")), 2),
+            "underlying_target_price": round_or_blank(as_float(candidate.get("underlying_target_price")), 2),
+            "active_level_name": str(candidate.get("active_level_name", "")),
+            "expiration_tier": str(candidate.get("expiration_tier", "")),
         }
     )
     return row
@@ -2623,15 +3102,100 @@ def conservative_option_exit(quote: dict[str, Any]) -> float:
 
 
 
-def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], timestamp: datetime) -> dict[str, Any]:
+def evaluate_open_spy_key_levels_row(
+    row: dict[str, str],
+    quotes: dict[str, dict[str, Any]],
+    timestamp: datetime,
+    underlying_spot_price: float | None,
+) -> dict[str, Any]:
+    """SPY Key-Levels exit: still marks/reports P&L off the real option
+    premium quote like every other play type (that's what realized money
+    actually is), but the exit TRIGGER is the underlying-price-level stop/
+    target stored on the row at entry, not a % of premium. Independent of
+    evaluate_open_row's SPY_0DTE branch entirely."""
+    entry = parse_entry_price(row)
+    quote = quotes.get(row.get("option_symbol", ""))
+    if not quote or not quote_is_reliable_for_exit(quote):
+        return {
+            "signal": "HOLD",
+            "note": "Live option quote unavailable; showing last tracked values.",
+            "mark": as_float(row.get("last_mark"), entry),
+            "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
+            "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
+        }
+    if underlying_spot_price is None:
+        return {
+            "signal": "HOLD",
+            "note": "SPY spot price unavailable; cannot evaluate the underlying-level stop/target.",
+            "mark": as_float(row.get("last_mark"), entry),
+            "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
+            "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
+        }
+    mark = conservative_option_exit(quote)
+    stop_underlying = as_float(row.get("underlying_stop_price"))
+    target_underlying = as_float(row.get("underlying_target_price"))
+    expiration_tier = row.get("expiration_tier") or "0DTE"
+    is_expiration_day = row.get("expiration") == timestamp.date().isoformat()
+    close_time = timestamp.replace(hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1], second=0, microsecond=0)
+    minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
+    if stop_underlying is None or target_underlying is None:
+        signal, exit_note = "EXPIRATION CLOSE", "fallback: forced close (missing stored stop/target level)"
+    else:
+        try:
+            signal, exit_note = spy_key_levels_exit_signal(
+                side=row.get("call_or_put", "call"),
+                stop_underlying_price=stop_underlying,
+                target_underlying_price=target_underlying,
+                current_underlying_price=underlying_spot_price,
+                expiration_tier=expiration_tier,
+                is_expiration_day=is_expiration_day,
+                minutes_remaining=minutes_remaining,
+            )
+        except Exception as exc:
+            print(f"spy_key_levels_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
+            signal = "EXPIRATION CLOSE"
+            exit_note = "fallback: forced close (smart exit errored)"
+
+    pnl_pct = ((mark - entry) / entry * 100) if entry else 0.0
+    previous_peak = as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct
+    row["max_favorable_pct"] = round_or_blank(max(previous_peak, pnl_pct), 0)
+    rounded_mark = round(mark, 2)
+    rounded_pnl = rounded_mark - entry
+    rounded_pnl_pct = (rounded_pnl / entry * 100) if entry else 0.0
+    result = {
+        "signal": signal,
+        "mark": rounded_mark,
+        "pl_dollars": round(rounded_pnl * 100),
+        "pl_pct": round(rounded_pnl_pct),
+        "delta": greek(quote, "delta"),
+        "theta": greek(quote, "theta"),
+        "iv": iv_value(quote),
+        "minutes_remaining": round(minutes_remaining),
+        "exit_note": exit_note,
+    }
+    apply_evaluation_to_row(row, result, timestamp)
+    return result
+
+
+def evaluate_open_row(
+    row: dict[str, str],
+    quotes: dict[str, dict[str, Any]],
+    timestamp: datetime,
+    *,
+    underlying_spot_price: float | None = None,
+) -> dict[str, Any]:
     entry = parse_entry_price(row)
     play_type = row.get("play_type")
 
+    if play_type == SPY_KEY_LEVELS_PLAY_TYPE:
+        return evaluate_open_spy_key_levels_row(row, quotes, timestamp, underlying_spot_price)
+
     if play_type not in ("SPY_0DTE_1M", "SPY_0DTE_5M"):
         # Every play type this system opens is one of the two independently
-        # tracked SPY 0DTE strategies - anything else (including the bare
-        # "SPY_0DTE" from before the 1m/5m split) is a historical row from a
-        # retired strategy and has nothing live to evaluate against.
+        # tracked SPY 0DTE strategies (or SPY Key-Levels, handled above) -
+        # anything else (including the bare "SPY_0DTE" from before the
+        # 1m/5m split) is a historical row from a retired strategy and has
+        # nothing live to evaluate against.
         return {
             "signal": "HOLD",
             "note": f"Unrecognized or retired play_type {play_type!r}; nothing to evaluate.",
@@ -4724,6 +5288,16 @@ def format_scanner_feed(
         blocked_by = list(ctx.get("failures") or [])
         if blocked_by:
             trend_lines[-1] += "\n**Blocked by:** " + "; ".join(blocked_by)
+    key_levels_ctx = stats.get("spy_key_levels_context") or {}
+    if key_levels_ctx:
+        trend_lines.append(
+            f"**SPY_KEY_LEVELS regime:** {key_levels_ctx.get('regime', 'Unavailable')} "
+            f"({'Passed' if key_levels_ctx.get('qualified') else 'Blocked'})\n"
+            f"**Read:** {key_levels_ctx.get('reason', '—')}"
+        )
+        blocked_by = list(key_levels_ctx.get("failures") or [])
+        if blocked_by:
+            trend_lines[-1] += "\n**Blocked by:** " + "; ".join(blocked_by)
     trend_text = "\n\n".join(trend_lines)
     strategy_text = "\n".join(
         f"• **{label}:** {count}" for label, count in by_strategy.items() if count
@@ -4787,6 +5361,7 @@ def update_performance_pages(
     for play_type, logical_stats, logical_results, label in (
         ("SPY_0DTE_1M", "performance_1m", "results_1m", "1-Minute Strategy"),
         ("SPY_0DTE_5M", "performance_5m", "results_5m", "5-Minute Strategy"),
+        (SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels", "results_key_levels", "Key-Levels Strategy"),
     ):
         discord.upsert_channel_message(
             logical_stats,
@@ -5038,6 +5613,10 @@ DEFAULT_TRADE_TYPES_ENABLED = {
     # range bar interval) that trade fully independently of each other.
     "spy_0dte_1m": False,
     "spy_0dte_5m": False,
+    # SPY Key-Levels/ORB/VWAP strategy - a second, independent SPY strategy.
+    # Same paused-by-default rule applies: never goes live just because a
+    # config key went missing.
+    "spy_key_levels": False,
 }
 
 
@@ -5109,6 +5688,117 @@ def _run_spy_0dte_variant(
     return context
 
 
+def resample_bars(bars: list[dict[str, Any]], group_size: int) -> list[dict[str, Any]]:
+    """Aggregate consecutive fine-grained bars into coarser ones (open of
+    the first bar, high/low across all, close of the last, volume summed).
+    Tradier's timesales interval only accepts 1min/5min/15min - there is no
+    native 3-minute bar to request, so the Key-Levels strategy's 3-minute
+    read is built by resampling 1-minute bars instead."""
+    if group_size <= 1:
+        return list(bars)
+    resampled: list[dict[str, Any]] = []
+    for start in range(0, len(bars), group_size):
+        group = bars[start:start + group_size]
+        if not group:
+            continue
+        highs = [value for bar in group if (value := as_float(bar.get("high"))) is not None]
+        lows = [value for bar in group if (value := as_float(bar.get("low"))) is not None]
+        close = as_float(group[-1].get("close") or group[-1].get("price"))
+        volume = sum(as_float(bar.get("volume"), 0.0) or 0.0 for bar in group)
+        if close is None or not highs or not lows:
+            continue
+        resampled.append({"high": max(highs), "low": min(lows), "close": close, "volume": volume})
+    return resampled
+
+
+def _run_spy_key_levels_variant(
+    *,
+    spot_price: float,
+    today_str: str,
+    candidates: list[dict[str, Any]],
+    quote_map: dict[str, dict[str, Any]],
+    add_candidates,
+) -> dict[str, Any]:
+    """Run the SPY Key-Levels/ORB/VWAP strategy's full signal + candidate
+    build in isolation - its own data fetch, its own levels/direction/
+    catalyst read, its own candidates, independent of SPY_0DTE entirely."""
+    try:
+        premarket_bars = get_premarket_history(SPY_KEY_LEVELS_TICKER, interval="5min")
+        daily_bars = get_daily_history(SPY_KEY_LEVELS_TICKER, days=260)
+        intraday_1m = get_intraday_history(SPY_KEY_LEVELS_TICKER, interval="1min")
+        intraday_5m = get_intraday_history(SPY_KEY_LEVELS_TICKER, interval="5min")
+        intraday_3m = resample_bars(intraday_1m, 3)
+    except (TradierError, requests.RequestException) as exc:
+        return _unavailable_context(f"spy key-levels data fetch failed: {exc}")
+
+    premarket_high, premarket_low = spy_key_levels_premarket_range(premarket_bars)
+    prior_day_high, prior_day_low = spy_key_levels_prior_day_range(daily_bars, today_str)
+    prior_week_high, prior_week_low = spy_key_levels_prior_week_range(daily_bars, today_str)
+    opening_range_high, opening_range_low = spy_key_levels_opening_range(
+        intraday_1m, bar_minutes=1, window_minutes=SPY_KEY_LEVELS_OPENING_RANGE_MINUTES
+    )
+    vwap = spy_key_levels_vwap(intraday_1m)
+    sma_200 = spy_key_levels_sma200(daily_bars)
+    levels = {
+        "premarket_high": premarket_high,
+        "premarket_low": premarket_low,
+        "prior_day_high": prior_day_high,
+        "prior_day_low": prior_day_low,
+        "prior_week_high": prior_week_high,
+        "prior_week_low": prior_week_low,
+        "opening_range_high": opening_range_high,
+        "opening_range_low": opening_range_low,
+        "vwap": vwap,
+        "sma_200": sma_200,
+    }
+
+    dir_1m = spy_key_levels_timeframe_direction(intraday_1m)
+    dir_3m = spy_key_levels_timeframe_direction(intraday_3m)
+    dir_5m = spy_key_levels_timeframe_direction(intraday_5m)
+    direction = spy_key_levels_combined_direction(dir_1m, dir_3m, dir_5m)
+
+    try:
+        catalyst = economic_calendar.active_or_upcoming_catalyst()
+    except Exception:
+        catalyst = None
+
+    entry = spy_key_levels_entry_signal(
+        spot_price=spot_price, direction=direction, levels=levels, catalyst=catalyst
+    )
+    context = {
+        "qualified": entry.get("qualified", False),
+        "regime": entry.get("direction", "MIXED"),
+        "reason": entry.get("reason", ""),
+        "failures": [] if entry.get("qualified") else [entry.get("reason", "not qualified")],
+        "levels": levels,
+        "directions": {"1m": dir_1m, "3m": dir_3m, "5m": dir_5m},
+        "catalyst": catalyst,
+    }
+    if not entry.get("qualified"):
+        return context
+
+    try:
+        expirations = get_expirations(SPY_KEY_LEVELS_TICKER)
+        choice = spy_key_levels_choose_expiration(
+            expirations, today_str, catalyst_active=catalyst is not None
+        )
+        if choice is None:
+            context["qualified"] = False
+            context["reason"] = "no tradeable expiration (0DTE/1-3DTE/weekly) currently listed"
+            context["failures"] = [context["reason"]]
+            return context
+        expiration_tier, expiration = choice
+        raw_chain = get_chain(SPY_KEY_LEVELS_TICKER, expiration)
+        for option in raw_chain:
+            if option.get("symbol"):
+                quote_map[option["symbol"]] = option
+        found = scan_spy_key_levels_candidates(raw_chain, entry, expiration, expiration_tier, spot_price)
+        add_candidates(f"SPY_KEY_LEVELS {entry['side']}s ({expiration_tier})", found)
+    except Exception as exc:
+        print(f"SPY Key-Levels scan step failed: {exc}", file=sys.stderr)
+    return context
+
+
 def scan_candidates(
     spot_price: float,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
@@ -5174,6 +5864,24 @@ def scan_candidates(
         else:
             unavailable = _unavailable_context("no same-day expiration listed today")
             stats["spy_0dte_market_context"] = {"SPY_0DTE_5M": unavailable, "SPY_0DTE_1M": unavailable}
+
+    # SPY Key-Levels/ORB/VWAP - a second, fully independent SPY strategy.
+    # Runs its own data fetch and signal read regardless of what SPY_0DTE
+    # did above; nothing here reads spy_0dte_market_context or vice versa.
+    if TICKER == SPY_KEY_LEVELS_TICKER:
+        today_str = now_ct().date().isoformat()
+        if enabled.get("spy_key_levels"):
+            stats["spy_key_levels_context"] = _run_spy_key_levels_variant(
+                spot_price=spot_price,
+                today_str=today_str,
+                candidates=candidates,
+                quote_map=quote_map,
+                add_candidates=add_candidates,
+            )
+        else:
+            stats["spy_key_levels_context"] = _unavailable_context(
+                "spy_key_levels disabled in trade_types_enabled"
+            )
 
     stats["qualified_candidates"] = len(candidates)
     return candidates, quote_map, stats
@@ -5353,7 +6061,7 @@ def main(*, publish_shared: bool = True) -> int:
         material_updates = 0
         hold_count = 0
         for row in list(currently_open):
-            evaluation = evaluate_open_row(row, open_quote_map, timestamp)
+            evaluation = evaluate_open_row(row, open_quote_map, timestamp, underlying_spot_price=spot_price)
             if evaluation.get("pl_pct") is None:
                 hold_count += 1
                 safe_discord_call(
@@ -5362,7 +6070,7 @@ def main(*, publish_shared: bool = True) -> int:
                 )
                 continue
             signal = evaluation.get("signal")
-            if signal in {"STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT"}:
+            if signal in {"STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "EXPIRATION CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT"}:
                 close_row(row, evaluation, timestamp)
                 safe_discord_call("close routing", lambda r=row, e=evaluation: post_close(r, e, discord, report_state))
                 closed_count += 1
@@ -5410,7 +6118,7 @@ def main(*, publish_shared: bool = True) -> int:
         # Give newly opened rows their initial zero-P&L values and preserve all state.
         all_quotes = {**open_quote_map, **candidate_quote_map}
         for row in new_rows:
-            evaluation = evaluate_open_row(row, all_quotes, timestamp)
+            evaluation = evaluate_open_row(row, all_quotes, timestamp, underlying_spot_price=spot_price)
             if evaluation.get("pl_pct") is None:
                 row["current_pl_pct"] = "0"
                 row["current_pl_dollars"] = "0"
