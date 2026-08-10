@@ -1369,7 +1369,15 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
 
 
 def position_tracker_job(connection: sqlite3.Connection) -> str:
-    """REST safety refresh used if a stream tick is missed or disconnected."""
+    """REST safety refresh used if a stream tick is missed or disconnected.
+
+    Also the actual driver of a live held-positions card: this runs on a
+    fast interval (vs. full-options-scan's ~15-16 minutes), and this is a
+    0DTE options desk - the owner wants current P/L, not a card that's
+    stale for most of the time between full scans. upsert_channel_message
+    hashes the rendered content and skips the Discord call when nothing
+    actually changed, so this doesn't spam the API on every tick - it
+    edits only when price movement actually changes what the card shows."""
     with POSITION_FILE_LOCK:
         rows = spy_scanner.read_log()
         opened = spy_scanner.open_rows(rows)
@@ -1382,8 +1390,11 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
     quotes = spy_scanner.get_quotes(
         spy_scanner.symbols_for_rows(opened), include_greeks=True
     )
+    tracker = discord_tracker()
+    report_state = spy_scanner.read_report_state() if tracker else {}
     closed = 0
     refreshed = 0
+    live_updated = 0
     with POSITION_FILE_LOCK:
         for row in list(opened):
             evaluation = spy_scanner.evaluate_open_row(row, quotes, timestamp)
@@ -1402,9 +1413,21 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
                 row["current_pl_dollars"] = spy_scanner.round_or_blank(
                     evaluation.get("pl_dollars"), 0
                 )
+                if tracker:
+                    before = report_state.get("message_hashes", {}).get(
+                        f"position:updates:{row.get('trade_id', '')}"
+                    )
+                    spy_scanner.sync_open_trade_cards(row, tracker, report_state, evaluation)
+                    after = report_state.get("message_hashes", {}).get(
+                        f"position:updates:{row.get('trade_id', '')}"
+                    )
+                    if after != before:
+                        live_updated += 1
             refreshed += 1
         if refreshed:
             spy_scanner.write_log(rows)
+    if tracker:
+        spy_scanner.write_report_state(report_state)
     stream_connected = bool(POSITION_STREAM and POSITION_STREAM.connected)
     stream_state = "connected" if stream_connected else "fallback"
     stream_error = (POSITION_STREAM.last_error if POSITION_STREAM else "") or ""
@@ -1415,11 +1438,12 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
             "open": len(opened) - closed,
             "closed": closed,
             "refreshed": refreshed,
+            "live_updated": live_updated,
             "stream": stream_state,
             "stream_error": stream_error,
         },
     )
-    return f"{refreshed} refreshed · {closed} closed · stream {stream_state}"
+    return f"{refreshed} refreshed · {closed} closed · {live_updated} live card update(s) · stream {stream_state}"
 
 
 def closed_position_cleanup_job(connection: sqlite3.Connection) -> str:
