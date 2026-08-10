@@ -808,7 +808,13 @@ def format_expiration(value: str) -> str:
 
 
 
-def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
+def entry_alert_text(row: dict[str, str], include_link: str = "", summary_only: bool = False) -> str:
+    """summary_only trims the card to Position/Entry Plan/Risk (through
+    Break-even) - what the shared new-positions channel shows. Market Data,
+    Why This Qualified, and the learning-center analysis only appear in the
+    full (summary_only=False) version, which is what actually gets posted
+    into the trade's own journal thread - per owner direction, that detail
+    belongs in the trade's journal, not the shared channel card."""
     ticker = (row.get("ticker") or TICKER).upper()
     trade_id = row.get("trade_id") or f"{ticker}-UNKNOWN"
     sequence = trade_sequence(row)
@@ -861,13 +867,6 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
             f"**Break-even:** {fmt_option_price(breakeven)}"
         )
 
-    market_data = (
-        f"**Delta:** {fmt_delta(delta)}\n"
-        f"**IV:** {fmt_iv(iv)}\n"
-        f"**OI:** {fmt_oi(oi)} *(open interest)*\n"
-        f"**Volume:** {fmt_oi(row.get('option_volume_at_entry'))}\n"
-        f"**Theta:** {'Unavailable' if theta is None else f'{theta:+.3f}/day'}"
-    )
     lines = [
         f"## 🟦 {ticker} #{sequence} · ENTRY · {strategy}",
         "### Position",
@@ -876,6 +875,17 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
         price_line,
         "### Risk",
         risk_line,
+    ]
+    if summary_only:
+        return "\n".join(lines)
+    market_data = (
+        f"**Delta:** {fmt_delta(delta)}\n"
+        f"**IV:** {fmt_iv(iv)}\n"
+        f"**OI:** {fmt_oi(oi)} *(open interest)*\n"
+        f"**Volume:** {fmt_oi(row.get('option_volume_at_entry'))}\n"
+        f"**Theta:** {'Unavailable' if theta is None else f'{theta:+.3f}/day'}"
+    )
+    lines.extend([
         "### Market Data",
         market_data,
         "### Why This Qualified",
@@ -884,7 +894,7 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
             f"**Score:** {row.get('setup_score') or '—'} *(ranking only; not a win probability)*\n"
             f"**Evidence:** {row.get('setup_reason') or 'Conservative directional filters passed'}"
         ),
-    ]
+    ])
     if include_link:
         lines.extend(["### Journal", f"[Open trade journal]({include_link})"])
     lines.append(trade_learning_analysis(row))
@@ -5167,7 +5177,7 @@ def sync_open_trade_cards(
             report_state,
             "entry",
             trade_id,
-            entry_alert_text(row, link),
+            entry_alert_text(row, link, summary_only=True),
         )
     discord.upsert_trade_message(
         "updates",
@@ -5200,7 +5210,7 @@ def sync_all_open_trade_cards(
             report_state,
             "entry",
             trade_id,
-            entry_alert_text(row, link),
+            entry_alert_text(row, link, summary_only=True),
         )
         if row.get("outcome") == "OPEN":
             sync_open_trade_cards(row, discord, report_state)

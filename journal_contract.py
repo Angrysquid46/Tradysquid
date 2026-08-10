@@ -83,8 +83,16 @@ def _separate_entry_sections(content: str) -> str:
     return updated
 
 
-def complete_entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
+def complete_entry_alert_text(
+    row: dict[str, str], include_link: str = "", summary_only: bool = False
+) -> str:
     """Render only recorded entry evidence and make chart availability explicit."""
+    if summary_only:
+        # The trimmed card (Position/Entry Plan/Risk only) has none of the
+        # backfilled-evidence or Journal Evidence Status sections this
+        # function exists to fix up - nothing to do, pass it straight
+        # through.
+        return _ORIGINAL_ENTRY_ALERT_TEXT(row, include_link, summary_only=True)
     content = _ORIGINAL_ENTRY_ALERT_TEXT(row, include_link)
 
     # The base formatter previously synthesized a thesis, confirmation, learning
