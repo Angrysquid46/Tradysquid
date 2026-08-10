@@ -22,6 +22,8 @@ class FakeDiscord:
             "results_5m": "strategy-5m",
             "performance_key_levels": "monthly-key-levels",
             "results_key_levels": "strategy-key-levels",
+            "performance_expansion": "monthly-expansion",
+            "results_expansion": "strategy-expansion",
         }
         self.cards: dict[str, str] = {}
         self.channel_cards: dict[str, list[str]] = {
@@ -155,12 +157,13 @@ class PerformanceScorecardTests(unittest.TestCase):
         self.assertEqual(state["performance_reconciliation_daily_reports"], 5)
         self.assertEqual(state["performance_reconciliation_weekly_reports"], 1)
         # 2 months (July from actual trades + August from "today") for EACH
-        # of the two SPY_0DTE variants, plus 1 for SPY_KEY_LEVELS - it has
-        # zero rows in make_rows()'s synthetic ledger, but period_months()
-        # always includes the current month as a placeholder even with no
-        # trades, so a third, trade-less variant still contributes exactly
-        # one empty "current month" scorecard: 2 + 2 + 1 = 5.
-        self.assertEqual(state["performance_reconciliation_monthly_reports"], 5)
+        # of the two SPY_0DTE variants, plus 1 each for SPY_KEY_LEVELS and
+        # SPY_EXPANSION_LEVEL - both have zero rows in make_rows()'s
+        # synthetic ledger, but period_months() always includes the current
+        # month as a placeholder even with no trades, so each trade-less
+        # variant still contributes exactly one empty "current month"
+        # scorecard: 2 + 2 + 1 + 1 = 6.
+        self.assertEqual(state["performance_reconciliation_monthly_reports"], 6)
         # CALL and PUT groups for EACH variant that actually has trades -
         # SPY_KEY_LEVELS has none in this synthetic ledger, so it
         # contributes 0 groups and this count is unaffected by its addition.
