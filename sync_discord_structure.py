@@ -84,7 +84,7 @@ CHANNELS = [
     ChannelSpec("MARKET INTELLIGENCE", "charts-and-levels", "Requested and scheduled charts, support, and resistance."),
     ChannelSpec("MARKET INTELLIGENCE", "news-and-events", "Cached company and market news with timestamps."),
     ChannelSpec("MARKET INTELLIGENCE", "market-regime", "Broad-market context, trend, and volatility conditions."),
-    ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "Active symbols, discovery source, rank, and exclusions."),
+    ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "SPY off-hours screen status and on-demand snapshot."),
     ChannelSpec("1-MINUTE STRATEGY", "1m-performance", "Lifecycle totals and recorded paper performance for the 1-minute-bar SPY 0DTE opening-range strategy only."),
     ChannelSpec("1-MINUTE STRATEGY", "1m-results", "1-minute strategy results by direction and entry regime."),
     ChannelSpec("5-MINUTE STRATEGY", "5m-performance", "Lifecycle totals and recorded paper performance for the 5-minute-bar SPY 0DTE opening-range strategy only."),
@@ -158,7 +158,7 @@ CHANNEL_STARTERS = {
     "charts-and-levels": "Updated by scheduled research and `/chart` or `/levels` requests.",
     "news-and-events": "Updated by scheduled news checks and `/events` requests.",
     "market-regime": "Updated with broad-market and scanner context.",
-    "universe-watch": "Updated when the rotating scanner universe is refreshed.",
+    "universe-watch": "Updated by the SPY off-hours screen and on-demand scans.",
     "1m-performance": "Updated as the 1-minute strategy's paper trades open and close.",
     "1m-results": "Updated from the 1-minute strategy's recorded paper-trade outcomes.",
     "5m-performance": "Updated as the 5-minute strategy's paper trades open and close.",
@@ -491,11 +491,10 @@ Protect tokens and passwords, verify identities, and never give anyone remote
 control of a brokerage account.""",
     "scanner-controls": """# Owner Scanner Controls
 `/filters` shows active limits. `/filter-set` changes a guarded local value.
-`/ticker-add`, `/ticker-pause`, `/ticker-resume`, and `/ticker-remove` manage
-the rotating universe. `/scan-now scope:Everything` immediately runs discovery,
-market intelligence, active-ticker scanning, position tracking, and health
-reporting. Existing paper positions remain tracked after removal. The runtime is
-read-only toward brokerages and cannot place trades.""",
+This system trades SPY exclusively - there is no ticker roster to manage.
+`/scan-now scope:Everything` immediately runs provider events, market
+intelligence, the SPY options scan, position tracking, and health reporting.
+The runtime is read-only toward brokerages and cannot place trades.""",
 }
 
 
