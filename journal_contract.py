@@ -26,21 +26,9 @@ DISCORD_EMBED_TEXT_LIMIT = 6000
 _INSTALLED = False
 
 REQUIRED_ENTRY_MARKERS = (
+    "Position",
     "Entry Plan",
     "Risk",
-    "Market Data",
-    "Why This Qualified",
-    "Applied Learning Center Analysis",
-    "Trade thesis",
-    "Entry confirmation",
-    "Invalidation",
-    "Risk plan",
-    "Learning application",
-    "Recorded option evidence",
-    "Evidence limitation",
-    "Learning Center version",
-    "Data confidence",
-    "Journal Evidence Status",
 )
 REQUIRED_CLOSED_MARKERS = (
     "Post-Trade Learning",
