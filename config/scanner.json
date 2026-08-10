@@ -42,8 +42,17 @@
     "bull_put_spreads": false,
     "bear_call_spreads": false,
     "spy_0dte_1m": true,
-    "spy_0dte_5m": true
+    "spy_0dte_5m": true,
+    "spy_key_levels": true
   },
+  "spy_key_levels_opening_range_minutes": 15,
+  "spy_key_levels_level_proximity_pct": 0.10,
+  "spy_key_levels_delta_min": 0.40,
+  "spy_key_levels_delta_max": 0.60,
+  "spy_key_levels_max_contract_ask": 5.0,
+  "spy_key_levels_max_risk_per_trade": 500.0,
+  "spy_key_levels_target_r_multiple": 2.0,
+  "spy_key_levels_stop_buffer_pct": 0.15,
   "providers": {
     "tradier": {
       "enabled": true,

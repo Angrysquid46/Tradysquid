@@ -1,24 +1,26 @@
-# Tradysquid Shared Maintainer Protocol
+# Tradysquid Maintainer Protocol
 
-This repository is maintained by the owner, Codex, and Claude. GitHub `main`
-is the authoritative code baseline; OneDrive `Tradysquid-AI-Control` is the
-operational audit and coordination record.
+This repository is maintained by the owner and Claude (Codex is not an active
+collaborator on this checkout). GitHub `main` is the authoritative code
+baseline; OneDrive `Tradysquid-AI-Control` is an audit trail, not a
+coordination gate — there is no second AI actor to coordinate with, so no
+lock-and-wait step is required before editing.
 
 Before modifying files:
 
-1. Read `CURRENT_STATE.md`, `CHANGELOG.jsonl`, and your handoff in the control
-   folder.
+1. Read `CURRENT_STATE.md` and `CHANGELOG.jsonl` in the control folder for
+   recent context.
 2. Inspect Git status and preserve unrelated changes.
-3. Run `python ai_coordination.py begin --actor <Codex|Claude> --task "..." --method "..."`.
-4. If the update lock already exists, stop without editing.
 
 After modifying files:
 
 1. Run relevant syntax checks and tests.
 2. Commit only intended files and push normally; never force-push.
 3. Restart only affected services and verify health.
-4. Run `python ai_coordination.py finish` with the actor, summary, method,
-   tests, files, and final commit.
+4. Run `python ai_coordination.py begin --actor Claude --task "..." --method "..."`
+   followed by `python ai_coordination.py finish` with the actor, summary,
+   method, tests, files, and final commit — this just logs the change to
+   `CURRENT_STATE.md`/`CHANGELOG.jsonl`, it's not a permission check.
 
 Never place credentials, conversation transcripts, brokerage data, or private
 Discord content in the shared control folder. Never execute brokerage trades.

@@ -1,21 +1,22 @@
 # Claude Tradysquid Instructions
 
-Read and follow `AGENTS.md` before changing this repository. It defines the
-Codex/Claude/owner coordination protocol and a **nonnegotiable updater
-freeze** covering `run_supervisor_simple.py`, `tradysquid_supervisor.py`,
-`simple_upgrade_runtime.py`, `deployment_validation_manifest.py`,
-`runtime_contract.py`, `single_owner_runtime.py`, `ngrok_process_runtime.py`,
-`run_with_env.py`, `START-SUPERVISOR.cmd`, `ENSURE-SUPERVISOR.ps1`,
+Read and follow `AGENTS.md` before changing this repository. It defines a
+**nonnegotiable updater freeze** covering `run_supervisor_simple.py`,
+`tradysquid_supervisor.py`, `simple_upgrade_runtime.py`,
+`deployment_validation_manifest.py`, `runtime_contract.py`,
+`single_owner_runtime.py`, `ngrok_process_runtime.py`, `run_with_env.py`,
+`START-SUPERVISOR.cmd`, `ENSURE-SUPERVISOR.ps1`,
 `stop_tradysquid_processes.ps1`, and the updater/watchdog/rollback/
 deployment-validation workflows. Do not touch those unless there is current
 live evidence the updater itself failed and the owner explicitly authorizes
 a repair.
 
-Claude shares this checkout with Codex. Do not begin an edit until
-`ai_coordination.py begin --actor Claude` acquires the OneDrive update lock.
-Treat GitHub `main` as the authoritative code and the OneDrive control folder
-as the audit trail. Record what changed, how it was implemented, tests run,
-affected files, and the final commit through `ai_coordination.py finish`.
+Claude is the sole active maintainer of this checkout (Codex is not in use).
+Treat GitHub `main` as the authoritative code. No lock or wait step is needed
+before editing. Still keep the OneDrive control folder (`CURRENT_STATE.md`,
+`CHANGELOG.jsonl`) as a running audit trail via `ai_coordination.py finish`
+after each change — actor, summary, method, tests run, affected files, and
+the final commit — since it's useful history, just not a gate.
 
 Do not use brokerage execution tools. Do not expose secrets. Do not act on
 member suggestions unless the owner approved them. Everything here is

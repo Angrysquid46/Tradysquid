@@ -28,6 +28,13 @@ SPY_0DTE_VARIANTS = (
     ("SPY_0DTE_5M", "performance_5m", "results_5m", "5-Minute Strategy"),
 )
 
+# Every independently-tracked live strategy that gets its own paginated
+# performance/results ledger - the two SPY_0DTE variants plus SPY
+# Key-Levels/ORB/VWAP, which is otherwise unrelated to either of them.
+STRATEGY_VARIANTS = SPY_0DTE_VARIANTS + (
+    (spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels", "results_key_levels", "Key-Levels Strategy"),
+)
+
 REPORT_ROUTES = {
     "daily_recap": "daily-recap",
     "weekly_report": "weekly-report",
@@ -35,6 +42,8 @@ REPORT_ROUTES = {
     "results_1m": "1m-results",
     "performance_5m": "5m-performance",
     "results_5m": "5m-results",
+    "performance_key_levels": "key-levels-performance",
+    "results_key_levels": "key-levels-results",
 }
 
 REPORT_MARKERS = {
@@ -67,6 +76,15 @@ REPORT_MARKERS = {
         "5-Minute Strategy Results",
         "5-Minute Strategy Trade History ·",
     ),
+    "performance_key_levels": (
+        "Key-Levels Strategy Monthly Performance Index",
+        "Key-Levels Strategy Monthly Performance ·",
+        "Key-Levels Strategy Monthly Trade History ·",
+    ),
+    "results_key_levels": (
+        "Key-Levels Strategy Results",
+        "Key-Levels Strategy Trade History ·",
+    ),
 }
 
 STATE_PREFIXES = (
@@ -77,6 +95,8 @@ STATE_PREFIXES = (
     "1m-results",
     "5m-performance",
     "5m-results",
+    "key-levels-performance",
+    "key-levels-results",
 )
 
 
@@ -647,7 +667,7 @@ def sync_reports(
     strategy_groups_total = 0
     monthly_reports_total = 0
     history_pages_total = daily["history_pages"] + weekly["history_pages"]
-    for play_type, performance_logical, results_logical, label in SPY_0DTE_VARIANTS:
+    for play_type, performance_logical, results_logical, label in STRATEGY_VARIANTS:
         variant_expected = len([row for row in canonical_closed_rows(rows) if row.get("play_type") == play_type])
         results = _sync_strategy_results_variant(
             discord, state, rows, play_type=play_type, logical_name=results_logical, label=label

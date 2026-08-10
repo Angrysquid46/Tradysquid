@@ -328,7 +328,7 @@ def sync_reports(
 
     strategy_count = 0
     monthly_count = 0
-    for play_type, performance_logical, results_logical, label in base.SPY_0DTE_VARIANTS:
+    for play_type, performance_logical, results_logical, label in base.STRATEGY_VARIANTS:
         strategy_count += _sync_strategy_results_variant(
             discord, state, rows, play_type=play_type, logical_name=results_logical, label=label
         )
@@ -424,7 +424,7 @@ def install() -> None:
         return
     base.install()
     base.REPORT_VERSION = REPORT_VERSION
-    for logical_name in ("results_1m", "results_5m"):
+    for logical_name in ("results_1m", "results_5m", "results_key_levels"):
         base.REPORT_MARKERS[logical_name] = tuple(
             dict.fromkeys((*base.REPORT_MARKERS[logical_name], "Strategy Scorecard ·"))
         )
