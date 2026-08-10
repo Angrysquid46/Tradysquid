@@ -38,15 +38,19 @@ REQUIRED_JOBS = {
 REQUIRED_CHANNELS = {
     "system-activity": "Always-On Tradysquids Activity",
     "automation-diagnostics": "Automation Diagnostics and Self-Repair",
-    "performance-dashboard": "Performance Dashboard",
-    "strategy-results": "Strategy Breakdown",
+    "1m-performance": "1-Minute Strategy Monthly Performance",
+    "1m-results": "1-Minute Strategy Results",
+    "5m-performance": "5-Minute Strategy Monthly Performance",
+    "5m-results": "5-Minute Strategy Results",
     "ticker-results": "Ticker Results",
     "wins": "Wins Summary",
     "losses": "Losses Summary",
 }
 CARD_STATE_KEYS = {
-    "performance-dashboard": "performance-stats",
-    "strategy-results": "strategy-breakdown",
+    "1m-performance": "report-v3:performance_1m:index",
+    "1m-results": "report-v3:results_1m:summary:1",
+    "5m-performance": "report-v3:performance_5m:index",
+    "5m-results": "report-v3:results_5m:summary:1",
     "ticker-results": "ticker-results",
     "wins": "wins-summary",
     "losses": "losses-summary",
@@ -134,15 +138,11 @@ def discord_channels_and_cards() -> dict[str, Any]:
         card_text[name] = spy_scanner.message_search_text(matching)
 
     rows = spy_scanner.read_log()
-    metrics = spy_scanner.result_metrics(spy_scanner.closed_rows(rows))
+    closed = spy_scanner.closed_rows(rows)
+    metrics = spy_scanner.result_metrics(closed)
     expected_closed = int(metrics["closed"])
     expected_wins = int(metrics["wins"])
     expected_losses = int(metrics["losses"])
-    performance = card_text["performance-dashboard"]
-    if not re.search(rf"Closed trades\D+{expected_closed}\b", performance):
-        raise OperationsAcceptanceFailure(
-            f"#performance-dashboard does not reconcile to {expected_closed} canonical closed trades."
-        )
 
     def summed_records(text: str) -> int:
         return sum(
@@ -150,10 +150,31 @@ def discord_channels_and_cards() -> dict[str, Any]:
             for match in re.findall(r"(\d+)W\s*(?:/|·)\s*(\d+)L\s*(?:/|·)\s*(\d+)S", text)
         )
 
+    # Ticker results stays combined across both live SPY 0DTE strategies -
+    # it's the one tracker the split deliberately did not duplicate.
     if summed_records(card_text["ticker-results"]) != expected_closed:
         raise OperationsAcceptanceFailure("#ticker-results trade counts do not reconcile to the canonical ledger.")
-    if summed_records(card_text["strategy-results"]) != expected_closed:
-        raise OperationsAcceptanceFailure("#strategy-results trade counts do not reconcile to the canonical ledger.")
+
+    # Performance and results ARE split per strategy - each channel only
+    # ever reconciles to ITS OWN play_type's closed count, never the total,
+    # since the two strategies trade fully independently of each other.
+    for play_type, performance_channel, results_channel, label in (
+        ("SPY_0DTE_1M", "1m-performance", "1m-results", "1-Minute Strategy"),
+        ("SPY_0DTE_5M", "5m-performance", "5m-results", "5-Minute Strategy"),
+    ):
+        variant_expected = len([row for row in closed if row.get("play_type") == play_type])
+        if not re.search(
+            rf"Canonical ledger coverage\D+{variant_expected}/{variant_expected}\b",
+            card_text[performance_channel],
+        ):
+            raise OperationsAcceptanceFailure(
+                f"#{performance_channel} does not reconcile to {variant_expected} canonical closed trades for {label}."
+            )
+        if summed_records(card_text[results_channel]) != variant_expected:
+            raise OperationsAcceptanceFailure(
+                f"#{results_channel} trade counts do not reconcile to the canonical ledger for {label}."
+            )
+
     if not re.search(rf"Trades\D+{expected_wins}\b", card_text["wins"]):
         raise OperationsAcceptanceFailure("#wins summary does not reconcile to the canonical ledger.")
     if not re.search(rf"Trades\D+{expected_losses}\b", card_text["losses"]):
@@ -166,8 +187,8 @@ def discord_channels_and_cards() -> dict[str, Any]:
         "all_closed_trade_views_reconcile": True,
     }
     synchronized_consumers = (
-        "journal", "result-channel", "performance-dashboard", "ticker-results",
-        "strategy-results", "wins-losses", "learning-results",
+        "journal", "result-channel", "1m-performance", "1m-results",
+        "5m-performance", "5m-results", "ticker-results", "wins-losses", "learning-results",
     )
     pending = trade_intelligence.pending_rows(
         spy_scanner.closed_rows(rows), synchronized_consumers

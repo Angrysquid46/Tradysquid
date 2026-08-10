@@ -16,25 +16,28 @@ import spy_scanner
 import performance_reconciliation as base
 
 
-REPORT_VERSION = "performance-scorecards-v4"
+REPORT_VERSION = "performance-scorecards-v5"
 _INSTALLED = False
 
-PLAY_TYPE_ORDER = (
-    "REGULAR CALL",
-    "REGULAR PUT",
-    "SWING CALL",
-    "SWING PUT",
-    "SPREAD CALL",
-    "SPREAD PUT",
-)
+# SPY 0DTE is the only strategy family this system trades, split into two
+# independently-tracked live strategies. REGULAR/SWING/SPREAD were retired
+# along with the multi-ticker system they belonged to - PLAY_TYPE_ORDER used
+# to list their CALL/PUT combinations for scorecard ordering, which no
+# longer means anything live. Kept as a fallback label set for any old
+# historical row still sitting in the ledger, not as anything the two live
+# strategies use.
+PLAY_TYPE_ORDER: tuple[str, ...] = ()
 
 STATE_PREFIXES = (
     "report-v3:",
     "report-v4:",
+    "report-v5:",
     "daily-recap:",
     "weekly-report:",
-    "performance-stats",
-    "strategy-breakdown",
+    "1m-performance",
+    "1m-results",
+    "5m-performance",
+    "5m-results",
 )
 
 
@@ -233,45 +236,70 @@ def _sync_weekly(
     return len(weeks)
 
 
-def _sync_monthly(
+def _sync_monthly_variant(
     discord: Any,
     state: dict[str, Any],
     rows: list[dict[str, str]],
     today: date,
+    *,
+    play_type: str,
+    logical_name: str,
+    label: str,
 ) -> int:
-    months = period_months(rows, today)
+    """Monthly scorecard for ONE of the two independently-tracked SPY 0DTE
+    strategies - rows are filtered to play_type before any period math runs,
+    so the two variants' monthly numbers can never bleed into each other."""
+    filtered = [row for row in rows if row.get("play_type") == play_type]
+    months = period_months(filtered, today)
     for month in months:
-        content = clean_period_scorecard(base.format_monthly_report(rows, month))
+        content = clean_period_scorecard(base.format_monthly_report(filtered, month)).replace(
+            "📊 Monthly Performance", f"📊 {label} Monthly Performance"
+        )
         _require_upsert(
             discord,
-            "performance_stats",
+            logical_name,
             state,
-            f"report-v4:monthly:{month.isoformat()}",
+            f"report-v5:monthly:{logical_name}:{month.isoformat()}",
             content,
-            f"Monthly Performance · {month.strftime('%B %Y')}",
+            f"{label} Monthly Performance · {month.strftime('%B %Y')}",
         )
     return len(months)
 
 
-def _sync_strategies(
+def _sync_strategy_results_variant(
     discord: Any,
     state: dict[str, Any],
     rows: list[dict[str, str]],
+    *,
+    play_type: str,
+    logical_name: str,
+    label: str,
 ) -> int:
-    groups = play_type_groups(rows)
-    ordered = list(PLAY_TYPE_ORDER) + sorted(
-        label for label in groups if label not in PLAY_TYPE_ORDER
-    )
-    for label in ordered:
-        token = f"Strategy Scorecard · {label}"
+    """Results scorecard (by direction) for ONE SPY 0DTE variant - same
+    filter-first isolation as the monthly variant above."""
+    filtered = [row for row in rows if row.get("play_type") == play_type]
+    groups = play_type_groups(filtered)
+    ordered = sorted(groups)
+    for group_label in ordered:
+        token = f"{label} Results · {group_label}"
         _require_upsert(
             discord,
-            "strategy_breakdown",
+            logical_name,
             state,
-            f"report-v4:strategy:{safe_key(label)}",
-            play_type_scorecard(label, groups[label]),
+            f"report-v5:results:{logical_name}:{safe_key(group_label)}",
+            play_type_scorecard(f"{label} · {group_label}", groups[group_label]),
             token,
         )
+    if not ordered:
+        _require_upsert(
+            discord,
+            logical_name,
+            state,
+            f"report-v5:results:{logical_name}:empty",
+            play_type_scorecard(label, []),
+            f"{label} Results",
+        )
+        return 0
     return len(ordered)
 
 
@@ -297,8 +325,17 @@ def sync_reports(
         discord, state, rows, timestamp, market_open=market_open
     )
     weekly_count = _sync_weekly(discord, state, rows, timestamp.date())
-    strategy_count = _sync_strategies(discord, state, rows)
-    monthly_count = _sync_monthly(discord, state, rows, timestamp.date())
+
+    strategy_count = 0
+    monthly_count = 0
+    for play_type, performance_logical, results_logical, label in base.SPY_0DTE_VARIANTS:
+        strategy_count += _sync_strategy_results_variant(
+            discord, state, rows, play_type=play_type, logical_name=results_logical, label=label
+        )
+        monthly_count += _sync_monthly_variant(
+            discord, state, rows, timestamp.date(),
+            play_type=play_type, logical_name=performance_logical, label=label,
+        )
 
     monday = base.week_start(timestamp.date())
     friday = monday + timedelta(days=4)
@@ -326,12 +363,10 @@ def validate_reconciliation() -> dict[str, int]:
     rows: list[dict[str, str]] = []
     monday = datetime(2026, 7, 27, 14, 30, tzinfo=spy_scanner.MARKET_TZ)
     strategies = (
-        ("REGULAR", "call"),
-        ("REGULAR", "put"),
-        ("SWING", "call"),
-        ("SWING", "put"),
-        ("SPREAD", "call"),
-        ("SPREAD", "put"),
+        ("SPY_0DTE_1M", "call"),
+        ("SPY_0DTE_1M", "put"),
+        ("SPY_0DTE_5M", "call"),
+        ("SPY_0DTE_5M", "put"),
     )
     for index in range(100):
         closed_at = monday + timedelta(days=index % 5, minutes=index)
@@ -347,8 +382,8 @@ def validate_reconciliation() -> dict[str, int]:
                 "outcome": outcome,
                 "play_type": play_type,
                 "call_or_put": side,
-                "ticker": "F",
-                "strike": "12",
+                "ticker": "SPY",
+                "strike": "600",
                 "entry_price": "0.50",
                 "exit_price": "0.60" if outcome == "WIN" else "0.40",
                 "realized_pl_dollars": "10" if outcome == "WIN" else "-10",
@@ -360,15 +395,24 @@ def validate_reconciliation() -> dict[str, int]:
     groups = play_type_groups(rows)
     if len(canonical_rows(rows)) != 100:
         raise RuntimeError("Synthetic scorecard ledger did not retain 100 trades")
-    if any(label not in groups for label in PLAY_TYPE_ORDER):
-        raise RuntimeError("Synthetic scorecard validation omitted a play type")
     if sum(len(group) for group in groups.values()) != 100:
         raise RuntimeError("Synthetic play-type scorecards lost trades")
+    # The real point of the split: each variant's own filtered group must
+    # never leak the other variant's trades into it.
+    rows_1m = [row for row in rows if row.get("play_type") == "SPY_0DTE_1M"]
+    rows_5m = [row for row in rows if row.get("play_type") == "SPY_0DTE_5M"]
+    if len(canonical_rows(rows_1m)) + len(canonical_rows(rows_5m)) != 100:
+        raise RuntimeError("SPY_0DTE_1M / SPY_0DTE_5M filtering lost or duplicated trades")
+    if set(canonical_rows(rows_1m)[0].keys()) and any(
+        row.get("play_type") == "SPY_0DTE_5M" for row in rows_1m
+    ):
+        raise RuntimeError("SPY_0DTE_1M filter leaked a SPY_0DTE_5M trade")
     return {
         "closed_trades": 100,
         "daily_scorecards": len(period_dates(rows, date(2026, 8, 1))),
         "weekly_scorecards": len(period_weeks(rows, date(2026, 8, 1))),
-        "monthly_scorecards": len(period_months(rows, date(2026, 8, 1))),
+        "monthly_scorecards": len(period_months(rows_1m, date(2026, 8, 1)))
+        + len(period_months(rows_5m, date(2026, 8, 1))),
         "strategy_scorecards": len(groups),
         "history_pages": 0,
     }
@@ -380,11 +424,10 @@ def install() -> None:
         return
     base.install()
     base.REPORT_VERSION = REPORT_VERSION
-    base.REPORT_MARKERS["strategy_breakdown"] = tuple(
-        dict.fromkeys(
-            (*base.REPORT_MARKERS["strategy_breakdown"], "Strategy Scorecard ·")
+    for logical_name in ("results_1m", "results_5m"):
+        base.REPORT_MARKERS[logical_name] = tuple(
+            dict.fromkeys((*base.REPORT_MARKERS[logical_name], "Strategy Scorecard ·"))
         )
-    )
     base.sync_reports = sync_reports
     base.validate_reconciliation = validate_reconciliation
     spy_scanner.sync_reports = sync_reports

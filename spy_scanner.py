@@ -20,9 +20,9 @@ Expected Discord channel names
 Forum: trade-journal
 Text: scanner-feed, qualified-trades, entry-alerts, position-updates,
       exit-alerts, wins, losses, scratches, daily-recap, weekly-report,
-      performance-stats, strategy-breakdown, scanner-status, api-errors,
-      workflow-log, admin-notes, welcome, strategy-rules, risk-management,
-      server-guide
+      1m-performance, 1m-results, 5m-performance, 5m-results,
+      scanner-status, api-errors, workflow-log, admin-notes, welcome,
+      strategy-rules, risk-management, server-guide
 
 Expected forum status tags
 --------------------------
@@ -124,6 +124,18 @@ MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.25"))
 # band, own stop/target, own signal - nothing here is read by any other
 # play type, and nothing above is read by this one.
 SPY_0DTE_TICKER = "SPY"
+SPY_0DTE_PLAY_TYPES = ("SPY_0DTE_1M", "SPY_0DTE_5M")
+
+
+def is_spy_0dte_play_type(play_type: str | None) -> bool:
+    """True for either independently-tracked SPY 0DTE variant (1-minute or
+    5-minute opening-range bar interval) - they share every exit rule, risk
+    cap, and delta band, differing only in entry-signal bar interval, so
+    every place that branches on "is this a SPY 0DTE trade" should treat
+    both the same way rather than re-listing both strings each time."""
+    return play_type in SPY_0DTE_PLAY_TYPES
+
+
 SPY_0DTE_OPENING_RANGE_MINUTES = int(os.environ.get(
     "SPY_0DTE_OPENING_RANGE_MINUTES", configured("spy_0dte_opening_range_minutes", 30)
 ))
@@ -295,7 +307,6 @@ CHANNEL_NAMES = {
     "risk_desk": "scanner-controls",
     "news_events": "news-and-events",
     "sec_filings": "news-and-events",
-    "research_summary": "strategy-results",
     "qualified": "new-positions",
     "entry": "new-positions",
     "updates": "held-positions",
@@ -304,10 +315,15 @@ CHANNEL_NAMES = {
     "losses": "losses",
     "scratches": "losses",
     "expired": "losses",
-    "daily_recap": "performance-dashboard",
-    "weekly_report": "performance-dashboard",
-    "performance_stats": "performance-dashboard",
-    "strategy_breakdown": "strategy-results",
+    "daily_recap": "daily-recap",
+    "weekly_report": "weekly-report",
+    # Split per independently-tracked SPY 0DTE strategy - see
+    # is_spy_0dte_play_type/SPY_0DTE_PLAY_TYPES. Owned live by
+    # performance_reconciliation.py's sync_reports once it installs.
+    "performance_1m": "1m-performance",
+    "results_1m": "1m-results",
+    "performance_5m": "5m-performance",
+    "results_5m": "5m-results",
     "ticker_results": "ticker-results",
     "learning_results": "learning-results",
     "examples_reviews": "examples-and-reviews",
@@ -349,7 +365,6 @@ AUTOMATED_CHANNEL_KEYS = [
     "risk_desk",
     "news_events",
     "sec_filings",
-    "research_summary",
     "qualified",
     "entry",
     "updates",
@@ -360,8 +375,10 @@ AUTOMATED_CHANNEL_KEYS = [
     "expired",
     "daily_recap",
     "weekly_report",
-    "performance_stats",
-    "strategy_breakdown",
+    "performance_1m",
+    "results_1m",
+    "performance_5m",
+    "results_5m",
     "ticker_results",
     "learning_results",
     "examples_reviews",
@@ -794,8 +811,8 @@ def entry_alert_text(row: dict[str, str], include_link: str = "") -> str:
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"LONG {kind}"
         setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
-        stop_pct = SPY_0DTE_STOP_PCT if play_type == "SPY_0DTE" else SINGLE_STOP_PCT
-        target_pct = SPY_0DTE_TARGET_PCT if play_type == "SPY_0DTE" else SINGLE_TAKE_PROFIT_PCT
+        stop_pct = SPY_0DTE_STOP_PCT if is_spy_0dte_play_type(play_type) else SINGLE_STOP_PCT
+        target_pct = SPY_0DTE_TARGET_PCT if is_spy_0dte_play_type(play_type) else SINGLE_TAKE_PROFIT_PCT
         stop = round(entry * (1 - stop_pct), 2)
         target = round(entry * (1 + target_pct), 2)
         price_line = (
@@ -954,7 +971,7 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
     # threshold before the exit ever fires. Showing the overshoot plainly
     # here answers "did the stop actually hold" at a glance, every time.
     if close_reason in ("STOP OUT", "BREAKEVEN STOP") and play_type != "SPREAD":
-        if play_type == "SPY_0DTE":
+        if is_spy_0dte_play_type(play_type):
             # "BREAKEVEN STOP" for SPY_0DTE means the one-time-raised floor
             # fired, not a return to flat - the real target is the floor
             # level itself, SPY_0DTE_FLOOR_PCT, not 0.0.
@@ -1461,16 +1478,26 @@ def directional_market_context(
 
 
 
-def spy_0dte_opening_range_signal(intraday: list[dict[str, Any]] | None) -> dict[str, Any]:
+def spy_0dte_opening_range_signal(
+    intraday: list[dict[str, Any]] | None, bar_minutes: int = 5
+) -> dict[str, Any]:
     """Standalone SPY 0DTE entry signal - a classic, real, independently
     documented day-trading pattern (opening-range breakout), not a
     variant of regular/swing's momentum models. Waits for the first
     SPY_0DTE_OPENING_RANGE_MINUTES of the session to establish a high/low,
     then fires once price genuinely trades outside that range - not on
     every subsequent bar past it, so a signal fires at most once per
-    session."""
+    session.
+
+    bar_minutes is the interval of the intraday bars passed in (default 5,
+    matching the original single-strategy behavior). This function is now
+    shared by two independently-tracked live strategies - SPY_0DTE_5M calls
+    it with 5-minute bars, SPY_0DTE_1M with 1-minute bars - so the number of
+    bars needed to cover the same opening-range window has to scale with
+    whatever interval the caller actually fetched, not stay hardcoded to
+    5-minute math for both."""
     intraday = intraday or []
-    bars_needed = max(SPY_0DTE_OPENING_RANGE_MINUTES // 5, 1)
+    bars_needed = max(SPY_0DTE_OPENING_RANGE_MINUTES // bar_minutes, 1)
     if len(intraday) <= bars_needed:
         return {
             "qualified": False,
@@ -1571,11 +1598,18 @@ def scan_spy_0dte_candidates(
     expiration: str,
     spot_price: float,
     market_context: dict[str, Any] | None = None,
+    play_type: str = "SPY_0DTE_5M",
 ) -> list[dict[str, Any]]:
     """Candidate builder for SPY 0DTE - its own delta band and its own
     risk cap (SPY_0DTE_MAX_CONTRACT_ASK/SPY_0DTE_MAX_RISK_PER_TRADE),
     built standalone per explicit owner direction not to reuse the
     retired multi-ticker single-leg machinery.
+
+    Shared by both independently-tracked SPY_0DTE_1M and SPY_0DTE_5M
+    strategies - they differ only in the opening-range bar interval used
+    by spy_0dte_opening_range_signal, not in contract selection, delta
+    band, or risk cap. play_type tags which one a given candidate came
+    from so the two are tracked, cooled-down, and learned from separately.
 
     candidate_to_row reads cost_or_credit/pop/max_profit/max_risk/
     breakeven/option_symbol directly off every candidate, so a SPY_0DTE
@@ -1599,7 +1633,7 @@ def scan_spy_0dte_candidates(
         breakeven = round(strike + ask if kind == "call" else strike - ask, 2)
         candidates.append(
             {
-                "play_type": "SPY_0DTE",
+                "play_type": play_type,
                 "call_or_put": kind,
                 "strike": fmt_strike(strike),
                 "expiration": expiration,
@@ -2593,10 +2627,11 @@ def evaluate_open_row(row: dict[str, str], quotes: dict[str, dict[str, Any]], ti
     entry = parse_entry_price(row)
     play_type = row.get("play_type")
 
-    if play_type != "SPY_0DTE":
-        # Every play type this system opens is SPY_0DTE - anything else is
-        # a historical row from a retired strategy and has nothing live to
-        # evaluate against.
+    if play_type not in ("SPY_0DTE_1M", "SPY_0DTE_5M"):
+        # Every play type this system opens is one of the two independently
+        # tracked SPY 0DTE strategies - anything else (including the bare
+        # "SPY_0DTE" from before the 1m/5m split) is a historical row from a
+        # retired strategy and has nothing live to evaluate against.
         return {
             "signal": "HOLD",
             "note": f"Unrecognized or retired play_type {play_type!r}; nothing to evaluate.",
@@ -3542,20 +3577,26 @@ def sync_existing_open_threads(
 def refresh_all_summary_dashboards(
     discord: DiscordTracker, report_state: dict[str, Any], rows: list[dict[str, str]]
 ) -> None:
-    """Rebuild every summary dashboard - performance, strategy breakdowns,
-    ticker results, per-play-style, wins/losses/scratches - directly against
-    Discord, using the same low-level upsert primitive throughout rather
-    than delegating to update_performance_pages. That function gets
-    replaced with a no-op by a separate reconciliation system once it
+    """Rebuild the summary dashboards this function still owns - ticker
+    results and wins/losses/scratches - directly against Discord, using the
+    same low-level upsert primitive throughout rather than delegating to
+    update_performance_pages. That function gets replaced with a no-op by a
+    separate reconciliation system (performance_reconciliation.py) once it
     installs itself in the real running system, on purpose, to stop two
-    systems fighting over the same cards - which makes it unsafe for
-    anything else to depend on by reference. This function never depends on
-    what that other system has done to update_performance_pages, so every
-    caller here stays correct regardless of install order or which system
-    is currently active."""
+    systems fighting over the same cards.
+
+    This function does NOT post per-strategy performance/results content
+    (performance_1m/results_1m/performance_5m/results_5m) - that's owned
+    exclusively by performance_reconciliation.py's sync_reports once it
+    installs, via the exact same logical channel keys. Posting the same
+    content from both places would be the "two systems fighting over the
+    same cards" problem the original design explicitly avoided, just
+    reintroduced for the new per-strategy channels instead of the old
+    combined ones. format_strategy_performance/format_strategy_results
+    still exist for anything that wants a simple, single-message read
+    outside of that paginated ledger system, they're just not wired to
+    fire from here."""
     summary_channels = [
-        ("performance_stats", "performance-stats", format_performance_stats, "Performance Dashboard"),
-        ("strategy_breakdown", "strategy-breakdown", format_strategy_breakdown, "Strategy Breakdown"),
         ("ticker_results", "ticker-results", format_ticker_results, "Ticker Results"),
     ]
     for logical_name, token, formatter, search_text in summary_channels:
@@ -4288,6 +4329,79 @@ def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
 
 
 
+def format_strategy_performance(rows: list[dict[str, str]], play_type: str, label: str) -> str:
+    """Per-strategy version of format_performance_stats, filtered to one of
+    the two independently-tracked SPY 0DTE variants so each gets its own
+    dashboard instead of one combined number that hides which one is
+    actually working."""
+    completed = [row for row in closed_rows(rows) if row.get("play_type") == play_type]
+    open_count = len([row for row in open_rows(rows) if row.get("play_type") == play_type])
+    metrics = result_metrics(completed)
+    return "\n".join([
+        f"## 📊 {label} Performance",
+        "### Record",
+        (
+            f"🏆 **{int(metrics['wins'])} Wins** · 🔴 **{int(metrics['losses'])} Losses** · "
+            f"➖ **{int(metrics['scratches'])} Scratches**"
+        ),
+        f"Win rate **{metrics['win_rate']:.0f}%** · Closed trades **{int(metrics['closed'])}**",
+        "### Money",
+        (
+            f"Won **{fmt_metric_money(metrics, 'gross_won')}** · "
+            f"Lost **{fmt_metric_money(metrics, 'gross_lost')}** · "
+            f"Net **{fmt_metric_money(metrics, 'total_pnl')}**"
+        ),
+        "### Trade Quality",
+        (
+            f"Avg win **{metrics['average_win_pct']:+.0f}%** · "
+            f"Avg loss **{metrics['average_loss_pct']:+.0f}%** · "
+            f"Expectancy **{metrics['expectancy_pct']:+.0f}%**"
+        ),
+        "### Current Exposure",
+        f"⏸️ Open/HOLD positions **{open_count}** · Results use **1 contract per trade**",
+        f"Updated **{portable_strftime(now_ct(), '%m\\%d\\%y %-I:%M %p CT')}**",
+    ])[:2000]
+
+
+def format_strategy_results(rows: list[dict[str, str]], play_type: str, label: str) -> str:
+    """Per-strategy breakdown by direction (call/put) and market regime at
+    entry, so the two SPY 0DTE variants can be compared on more than just a
+    single headline number - if they're only ever splitting evenly on
+    direction and regime too, that's a real signal they aren't actually
+    diverging enough to be worth tracking separately."""
+    completed = [row for row in closed_rows(rows) if row.get("play_type") == play_type]
+    lines = [f"## 🧠 {label} Results", "By direction and entry regime."]
+    if not completed:
+        lines.append("No completed trades yet.")
+        lines.append(f"Updated **{portable_strftime(now_ct(), '%m\\%d\\%y %-I:%M %p CT')}**")
+        return "\n".join(lines)[:2000]
+
+    by_direction: dict[str, list[dict[str, str]]] = {}
+    by_regime: dict[str, list[dict[str, str]]] = {}
+    for row in completed:
+        kind = (row.get("call_or_put") or "UNKNOWN").upper()
+        by_direction.setdefault(kind, []).append(row)
+        regime = (row.get("market_regime") or "UNKNOWN").upper()
+        by_regime.setdefault(regime, []).append(row)
+
+    lines.append("### By direction")
+    for kind, group in sorted(by_direction.items(), key=lambda item: -result_metrics(item[1])["total_pnl"]):
+        metrics = result_metrics(group)
+        lines.append(
+            f"**{kind}** — {int(metrics['wins'])}W / {int(metrics['losses'])}L · "
+            f"{metrics['win_rate']:.0f}% win rate · Net {fmt_metric_money(metrics, 'total_pnl')}"
+        )
+    lines.append("### By entry regime")
+    for regime, group in sorted(by_regime.items(), key=lambda item: -result_metrics(item[1])["total_pnl"]):
+        metrics = result_metrics(group)
+        lines.append(
+            f"**{regime}** — {int(metrics['wins'])}W / {int(metrics['losses'])}L · "
+            f"{metrics['win_rate']:.0f}% win rate · Net {fmt_metric_money(metrics, 'total_pnl')}"
+        )
+    lines.append(f"Updated **{portable_strftime(now_ct(), '%m\\%d\\%y %-I:%M %p CT')}**")
+    return "\n".join(lines)[:2000]
+
+
 def format_ticker_results(rows: list[dict[str, str]]) -> str:
     groups: dict[str, list[dict[str, str]]] = {}
     for row in closed_rows(rows):
@@ -4598,15 +4712,19 @@ def format_scanner_feed(
         for item in expirations
     ) or "None available"
     by_strategy = stats.get("candidate_counts") or {}
-    spy_0dte_ctx = stats.get("spy_0dte_market_context") or {}
-    trend_text = (
-        f"**SPY 0DTE regime:** {spy_0dte_ctx.get('regime', 'Unavailable')} "
-        f"({'Passed' if spy_0dte_ctx.get('qualified') else 'Blocked'})\n"
-        f"**Read:** {spy_0dte_ctx.get('reason', '—')}"
-    )
-    blocked_by = list(spy_0dte_ctx.get("failures") or [])
-    if blocked_by:
-        trend_text += "\n**Blocked by:** " + "; ".join(blocked_by)
+    spy_0dte_contexts = stats.get("spy_0dte_market_context") or {}
+    trend_lines = []
+    for play_type in ("SPY_0DTE_1M", "SPY_0DTE_5M"):
+        ctx = spy_0dte_contexts.get(play_type) or {}
+        trend_lines.append(
+            f"**{play_type} regime:** {ctx.get('regime', 'Unavailable')} "
+            f"({'Passed' if ctx.get('qualified') else 'Blocked'})\n"
+            f"**Read:** {ctx.get('reason', '—')}"
+        )
+        blocked_by = list(ctx.get("failures") or [])
+        if blocked_by:
+            trend_lines[-1] += "\n**Blocked by:** " + "; ".join(blocked_by)
+    trend_text = "\n\n".join(trend_lines)
     strategy_text = "\n".join(
         f"• **{label}:** {count}" for label, count in by_strategy.items() if count
     ) or "None"
@@ -4666,20 +4784,24 @@ def update_performance_pages(
 ) -> None:
     if not discord.ready:
         return
-    discord.upsert_channel_message(
-        "performance_stats",
-        state,
-        "performance-stats",
-        format_performance_stats(rows),
-        search_token="Performance Dashboard",
-    )
-    discord.upsert_channel_message(
-        "strategy_breakdown",
-        state,
-        "strategy-breakdown",
-        format_strategy_breakdown(rows),
-        search_token="Strategy Breakdown",
-    )
+    for play_type, logical_stats, logical_results, label in (
+        ("SPY_0DTE_1M", "performance_1m", "results_1m", "1-Minute Strategy"),
+        ("SPY_0DTE_5M", "performance_5m", "results_5m", "5-Minute Strategy"),
+    ):
+        discord.upsert_channel_message(
+            logical_stats,
+            state,
+            f"{logical_stats}-stats",
+            format_strategy_performance(rows, play_type, label),
+            search_token=f"{label} Performance",
+        )
+        discord.upsert_channel_message(
+            logical_results,
+            state,
+            f"{logical_results}-results",
+            format_strategy_results(rows, play_type, label),
+            search_token=f"{label} Results",
+        )
     discord.upsert_channel_message(
         "ticker_results",
         state,
@@ -4911,8 +5033,11 @@ DEFAULT_TRADE_TYPES_ENABLED = {
     "bear_call_spreads": True,
     # Defaults to paused even in code, not just config - a brand-new,
     # single-regime-backtested, real-leverage play type should never
-    # silently go live just because a config key went missing.
-    "spy_0dte": False,
+    # silently go live just because a config key went missing. Split into
+    # two independently-toggleable strategies (1-minute vs 5-minute opening
+    # range bar interval) that trade fully independently of each other.
+    "spy_0dte_1m": False,
+    "spy_0dte_5m": False,
 }
 
 
@@ -4935,14 +5060,67 @@ def _unavailable_context(reason: str) -> dict[str, Any]:
     }
 
 
+def _run_spy_0dte_variant(
+    *,
+    play_type: str,
+    bar_minutes: int,
+    intraday_history: list[dict[str, Any]],
+    today_str: str,
+    spot_price: float,
+    candidates: list[dict[str, Any]],
+    quote_map: dict[str, dict[str, Any]],
+    add_candidates,
+) -> dict[str, Any]:
+    """Run one SPY 0DTE variant's signal + candidate build in isolation.
+    Two variants (SPY_0DTE_1M, SPY_0DTE_5M) call this independently with
+    their own intraday bar interval - each gets its own market-context
+    read, its own chain fetch, its own candidates tagged with its own
+    play_type, and neither one's failure or signal state can affect the
+    other's. They trade fully independently: both can be open at once,
+    each under its own $500/trade risk cap, by owner decision."""
+    try:
+        context = spy_0dte_opening_range_signal(intraday_history, bar_minutes=bar_minutes)
+    except Exception as exc:
+        context = _unavailable_context(f"spy 0dte ({play_type}) signal errored: {exc}")
+    if not context.get("qualified"):
+        return context
+    try:
+        allowed_strikes = set(filter_strikes(get_strikes(TICKER, today_str), spot_price))
+        raw_chain = get_chain(TICKER, today_str)
+        chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
+        for option in chain:
+            if option.get("symbol"):
+                quote_map[option["symbol"]] = option
+        calls = [option for option in chain if option.get("option_type") == "call"]
+        puts = [option for option in chain if option.get("option_type") == "put"]
+        regime = context["regime"]
+        if regime == "BULLISH / CONTROLLED":
+            add_candidates(
+                f"{play_type} calls",
+                scan_spy_0dte_candidates(calls, "call", today_str, spot_price, context, play_type=play_type),
+            )
+        elif regime == "BEARISH / CONTROLLED":
+            add_candidates(
+                f"{play_type} puts",
+                scan_spy_0dte_candidates(puts, "put", today_str, spot_price, context, play_type=play_type),
+            )
+    except Exception as exc:
+        print(f"SPY 0DTE ({play_type}) scan step failed: {exc}", file=sys.stderr)
+    return context
+
+
 def scan_candidates(
     spot_price: float,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
     expirations = get_expirations(TICKER)
     try:
-        intraday_history = get_intraday_history(TICKER)
+        intraday_5m = get_intraday_history(TICKER, interval="5min")
     except (TradierError, requests.RequestException):
-        intraday_history = []
+        intraday_5m = []
+    try:
+        intraday_1m = get_intraday_history(TICKER, interval="1min")
+    except (TradierError, requests.RequestException):
+        intraday_1m = []
 
     enabled = trade_types_enabled()
 
@@ -4954,6 +5132,7 @@ def scan_candidates(
         "puts": 0,
         "qualified_candidates": 0,
         "candidate_counts": {},
+        "spy_0dte_market_context": {},
     }
     candidates: list[dict[str, Any]] = []
     quote_map: dict[str, dict[str, Any]] = {}
@@ -4962,41 +5141,39 @@ def scan_candidates(
         candidates.extend(found)
         stats["candidate_counts"][label] = stats["candidate_counts"].get(label, 0) + len(found)
 
-    # SPY 0DTE is the only play type this system trades: its own expiration
-    # handling (today's date only), its own signal, its own candidate builder.
-    if TICKER == SPY_0DTE_TICKER and enabled.get("spy_0dte"):
+    # SPY 0DTE is the only trade family this system runs, now split into two
+    # independently-tracked live strategies that differ only in the intraday
+    # bar interval their opening-range signal reads: SPY_0DTE_5M (the
+    # original) and SPY_0DTE_1M. Same delta band, same risk cap, same
+    # stop/target/floor/EOD exit rules for both - bar interval is the one
+    # variable actually being compared, per explicit owner direction not to
+    # invent artificial differences that would muddy the comparison.
+    if TICKER == SPY_0DTE_TICKER:
         today_str = now_ct().date().isoformat()
         if today_str in expirations:
-            try:
-                spy_0dte_context = spy_0dte_opening_range_signal(intraday_history)
-            except Exception as exc:
-                spy_0dte_context = _unavailable_context(f"spy 0dte signal errored: {exc}")
-            stats["spy_0dte_market_context"] = spy_0dte_context
-            if spy_0dte_context.get("qualified"):
-                try:
-                    allowed_strikes = set(filter_strikes(get_strikes(TICKER, today_str), spot_price))
-                    raw_chain = get_chain(TICKER, today_str)
-                    chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
-                    for option in chain:
-                        if option.get("symbol"):
-                            quote_map[option["symbol"]] = option
-                    calls = [option for option in chain if option.get("option_type") == "call"]
-                    puts = [option for option in chain if option.get("option_type") == "put"]
-                    regime = spy_0dte_context["regime"]
-                    if regime == "BULLISH / CONTROLLED":
-                        add_candidates(
-                            "SPY 0DTE calls",
-                            scan_spy_0dte_candidates(calls, "call", today_str, spot_price, spy_0dte_context),
-                        )
-                    elif regime == "BEARISH / CONTROLLED":
-                        add_candidates(
-                            "SPY 0DTE puts",
-                            scan_spy_0dte_candidates(puts, "put", today_str, spot_price, spy_0dte_context),
-                        )
-                except Exception as exc:
-                    print(f"SPY 0DTE scan step failed: {exc}", file=sys.stderr)
+            variants = (
+                ("SPY_0DTE_5M", 5, intraday_5m, enabled.get("spy_0dte_5m")),
+                ("SPY_0DTE_1M", 1, intraday_1m, enabled.get("spy_0dte_1m")),
+            )
+            for play_type, bar_minutes, intraday_history, variant_enabled in variants:
+                if not variant_enabled:
+                    stats["spy_0dte_market_context"][play_type] = _unavailable_context(
+                        f"{play_type} disabled in trade_types_enabled"
+                    )
+                    continue
+                stats["spy_0dte_market_context"][play_type] = _run_spy_0dte_variant(
+                    play_type=play_type,
+                    bar_minutes=bar_minutes,
+                    intraday_history=intraday_history,
+                    today_str=today_str,
+                    spot_price=spot_price,
+                    candidates=candidates,
+                    quote_map=quote_map,
+                    add_candidates=add_candidates,
+                )
         else:
-            stats["spy_0dte_market_context"] = _unavailable_context("no same-day expiration listed today")
+            unavailable = _unavailable_context("no same-day expiration listed today")
+            stats["spy_0dte_market_context"] = {"SPY_0DTE_5M": unavailable, "SPY_0DTE_1M": unavailable}
 
     stats["qualified_candidates"] = len(candidates)
     return candidates, quote_map, stats

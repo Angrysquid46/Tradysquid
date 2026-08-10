@@ -43,7 +43,7 @@ def _widened_stop_floor(row: dict) -> float:
     widening at all. Applying the single-leg math to a SPY_0DTE row
     produced false "EXECUTION ANOMALY" flags on ordinary, correct 0DTE
     losses that happened before the floor engaged."""
-    if row.get("play_type") == "SPY_0DTE":
+    if spy_scanner.is_spy_0dte_play_type(row.get("play_type")):
         peak = spy_scanner.as_float(row.get("max_favorable_pct")) or 0.0
         if peak >= spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT:
             return spy_scanner.SPY_0DTE_FLOOR_PCT
@@ -120,7 +120,7 @@ def autopsy(row: dict) -> str:
 
     lines.append("  --- Risk floor ---")
     widened = _widened_stop_floor(row)
-    if row.get("play_type") == "SPY_0DTE":
+    if spy_scanner.is_spy_0dte_play_type(row.get("play_type")):
         peak = spy_scanner.as_float(row.get("max_favorable_pct")) or 0.0
         raised = peak >= spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT
         lines.append(

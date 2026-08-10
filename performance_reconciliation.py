@@ -23,11 +23,18 @@ _INSTALLED = False
 
 _ORIGINAL_CLOSED_ROWS = spy_scanner.closed_rows
 
+SPY_0DTE_VARIANTS = (
+    ("SPY_0DTE_1M", "performance_1m", "results_1m", "1-Minute Strategy"),
+    ("SPY_0DTE_5M", "performance_5m", "results_5m", "5-Minute Strategy"),
+)
+
 REPORT_ROUTES = {
     "daily_recap": "daily-recap",
     "weekly_report": "weekly-report",
-    "performance_stats": "performance-dashboard",
-    "strategy_breakdown": "strategy-breakdown",
+    "performance_1m": "1m-performance",
+    "results_1m": "1m-results",
+    "performance_5m": "5m-performance",
+    "results_5m": "5m-results",
 }
 
 REPORT_MARKERS = {
@@ -42,18 +49,23 @@ REPORT_MARKERS = {
         "Weekly Report ·",
         "Weekly Trade History ·",
     ),
-    "performance_stats": (
-        "Monthly Performance Index",
-        "Monthly Performance ·",
-        "Monthly Trade History ·",
-        "Performance Dashboard",
-        "Daily Recap ·",
-        "Weekly Report ·",
-        "Strategy Breakdown",
+    "performance_1m": (
+        "1-Minute Strategy Monthly Performance Index",
+        "1-Minute Strategy Monthly Performance ·",
+        "1-Minute Strategy Monthly Trade History ·",
     ),
-    "strategy_breakdown": (
-        "Strategy Breakdown",
-        "Strategy Trade History ·",
+    "results_1m": (
+        "1-Minute Strategy Results",
+        "1-Minute Strategy Trade History ·",
+    ),
+    "performance_5m": (
+        "5-Minute Strategy Monthly Performance Index",
+        "5-Minute Strategy Monthly Performance ·",
+        "5-Minute Strategy Monthly Trade History ·",
+    ),
+    "results_5m": (
+        "5-Minute Strategy Results",
+        "5-Minute Strategy Trade History ·",
     ),
 }
 
@@ -61,8 +73,10 @@ STATE_PREFIXES = (
     "report-v3:",
     "daily-recap:",
     "weekly-report:",
-    "performance-stats",
-    "strategy-breakdown",
+    "1m-performance",
+    "1m-results",
+    "5m-performance",
+    "5m-results",
 )
 
 
@@ -281,7 +295,7 @@ def strategy_groups(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]
     return groups
 
 
-def strategy_summary_pages(rows: list[dict[str, str]]) -> list[str]:
+def strategy_summary_pages(rows: list[dict[str, str]], title: str = "Strategy Breakdown") -> list[str]:
     groups = strategy_groups(rows)
     ranked = sorted(
         groups.items(),
@@ -293,13 +307,13 @@ def strategy_summary_pages(rows: list[dict[str, str]]) -> list[str]:
     )
     if not ranked:
         return [
-            "## Strategy Breakdown\n**Canonical ledger coverage:** **0/0** closed trades.\n### Results\nNo completed trades yet."
+            f"## {title}\n**Canonical ledger coverage:** **0/0** closed trades.\n### Results\nNo completed trades yet."
         ]
     pages = []
     grouped_pages = list(chunks(ranked, 7))
     for page_number, page_groups in enumerate(grouped_pages, 1):
         lines = [
-            f"## Strategy Breakdown · Page {page_number}/{len(grouped_pages)}",
+            f"## {title} · Page {page_number}/{len(grouped_pages)}",
             (
                 f"**Canonical ledger coverage:** **{sum(len(group) for _, group in ranked)}/"
                 f"{len(canonical_closed_rows(rows))}** closed trades across **{len(ranked)}** strategies."
@@ -310,24 +324,12 @@ def strategy_summary_pages(rows: list[dict[str, str]]) -> list[str]:
             metrics = spy_scanner.result_metrics(group)
             lines.append(
                 f"**{label}** · {len(group)} trades · {int(metrics['wins'])}W/"
-                f"{int(metrics['losses'])}L · {metrics['win_rate']:.0f}% · "
+                f"{int(metrics['losses'])}L/{int(metrics['scratches'])}S · {metrics['win_rate']:.0f}% · "
                 f"Net {spy_scanner.fmt_metric_money(metrics, 'total_pnl')} · "
                 f"Exp {metrics['expectancy_pct']:+.0f}%"
             )
         pages.append("\n".join(lines)[:5900])
     return pages
-
-
-def format_strategy_breakdown(rows: list[dict[str, str]]) -> str:
-    return strategy_summary_pages(rows)[0]
-
-
-def format_performance_stats(rows: list[dict[str, str]]) -> str:
-    completed = canonical_closed_rows(rows)
-    if not completed:
-        return "## Monthly Performance Index\n**Canonical ledger coverage:** **0/0** closed trades."
-    latest = month_start(effective_closed_at(completed[-1]).date())
-    return format_monthly_report(rows, latest)
 
 
 def _require_upsert(
@@ -509,29 +511,37 @@ def _sync_weekly(discord: Any, state: dict[str, Any], rows: list[dict[str, str]]
     return {"periods": len(weeks), "history_pages": pages, "trades": len(completed)}
 
 
-def _sync_strategy(discord: Any, state: dict[str, Any], rows: list[dict[str, str]]) -> dict[str, int]:
-    completed = canonical_closed_rows(rows)
-    summaries = strategy_summary_pages(rows)
+def _sync_strategy_results_variant(
+    discord: Any, state: dict[str, Any], rows: list[dict[str, str]], *, play_type: str, logical_name: str, label: str
+) -> dict[str, int]:
+    """Results report for ONE of the two independently-tracked SPY 0DTE
+    variants - rows are filtered to play_type before anything else runs, so
+    this variant's ranking, pagination, and trade history can never include
+    the other variant's trades."""
+    filtered = [row for row in rows if row.get("play_type") == play_type]
+    completed = canonical_closed_rows(filtered)
+    title = f"{label} Results"
+    summaries = strategy_summary_pages(filtered, title=title)
     for page_number, content in enumerate(summaries, 1):
         _require_upsert(
             discord,
-            "strategy_breakdown",
+            logical_name,
             state,
-            f"report-v3:strategy:summary:{page_number}",
+            f"report-v3:{logical_name}:summary:{page_number}",
             content,
-            f"Strategy Breakdown · Page {page_number}/{len(summaries)}",
+            f"{title} · Page {page_number}/{len(summaries)}",
         )
     pages = 0
-    groups = strategy_groups(rows)
-    for label in sorted(groups):
-        safe_key = hashlib.sha256(label.encode("utf-8")).hexdigest()[:10]
+    groups = strategy_groups(filtered)
+    for group_label in sorted(groups):
+        safe_key = hashlib.sha256(group_label.encode("utf-8")).hexdigest()[:10]
         pages += _sync_history(
             discord,
             state,
-            "strategy_breakdown",
-            f"strategy:{safe_key}",
-            f"Strategy Trade History · {label}",
-            groups[label],
+            logical_name,
+            f"{logical_name}:{safe_key}",
+            f"{label} Trade History · {group_label}",
+            groups[group_label],
         )
     return {
         "periods": len(groups),
@@ -541,48 +551,56 @@ def _sync_strategy(discord: Any, state: dict[str, Any], rows: list[dict[str, str
     }
 
 
-def _sync_monthly(discord: Any, state: dict[str, Any], rows: list[dict[str, str]]) -> dict[str, int]:
-    completed = canonical_closed_rows(rows)
-    months = _period_months(rows)
+def _sync_monthly_performance_variant(
+    discord: Any, state: dict[str, Any], rows: list[dict[str, str]], *, play_type: str, logical_name: str, label: str
+) -> dict[str, int]:
+    """Monthly performance report for ONE SPY 0DTE variant - same isolation
+    as _sync_strategy_results_variant: filtered to play_type first, so the
+    two variants' monthly numbers can never bleed into each other."""
+    filtered = [row for row in rows if row.get("play_type") == play_type]
+    completed = canonical_closed_rows(filtered)
+    months = _period_months(filtered)
     _require_upsert(
         discord,
-        "performance_stats",
+        logical_name,
         state,
-        "report-v3:monthly:index",
+        f"report-v3:{logical_name}:index",
         "\n".join(
             [
-                "## Monthly Performance Index",
+                f"## {label} Monthly Performance Index",
                 f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades.",
                 f"**Recorded months shown:** **{len(months)}**",
                 "Monthly summaries use the weekly layout and include every trade in history pages.",
             ]
         ),
-        "Monthly Performance Index",
+        f"{label} Monthly Performance Index",
     )
     pages = 0
     covered = 0
     for month in months:
-        month_rows = rows_closed_between(rows, month, month_end(month))
+        month_rows = rows_closed_between(filtered, month, month_end(month))
         covered += len(month_rows)
         _require_upsert(
             discord,
-            "performance_stats",
+            logical_name,
             state,
-            f"report-v3:monthly:{month.isoformat()}:summary",
-            format_monthly_report(rows, month),
-            f"Monthly Performance · {month.strftime('%B %Y')}",
+            f"report-v3:{logical_name}:{month.isoformat()}:summary",
+            format_monthly_report(filtered, month).replace(
+                "📊 Monthly Performance", f"📊 {label} Monthly Performance"
+            ),
+            f"{label} Monthly Performance · {month.strftime('%B %Y')}",
         )
         pages += _sync_history(
             discord,
             state,
-            "performance_stats",
-            f"monthly:{month.isoformat()}",
-            f"Monthly Trade History · {month.strftime('%B %Y')}",
+            logical_name,
+            f"{logical_name}:monthly:{month.isoformat()}",
+            f"{label} Monthly Trade History · {month.strftime('%B %Y')}",
             month_rows,
         )
     if covered != len(completed):
         raise RuntimeError(
-            f"Monthly reporting omitted canonical trades: {covered}/{len(completed)}"
+            f"{label} monthly reporting omitted canonical trades: {covered}/{len(completed)}"
         )
     return {"periods": len(months), "history_pages": pages, "trades": covered}
 
@@ -617,20 +635,35 @@ def sync_reports(
 
     daily = _sync_daily(discord, state, rows)
     weekly = _sync_weekly(discord, state, rows)
-    strategy = _sync_strategy(discord, state, rows)
-    monthly = _sync_monthly(discord, state, rows)
 
     expected = len(canonical_closed_rows(rows))
-    for name, result in (
-        ("daily", daily),
-        ("weekly", weekly),
-        ("strategy", strategy),
-        ("monthly", monthly),
-    ):
+    for name, result in (("daily", daily), ("weekly", weekly)):
         if result["trades"] != expected:
             raise RuntimeError(
                 f"{name} reporting coverage failed: {result['trades']}/{expected}"
             )
+
+    variant_results: dict[str, dict[str, int]] = {}
+    strategy_groups_total = 0
+    monthly_reports_total = 0
+    history_pages_total = daily["history_pages"] + weekly["history_pages"]
+    for play_type, performance_logical, results_logical, label in SPY_0DTE_VARIANTS:
+        variant_expected = len([row for row in canonical_closed_rows(rows) if row.get("play_type") == play_type])
+        results = _sync_strategy_results_variant(
+            discord, state, rows, play_type=play_type, logical_name=results_logical, label=label
+        )
+        monthly = _sync_monthly_performance_variant(
+            discord, state, rows, play_type=play_type, logical_name=performance_logical, label=label
+        )
+        for name, result in ((f"{label} results", results), (f"{label} monthly", monthly)):
+            if result["trades"] != variant_expected:
+                raise RuntimeError(
+                    f"{name} reporting coverage failed: {result['trades']}/{variant_expected}"
+                )
+        variant_results[play_type] = {"results": results, "monthly": monthly}
+        strategy_groups_total += results["periods"]
+        monthly_reports_total += monthly["periods"]
+        history_pages_total += results["history_pages"] + monthly["history_pages"]
 
     state.update(
         {
@@ -639,14 +672,9 @@ def sync_reports(
             "performance_reconciliation_closed_trades": expected,
             "performance_reconciliation_daily_reports": daily["periods"],
             "performance_reconciliation_weekly_reports": weekly["periods"],
-            "performance_reconciliation_strategy_groups": strategy["periods"],
-            "performance_reconciliation_monthly_reports": monthly["periods"],
-            "performance_reconciliation_history_pages": (
-                daily["history_pages"]
-                + weekly["history_pages"]
-                + strategy["history_pages"]
-                + monthly["history_pages"]
-            ),
+            "performance_reconciliation_strategy_groups": strategy_groups_total,
+            "performance_reconciliation_monthly_reports": monthly_reports_total,
+            "performance_reconciliation_history_pages": history_pages_total,
             "performance_reconciliation_removed_misplaced_cards": removed,
             "performance_reconciliation_checked_at": timestamp.isoformat(),
         }
@@ -665,8 +693,6 @@ def install() -> None:
     spy_scanner.rows_closed_between = rows_closed_between
     spy_scanner.format_daily_recap = format_daily_recap
     spy_scanner.format_weekly_report = format_weekly_report
-    spy_scanner.format_strategy_breakdown = format_strategy_breakdown
-    spy_scanner.format_performance_stats = format_performance_stats
     spy_scanner.update_performance_pages = update_performance_pages
     spy_scanner.sync_reports = sync_reports
     _INSTALLED = True

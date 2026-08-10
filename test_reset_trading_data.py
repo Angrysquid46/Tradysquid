@@ -232,14 +232,16 @@ def test_reset_refreshes_every_summary_dashboard_immediately():
             "wins", "losses", "scratches", "expired",
         }
 
-        # Every summary dashboard should have been refreshed directly in
-        # this same call, not left for the next scheduled cycle, and not
-        # routed through a helper that some other system might have
-        # replaced with a no-op.
+        # refresh_all_summary_dashboards only owns ticker_results and
+        # wins/losses/scratches now - performance_1m/results_1m/
+        # performance_5m/results_5m are owned exclusively by
+        # performance_reconciliation.py's sync_reports (installed as
+        # spy_scanner.sync_reports) to avoid the "two systems fighting over
+        # the same cards" problem that posting them from both places would
+        # reintroduce. Those four zero out on the next scheduled sync_reports
+        # cycle instead, once the ledger signature changes.
         refreshed = {c[1] for c in calls if c[0] == "refresh_dashboard"}
         assert refreshed == {
-            "performance_stats",
-            "strategy_breakdown",
             "ticker_results",
             "wins",
             "losses",
