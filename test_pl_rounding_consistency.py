@@ -15,7 +15,7 @@ def test_live_evaluation_pl_matches_what_close_row_would_derive_from_it():
     # decimal digit past what entry_price/exit_price are ever stored at.
     row = {field: "" for field in spy_scanner.LOG_HEADER}
     row.update({
-        "trade_id": "T-ROUND-1", "ticker": "SPY", "play_type": "SPY_0DTE",
+        "trade_id": "T-ROUND-1", "ticker": "SPY", "play_type": "SPY_0DTE_1M",
         "call_or_put": "call", "entry_price": "1.00",
         "option_symbol": "SPY260821C00100000",
         "delta_at_entry": "0.30", "iv_at_entry": "0.40",

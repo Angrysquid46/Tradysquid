@@ -1,4 +1,15 @@
-"""Install the four distinct Performance-category scorecard destinations."""
+"""Install the shared, non-strategy-specific Performance-category scorecard
+destinations. Monthly performance and strategy-breakdown scorecards used to
+live here too, back when there was only one live strategy - now that SPY
+0DTE is split into two independently-tracked live strategies (1-minute and
+5-minute), those two report types moved into their own per-strategy
+categories (1-MINUTE STRATEGY / 5-MINUTE STRATEGY, channels
+1m-performance/1m-results/5m-performance/5m-results) instead of being
+recreated here. Daily and weekly recaps stay here deliberately - they're
+calendar summaries across BOTH strategies combined, not something the split
+duplicated, matching the explicit "we just need 1 of all the trackers"
+direction for anything that isn't strategy-specific.
+"""
 
 from __future__ import annotations
 
@@ -7,20 +18,12 @@ from typing import Any
 
 PERFORMANCE_CHANNELS = (
     (
-        "performance-dashboard",
-        "One updating monthly scorecard per calendar month; trade detail remains in the journal.",
-    ),
-    (
         "daily-recap",
         "One updating scorecard per trading day with wins, losses, P/L, expectancy, and best/worst.",
     ),
     (
         "weekly-report",
         "One updating scorecard per trading week; a new card begins with each new trading week.",
-    ),
-    (
-        "strategy-breakdown",
-        "One updating scorecard for each play type: regular, swing, and spread calls and puts.",
     ),
 )
 
@@ -48,17 +51,11 @@ def install(sync: Any) -> None:
     sync.CHANNELS = rebuilt
     sync.CHANNEL_STARTERS.update(
         {
-            "performance-dashboard": (
-                "Monthly scoreboard only: one updating summary card per calendar month. Trade details remain in #trade-journal."
-            ),
             "daily-recap": (
                 "Daily scoreboard only: one updating summary card per recorded trading day."
             ),
             "weekly-report": (
                 "Weekly scoreboard only: one updating card for the active trading week, followed by a new card next week."
-            ),
-            "strategy-breakdown": (
-                "One updating scorecard per play type. No duplicated trade-history pages are posted here."
             ),
         }
     )

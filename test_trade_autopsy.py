@@ -85,7 +85,7 @@ def test_spy_0dte_loss_within_its_real_stop_is_not_a_false_anomaly():
     # not be flagged, even though it would blow through the old
     # (wrong) single-leg-derived floor.
     row = _row(
-        play_type="SPY_0DTE", ticker="SPY",
+        play_type="SPY_0DTE_1M", ticker="SPY",
         outcome="LOSS", exit_price="0.72", pct_gain_loss="-40.0",
         max_favorable_pct="10.0", closed_at="2026-08-10T10:15:00-05:00",
         last_signal="STOP OUT",
@@ -99,7 +99,7 @@ def test_spy_0dte_floor_locked_loss_is_not_a_false_anomaly():
     # Peaked past the 30% trigger, closed at the real -15% raised floor -
     # exactly the intended, correct outcome, must not be flagged.
     row = _row(
-        play_type="SPY_0DTE", ticker="SPY",
+        play_type="SPY_0DTE_1M", ticker="SPY",
         outcome="LOSS", exit_price="1.06", pct_gain_loss="-15.0",
         max_favorable_pct="35.0", closed_at="2026-08-10T10:15:00-05:00",
         last_signal="BREAKEVEN STOP",
@@ -113,7 +113,7 @@ def test_spy_0dte_still_flags_a_real_anomaly_past_its_own_floor():
     # A loss well past even the correct -15% raised floor is still a real
     # anomaly worth flagging for a trade that had crossed the trigger.
     row = _row(
-        play_type="SPY_0DTE", ticker="SPY",
+        play_type="SPY_0DTE_1M", ticker="SPY",
         outcome="LOSS", exit_price="0.40", pct_gain_loss="-68.0",
         max_favorable_pct="35.0", closed_at="2026-08-10T10:15:00-05:00",
         last_signal="STOP OUT",

@@ -190,26 +190,39 @@ and repair attempts. All output uses readable cards. Paper trading only; no
 brokerage orders are placed."""
 
 sync.GUIDES["how-trades-are-found"] = """# How TradeBot Finds Paper Trades
-Every paper position must pass a recorded process.
+Nothing is selected randomly. SPY 0DTE is the only strategy family this system
+trades, split into two independently-tracked live strategies that run at the
+same time and never share a position - #1-minute-strategy and
+#5-minute-strategy. They differ in exactly one thing: how often the bot checks
+SPY's price to read the opening range and the breakout. Everything else below
+is identical for both.
 
-**Universe:** verified optionable symbols from baseline, member additions, and
-approved discovery. Maximum 25 active; 12 per market-hours scan rotation.
+**1. Establish the opening range**
+The bot watches SPY's first 30 minutes of trading and records the high/low of
+that range from its own bar interval (1-minute or 5-minute). Nothing opens
+before the range is established.
 
-**Open-market context:** trend, momentum, volatility, support/resistance, VWAP,
-volume, and intraday evidence. A score ranks candidates; it is not a win
-probability.
+**2. Wait for a real breakout**
+The first bar to close outside the opening range fires the signal - above for
+bullish, below for bearish. A signal fires once per session, at the first
+breach, not on every bar that stays outside the range.
 
-**Closed-market research:** smaller rotating batches continue through evenings,
-overnight periods, and weekends using closing or last-known market evidence.
-They refresh charts, rank context, inspect a limited closing option-chain sample,
-and check events. They do not open or close paper positions.
+**3. Choose an eligible contract**
+Same-day (0DTE) expiration only. Absolute delta must be 0.40-0.60 and the
+contract must cost $5.00 or less per share ($500 or less per contract). Both
+strategies use the same delta band and the same $500-per-trade risk cap - each
+one independently, so both can hold a position on the same underlying move at
+once.
 
-**Contract quality:** DTE, strike, bid, ask, volume, open interest, width, delta,
-IV, cost, and modeled risk.
+**4. Manage the position**
+Target +50% / stop -50%. Once a trade peaks past +30% profit, the stop raises
+ONCE to -15% and holds there - it does not keep trailing behind every tick.
+Every position force-closes at end of day; 0DTE never holds overnight.
 
-**Lifecycle:** duplicates are blocked, positions are monitored, and every close
-receives a trade-specific review separating exit trigger from probable cause.
-Cause tags feed the review-first learning archive; filters never change without
+**Lifecycle:** duplicates are blocked per strategy, positions are monitored,
+and every close receives a trade-specific review separating exit trigger from
+probable cause. Cause tags feed the review-first learning archive, grouped by
+strategy so the two are compared honestly; filters never change without
 adequate evidence and owner approval."""
 
 sync.GUIDES["scanner-controls"] = """# Ticker and Scanner Controls

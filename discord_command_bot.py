@@ -344,12 +344,17 @@ def require_ticker_admin(interaction: dict[str, Any]) -> None:
 def filters_reply() -> str:
     config = dynamic_universe.scanner_config()
     traders = config.get("trade_types_enabled") or {}
-    status = "on" if traders.get("spy_0dte", True) else "off"
+    status_1m = "on" if traders.get("spy_0dte_1m", False) else "off"
+    status_5m = "on" if traders.get("spy_0dte_5m", False) else "off"
 
     return "\n".join([
         "🎛️ **Active scanner controls**",
         "",
-        f"**SPY 0DTE** ({status}) - the only live strategy",
+        "**SPY 0DTE** - the only strategy family, split into two",
+        f"independently-tracked live strategies that trade fully",
+        f"independently of each other (both can hold a position at once):",
+        f"• **1-minute** opening-range read ({status_1m})",
+        f"• **5-minute** opening-range read ({status_5m})",
         f"Opening range window: **{spy_scanner.SPY_0DTE_OPENING_RANGE_MINUTES}min**",
         f"Delta range: **{spy_scanner.SPY_0DTE_DELTA_MIN:.2f}–{spy_scanner.SPY_0DTE_DELTA_MAX:.2f}**",
         f"Stop / target: **-{spy_scanner.SPY_0DTE_STOP_PCT * 100:.0f}% / +{spy_scanner.SPY_0DTE_TARGET_PCT * 100:.0f}%**",

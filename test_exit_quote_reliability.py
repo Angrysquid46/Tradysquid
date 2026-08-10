@@ -16,7 +16,7 @@ import spy_scanner
 def _row(**overrides):
     row = {field: "" for field in spy_scanner.LOG_HEADER}
     row.update({
-        "trade_id": "T-QUOTE-1", "ticker": "SPY", "play_type": "SPY_0DTE",
+        "trade_id": "T-QUOTE-1", "ticker": "SPY", "play_type": "SPY_0DTE_1M",
         "call_or_put": "put", "entry_price": "0.65",
         "option_symbol": "SPY260821P00100000",
         "delta_at_entry": "-0.57", "iv_at_entry": "1.21",

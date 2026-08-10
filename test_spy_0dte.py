@@ -2,6 +2,15 @@
 regular/swing/spread per explicit owner direction, so these tests exist
 specifically to confirm it doesn't quietly borrow the old system's
 constants (delta bands, contract caps, stop/target) anywhere.
+
+SPY 0DTE is split into two independently-tracked, independently-live-traded
+strategies - SPY_0DTE_1M and SPY_0DTE_5M - that differ ONLY in the intraday
+bar interval their opening-range signal reads. Everything else (delta band,
+risk cap, stop/target/floor/EOD exit rules) is identical and shared. Several
+tests below exist specifically to prove the two variants stay isolated from
+each other (own cooldown, own exposure accounting, own play_type tag) rather
+than silently sharing state, since "both trade fully independently" was an
+explicit owner decision, not an incidental default.
 """
 
 from __future__ import annotations
@@ -78,6 +87,35 @@ def test_opening_range_signal_only_fires_on_the_first_bar_that_breaks_out():
     assert context["breakout_price"] == 602.5
 
 
+def test_opening_range_signal_scales_bars_needed_to_a_1_minute_interval():
+    # SPY_0DTE_1M reads 1-minute bars, not the 5-minute default - bars_needed
+    # has to scale with bar_minutes or a 1-minute feed would lock in a range
+    # from only the first 6 minutes instead of the real 30-minute window.
+    thirty_one_minute_bars = [_bar(600.0 + (i % 3) * 0.2) for i in range(30)]
+    context_too_few = spy_scanner.spy_0dte_opening_range_signal(
+        thirty_one_minute_bars[:29], bar_minutes=1
+    )
+    assert context_too_few["qualified"] is False
+
+    bars = thirty_one_minute_bars + [_bar(602.5)]
+    context = spy_scanner.spy_0dte_opening_range_signal(bars, bar_minutes=1)
+    assert context["qualified"] is True
+    assert context["regime"] == "BULLISH / CONTROLLED"
+
+
+def test_opening_range_signal_5m_and_1m_can_disagree_on_the_same_session():
+    # The whole point of tracking both variants separately: they can read
+    # the same underlying session differently because they sample it at
+    # different granularity. A 5-minute bar can show the range still holding
+    # while the finer 1-minute data underneath it has already broken out.
+    five_min_bars = _opening_range_bars() + [_bar(601.5)]  # stays inside
+    one_min_bars = [_bar(600.0 + (i % 3) * 0.2) for i in range(30)] + [_bar(602.5)]  # breaks out
+    context_5m = spy_scanner.spy_0dte_opening_range_signal(five_min_bars, bar_minutes=5)
+    context_1m = spy_scanner.spy_0dte_opening_range_signal(one_min_bars, bar_minutes=1)
+    assert context_5m["qualified"] is False
+    assert context_1m["qualified"] is True
+
+
 def test_exit_signal_stops_out_at_the_spy_0dte_specific_threshold():
     entry = 2.00
     stop_mark = entry * (1 - spy_scanner.SPY_0DTE_STOP_PCT) - 0.01
@@ -151,7 +189,30 @@ def test_candidate_builder_accepts_a_contract_priced_well_under_its_own_cap():
     chain = [_option(delta=0.50, ask=2.00)]
     candidates = spy_scanner.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0)
     assert len(candidates) == 1
-    assert candidates[0]["play_type"] == "SPY_0DTE"
+    # Defaults to the 5-minute variant when play_type isn't specified,
+    # matching the original single-strategy behavior this builder started as.
+    assert candidates[0]["play_type"] == "SPY_0DTE_5M"
+
+
+def test_candidate_builder_tags_each_variant_with_its_own_play_type():
+    # The candidate builder itself is shared - same delta band, same risk
+    # cap, same contract selection - for both variants. play_type is the
+    # ONE thing that must differ, since it's what keeps their cooldowns,
+    # exposure accounting, and learning evidence from mixing together.
+    chain = [_option(delta=0.50, ask=2.00)]
+    candidates_1m = spy_scanner.scan_spy_0dte_candidates(
+        chain, "call", "2026-08-10", 600.0, play_type="SPY_0DTE_1M"
+    )
+    candidates_5m = spy_scanner.scan_spy_0dte_candidates(
+        chain, "call", "2026-08-10", 600.0, play_type="SPY_0DTE_5M"
+    )
+    assert candidates_1m[0]["play_type"] == "SPY_0DTE_1M"
+    assert candidates_5m[0]["play_type"] == "SPY_0DTE_5M"
+    # Everything else about the two candidates is identical - only the tag differs.
+    for key in candidates_1m[0]:
+        if key == "play_type":
+            continue
+        assert candidates_1m[0][key] == candidates_5m[0][key]
 
 
 def test_candidate_builder_rejects_a_contract_over_its_own_risk_cap():
@@ -178,7 +239,7 @@ def test_candidate_survives_candidate_to_row_without_a_keyerror():
         row = spy_scanner.candidate_to_row(candidates[0], [], spy_scanner.now_ct())
     finally:
         spy_scanner.TICKER = original_ticker
-    assert row["play_type"] == "SPY_0DTE"
+    assert row["play_type"] == "SPY_0DTE_5M"
     assert row["ticker"] == "SPY"
     assert row["cost_or_credit"] == "1.2"
     assert row["max_risk"] == "120.0"
@@ -190,15 +251,25 @@ def test_spy_0dte_defaults_paused_when_config_is_silent():
     # The code-level fallback (not the live config, which this session
     # intentionally flips on) must still default to paused - a missing
     # config key must never silently enable a leveraged, single-regime-
-    # backtested play type.
-    assert spy_scanner.DEFAULT_TRADE_TYPES_ENABLED["spy_0dte"] is False
+    # backtested play type, for EITHER variant.
+    assert spy_scanner.DEFAULT_TRADE_TYPES_ENABLED["spy_0dte_1m"] is False
+    assert spy_scanner.DEFAULT_TRADE_TYPES_ENABLED["spy_0dte_5m"] is False
+
+
+def test_is_spy_0dte_play_type_recognizes_both_variants_and_nothing_else():
+    assert spy_scanner.is_spy_0dte_play_type("SPY_0DTE_1M") is True
+    assert spy_scanner.is_spy_0dte_play_type("SPY_0DTE_5M") is True
+    # The bare pre-split string is now retired, not a live variant.
+    assert spy_scanner.is_spy_0dte_play_type("SPY_0DTE") is False
+    assert spy_scanner.is_spy_0dte_play_type("REGULAR") is False
+    assert spy_scanner.is_spy_0dte_play_type(None) is False
 
 
 def _row(**overrides) -> dict[str, str]:
     row = {field: "" for field in spy_scanner.LOG_HEADER}
     row.update({
         "trade_id": "T-1", "ticker": "SPY", "outcome": "OPEN",
-        "play_type": "SPY_0DTE", "call_or_put": "call",
+        "play_type": "SPY_0DTE_1M", "call_or_put": "call",
         "entry_price": "2.00", "option_symbol": "SPY260810C00600000",
         "expiration": spy_scanner.now_ct().date().isoformat(),
     })
@@ -243,3 +314,51 @@ def test_evaluate_open_row_raises_the_floor_after_a_spy_0dte_position_has_proven
     row = _row(max_favorable_pct=str(spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT + 10))
     evaluation = spy_scanner.evaluate_open_row(row, quote, spy_scanner.now_ct())
     assert evaluation["signal"] == "BREAKEVEN STOP"
+
+
+def test_evaluate_open_row_treats_the_5m_variant_identically_to_the_1m_variant():
+    # Same exit rules for both - only entry-signal bar interval differs
+    # between the two variants, never the exit management.
+    quote = {
+        "SPY260810C00600000": {
+            "symbol": "SPY260810C00600000", "bid": 0.98, "ask": 1.02,
+            "greeks": {"delta": 0.45, "mid_iv": 0.20, "theta": -0.4},
+        }
+    }
+    row = _row(play_type="SPY_0DTE_5M")
+    evaluation = spy_scanner.evaluate_open_row(row, quote, spy_scanner.now_ct())
+    assert evaluation["signal"] == "STOP OUT"
+
+
+def test_evaluate_open_row_no_longer_recognizes_the_pre_split_play_type():
+    # The bare "SPY_0DTE" string (before the 1m/5m split) is now a retired
+    # play_type, same as any other historical row from a dropped strategy -
+    # it must not silently keep evaluating against live exit rules.
+    row = _row(play_type="SPY_0DTE")
+    evaluation = spy_scanner.evaluate_open_row(row, {}, spy_scanner.now_ct())
+    assert evaluation["signal"] == "HOLD"
+    assert "Unrecognized or retired play_type" in evaluation["note"]
+
+
+def test_recently_tracked_cooldown_does_not_cross_contaminate_the_two_variants():
+    # A cooldown on the 1-minute variant's exact contract must never block
+    # the 5-minute variant from opening the same contract - they trade
+    # fully independently by owner decision, and play_type is what keeps
+    # their cooldowns from bleeding into each other. recently_tracked keys
+    # on the module-level TICKER, not row["ticker"], so the fixture row has
+    # to match whatever TICKER actually is in this test process.
+    now = spy_scanner.now_ct()
+    existing_open_1m = _row(
+        ticker=spy_scanner.TICKER, play_type="SPY_0DTE_1M", strike="600", expiration="2026-08-10"
+    )
+    rows = [existing_open_1m]
+    candidate_5m = {
+        "play_type": "SPY_0DTE_5M", "call_or_put": "call",
+        "strike": "600", "expiration": "2026-08-10",
+    }
+    candidate_1m = {
+        "play_type": "SPY_0DTE_1M", "call_or_put": "call",
+        "strike": "600", "expiration": "2026-08-10",
+    }
+    assert spy_scanner.recently_tracked(rows, candidate_5m, now) is False
+    assert spy_scanner.recently_tracked(rows, candidate_1m, now) is True

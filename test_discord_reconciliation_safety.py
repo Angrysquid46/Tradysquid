@@ -18,8 +18,10 @@ class NoDeleteDiscord:
         self.channels = {
             "daily_recap": "daily",
             "weekly_report": "weekly",
-            "performance_stats": "monthly",
-            "strategy_breakdown": "strategy",
+            "performance_1m": "monthly-1m",
+            "results_1m": "strategy-1m",
+            "performance_5m": "monthly-5m",
+            "results_5m": "strategy-5m",
         }
         self.cards: dict[str, str] = {}
         self.deleted: list[str] = []
@@ -57,15 +59,15 @@ class DiscordReconciliationSafetyTests(unittest.TestCase):
         row = spy_scanner.blank_row()
         row.update(
             {
-                "trade_id": "F-SAFETY-001",
+                "trade_id": "SPY-SAFETY-001",
                 "timestamp": closed_at.isoformat(),
                 "closed_at": closed_at.isoformat(),
                 "last_evaluated_at": closed_at.isoformat(),
                 "outcome": "WIN",
-                "play_type": "REGULAR",
+                "play_type": "SPY_0DTE_1M",
                 "call_or_put": "call",
-                "ticker": "F",
-                "strike": "12",
+                "ticker": "SPY",
+                "strike": "600",
                 "entry_price": "0.50",
                 "exit_price": "0.60",
                 "realized_pl_dollars": "10",

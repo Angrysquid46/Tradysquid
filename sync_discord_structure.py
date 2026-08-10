@@ -57,6 +57,8 @@ CATEGORY_ORDER = [
     "LIVE TRADING DESK",
     "MARKET INTELLIGENCE",
     "LEARNING CENTER",
+    "1-MINUTE STRATEGY",
+    "5-MINUTE STRATEGY",
     "PERFORMANCE",
     "SYSTEM",
     "STRATEGY CONTROL",
@@ -81,9 +83,11 @@ CHANNELS = [
     ChannelSpec("MARKET INTELLIGENCE", "news-and-events", "Cached company and market news with timestamps."),
     ChannelSpec("MARKET INTELLIGENCE", "market-regime", "Broad-market context, trend, and volatility conditions."),
     ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "Active symbols, discovery source, rank, and exclusions."),
-    ChannelSpec("PERFORMANCE", "performance-dashboard", "Lifecycle totals and recorded paper performance."),
-    ChannelSpec("PERFORMANCE", "strategy-results", "SPY 0DTE results by DTE, delta, and regime - the only live strategy."),
-    ChannelSpec("PERFORMANCE", "ticker-results", "Results by underlying without ticker-specific desks."),
+    ChannelSpec("1-MINUTE STRATEGY", "1m-performance", "Lifecycle totals and recorded paper performance for the 1-minute-bar SPY 0DTE opening-range strategy only."),
+    ChannelSpec("1-MINUTE STRATEGY", "1m-results", "1-minute strategy results by direction and entry regime."),
+    ChannelSpec("5-MINUTE STRATEGY", "5m-performance", "Lifecycle totals and recorded paper performance for the 5-minute-bar SPY 0DTE opening-range strategy only."),
+    ChannelSpec("5-MINUTE STRATEGY", "5m-results", "5-minute strategy results by direction and entry regime."),
+    ChannelSpec("PERFORMANCE", "ticker-results", "Results by underlying, combined across both live SPY 0DTE strategies."),
     ChannelSpec("PERFORMANCE", "learning-results", "Evidence summaries that never change filters automatically."),
     ChannelSpec("LEARNING CENTER", "learning-index", "Complete organized curriculum and recommended learning path."),
     ChannelSpec("LEARNING CENTER", "01-market-basics", "Stocks, ETFs, indexes, exchanges, sessions, quotes, and market mechanics."),
@@ -110,7 +114,7 @@ CHANNELS = [
     ChannelSpec("SYSTEM", "system-health", "Local service health, freshness, queue depth, and restarts."),
     ChannelSpec("SYSTEM", "update-status", "Deploy checks, current commit, and auto-update outcomes."),
     ChannelSpec("SYSTEM", "provider-status", "Tradier, TradingView, Discord, and read-only MCP status."),
-    ChannelSpec("STRATEGY CONTROL", "strategy-control", "Current status and quick controls for the live SPY 0DTE strategy."),
+    ChannelSpec("STRATEGY CONTROL", "strategy-control", "Current status and quick controls for both live SPY 0DTE strategies (1-minute and 5-minute)."),
     ChannelSpec("STRATEGY CONTROL", "strategy-settings", "Active filters and thresholds per strategy."),
     ChannelSpec("STRATEGY CONTROL", "strategy-versions", "Version history and configuration hashes per strategy."),
     ChannelSpec("STRATEGY CONTROL", "trade-overrides", "Owner-issued manual overrides to an in-progress trade."),
@@ -129,6 +133,10 @@ DELETE_CHANNELS = {
     "vale-charts", "vale-news-events", "vale-research-performance",
     "regular-calls", "regular-puts", "swing-calls", "swing-puts",
     "bull-put-spreads", "bear-call-spreads",
+    # Retired in favor of per-strategy 1m-performance/1m-results and
+    # 5m-performance/5m-results, now that SPY 0DTE is split into two
+    # independently-tracked live strategies instead of one combined read.
+    "performance-dashboard", "strategy-results", "strategy-breakdown",
 }
 
 DELETE_CATEGORIES = {"ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE"}
@@ -145,9 +153,11 @@ CHANNEL_STARTERS = {
     "news-and-events": "Updated by scheduled news checks and `/events` requests.",
     "market-regime": "Updated with broad-market and scanner context.",
     "universe-watch": "Updated when the rotating scanner universe is refreshed.",
-    "performance-dashboard": "Updated as paper trades open and close.",
-    "strategy-results": "Updated from recorded paper-trade outcomes.",
-    "ticker-results": "Updated from recorded outcomes grouped by underlying.",
+    "1m-performance": "Updated as the 1-minute strategy's paper trades open and close.",
+    "1m-results": "Updated from the 1-minute strategy's recorded paper-trade outcomes.",
+    "5m-performance": "Updated as the 5-minute strategy's paper trades open and close.",
+    "5m-results": "Updated from the 5-minute strategy's recorded paper-trade outcomes.",
+    "ticker-results": "Updated from recorded outcomes grouped by underlying, combined across both strategies.",
     "learning-results": "Updated by the local learning review.",
     "ask-tradebot": "Use `/ask` or `/explain`; general conversation belongs in #general-chat.",
     "examples-and-reviews": "Paper-trade examples and completed reviews appear here.",
@@ -156,7 +166,7 @@ CHANNEL_STARTERS = {
     "system-health": "Updated by the local supervisor and engine.",
     "update-status": "Updated on every automatic deploy check.",
     "provider-status": "Shows the current data-provider and webhook status.",
-    "strategy-control": "Owner-only; reflects the live SPY 0DTE strategy toggle.",
+    "strategy-control": "Owner-only; reflects both live SPY 0DTE strategy toggles (1-minute and 5-minute).",
     "strategy-settings": "Mirrors the filters each strategy is currently using.",
     "strategy-versions": "Updated when a strategy's configuration hash changes.",
     "trade-overrides": "Owner-only; a manual override always overrides automatic management.",
@@ -195,12 +205,17 @@ The hidden supervisor starts services, checks GitHub for approved releases,
 restarts failures, synchronizes Discord, and reports deployments. The system is
 paper-trading only and cannot place brokerage orders.""",
     "how-trades-are-found": """# How TradeBot Finds Paper Trades
-Nothing is selected randomly. SPY 0DTE is the only live strategy - every
-position must pass the same recorded process.
+Nothing is selected randomly. SPY 0DTE is the only strategy family this system
+trades, split into two independently-tracked live strategies that run at the
+same time and never share a position - #1-minute-strategy and
+#5-minute-strategy. They differ in exactly one thing: how often the bot checks
+SPY's price to read the opening range and the breakout. Everything else below
+is identical for both.
 
 **1. Establish the opening range**
 The bot watches SPY's first 30 minutes of trading and records the high/low of
-that range. Nothing opens before the range is established.
+that range from its own bar interval (1-minute or 5-minute). Nothing opens
+before the range is established.
 
 **2. Wait for a real breakout**
 The first bar to close outside the opening range fires the signal - above for
@@ -209,7 +224,10 @@ breach, not on every bar that stays outside the range.
 
 **3. Choose an eligible contract**
 Same-day (0DTE) expiration only. Absolute delta must be 0.40–0.60 and the
-contract must cost $5.00 or less per share ($500 or less per contract).
+contract must cost $5.00 or less per share ($500 or less per contract). Both
+strategies use the same delta band and the same $500-per-trade risk cap - each
+one independently, so both can hold a position on the same underlying move at
+once.
 
 **4. Manage the position**
 Target +50% / stop -50%. Once a trade peaks past +30% profit, the stop raises

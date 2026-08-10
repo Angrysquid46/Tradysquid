@@ -1395,7 +1395,7 @@ class InformationEngineTests(unittest.TestCase):
                 {
                     "trade_id": "SPY-STREAM-001",
                     "ticker": "SPY",
-                    "play_type": "SPY_0DTE",
+                    "play_type": "SPY_0DTE_1M",
                     "option_symbol": "SPY260821C00500000",
                     "expiration": spy_scanner.now_ct().date().isoformat(),
                     "entry_price": "0.50",

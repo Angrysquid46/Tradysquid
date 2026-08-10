@@ -1008,7 +1008,11 @@ def weekly_review_job(connection: sqlite3.Connection) -> str:
         connection,
         key,
         content,
-        logical_channel="performance_stats",
+        # performance_stats was retired along with the single combined
+        # dashboard - this review is a general system summary across both
+        # SPY 0DTE strategies, not specific to either one, so it belongs
+        # with the other shared (non-split) weekly content.
+        logical_channel="weekly_report",
         minimum_minutes=0,
     )
     if sent:
@@ -1627,8 +1631,8 @@ def discord_reporting_job(connection: sqlite3.Connection) -> str:
     report_state = spy_scanner.read_report_state()
     closed_rows = spy_scanner.closed_rows(rows)
     consumers = (
-        "performance-dashboard", "ticker-results", "strategy-results", "wins-losses",
-        "learning-results",
+        "1m-performance", "1m-results", "5m-performance", "5m-results",
+        "ticker-results", "wins-losses", "learning-results",
     )
     changed = trade_intelligence.pending_rows(closed_rows, consumers)
     # pending_rows() only ever reports rows it hasn't acknowledged yet, so a
