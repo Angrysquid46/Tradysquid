@@ -13,15 +13,12 @@ import ai_coordination
 import dynamic_universe
 import spy_scanner
 import local_information_engine as engine
-import multi_ticker_scan
 import outcome_learning
 import register_discord_commands
 import recover_discord_trade_history
 import run_with_env
-import ticker_registry
 import sync_discord_structure
 import ensure_tradingview_secret
-import robinhood_readonly_bridge
 import tradier_stream
 
 
@@ -374,7 +371,6 @@ class InformationEngineTests(unittest.TestCase):
             "position-tracker",
             "closed-position-cleanup",
             "discord-reporting",
-            "dynamic-universe-refresh",
             "managed-ticker-information",
             "managed-ticker-news",
             "session-briefing",
@@ -538,27 +534,6 @@ class InformationEngineTests(unittest.TestCase):
         observe.assert_called_once()
         self.assertIn("1 closed indexed; 1 changed", result)
 
-    def test_multi_ticker_scan_publishes_each_ticker_and_syncs_once(self) -> None:
-        calls: list[tuple[str, bool]] = []
-
-        def scanner(*, publish_shared: bool = True) -> int:
-            calls.append((spy_scanner.TICKER, publish_shared))
-            return 0
-
-        with patch.object(multi_ticker_scan.spy_scanner, "main", scanner):
-            result = multi_ticker_scan.main(["BAC", "CCL", "RIVN"])
-        self.assertEqual(result, 0)
-        self.assertEqual(multi_ticker_scan.LAST_RESULTS, {
-            "BAC": 0,
-            "CCL": 0,
-            "RIVN": 0,
-        })
-        self.assertEqual(calls, [
-            ("BAC", False),
-            ("CCL", False),
-            ("RIVN", True),
-        ])
-
     def test_scanner_outputs_use_consolidated_channels(self) -> None:
         self.assertEqual(spy_scanner.CHANNEL_NAMES["qualified"], "new-positions")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["scratches"], "losses")
@@ -580,7 +555,6 @@ class InformationEngineTests(unittest.TestCase):
             engine.DB_PATH = Path(temp) / "manual.db"
             with (
                 patch.object(engine, "provider_event_job", callback("events")),
-                patch.object(engine, "universe_refresh_job", callback("discovery")),
                 patch.object(engine, "manual_intelligence_job", callback("intelligence")),
                 patch.object(engine, "manual_options_scan_job", callback("options")),
                 patch.object(engine, "position_tracker_job", callback("positions")),
@@ -590,9 +564,9 @@ class InformationEngineTests(unittest.TestCase):
         engine.DB_PATH = original
         self.assertEqual(
             calls,
-            ["events", "discovery", "intelligence", "options", "positions", "health"],
+            ["events", "intelligence", "options", "positions", "health"],
         )
-        self.assertEqual(result.count("**"), 12)
+        self.assertEqual(result.count("**"), 10)
         self.assertNotIn("ERROR", result)
 
     def test_env_runner_preserves_safe_script_arguments(self) -> None:
@@ -619,11 +593,7 @@ class InformationEngineTests(unittest.TestCase):
         }
         for name in owner_commands:
             self.assertEqual(definitions[name]["default_member_permissions"], "0")
-        self.assertTrue(
-            {"ticker-pause", "ticker-resume", "scan-now"}.issubset(
-                owner_commands
-            )
-        )
+        self.assertTrue({"scan-now"}.issubset(owner_commands))
         self.assertEqual(
             {
                 name
@@ -693,31 +663,6 @@ class InformationEngineTests(unittest.TestCase):
             )
             self.assertIsNotNone(ticker, name)
             self.assertFalse(ticker["required"], name)
-
-    def test_dynamic_command_ticker_accepts_active_and_rejects_unknown_or_archived(self) -> None:
-        original_db = dynamic_universe.DB_PATH
-        original_config = dynamic_universe.CONFIG_PATH
-        with tempfile.TemporaryDirectory() as temp:
-            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
-            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
-            dynamic_universe.CONFIG_PATH.write_text(
-                '{"seed_symbols":["VALE"],"exclude_symbols":[],"max_active_symbols":10}',
-                encoding="utf-8",
-            )
-            # initialize() no longer force-seeds from config - VALE needs a
-            # real source to actually be active, same as in production.
-            dynamic_universe.seed_universe()
-            self.assertEqual(discord_command_bot.command_ticker("vale"), "VALE")
-            with self.assertRaises(ValueError):
-                discord_command_bot.command_ticker("XYZ")
-            dynamic_universe.CONFIG_PATH.write_text(
-                '{"seed_symbols":["VALE"],"exclude_symbols":["VALE"],"max_active_symbols":10}',
-                encoding="utf-8",
-            )
-            with self.assertRaises(ValueError):
-                discord_command_bot.command_ticker("VALE")
-        dynamic_universe.DB_PATH = original_db
-        dynamic_universe.CONFIG_PATH = original_config
 
     def test_consolidated_channels_do_not_force_a_ticker_context(self) -> None:
         interaction = {
@@ -799,27 +744,6 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn(
             "VALE",
             discord_command_bot.risk_reply("VALE", 0.25, 1, "call"),
-        )
-
-    def test_any_member_can_add_ticker_to_shared_universe_without_desk(self) -> None:
-        interaction = {
-            "member": {"user": {"id": "member-123"}},
-            "data": {"options": [{"name": "ticker", "value": "vale"}]},
-        }
-        with (
-            patch.object(discord_command_bot.spy_scanner, "get_quote", return_value={"last": 14.77}),
-            patch.object(discord_command_bot.spy_scanner, "get_expirations", return_value=["2026-08-07"]),
-            patch.object(discord_command_bot.dynamic_universe, "upsert_candidates") as upsert,
-            patch.object(discord_command_bot.ticker_registry, "save") as save,
-        ):
-            reply = discord_command_bot.ticker_add_reply(interaction)
-        self.assertIn("shared scanner universe", reply)
-        self.assertIn("No ticker category", reply)
-        upsert.assert_called_once()
-        save.assert_called_once_with(
-            "VALE",
-            status="ACTIVE",
-            note="Added to the shared scanner universe through Discord",
         )
 
     def test_routed_closed_trade_is_removed_from_held_positions(self) -> None:
@@ -1044,11 +968,6 @@ class InformationEngineTests(unittest.TestCase):
             connection.close()
         engine.DB_PATH = original
 
-    def test_ticker_symbols_are_normalized(self) -> None:
-        self.assertEqual(ticker_registry.normalize_ticker(" vale "), "VALE")
-        with self.assertRaises(ValueError):
-            ticker_registry.normalize_ticker("bad ticker!")
-
     def test_trade_ids_use_current_ticker(self) -> None:
         original = engine.spy_scanner.TICKER
         engine.spy_scanner.TICKER = "VALE"
@@ -1058,136 +977,12 @@ class InformationEngineTests(unittest.TestCase):
         finally:
             engine.spy_scanner.TICKER = original
 
-    def test_dynamic_universe_rotates_provider_safe_batches(self) -> None:
-        original_db = dynamic_universe.DB_PATH
-        original_config = dynamic_universe.CONFIG_PATH
-        original_member_state = dynamic_universe.MEMBER_STATE_PATH
-        with tempfile.TemporaryDirectory() as temp:
-            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
-            config = Path(temp) / "universe.json"
-            config.write_text(
-                """
-                {
-                  "version": 2,
-                  "seed_symbols": ["F", "VALE", "XYZ"],
-                  "exclude_symbols": ["XYZ"],
-                  "max_active_symbols": 10
-                }
-                """,
-                encoding="utf-8",
-            )
-            dynamic_universe.CONFIG_PATH = config
-            # Real, permanent member additions (e.g. SPY) live in a fixed
-            # state file outside this test's temp dir - isolate it too, or a
-            # real production addition leaks into every test that seeds here.
-            dynamic_universe.MEMBER_STATE_PATH = Path(temp) / "member-universe.json"
-            # initialize() no longer force-seeds - explicitly seed here so this
-            # test keeps proving exclude_symbols filtering works, independent
-            # of whether anything auto-populates the universe.
-            dynamic_universe.seed_universe()
-            dynamic_universe.initialize()
-            self.assertEqual(set(dynamic_universe.active_symbols()), {"F", "VALE"})
-        dynamic_universe.DB_PATH = original_db
-        dynamic_universe.CONFIG_PATH = original_config
-        dynamic_universe.MEMBER_STATE_PATH = original_member_state
-
-    def test_initialize_does_not_force_include_hardcoded_seed_symbols(self) -> None:
-        original_db = dynamic_universe.DB_PATH
-        original_config = dynamic_universe.CONFIG_PATH
-        with tempfile.TemporaryDirectory() as temp:
-            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
-            config = Path(temp) / "universe.json"
-            config.write_text(
-                """
-                {
-                  "version": 3,
-                  "seed_symbols": ["F", "AAL", "AMD"],
-                  "exclude_symbols": [],
-                  "max_active_symbols": 25
-                }
-                """,
-                encoding="utf-8",
-            )
-            dynamic_universe.CONFIG_PATH = config
-            # Nothing has nominated F/AAL/AMD through a real source (owner add,
-            # member add, TradingView, screener) - initialize() must not
-            # resurrect them just because they're sitting in the config file.
-            dynamic_universe.initialize()
-            self.assertEqual(dynamic_universe.active_symbols(), [])
-        dynamic_universe.DB_PATH = original_db
-        dynamic_universe.CONFIG_PATH = original_config
-
-    def test_stale_time_limited_candidate_can_be_outranked_before_hard_expiry(
-        self,
-    ) -> None:
-        original_db = dynamic_universe.DB_PATH
-        original_config = dynamic_universe.CONFIG_PATH
-        with tempfile.TemporaryDirectory() as temp:
-            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
-            config = Path(temp) / "universe.json"
-            config.write_text(
-                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":1}',
-                encoding="utf-8",
-            )
-            dynamic_universe.CONFIG_PATH = config
-            dynamic_universe.upsert_candidates([
-                dynamic_universe.Candidate(
-                    "F", "tradingview", score=100, ttl_minutes=240
-                )
-            ])
-            # Simulate F being 75% of the way through its 4-hour window -
-            # still technically not expired, but should have decayed to
-            # roughly a quarter of its original score by now.
-            now = datetime.now().astimezone()
-            stale_updated = (now - timedelta(minutes=180)).isoformat(timespec="seconds")
-            stale_expires = (now + timedelta(minutes=60)).isoformat(timespec="seconds")
-            connection = dynamic_universe.connect()
-            connection.execute(
-                "UPDATE universe SET updated_at=?, expires_at=? WHERE symbol='F'",
-                (stale_updated, stale_expires),
-            )
-            connection.commit()
-            connection.close()
-            # A fresh hit with a much lower raw score should still win the
-            # single available slot, because F has decayed well below it.
-            dynamic_universe.upsert_candidates([
-                dynamic_universe.Candidate(
-                    "VALE", "tradingview", score=30, ttl_minutes=240
-                )
-            ])
-            self.assertEqual(dynamic_universe.active_symbols(), ["VALE"])
-        dynamic_universe.DB_PATH = original_db
-        dynamic_universe.CONFIG_PATH = original_config
-
-    def test_effective_score_decays_linearly_toward_expiry(self) -> None:
-        now = datetime.now().astimezone()
-        started = now - timedelta(minutes=180)
-        expires = now + timedelta(minutes=60)
-        decayed = dynamic_universe._effective_score(
-            100,
-            started.isoformat(timespec="seconds"),
-            expires.isoformat(timespec="seconds"),
-            now,
-        )
-        # 180 of 240 total minutes elapsed -> 25% of the score should remain.
-        self.assertAlmostEqual(decayed, 25.0, delta=1.0)
-        permanent = dynamic_universe._effective_score(
-            200, started.isoformat(timespec="seconds"), None, now
-        )
-        self.assertEqual(permanent, 200)
-
     def test_tradingview_webhook_is_authenticated_and_deduplicated(self) -> None:
         original_secret = discord_command_bot.TRADINGVIEW_WEBHOOK_SECRET
         original_db = dynamic_universe.DB_PATH
-        original_config = dynamic_universe.CONFIG_PATH
         with tempfile.TemporaryDirectory() as temp:
             discord_command_bot.TRADINGVIEW_WEBHOOK_SECRET = "test-secret"
             dynamic_universe.DB_PATH = Path(temp) / "universe.db"
-            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
-            dynamic_universe.CONFIG_PATH.write_text(
-                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":10}',
-                encoding="utf-8",
-            )
             client = discord_command_bot.APP.test_client()
             denied = client.post("/tradingview", json={"ticker": "AMD"})
             self.assertEqual(denied.status_code, 401)
@@ -1204,137 +999,6 @@ class InformationEngineTests(unittest.TestCase):
             self.assertFalse(second.get_json()["queued"])
         discord_command_bot.TRADINGVIEW_WEBHOOK_SECRET = original_secret
         dynamic_universe.DB_PATH = original_db
-        dynamic_universe.CONFIG_PATH = original_config
-
-    def test_robinhood_scan_webhook_is_authenticated_and_scores_by_scan(self) -> None:
-        original_secret = discord_command_bot.ROBINHOOD_SCAN_WEBHOOK_SECRET
-        original_db = dynamic_universe.DB_PATH
-        original_config = dynamic_universe.CONFIG_PATH
-        with tempfile.TemporaryDirectory() as temp:
-            discord_command_bot.ROBINHOOD_SCAN_WEBHOOK_SECRET = "test-secret"
-            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
-            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
-            dynamic_universe.CONFIG_PATH.write_text(
-                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":10}',
-                encoding="utf-8",
-            )
-            client = discord_command_bot.APP.test_client()
-            denied = client.post(
-                "/robinhood-scan",
-                json={"scan": "HIGH_OPTIONS_VOLUME_IV", "symbols": ["AMD"]},
-            )
-            self.assertEqual(denied.status_code, 401)
-
-            bad_scan = client.post(
-                "/robinhood-scan?secret=test-secret",
-                json={"scan": "NOT_A_REAL_PRESET", "symbols": ["AMD"]},
-            )
-            self.assertEqual(bad_scan.status_code, 400)
-
-            response = client.post(
-                "/robinhood-scan?secret=test-secret",
-                json={"scan": "high_options_volume_iv", "symbols": ["amd", "nio"]},
-            )
-            self.assertEqual(response.status_code, 202)
-            body = response.get_json()
-            self.assertEqual(body["queued"], 2)
-            self.assertEqual(sorted(body["symbols"]), ["AMD", "NIO"])
-
-            connection = dynamic_universe.connect()
-            try:
-                row = connection.execute(
-                    "SELECT source, score, reason FROM universe WHERE symbol='AMD'"
-                ).fetchone()
-                self.assertEqual(row["source"], "robinhood_mcp")
-                self.assertEqual(row["score"], 60.0)
-                self.assertEqual(row["reason"], "Robinhood HIGH_OPTIONS_VOLUME_IV scan")
-            finally:
-                connection.close()
-        discord_command_bot.ROBINHOOD_SCAN_WEBHOOK_SECRET = original_secret
-        dynamic_universe.DB_PATH = original_db
-        dynamic_universe.CONFIG_PATH = original_config
-
-    def test_import_robinhood_snapshot_uses_a_custom_reason_when_given(self) -> None:
-        original_db = dynamic_universe.DB_PATH
-        original_config = dynamic_universe.CONFIG_PATH
-        with tempfile.TemporaryDirectory() as temp:
-            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
-            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
-            dynamic_universe.CONFIG_PATH.write_text(
-                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":10}',
-                encoding="utf-8",
-            )
-            dynamic_universe.import_robinhood_snapshot({
-                "source": "robinhood_mcp",
-                "symbols": [{"symbol": "T", "score": 60, "reason": "Robinhood DAILY_GAINERS scan"}],
-            })
-            connection = dynamic_universe.connect()
-            try:
-                row = connection.execute(
-                    "SELECT reason FROM universe WHERE symbol='T'"
-                ).fetchone()
-                self.assertEqual(row["reason"], "Robinhood DAILY_GAINERS scan")
-            finally:
-                connection.close()
-            # A plain string row (no dict, no reason) still falls back to the
-            # original text - existing callers like robinhood_readonly_bridge
-            # that only pass symbol strings must keep working unchanged.
-            dynamic_universe.import_robinhood_snapshot({
-                "source": "robinhood_mcp",
-                "symbols": ["VALE"],
-            })
-            connection = dynamic_universe.connect()
-            try:
-                row = connection.execute(
-                    "SELECT reason FROM universe WHERE symbol='VALE'"
-                ).fetchone()
-                self.assertEqual(row["reason"], "read-only discovery")
-            finally:
-                connection.close()
-        dynamic_universe.DB_PATH = original_db
-        dynamic_universe.CONFIG_PATH = original_config
-
-    def test_robinhood_adapter_rejects_order_shaped_payloads(self) -> None:
-        with self.assertRaises(ValueError):
-            dynamic_universe.import_robinhood_snapshot({
-                "orders": [{"symbol": "F", "side": "buy"}]
-            })
-        with self.assertRaises(ValueError):
-            dynamic_universe.import_robinhood_snapshot({
-                "symbols": [{"symbol": "F", "order": {"side": "buy"}}]
-            })
-
-    def test_robinhood_bridge_accepts_symbols_without_trade_capability(self) -> None:
-        original_db = dynamic_universe.DB_PATH
-        original_config = dynamic_universe.CONFIG_PATH
-        original_member_state = dynamic_universe.MEMBER_STATE_PATH
-        with tempfile.TemporaryDirectory() as temp:
-            dynamic_universe.DB_PATH = Path(temp) / "universe.db"
-            dynamic_universe.CONFIG_PATH = Path(temp) / "universe.json"
-            dynamic_universe.CONFIG_PATH.write_text(
-                '{"seed_symbols":[],"exclude_symbols":[],"max_active_symbols":10}',
-                encoding="utf-8",
-            )
-            # Real, permanent member additions (e.g. SPY) live in a fixed
-            # state file outside this test's temp dir - isolate it too, or a
-            # real production addition leaks into every test that seeds here.
-            dynamic_universe.MEMBER_STATE_PATH = Path(temp) / "member-universe.json"
-            self.assertEqual(
-                robinhood_readonly_bridge.ingest_symbols(["f", "F"]), 1
-            )
-            dynamic_universe.seed_universe()
-            self.assertEqual(dynamic_universe.active_symbols(), ["F"])
-            connection = dynamic_universe.connect()
-            try:
-                row = connection.execute(
-                    "SELECT source FROM universe WHERE symbol='F'"
-                ).fetchone()
-                self.assertEqual(row["source"], "robinhood_mcp")
-            finally:
-                connection.close()
-        dynamic_universe.DB_PATH = original_db
-        dynamic_universe.CONFIG_PATH = original_config
-        dynamic_universe.MEMBER_STATE_PATH = original_member_state
 
     def test_new_closed_trades_are_binary_not_scratch(self) -> None:
         row = {"play_type": "LONG", "entry_price": "0.50"}
@@ -1448,29 +1112,3 @@ class InformationEngineTests(unittest.TestCase):
             spy_scanner.LOG_PATH = original_log
             spy_scanner.STATE_DIR = original_state
 
-    def test_github_backup_workflow_runs_multi_ticker_entrypoint(self) -> None:
-        workflow = (
-            Path(__file__).resolve().parent
-            / ".github"
-            / "workflows"
-            / "spy-scan.yml"
-        ).read_text(encoding="utf-8")
-        self.assertIn("python multi_ticker_scan.py", workflow)
-        self.assertIn("Multi-Ticker Options Scan", workflow)
-
-    def test_ticker_pause_resume_and_archive_preserve_registry(self) -> None:
-        original = ticker_registry.DB_PATH
-        with tempfile.TemporaryDirectory() as temp:
-            ticker_registry.DB_PATH = Path(temp) / "registry.db"
-            ticker_registry.save("VALE", status="ACTIVE", note="test")
-            self.assertEqual(
-                ticker_registry.pause("VALE", today_only=False)["status"], "PAUSED"
-            )
-            self.assertEqual(ticker_registry.resume("VALE")["status"], "ACTIVE")
-            self.assertEqual(ticker_registry.archive("VALE")["status"], "ARCHIVED")
-            self.assertIsNotNone(ticker_registry.get("VALE"))
-        ticker_registry.DB_PATH = original
-
-
-if __name__ == "__main__":
-    unittest.main()

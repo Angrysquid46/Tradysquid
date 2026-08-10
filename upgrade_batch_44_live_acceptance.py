@@ -403,7 +403,13 @@ def static_audit() -> list[dict[str, str]]:
         result(4, "Deduplicated breaking alerts", hasattr(upgrade_batch_44, "_headline_digest") and hasattr(upgrade_batch_44, "active_news_job"), "stable per-ticker headline hashing installed"),
         result(5, "Intraday charts and levels", "intraday-chart-refresh" in jobs and jobs["intraday-chart-refresh"].callback is upgrade_batch_44.intraday_chart_job, "small-timeframe chart job installed"),
         result(6, "Active market regime", "active-market-regime" in jobs and jobs["active-market-regime"].callback is upgrade_batch_44.market_regime_summary_job, "single active-universe regime job installed"),
-        result(7, "Dynamic universe rotation", "dynamic-universe-rotation" in jobs and jobs["dynamic-universe-rotation"].callback is upgrade_batch_44.universe_rotation_job, "protected optionable-candidate rotation installed"),
+        result(
+            7,
+            "Dynamic universe rotation",
+            "dynamic-universe-rotation" not in jobs and not hasattr(upgrade_batch_44, "universe_rotation_job"),
+            "removed entirely per later, overriding owner direction - this system trades SPY exclusively, "
+            "not merely a manually-curated universe with rotation paused",
+        ),
         result(8, "System Activity receipts", getattr(upgrade_batch_44._OPERATIONS, "activity_card", None) is upgrade_batch_44.enhanced_activity_card, "activity card uses real job receipts"),
         result(9, "Learning Results dashboard", "Evidence Dashboard" in learning_text and "Suggested next reviews" in learning_text, "aggregate evidence dashboard renderer installed"),
         result(10, "No play-type trade-history spam", "trade_id" not in style_text and "Individual completed trades remain only in Trade Journal" in style_text, "play-type output is aggregate-only"),

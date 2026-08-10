@@ -57,7 +57,12 @@ import trade_intelligence
 # Config
 # ---------------------------------------------------------------------------
 
-TICKER = os.environ.get("SCAN_TICKER", "F").strip().upper() or "F"
+# Hard-locked to SPY - this system trades SPY exclusively. Previously
+# configurable via a SCAN_TICKER env var to support scanning other tickers
+# (multi_ticker_scan.py mutated this at runtime per ticker); that capability
+# was removed entirely per explicit owner direction, not just disabled, so
+# there is no longer an env-var override to silently repoint this.
+TICKER = "SPY"
 TRADIER_BASE_URL = os.environ.get("TRADIER_BASE_URL", "https://api.tradier.com/v1").rstrip("/")
 TRADIER_TOKEN = os.environ.get("TRADIER_TOKEN", "").strip()
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()

@@ -74,16 +74,13 @@ class AutomationAcceptanceTests(unittest.TestCase):
                 acceptance.verify_visible_learning_order()
 
     def test_status_logic_must_generate_online_response(self) -> None:
-        with (
-            patch.object(acceptance.dynamic_universe, "initialize", return_value=["F"]),
-            patch.object(
-                acceptance.command_bot,
-                "status_reply",
-                return_value="🩺 **F Tradysquids status**\nCommand service: **ONLINE**",
-            ),
+        with patch.object(
+            acceptance.command_bot,
+            "status_reply",
+            return_value="🩺 **SPY Tradysquids status**\nCommand service: **ONLINE**",
         ):
             result = acceptance.verify_status_logic()
-        self.assertEqual(result["ticker"], "F")
+        self.assertEqual(result["ticker"], "SPY")
 
 
 if __name__ == "__main__":

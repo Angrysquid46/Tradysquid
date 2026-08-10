@@ -23,7 +23,6 @@ from typing import Any
 import requests
 
 import discord_command_bot as command_bot
-import dynamic_universe
 import spy_scanner
 from learning_center_catalog import LEARNING_CHANNEL_ORDER
 from strict_learning_order import category_and_children, normalized, ordered_children
@@ -270,8 +269,7 @@ def verify_visible_learning_order() -> dict[str, Any]:
 
 
 def verify_status_logic() -> dict[str, str]:
-    active = dynamic_universe.initialize()
-    ticker = active[0] if active else "F"
+    ticker = spy_scanner.TICKER
     text = command_bot.status_reply(ticker)
     if "Command service: **ONLINE**" not in text or "Tradysquids status" not in text:
         raise AcceptanceFailure("The local /status command logic did not return a valid status response.")

@@ -14,15 +14,12 @@ GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "").strip()
 OWNER_ONLY_COMMANDS = {
     "reset-trading-data",
     "clear-chat-history",
-    "ticker-pause",
-    "ticker-resume",
-    "ticker-remove",
     "scan-now",
 }
 
 TICKER_ARGUMENT = {
     "name": "ticker",
-    "description": "Active-universe ticker; defaults to the highest-ranked symbol",
+    "description": "Ticker symbol; defaults to SPY, the only ticker this system trades",
     "type": 3,
     "required": False,
     "min_length": 1,
@@ -47,7 +44,6 @@ COMMANDS = [
             "required": True,
             "choices": [
                 {"name": "Everything", "value": "all"},
-                {"name": "Universe discovery", "value": "discovery"},
                 {"name": "Options scanner", "value": "options"},
                 {"name": "Market intelligence", "value": "intelligence"},
                 {"name": "Open positions", "value": "positions"},
@@ -92,91 +88,6 @@ COMMANDS = [
                 "max_length": 5
             }
         ]
-    },
-    {
-        "name": "ticker-add",
-        "type": 1,
-        "description": "Add a verified optionable ticker to the shared scan universe",
-        "options": [{
-            "name": "ticker",
-            "description": "Stock symbol, such as VALE",
-            "type": 3,
-            "required": True,
-            "min_length": 1,
-            "max_length": 10,
-        }],
-    },
-    {
-        "name": "ticker-pause",
-        "type": 1,
-        "default_member_permissions": "0",
-        "description": "Owner: exclude a ticker from new scans",
-        "options": [
-            {
-                "name": "ticker",
-                "description": "Integrated ticker symbol",
-                "type": 3,
-                "required": True,
-                "min_length": 1,
-                "max_length": 10,
-            },
-            {
-                "name": "duration",
-                "description": "Resume next market day or remain paused",
-                "type": 3,
-                "required": False,
-                "choices": [
-                    {"name": "Today only", "value": "today"},
-                    {"name": "Until resumed", "value": "indefinite"},
-                ],
-            },
-        ],
-    },
-    {
-        "name": "ticker-resume",
-        "type": 1,
-        "default_member_permissions": "0",
-        "description": "Owner: restore a ticker to the shared scan universe",
-        "options": [{
-            "name": "ticker",
-            "description": "Integrated ticker symbol",
-            "type": 3,
-            "required": True,
-            "min_length": 1,
-            "max_length": 10,
-        }],
-    },
-    {
-        "name": "ticker-remove",
-        "type": 1,
-        "default_member_permissions": "0",
-        "description": "Owner: remove a ticker from new scans but preserve history",
-        "options": [{
-            "name": "ticker",
-            "description": "Integrated ticker symbol",
-            "type": 3,
-            "required": True,
-            "min_length": 1,
-            "max_length": 10,
-        }],
-    },
-    {
-        "name": "ticker-list",
-        "type": 1,
-        "description": "List the current dynamic scanner universe and exclusions",
-    },
-    {
-        "name": "ticker-status",
-        "type": 1,
-        "description": "Show whether a ticker is active in the shared universe",
-        "options": [{
-            "name": "ticker",
-            "description": "Integrated ticker symbol",
-            "type": 3,
-            "required": True,
-            "min_length": 1,
-            "max_length": 10,
-        }],
     },
     {
         "name": "help",

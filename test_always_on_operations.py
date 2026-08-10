@@ -189,9 +189,6 @@ class AlwaysOnOperationsTests(unittest.TestCase):
             patch.object(engine, "DB_PATH", db_path),
             patch.object(operations, "HEARTBEAT_PATH", heartbeat),
             patch.object(operations, "market_open_now", return_value=False),
-            patch.object(operations.dynamic_universe, "initialize", return_value=["AAPL", "F", "SPY"]),
-            patch.object(operations.dynamic_universe, "active_symbols", return_value=["AAPL", "F", "SPY"]),
-            patch.object(operations.dynamic_universe, "max_active_symbols", return_value=25),
             patch.object(engine, "market_snapshot", side_effect=snapshot),
             patch.object(engine, "ranked_option_chain", return_value=[]),
             patch.object(engine, "upsert_dashboard", side_effect=dashboard),
@@ -205,9 +202,11 @@ class AlwaysOnOperationsTests(unittest.TestCase):
                 ).fetchone()
             finally:
                 connection.close()
-        self.assertIn("screened 3/3", result)
+        # This system trades SPY exclusively - dynamic_universe.active_symbols()
+        # is hardcoded to ["SPY"], so this screen is always a single-ticker pass.
+        self.assertIn("screened 1/1", result)
         payload = json.loads(observation["payload_json"])
-        self.assertEqual(payload["batch"], ["AAPL", "F", "SPY"])
+        self.assertEqual(payload["batch"], ["SPY"])
         self.assertEqual({channel for channel, _ in dashboards}, {"scanner_feed", "universe_watch"})
         self.assertTrue(any("opens no paper position" in content for _, content in dashboards))
 
