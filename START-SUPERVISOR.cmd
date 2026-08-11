@@ -9,7 +9,7 @@ if exist "state\supervisor-stop.flag" exit /b 0
 :restart
 echo [%date% %time%] Starting Tradysquids Supervisor...
 echo [%date% %time%] Launching simple two-minute supervisor.>> "%~dp0state\supervisor-startup.log"
-python -u "%~dp0run_with_env.py" "%~dp0run_supervisor_simple.py" >> "%~dp0state\supervisor-startup.log" 2>&1
+"%~dp0.venv-tradysquid\Scripts\python.exe" -u "%~dp0run_with_env.py" "%~dp0run_supervisor_simple.py" >> "%~dp0state\supervisor-startup.log" 2>&1
 set "SUPERVISOR_EXIT=%ERRORLEVEL%"
 echo [%date% %time%] Python supervisor exited with code %SUPERVISOR_EXIT%.>> "%~dp0state\supervisor-startup.log"
 
