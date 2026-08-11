@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 import socket
 import json
@@ -1222,6 +1223,7 @@ class InformationEngineTests(unittest.TestCase):
             spy_scanner.write_log([row])
             engine.STREAM_QUOTES.clear()
             engine.STREAM_LAST_WRITTEN.clear()
+            engine.STREAM_QUOTE_RECEIVED_AT.clear()
             engine._SPY_SPOT_CACHE = (None, 0.0)
             with (
                 patch.object(
@@ -1276,6 +1278,7 @@ class InformationEngineTests(unittest.TestCase):
             spy_scanner.write_log([row])
             engine.STREAM_QUOTES.clear()
             engine.STREAM_LAST_WRITTEN.clear()
+            engine.STREAM_QUOTE_RECEIVED_AT.clear()
             engine._SPY_SPOT_CACHE = (None, 0.0)
             with (
                 patch.object(
@@ -1295,6 +1298,71 @@ class InformationEngineTests(unittest.TestCase):
                         "bid": 2.42,
                         "ask": 2.46,
                     }
+                )
+            closed = spy_scanner.read_log()[0]
+            self.assertEqual(closed["last_signal"], "FLOOR STOP")
+            route_close.assert_called_once()
+        spy_scanner.LOG_PATH = original_log
+
+    def test_underlying_tick_refetches_a_stale_option_quote_and_catches_the_exit(self) -> None:
+        # Real bug caught live: a ratchet-floor trade peaked at +29%, but
+        # its option quote hadn't ticked again by the time price
+        # reversed, so it was never re-checked until it had already
+        # fallen to +6% - a 23-point overshoot past where the floor
+        # should have locked it in. The system was subscribed to SPY's
+        # own ticks but completely ignored them for triggering
+        # re-evaluation, only reacting to the option's own (slower)
+        # prints. This proves the fix: a tick on the UNDERLYING, with the
+        # option's cached quote already stale, now actively refetches
+        # that option via REST and catches the floor stop immediately -
+        # not on the next time the option happens to tick on its own.
+        original_log = spy_scanner.LOG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
+            row = {field: "" for field in spy_scanner.LOG_HEADER}
+            row.update(
+                {
+                    "trade_id": "SPY-RATCHET-STALE-001",
+                    "ticker": "SPY",
+                    "play_type": "SPY_RATCHET_26_16",
+                    "option_symbol": "SPY260821C00500002",
+                    "expiration": spy_scanner.now_ct().date().isoformat(),
+                    "entry_price": "2.00",
+                    "outcome": "OPEN",
+                    "max_favorable_pct": "27",
+                }
+            )
+            spy_scanner.write_log([row])
+            engine.STREAM_QUOTES.clear()
+            engine.STREAM_LAST_WRITTEN.clear()
+            engine.STREAM_QUOTE_RECEIVED_AT.clear()
+            engine._SPY_SPOT_CACHE = (None, 0.0)
+            # The option's own quote is old (never refreshed this tick
+            # cycle) - a real gap that would previously never be noticed
+            # until the option itself ticked again.
+            engine.STREAM_QUOTES["SPY260821C00500002"] = {"bid": 2.55, "ask": 2.58}
+            engine.STREAM_QUOTE_RECEIVED_AT["SPY260821C00500002"] = (
+                time.monotonic() - engine.STREAM_QUOTE_STALE_SECONDS - 1
+            )
+            with (
+                patch.object(
+                    engine.spy_scanner,
+                    "market_is_open_now",
+                    return_value=(True, spy_scanner.now_ct()),
+                ),
+                patch.object(spy_scanner, "get_quote", return_value={"last": "774.50"}),
+                patch.object(
+                    spy_scanner,
+                    "get_quotes",
+                    # ~+22%, below the locked 26% floor - the fresh quote
+                    # the refetch is supposed to pick up.
+                    return_value={"SPY260821C00500002": {"bid": 2.42, "ask": 2.46}},
+                ),
+                patch.object(engine, "_route_stream_close") as route_close,
+                patch.object(spy_scanner.trade_intelligence, "record_event"),
+            ):
+                engine._stream_quote_event(
+                    {"type": "trade", "symbol": "SPY", "price": 774.50}
                 )
             closed = spy_scanner.read_log()[0]
             self.assertEqual(closed["last_signal"], "FLOOR STOP")
@@ -1330,6 +1398,7 @@ class InformationEngineTests(unittest.TestCase):
             spy_scanner.write_log([row])
             engine.STREAM_QUOTES.clear()
             engine.STREAM_LAST_WRITTEN.clear()
+            engine.STREAM_QUOTE_RECEIVED_AT.clear()
             engine._SPY_SPOT_CACHE = (None, 0.0)
             with (
                 patch.object(
