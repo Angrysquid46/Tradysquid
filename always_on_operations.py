@@ -411,6 +411,19 @@ def activity_card(
     return "\n".join(lines)[:5900]
 
 
+# upgrade_batch_44.install_engine() replaces the module-level activity_card
+# name with its own enhanced_activity_card for whatever context that upgrade
+# actually applies to (local_information_engine_bootstrap.py's launch path).
+# The live system launches local_information_engine_public.py directly and
+# never runs install_engine(), so this override never fires live - but
+# several unrelated test files call install_engine() directly, and since
+# it's a plain module-attribute assignment, that override otherwise leaks
+# into any other test sharing the same process. Keep a reference captured at
+# import time so this module's OWN tests can verify its OWN function's
+# behavior regardless of what any other test file installed first.
+_ORIGINAL_ACTIVITY_CARD = activity_card
+
+
 def scheduler_diagnostics_job(connection: sqlite3.Connection) -> str:
     rows = job_health_rows(connection)
     counts = health_counts(rows)

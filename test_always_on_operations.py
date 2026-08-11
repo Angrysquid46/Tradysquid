@@ -91,6 +91,15 @@ class AlwaysOnOperationsTests(unittest.TestCase):
         self.assertEqual(engine.spy_scanner.CHANNEL_NAMES["system_activity"], "system-activity")
 
     def test_activity_card_shows_live_stream_status_from_position_tracker(self) -> None:
+        # Uses _ORIGINAL_ACTIVITY_CARD, not operations.activity_card - the
+        # latter is a plain module attribute that upgrade_batch_44's
+        # install_engine() (called directly by other, unrelated test files
+        # sharing this same test process) permanently overwrites with a
+        # different implementation that doesn't render stream status at
+        # all. That override never happens on the live system (see
+        # _ORIGINAL_ACTIVITY_CARD's comment in always_on_operations.py), so
+        # testing the captured original is what actually matches production
+        # behavior, not an artifact of whichever test file ran first.
         directory, db_path, heartbeat = self.temporary_database()
         self.addCleanup(directory.cleanup)
         with patch.object(engine, "DB_PATH", db_path):
@@ -101,7 +110,7 @@ class AlwaysOnOperationsTests(unittest.TestCase):
                     "position-tracker",
                     {"open": 2, "closed": 0, "refreshed": 2, "stream": "connected", "stream_error": ""},
                 )
-                connected_card = operations.activity_card(connection, [])
+                connected_card = operations._ORIGINAL_ACTIVITY_CARD(connection, [])
             finally:
                 connection.close()
         self.assertIn("Live position stream:** connected", connected_card)
@@ -119,7 +128,7 @@ class AlwaysOnOperationsTests(unittest.TestCase):
                         "stream": "fallback", "stream_error": "ConnectionError: reset",
                     },
                 )
-                fallback_card = operations.activity_card(connection, [])
+                fallback_card = operations._ORIGINAL_ACTIVITY_CARD(connection, [])
             finally:
                 connection.close()
         self.assertIn("Live position stream:** not connected", fallback_card)
