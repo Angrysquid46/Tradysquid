@@ -88,9 +88,26 @@ class UpgradeBatch44Tests(unittest.TestCase):
         result = journal_contract.validate_contract()
         self.assertEqual(result["format_version"], "16")
         self.assertEqual(result["missing"], 0)
-        self.assertIn(
+        # Not required in REQUIRED_ENTRY_MARKERS: create_trade_thread/
+        # refresh_trade_thread post the "1 card" trim (summary_only=True),
+        # which never reaches trade_learning_analysis, so an open trade's
+        # actual journal thread can never contain this section. Requiring
+        # it there made journal-contract verification fail permanently for
+        # every open trade needing a refresh - a real bug that errored the
+        # live options scanner every cycle, fixed by not adding it here.
+        self.assertNotIn(
             "Applied Decision Checklist",
             journal_contract.REQUIRED_ENTRY_MARKERS,
+        )
+        # The extension itself still installs and still reaches a full
+        # (non-summary) render, e.g. a closed trade's close_alert_text -
+        # this proves the checklist content genuinely exists, just isn't
+        # a completeness requirement for the trimmed open-trade card.
+        row = journal_contract.spy_scanner.blank_row()
+        row.update({"trade_id": "TEST-CHECKLIST-001", "outcome": "OPEN"})
+        self.assertIn(
+            "Applied Decision Checklist",
+            journal_contract.spy_scanner.trade_learning_analysis(row),
         )
 
     def test_universe_rotation_capability_was_removed_not_merely_disabled(self) -> None:
