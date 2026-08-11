@@ -9,6 +9,14 @@ if exist "state\supervisor-stop.flag" exit /b 0
 :restart
 echo [%date% %time%] Starting Tradysquids Supervisor...
 echo [%date% %time%] Launching simple two-minute supervisor.>> "%~dp0state\supervisor-startup.log"
+rem Put the project venv's Scripts dir first on PATH so the bare `python`
+rem call below always resolves to the venv (with requests/discord.py/etc.
+rem installed) instead of whatever unrelated Python install happens to
+rem win PATH-resolution order in this launch context - a bare `python`
+rem here was intermittently resolving to one without the project's
+rem dependencies, causing "ModuleNotFoundError: No module named 'requests'"
+rem and crashing the supervisor every 20-50 minutes.
+set "PATH=%~dp0.venv-tradysquid\Scripts;%PATH%"
 python -u "%~dp0run_with_env.py" "%~dp0run_supervisor_simple.py" >> "%~dp0state\supervisor-startup.log" 2>&1
 set "SUPERVISOR_EXIT=%ERRORLEVEL%"
 echo [%date% %time%] Python supervisor exited with code %SUPERVISOR_EXIT%.>> "%~dp0state\supervisor-startup.log"
