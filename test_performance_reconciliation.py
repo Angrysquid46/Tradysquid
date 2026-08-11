@@ -25,6 +25,10 @@ class FakeDiscord:
             "performance_expansion": "monthly-expansion",
             "results_expansion": "strategy-expansion",
         }
+        for variant in spy_scanner.SPY_RATCHET_VARIANTS:
+            suffix = variant["play_type"].removeprefix("SPY_RATCHET_").lower()
+            self.channels[f"performance_ratchet_{suffix}"] = f"monthly-ratchet-{suffix.replace('_', '-')}"
+            self.channels[f"results_ratchet_{suffix}"] = f"strategy-ratchet-{suffix.replace('_', '-')}"
         self.cards: dict[str, str] = {}
         self.channel_cards: dict[str, list[str]] = {
             channel_id: [] for channel_id in self.channels.values()
@@ -162,8 +166,10 @@ class PerformanceScorecardTests(unittest.TestCase):
         # synthetic ledger, but period_months() always includes the current
         # month as a placeholder even with no trades, so each trade-less
         # variant still contributes exactly one empty "current month"
-        # scorecard: 2 + 2 + 1 + 1 = 6.
-        self.assertEqual(state["performance_reconciliation_monthly_reports"], 6)
+        # scorecard: 2 + 2 + 1 + 1 = 6, plus 1 each for the 10 trade-less
+        # ratchet-floor variants (same "current month" placeholder rule) =
+        # 6 + 10 = 16.
+        self.assertEqual(state["performance_reconciliation_monthly_reports"], 16)
         # CALL and PUT groups for EACH variant that actually has trades -
         # SPY_KEY_LEVELS has none in this synthetic ledger, so it
         # contributes 0 groups and this count is unaffected by its addition.

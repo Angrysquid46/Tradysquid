@@ -51,6 +51,13 @@ class ChannelSpec:
     channel_type: int = 0
 
 
+# One category per ratchet-floor variant, name derived from
+# spy_scanner.SPY_RATCHET_VARIANTS' own label (single source of truth for
+# the 10 (step, stop) pairs - see spy_scanner.py for how they were picked).
+RATCHET_CATEGORY_NAMES = [
+    f"{variant['label'].upper()} STRATEGY" for variant in spy_scanner.SPY_RATCHET_VARIANTS
+]
+
 CATEGORY_ORDER = [
     "START HERE",
     "COMMUNITY",
@@ -61,6 +68,7 @@ CATEGORY_ORDER = [
     "5-MINUTE STRATEGY",
     "KEY-LEVELS STRATEGY",
     "EXPANSION-LEVEL STRATEGY",
+    *RATCHET_CATEGORY_NAMES,
     "PERFORMANCE",
     "SYSTEM",
     "STRATEGY CONTROL",
@@ -132,6 +140,27 @@ CHANNELS = [
     ChannelSpec("OWNER CONTROL", "security-log", "Rejected requests and configuration warnings without secrets."),
 ]
 
+
+def _ratchet_slug(play_type: str) -> str:
+    return play_type.removeprefix("SPY_RATCHET_").lower().replace("_", "-")
+
+
+# Two channels per ratchet variant (performance + results), mirroring the
+# existing 1m/5m/key-levels/expansion pattern above - generated from
+# spy_scanner.SPY_RATCHET_VARIANTS instead of hand-duplicated 10 times.
+for _variant in spy_scanner.SPY_RATCHET_VARIANTS:
+    _category = f"{_variant['label'].upper()} STRATEGY"
+    _slug = _ratchet_slug(_variant["play_type"])
+    CHANNELS.append(ChannelSpec(
+        _category, f"ratchet-{_slug}-performance",
+        f"Lifecycle totals and recorded paper performance for the {_variant['label']} "
+        "ratchet-floor strategy only - fully independent of every other live SPY strategy.",
+    ))
+    CHANNELS.append(ChannelSpec(
+        _category, f"ratchet-{_slug}-results",
+        f"{_variant['label']} strategy results by direction and entry regime.",
+    ))
+
 DELETE_CHANNELS = {
     "qualified-trades", "scratches", "expired", "exit-alerts",
     "f-dashboard", "f-options-setups", "f-charts", "f-news-events",
@@ -186,6 +215,14 @@ CHANNEL_STARTERS = {
     "upgrade-review": "Manual owner review only.",
     "security-log": "Receives rejected requests and configuration warnings.",
 }
+for _variant in spy_scanner.SPY_RATCHET_VARIANTS:
+    _slug = _ratchet_slug(_variant["play_type"])
+    CHANNEL_STARTERS[f"ratchet-{_slug}-performance"] = (
+        f"Updated as the {_variant['label']} strategy's paper trades open and close."
+    )
+    CHANNEL_STARTERS[f"ratchet-{_slug}-results"] = (
+        f"Updated from the {_variant['label']} strategy's recorded paper-trade outcomes."
+    )
 
 GUIDES = {
     "welcome": """# Tradysquids

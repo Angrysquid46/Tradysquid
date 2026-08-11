@@ -28,13 +28,27 @@ SPY_0DTE_VARIANTS = (
     ("SPY_0DTE_5M", "performance_5m", "results_5m", "5-Minute Strategy"),
 )
 
+# 10 more independently-tracked strategies - one per ratchet-floor variant.
+# Built from spy_scanner.SPY_RATCHET_VARIANTS (single source of truth for
+# the (step, stop) pairs) rather than hand-duplicated 10 times.
+RATCHET_VARIANTS = tuple(
+    (
+        variant["play_type"],
+        f"performance_ratchet_{variant['play_type'].removeprefix('SPY_RATCHET_').lower()}",
+        f"results_ratchet_{variant['play_type'].removeprefix('SPY_RATCHET_').lower()}",
+        f"{variant['label']} Strategy",
+    )
+    for variant in spy_scanner.SPY_RATCHET_VARIANTS
+)
+
 # Every independently-tracked live strategy that gets its own paginated
 # performance/results ledger - the two SPY_0DTE variants, SPY Key-Levels/
-# ORB/VWAP, and SPY Expansion-Level, none of which read each other's rows.
+# ORB/VWAP, SPY Expansion-Level, and the 10 ratchet-floor variants, none of
+# which read each other's rows.
 STRATEGY_VARIANTS = SPY_0DTE_VARIANTS + (
     (spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels", "results_key_levels", "Key-Levels Strategy"),
     (spy_scanner.SPY_EXPANSION_PLAY_TYPE, "performance_expansion", "results_expansion", "Expansion-Level Strategy"),
-)
+) + RATCHET_VARIANTS
 
 REPORT_ROUTES = {
     "daily_recap": "daily-recap",
@@ -48,6 +62,10 @@ REPORT_ROUTES = {
     "performance_expansion": "expansion-performance",
     "results_expansion": "expansion-results",
 }
+for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
+    _suffix = _play_type.removeprefix("SPY_RATCHET_").lower()
+    REPORT_ROUTES[_perf_logical] = f"ratchet-{_suffix.replace('_', '-')}-performance"
+    REPORT_ROUTES[_results_logical] = f"ratchet-{_suffix.replace('_', '-')}-results"
 
 REPORT_MARKERS = {
     "daily_recap": (
@@ -98,6 +116,16 @@ REPORT_MARKERS = {
         "Expansion-Level Strategy Trade History ·",
     ),
 }
+for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
+    REPORT_MARKERS[_perf_logical] = (
+        f"{_label} Monthly Performance Index",
+        f"{_label} Monthly Performance ·",
+        f"{_label} Monthly Trade History ·",
+    )
+    REPORT_MARKERS[_results_logical] = (
+        f"{_label} Results",
+        f"{_label} Trade History ·",
+    )
 
 STATE_PREFIXES = (
     "report-v3:",
@@ -111,6 +139,10 @@ STATE_PREFIXES = (
     "key-levels-results",
     "expansion-performance",
     "expansion-results",
+) + tuple(
+    f"ratchet-{variant['play_type'].removeprefix('SPY_RATCHET_').lower().replace('_', '-')}-{suffix}"
+    for variant in spy_scanner.SPY_RATCHET_VARIANTS
+    for suffix in ("performance", "results")
 )
 
 
