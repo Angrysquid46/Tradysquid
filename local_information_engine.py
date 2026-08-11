@@ -57,6 +57,21 @@ RUNNING_JOBS: set[str] = set()
 RUNNING_JOBS_LOCK = threading.Lock()
 STREAM_QUOTES: dict[str, dict[str, Any]] = {}
 STREAM_LAST_WRITTEN: dict[str, float] = {}
+# monotonic time.time() each symbol's STREAM_QUOTES entry was last
+# refreshed (by a real stream tick OR the active refetch in
+# _stream_quote_event) - see STREAM_QUOTE_STALE_SECONDS.
+STREAM_QUOTE_RECEIVED_AT: dict[str, float] = {}
+# A 0DTE option's own quote can print far less often than SPY's own
+# underlying ticks do. _stream_quote_event used to only re-evaluate a
+# position when its OWN option symbol ticked - real bug caught live: a
+# ratchet-floor trade peaked at +29%, but its option hadn't ticked again
+# by the time price reversed, so it didn't get re-checked until it had
+# already fallen to +6% (a 23-point overshoot past where the floor
+# should have locked it in). Now, on ANY tick relevant to an open row
+# (its own option OR its underlying), a quote older than this many
+# seconds gets actively refetched via REST before evaluating, instead of
+# passively waiting for the option to tick again on its own.
+STREAM_QUOTE_STALE_SECONDS = 2.0
 POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
 # SPY's own spot price for Key-Levels' underlying-level stop/target check
 # (see _stream_quote_event) - cached rather than fetched on every option
@@ -1365,28 +1380,77 @@ def _cached_spy_spot() -> float | None:
 
 
 def _stream_quote_event(event: dict[str, Any]) -> None:
-    """Evaluate exits immediately when a streamed option quote changes, and
-    push the held-positions card on the same tick (debounced to once per
-    2s per trade - STREAM_LAST_WRITTEN already gated the CSV write at that
-    cadence; Discord now rides the same gate instead of waiting for
+    """Evaluate exits immediately when a streamed quote changes (the
+    row's own option OR its underlying), and push the held-positions
+    card on the same tick (debounced to once per 2s per trade -
+    STREAM_LAST_WRITTEN already gated the CSV write at that cadence;
+    Discord now rides the same gate instead of waiting for
     position_tracker_job's separate ~90s cycle). This is the actual
     real-time path - position_tracker_job is the REST fallback for a
-    missed or disconnected tick, not the live path itself."""
+    missed or disconnected tick, not the live path itself.
+
+    Reacting to underlying ticks matters: a 0DTE option's own quote can
+    print far less often than SPY itself ticks, and previously a row was
+    only re-evaluated when its own option symbol happened to tick - real
+    bug caught live, a ratchet-floor trade peaked at +29% but its option
+    hadn't ticked again by the time price reversed, so it wasn't
+    re-checked until it had already fallen to +6% (23 points of P&L
+    given up past where the floor should have locked it in). Now a stale
+    option quote gets actively refetched via REST before evaluating
+    instead of passively waiting for it to tick on its own."""
     symbol = str(event.get("symbol") or "")
     if not symbol or not spy_scanner.market_is_open_now()[0]:
         return
     STREAM_QUOTES.setdefault(symbol, {}).update(event)
-    timestamp = spy_scanner.now_ct()
     now_monotonic = time.monotonic()
-    live_updates: list[tuple[dict[str, str], dict[str, Any]]] = []
+    STREAM_QUOTE_RECEIVED_AT[symbol] = now_monotonic
+    timestamp = spy_scanner.now_ct()
+
     with POSITION_FILE_LOCK:
         rows = spy_scanner.read_log()
+        opened = spy_scanner.open_rows(rows)
+
+    # Find which open rows this tick is relevant to, and which of their
+    # option quotes have gone stale, before touching the lock again - a
+    # REST refetch is network I/O and must not be made while holding
+    # POSITION_FILE_LOCK (same reason position_tracker_job fetches quotes
+    # before its own second lock acquisition, not during it).
+    relevant: list[tuple[dict[str, str], set[str]]] = []
+    stale_symbols: set[str] = set()
+    for row in opened:
+        required = set(spy_scanner.symbols_for_rows([row]))
+        underlying_symbol = row.get("ticker", "")
+        option_symbols = required - {underlying_symbol}
+        if not option_symbols:
+            continue
+        if symbol not in option_symbols and symbol != underlying_symbol:
+            continue
+        relevant.append((row, option_symbols))
+        for option_symbol in option_symbols:
+            if (
+                now_monotonic - STREAM_QUOTE_RECEIVED_AT.get(option_symbol, 0.0)
+                > STREAM_QUOTE_STALE_SECONDS
+            ):
+                stale_symbols.add(option_symbol)
+
+    if not relevant:
+        return
+
+    if stale_symbols:
+        try:
+            fresh_quotes = spy_scanner.get_quotes(list(stale_symbols), include_greeks=True)
+        except Exception:
+            fresh_quotes = {}
+        for option_symbol, quote in fresh_quotes.items():
+            STREAM_QUOTES.setdefault(option_symbol, {}).update(quote)
+            STREAM_QUOTE_RECEIVED_AT[option_symbol] = now_monotonic
+
+    live_updates: list[tuple[dict[str, str], dict[str, Any]]] = []
+    with POSITION_FILE_LOCK:
         changed = False
         closed_events: list[tuple[dict[str, str], dict[str, Any]]] = []
-        for row in spy_scanner.open_rows(rows):
-            required = set(spy_scanner.symbols_for_rows([row]))
-            option_symbols = required - {row.get("ticker", "")}
-            if symbol not in option_symbols or not option_symbols.issubset(STREAM_QUOTES):
+        for row, option_symbols in relevant:
+            if not option_symbols.issubset(STREAM_QUOTES):
                 continue
             evaluation = spy_scanner.evaluate_open_row(
                 row, STREAM_QUOTES, timestamp, underlying_spot_price=_cached_spy_spot()
