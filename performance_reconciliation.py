@@ -257,6 +257,37 @@ def compact_trade_line(row: dict[str, str]) -> str:
     return f"• **{trade_id}** · {ticker} {label} · **{outcome} {dollars} ({pct})** · {stamp}"
 
 
+def top_strategies_lines(completed: list[dict[str, str]], limit: int = 3) -> list[str]:
+    """Owner ask: track which strategies actually perform best over time,
+    not just the combined total - ranked by net P/L for this period.
+    Grouped by play_type alone (not call/put side), matching the "one
+    combined card per strategy" pattern already used for results
+    channels - a side-by-side split isn't what "which strategy wins"
+    means here."""
+    if not completed:
+        return []
+    groups: dict[str, list[dict[str, str]]] = {}
+    for row in completed:
+        play_type = str(row.get("play_type") or "UNKNOWN").upper()
+        groups.setdefault(play_type, []).append(row)
+    ranked = sorted(
+        groups.items(),
+        key=lambda item: spy_scanner.result_metrics(item[1])["total_pnl"],
+        reverse=True,
+    )
+    medals = ("🥇", "🥈", "🥉")
+    lines = ["### Top Strategies"]
+    for index, (play_type, group_rows) in enumerate(ranked[:limit]):
+        metrics = spy_scanner.result_metrics(group_rows)
+        medal = medals[index] if index < len(medals) else f"{index + 1}."
+        lines.append(
+            f"{medal} **{play_type}** — Net "
+            f"{spy_scanner.fmt_metric_money(metrics, 'total_pnl')} · "
+            f"{int(metrics['wins'])}W-{int(metrics['losses'])}L"
+        )
+    return lines
+
+
 def result_summary(title: str, completed: list[dict[str, str]], period_text: str) -> str:
     metrics = spy_scanner.result_metrics(completed)
     lines = [
@@ -282,6 +313,7 @@ def result_summary(title: str, completed: list[dict[str, str]], period_text: str
             f"Avg loss **{metrics['average_loss_pct']:+.0f}%**"
         ),
     ]
+    lines.extend(top_strategies_lines(completed))
     if completed:
         best = max(
             completed,
