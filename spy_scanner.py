@@ -44,7 +44,7 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as dt_time, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
@@ -106,6 +106,13 @@ CHART_PUBLIC_URL = os.environ.get(
 ).strip()
 
 MARKET_TZ = ZoneInfo("America/Chicago")
+# Tradier's /markets/timesales endpoint interprets naive start/end strings in
+# America/New_York regardless of the timezone the caller meant - confirmed
+# live: a request with end="15:00" (intended as 3pm CT close) returned bars
+# stopping exactly at 15:00 ET, one hour before the real CT close, silently
+# dropping the last hour of every session. Any timesales start/end string
+# must be built through _et_window_str() below, not an f-string literal.
+TRADIER_TIMESALES_TZ = ZoneInfo("America/New_York")
 MARKET_OPEN = (8, 30)
 MARKET_CLOSE = (15, 0)
 
@@ -1400,19 +1407,28 @@ def get_daily_history(symbol: str, days: int = 90) -> list[dict[str, Any]]:
     return [values] if isinstance(values, dict) else list(values)
 
 
+def _et_window_str(day: date, hour: int, minute: int) -> str:
+    """Convert a CT wall-clock moment on `day` to the ET-labeled string
+    Tradier's timesales endpoint actually expects (see TRADIER_TIMESALES_TZ
+    above)."""
+    ct_dt = datetime.combine(day, dt_time(hour, minute), tzinfo=MARKET_TZ)
+    et_dt = ct_dt.astimezone(TRADIER_TIMESALES_TZ)
+    return et_dt.strftime("%Y-%m-%d %H:%M")
+
+
 def get_intraday_history(
     symbol: str,
     interval: str = "5min",
 ) -> list[dict[str, Any]]:
     """Return today's intraday bars when Tradier supplies time-and-sales data."""
-    today = now_ct().date().isoformat()
+    today = now_ct().date()
     data = tradier_get(
         "/markets/timesales",
         {
             "symbol": symbol,
             "interval": interval,
-            "start": f"{today} 08:30",
-            "end": f"{today} 15:00",
+            "start": _et_window_str(today, 8, 30),
+            "end": _et_window_str(today, 15, 0),
             "session_filter": "open",
         },
     )
@@ -1429,14 +1445,14 @@ def get_premarket_history(symbol: str, interval: str = "5min") -> list[dict[str,
     session_filter=open starting at the regular 8:30 CT bell - premarket
     needs session_filter=all and an earlier start, which would change
     behavior for every existing caller if bolted onto the same function."""
-    today = now_ct().date().isoformat()
+    today = now_ct().date()
     data = tradier_get(
         "/markets/timesales",
         {
             "symbol": symbol,
             "interval": interval,
-            "start": f"{today} 03:00",
-            "end": f"{today} 08:30",
+            "start": _et_window_str(today, 3, 0),
+            "end": _et_window_str(today, 8, 30),
             "session_filter": "all",
         },
     )
@@ -1464,8 +1480,8 @@ def get_recent_intraday_history(
         {
             "symbol": symbol,
             "interval": interval,
-            "start": f"{start.isoformat()} 08:30",
-            "end": f"{end.isoformat()} 15:00",
+            "start": _et_window_str(start, 8, 30),
+            "end": _et_window_str(end, 15, 0),
             "session_filter": "open",
         },
     )
