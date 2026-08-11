@@ -802,6 +802,51 @@ class InformationEngineTests(unittest.TestCase):
         )
         self.assertEqual(state["messages"], {})
 
+    def test_real_position_card_is_findable_by_trade_id_once_state_is_lost(self) -> None:
+        # A held-position card's visible content only ever shows a human
+        # sequence label ("SPY #4"), never the raw trade_id - so
+        # delete_trade_message's content-search fallback (used whenever the
+        # tracked message-id is missing from state, e.g. after a state
+        # write race) could never find it. discord_card's footer_suffix
+        # closes that gap; this proves it against the real card builder,
+        # not a hand-crafted embed.
+        row = spy_scanner.blank_row()
+        row.update(
+            {
+                "trade_id": "SPY-20260810-004",
+                "ticker": "SPY",
+                "play_type": "SPY_KEY_LEVELS",
+                "call_or_put": "put",
+                "strike": "772",
+                "expiration": "2026-08-17",
+                "entry_price": "3.95",
+                "outcome": "OPEN",
+            }
+        )
+        content = spy_scanner.position_update_text(row, spy_scanner.stored_open_evaluation(row))
+        card = spy_scanner.discord_card(content, footer_suffix=row["trade_id"])
+        self.assertNotIn(row["trade_id"], content)
+        rendered = spy_scanner.message_search_text({"content": "", "embeds": [card]})
+        self.assertIn(row["trade_id"], rendered)
+
+        tracker = spy_scanner.DiscordTracker("token", "guild")
+        tracker.ready = True
+        tracker.channels["updates"] = "held-channel"
+        requests: list[tuple[str, str]] = []
+
+        def request(method: str, path: str, payload=None):
+            requests.append((method, path))
+            if method == "GET":
+                return [{"id": "stale-position-card", "author": {"bot": True}, "content": "", "embeds": [card]}]
+            return {}
+
+        tracker._request = request
+        state: dict = {}
+        tracker.delete_trade_message("updates", state, "position", row["trade_id"])
+        self.assertIn(
+            ("DELETE", "/channels/held-channel/messages/stale-position-card"), requests
+        )
+
     def test_singleton_message_updates_newest_and_removes_older_duplicates(self) -> None:
         tracker = spy_scanner.DiscordTracker("token", "guild")
         requests: list[tuple[str, str]] = []
@@ -1391,6 +1436,101 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIsInstance(calls[0][1], FakeTracker)
         self.assertEqual(calls[0][2]["pl_pct"], 5.0)
         self.assertIn("1 refreshed", result)
+
+    def test_position_tracker_job_close_and_live_update_share_one_report_state(self) -> None:
+        # Real bug caught live: _route_stream_close used to do its own
+        # fresh read/write of report_state mid-loop. position_tracker_job
+        # reads report_state once at the top and writes it once at the
+        # end - that final write used to clobber whatever the close had
+        # just persisted (the close's held-position-card deletion, its
+        # routed_closed_trade_ids entry, etc.), since the outer object
+        # never learned about it. That's how a just-closed trade's
+        # held-position card message-id was silently dropped from state,
+        # leaving the card stuck (unfindable and undeletable) in Discord
+        # forever. Fixed by threading the same report_state object through.
+        class FakeTracker:
+            ready = True
+
+        shared_state: dict = {"messages": {}, "message_hashes": {}}
+        read_calls: list[int] = []
+
+        def fake_read_report_state():
+            read_calls.append(1)
+            return shared_state
+
+        written_states: list[dict] = []
+
+        def fake_evaluate(row, quotes, timestamp, underlying_spot_price=None):
+            if row["trade_id"] == "SPY-CLOSE-001":
+                return {"signal": "TAKE PROFIT", "pl_pct": 20.0, "pl_dollars": 10.0}
+            return {"signal": "HOLD", "pl_pct": 5.0, "pl_dollars": 2.5}
+
+        def fake_post_close(row, evaluation, tracker, report_state):
+            report_state["closed_marker"] = row["trade_id"]
+
+        def fake_sync_open_trade_cards(row, tracker, report_state, evaluation):
+            report_state.setdefault("open_markers", []).append(row["trade_id"])
+
+        with tempfile.TemporaryDirectory() as temp:
+            spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
+            engine.DB_PATH = Path(temp) / "local-information.db"
+            base_row = {field: "" for field in spy_scanner.LOG_HEADER}
+            rows = [
+                {
+                    **base_row,
+                    "trade_id": "SPY-CLOSE-001",
+                    "ticker": "SPY",
+                    "play_type": "SPY_0DTE_1M",
+                    "option_symbol": "SPY260821C00500000",
+                    "expiration": spy_scanner.now_ct().date().isoformat(),
+                    "entry_price": "0.50",
+                    "outcome": "OPEN",
+                },
+                {
+                    **base_row,
+                    "trade_id": "SPY-OPEN-001",
+                    "ticker": "SPY",
+                    "play_type": "SPY_0DTE_1M",
+                    "option_symbol": "SPY260821C00600000",
+                    "expiration": spy_scanner.now_ct().date().isoformat(),
+                    "entry_price": "0.50",
+                    "outcome": "OPEN",
+                },
+            ]
+            spy_scanner.write_log(rows)
+            connection = engine.connect_db()
+            try:
+                with (
+                    patch.object(spy_scanner, "get_quotes", return_value={}),
+                    patch.object(spy_scanner, "get_quote", return_value={"last": "774.50"}),
+                    patch.object(spy_scanner, "evaluate_open_row", side_effect=fake_evaluate),
+                    patch.object(engine, "discord_tracker", return_value=FakeTracker()),
+                    patch.object(spy_scanner, "read_report_state", side_effect=fake_read_report_state),
+                    patch.object(
+                        spy_scanner,
+                        "write_report_state",
+                        side_effect=lambda s: written_states.append(dict(s)),
+                    ),
+                    patch.object(spy_scanner, "sync_open_trade_cards", side_effect=fake_sync_open_trade_cards),
+                    patch.object(
+                        spy_scanner,
+                        "close_row",
+                        side_effect=lambda row, evaluation, timestamp: row.__setitem__("outcome", "WIN"),
+                    ),
+                    patch.object(spy_scanner, "post_close", side_effect=fake_post_close),
+                    patch.object(spy_scanner, "refresh_all_summary_dashboards"),
+                    patch.object(spy_scanner, "sync_reports"),
+                    patch.object(spy_scanner, "market_is_open_now", return_value=(True, spy_scanner.now_ct())),
+                ):
+                    engine.position_tracker_job(connection)
+            finally:
+                connection.close()
+
+        self.assertEqual(len(read_calls), 1)
+        self.assertTrue(written_states)
+        final_state = written_states[-1]
+        self.assertEqual(final_state.get("closed_marker"), "SPY-CLOSE-001")
+        self.assertEqual(final_state.get("open_markers"), ["SPY-OPEN-001"])
 
     def test_position_tracker_job_passes_spy_spot_to_evaluate_open_row(self) -> None:
         # Real bug caught live: SPY Key-Levels needs the underlying's own

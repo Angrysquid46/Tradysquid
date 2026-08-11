@@ -1307,12 +1307,25 @@ def discord_structure_sync_job(connection: sqlite3.Connection) -> str:
 
 
 def _route_stream_close(
-    row: dict[str, str], evaluation: dict[str, Any]
+    row: dict[str, str],
+    evaluation: dict[str, Any],
+    report_state: dict[str, Any] | None = None,
 ) -> None:
+    """report_state lets a caller that already holds one (e.g.
+    position_tracker_job's loop) share it instead of this function doing
+    its own fresh read/write. Without that, a caller which reads its own
+    report_state once at the top of a loop and writes it once at the end
+    would silently clobber whatever this function persisted in between -
+    that's exactly how a just-closed trade's held-position card message-id
+    was getting dropped from state, leaving the card impossible to find
+    and delete afterward (state lost the id, and the card's own visible
+    content never includes the raw trade_id to fall back to)."""
     tracker = discord_tracker()
     if not tracker:
         return
-    report_state = spy_scanner.read_report_state()
+    owns_state = report_state is None
+    if owns_state:
+        report_state = spy_scanner.read_report_state()
     spy_scanner.post_close(row, evaluation, tracker, report_state)
     rows = spy_scanner.read_log()
     # refresh_all_summary_dashboards, not update_performance_pages directly
@@ -1327,7 +1340,8 @@ def _route_stream_close(
         spy_scanner.now_ct(),
         market_open=spy_scanner.market_is_open_now()[0],
     )
-    spy_scanner.write_report_state(report_state)
+    if owns_state:
+        spy_scanner.write_report_state(report_state)
 
 
 def _position_symbols() -> list[str]:
@@ -1452,7 +1466,7 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
                 continue
             if evaluation.get("signal") in spy_scanner.CLOSING_SIGNALS:
                 spy_scanner.close_row(row, evaluation, timestamp)
-                _route_stream_close(row, evaluation)
+                _route_stream_close(row, evaluation, report_state if tracker else None)
                 closed += 1
             else:
                 row["current_pl_pct"] = spy_scanner.round_or_blank(

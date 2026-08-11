@@ -4192,8 +4192,18 @@ def card_color_for_text(content: str) -> int:
         return CARD_COLORS["performance"]
     return CARD_COLORS["status"]
 
-def discord_card(content: str) -> dict[str, Any]:
-    """Convert scanner markdown into a native Discord embed card."""
+def discord_card(content: str, *, footer_suffix: str = "") -> dict[str, Any]:
+    """Convert scanner markdown into a native Discord embed card.
+
+    footer_suffix appends a searchable identifier (a trade_id) to the
+    footer text. Per-trade cards (entry/position/result) render only a
+    human sequence label like "SPY #4" in their visible title, never the
+    raw trade_id - so search_token-based lookups (used both to find an
+    existing card to update and, in delete_trade_message's fallback path,
+    to find a card to delete once its tracked message-id is lost) can
+    never match on trade_id without this. The footer is real embed text
+    Discord renders (small, at the bottom) so it's genuinely searchable,
+    not a comment that gets thrown away."""
     raw_lines = [line.rstrip() for line in content.strip().splitlines()]
     title = "Tradysquids TradeBot"
     description_lines: list[str] = []
@@ -4232,10 +4242,13 @@ def discord_card(content: str) -> dict[str, Any]:
     flush_field()
 
     description = "\n".join(description_lines).strip()
+    footer_text = f"Tradysquids TradeBot · Card format {DISCORD_FORMAT_VERSION}"
+    if footer_suffix:
+        footer_text = f"{footer_text} · {footer_suffix}"
     embed: dict[str, Any] = {
         "title": title[:256],
         "color": card_color_for_text(content),
-        "footer": {"text": f"Tradysquids TradeBot · Card format {DISCORD_FORMAT_VERSION}"},
+        "footer": {"text": footer_text[:2048]},
     }
     if description:
         embed["description"] = description[:4096]
@@ -4252,6 +4265,7 @@ def message_search_text(message: dict[str, Any]) -> str:
         for field in embed.get("fields") or []:
             parts.append(str(field.get("name") or ""))
             parts.append(str(field.get("value") or ""))
+        parts.append(str((embed.get("footer") or {}).get("text") or ""))
     return "\n".join(parts)
 
 
@@ -4504,7 +4518,11 @@ class DiscordTracker:
         hashes = state.setdefault("message_hashes", {})
         message_id = str(messages.get(state_key) or "")
         clipped_content = content[:6000]
-        embed = discord_card(clipped_content)
+        # search_token doubles as the footer marker so a card can still be
+        # found (both here and by delete_trade_message's fallback) after its
+        # tracked message-id is lost from state - the visible card content
+        # itself never renders a raw trade_id, only a human sequence label.
+        embed = discord_card(clipped_content, footer_suffix=search_token)
         serialized = json.dumps(embed, sort_keys=True, separators=(",", ":"))
         content_hash = hashlib.sha256(
             f"{DISCORD_FORMAT_VERSION}:{serialized}".encode("utf-8")
