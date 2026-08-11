@@ -16,6 +16,7 @@ class FakeDiscord:
         self.channels = {
             "daily_recap": "daily",
             "weekly_report": "weekly",
+            "monthly_recap": "monthly-dashboard",
             "performance_1m": "monthly-1m",
             "results_1m": "strategy-1m",
             "performance_5m": "monthly-5m",
@@ -125,6 +126,7 @@ class PerformanceScorecardTests(unittest.TestCase):
     def test_six_distinct_discord_routes_are_installed(self) -> None:
         self.assertEqual(spy_scanner.CHANNEL_NAMES["daily_recap"], "daily-recap")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["weekly_report"], "weekly-report")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["monthly_recap"], "monthly-dashboard")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["performance_1m"], "1m-performance")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["results_1m"], "1m-results")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["performance_5m"], "5m-performance")
@@ -160,6 +162,10 @@ class PerformanceScorecardTests(unittest.TestCase):
         self.assertEqual(state["performance_reconciliation_closed_trades"], 100)
         self.assertEqual(state["performance_reconciliation_daily_reports"], 5)
         self.assertEqual(state["performance_reconciliation_weekly_reports"], 1)
+        # Combined-across-everything #monthly-dashboard: July (actual trades)
+        # + August ("today" placeholder) = 2, same as either SPY_0DTE variant
+        # alone since all synthetic trades close within the same July week.
+        self.assertEqual(state["performance_reconciliation_monthly_dashboard_reports"], 2)
         # 2 months (July from actual trades + August from "today") for EACH
         # of the two SPY_0DTE variants, plus 1 each for SPY_KEY_LEVELS and
         # SPY_EXPANSION_LEVEL - both have zero rows in make_rows()'s
@@ -183,6 +189,7 @@ class PerformanceScorecardTests(unittest.TestCase):
 
         self.assertEqual(len(discord.channel_cards["daily"]), 5)
         self.assertEqual(len(discord.channel_cards["weekly"]), 1)
+        self.assertEqual(len(discord.channel_cards["monthly-dashboard"]), 2)
         self.assertEqual(len(discord.channel_cards["monthly-1m"]), 2)
         self.assertEqual(len(discord.channel_cards["monthly-5m"]), 2)
         self.assertEqual(len(discord.channel_cards["strategy-1m"]), 2)

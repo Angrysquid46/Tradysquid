@@ -53,6 +53,7 @@ STRATEGY_VARIANTS = SPY_0DTE_VARIANTS + (
 REPORT_ROUTES = {
     "daily_recap": "daily-recap",
     "weekly_report": "weekly-report",
+    "monthly_recap": "monthly-dashboard",
     "performance_1m": "1m-performance",
     "results_1m": "1m-results",
     "performance_5m": "5m-performance",
@@ -78,6 +79,11 @@ REPORT_MARKERS = {
         "Weekly Performance Index",
         "Weekly Report ·",
         "Weekly Trade History ·",
+    ),
+    "monthly_recap": (
+        "Monthly Performance Index",
+        "Monthly Performance ·",
+        "Monthly Trade History ·",
     ),
     "performance_1m": (
         "1-Minute Strategy Monthly Performance Index",
@@ -131,6 +137,7 @@ STATE_PREFIXES = (
     "report-v3:",
     "daily-recap:",
     "weekly-report:",
+    "monthly-dashboard:",
     "1m-performance",
     "1m-results",
     "5m-performance",
@@ -577,6 +584,54 @@ def _sync_weekly(discord: Any, state: dict[str, Any], rows: list[dict[str, str]]
     return {"periods": len(weeks), "history_pages": pages, "trades": len(completed)}
 
 
+def _sync_monthly(discord: Any, state: dict[str, Any], rows: list[dict[str, str]]) -> dict[str, int]:
+    """Combined-across-every-strategy monthly P/L, parallel to _sync_daily/
+    _sync_weekly above. Before this, monthly totals only existed broken out
+    per strategy inside each strategy's own performance channel (see
+    _sync_monthly_performance_variant) - there was no single #monthly-dashboard
+    view of everything together, unlike daily/weekly which both already had
+    one. format_monthly_report/_period_months are already generic over
+    every row regardless of play_type, so this reuses them as-is."""
+    completed = canonical_closed_rows(rows)
+    months = _period_months(rows)
+    _require_upsert(
+        discord,
+        "monthly_recap",
+        state,
+        "report-v3:monthly:index",
+        "\n".join(
+            [
+                "## Monthly Performance Index",
+                f"**Canonical ledger coverage:** **{len(completed)}/{len(completed)}** closed trades.",
+                f"**Recorded months:** **{len(months)}**",
+                "Each month below contains a combined summary across every live strategy and every closed trade in paginated history.",
+            ]
+        ),
+        "Monthly Performance Index",
+    )
+    pages = 0
+    for month in months:
+        end = month_end(month)
+        month_rows = rows_closed_between(rows, month, end)
+        _require_upsert(
+            discord,
+            "monthly_recap",
+            state,
+            f"report-v3:monthly:{month.isoformat()}:summary",
+            format_monthly_report(rows, month),
+            f"Monthly Performance · {month.strftime('%B %Y')}",
+        )
+        pages += _sync_history(
+            discord,
+            state,
+            "monthly_recap",
+            f"monthly:{month.isoformat()}",
+            f"Monthly Trade History · {month.strftime('%B %Y')}",
+            month_rows,
+        )
+    return {"periods": len(months), "history_pages": pages, "trades": len(completed)}
+
+
 def _sync_strategy_results_variant(
     discord: Any, state: dict[str, Any], rows: list[dict[str, str]], *, play_type: str, logical_name: str, label: str
 ) -> dict[str, int]:
@@ -701,9 +756,10 @@ def sync_reports(
 
     daily = _sync_daily(discord, state, rows)
     weekly = _sync_weekly(discord, state, rows)
+    monthly_recap = _sync_monthly(discord, state, rows)
 
     expected = len(canonical_closed_rows(rows))
-    for name, result in (("daily", daily), ("weekly", weekly)):
+    for name, result in (("daily", daily), ("weekly", weekly), ("monthly recap", monthly_recap)):
         if result["trades"] != expected:
             raise RuntimeError(
                 f"{name} reporting coverage failed: {result['trades']}/{expected}"
@@ -712,7 +768,7 @@ def sync_reports(
     variant_results: dict[str, dict[str, int]] = {}
     strategy_groups_total = 0
     monthly_reports_total = 0
-    history_pages_total = daily["history_pages"] + weekly["history_pages"]
+    history_pages_total = daily["history_pages"] + weekly["history_pages"] + monthly_recap["history_pages"]
     for play_type, performance_logical, results_logical, label in STRATEGY_VARIANTS:
         variant_expected = len([row for row in canonical_closed_rows(rows) if row.get("play_type") == play_type])
         results = _sync_strategy_results_variant(
@@ -738,6 +794,7 @@ def sync_reports(
             "performance_reconciliation_closed_trades": expected,
             "performance_reconciliation_daily_reports": daily["periods"],
             "performance_reconciliation_weekly_reports": weekly["periods"],
+            "performance_reconciliation_monthly_recap_reports": monthly_recap["periods"],
             "performance_reconciliation_strategy_groups": strategy_groups_total,
             "performance_reconciliation_monthly_reports": monthly_reports_total,
             "performance_reconciliation_history_pages": history_pages_total,
