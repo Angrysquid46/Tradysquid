@@ -6564,6 +6564,23 @@ def _unavailable_context(reason: str) -> dict[str, Any]:
     }
 
 
+def _refresh_spot_price(fallback: float) -> float:
+    """scan_candidates() fetches one spot_price at the top of a scan cycle
+    and used to pass that same, increasingly stale value all the way
+    through 2 SPY_0DTE variants, 10 ratchet variants, Key-Levels, and
+    Expansion-Level - each doing its own sequential network round-trip, so
+    by the time the later groups ran, the strike selection and journaled
+    spot_at_entry could be tens of seconds behind the real market. Fails
+    open: any quote error keeps the caller's existing value rather than
+    ever blocking a scan on a single flaky refresh."""
+    try:
+        quote = get_quote(TICKER)
+        fresh = as_float(quote.get("last")) if quote else None
+        return fresh if fresh else fallback
+    except (TradierError, requests.RequestException):
+        return fallback
+
+
 def _run_spy_0dte_variant(
     *,
     play_type: str,
@@ -6646,6 +6663,7 @@ def _run_spy_ratchet_variants(
     source. Uses scan_spy_0dte_candidates as-is (already generic over
     play_type, same delta band/risk cap as SPY_0DTE - only the exit shape
     is new for these variants)."""
+    spot_price = _refresh_spot_price(spot_price)
     results: dict[str, dict[str, Any]] = {}
     for variant in SPY_RATCHET_VARIANTS:
         play_type = variant["play_type"]
@@ -6712,6 +6730,7 @@ def _run_spy_key_levels_variant(
     """Run the SPY Key-Levels/ORB/VWAP strategy's full signal + candidate
     build in isolation - its own data fetch, its own levels/direction/
     catalyst read, its own candidates, independent of SPY_0DTE entirely."""
+    spot_price = _refresh_spot_price(spot_price)
     try:
         premarket_bars = get_premarket_history(SPY_KEY_LEVELS_TICKER, interval="5min")
         daily_bars = get_daily_history(SPY_KEY_LEVELS_TICKER, days=260)
@@ -6800,6 +6819,7 @@ def _run_spy_expansion_variant(
     """Run the SPY 0-1 DTE Expansion-Level strategy's full signal + candidate
     build in isolation - its own data fetch, its own level/EMA/MACD read,
     its own candidates, independent of SPY_0DTE and SPY_KEY_LEVELS."""
+    spot_price = _refresh_spot_price(spot_price)
     try:
         daily_bars = get_daily_history(SPY_EXPANSION_TICKER, days=260)
         bars_15m = get_recent_intraday_history(
