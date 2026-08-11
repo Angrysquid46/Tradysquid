@@ -6,9 +6,7 @@ one updating summary card per day, week, month, and play type.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -139,11 +137,6 @@ def play_type_scorecard(label: str, completed: list[dict[str, str]]) -> str:
     if not completed:
         lines.append("No closed trades recorded for this play type yet.")
     return "\n".join(lines)[:5900]
-
-
-def safe_key(value: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")
-    return cleaned or hashlib.sha256(value.encode("utf-8")).hexdigest()[:10]
 
 
 def _require_upsert(
@@ -301,32 +294,23 @@ def _sync_strategy_results_variant(
     logical_name: str,
     label: str,
 ) -> int:
-    """Results scorecard (by direction) for ONE SPY 0DTE variant - same
-    filter-first isolation as the monthly variant above."""
+    """Results scorecard for ONE independently-tracked strategy, combined
+    across call and put - same filter-first isolation as the monthly
+    variant above. Used to be split into one card per side (CALL/PUT),
+    which read as duplicate cards sitting in the same channel even though
+    each was technically a different group - owner wants one combined card
+    per strategy here too, matching the daily/weekly/monthly pattern."""
     filtered = [row for row in rows if row.get("play_type") == play_type]
-    groups = play_type_groups(filtered)
-    ordered = sorted(groups)
-    for group_label in ordered:
-        token = f"{label} Results · {group_label}"
-        _require_upsert(
-            discord,
-            logical_name,
-            state,
-            f"report-v5:results:{logical_name}:{safe_key(group_label)}",
-            play_type_scorecard(f"{label} · {group_label}", groups[group_label]),
-            token,
-        )
-    if not ordered:
-        _require_upsert(
-            discord,
-            logical_name,
-            state,
-            f"report-v5:results:{logical_name}:empty",
-            play_type_scorecard(label, []),
-            f"{label} Results",
-        )
-        return 0
-    return len(ordered)
+    completed = canonical_rows(filtered)
+    _require_upsert(
+        discord,
+        logical_name,
+        state,
+        f"report-v5:results:{logical_name}:combined",
+        play_type_scorecard(label, completed),
+        f"{label} Results",
+    )
+    return 1 if completed else 0
 
 
 def sync_reports(

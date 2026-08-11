@@ -176,10 +176,10 @@ class PerformanceScorecardTests(unittest.TestCase):
         # ratchet-floor variants (same "current month" placeholder rule) =
         # 6 + 10 = 16.
         self.assertEqual(state["performance_reconciliation_monthly_reports"], 16)
-        # CALL and PUT groups for EACH variant that actually has trades -
-        # SPY_KEY_LEVELS has none in this synthetic ledger, so it
-        # contributes 0 groups and this count is unaffected by its addition.
-        self.assertEqual(state["performance_reconciliation_strategy_groups"], 4)
+        # One combined results card per variant that actually has trades
+        # (1m, 5m) - SPY_KEY_LEVELS/SPY_EXPANSION_LEVEL/ratchets have none
+        # in this synthetic ledger, contributing 0 each.
+        self.assertEqual(state["performance_reconciliation_strategy_groups"], 2)
         self.assertEqual(state["performance_reconciliation_history_pages"], 0)
         self.assertTrue(state["performance_reconciliation_scorecard_only"])
         self.assertEqual(len(discord.deleted), 0)
@@ -192,8 +192,12 @@ class PerformanceScorecardTests(unittest.TestCase):
         self.assertEqual(len(discord.channel_cards["monthly-dashboard"]), 2)
         self.assertEqual(len(discord.channel_cards["monthly-1m"]), 2)
         self.assertEqual(len(discord.channel_cards["monthly-5m"]), 2)
-        self.assertEqual(len(discord.channel_cards["strategy-1m"]), 2)
-        self.assertEqual(len(discord.channel_cards["strategy-5m"]), 2)
+        # One combined card per strategy now, not one per call/put side -
+        # owner ask: the split-by-side cards read as duplicates sitting in
+        # the same channel even though they were technically different
+        # groups.
+        self.assertEqual(len(discord.channel_cards["strategy-1m"]), 1)
+        self.assertEqual(len(discord.channel_cards["strategy-5m"]), 1)
 
         rendered = "\n".join(discord.cards.values())
         self.assertNotIn("Trade History", rendered)
@@ -203,11 +207,13 @@ class PerformanceScorecardTests(unittest.TestCase):
         # The two variants must never bleed into each other's results channel.
         strategy_1m_text = "\n".join(discord.channel_cards["strategy-1m"])
         strategy_5m_text = "\n".join(discord.channel_cards["strategy-5m"])
-        self.assertIn("1-Minute Strategy · SPY_0DTE_1M CALL", strategy_1m_text)
-        self.assertIn("1-Minute Strategy · SPY_0DTE_1M PUT", strategy_1m_text)
+        self.assertIn("Strategy Scorecard · 1-Minute Strategy", strategy_1m_text)
+        # Combined across both call and put trades for this variant (25 of
+        # each in the synthetic ledger).
+        self.assertIn("**Closed trades:** **50**", strategy_1m_text)
         self.assertNotIn("SPY_0DTE_5M", strategy_1m_text)
-        self.assertIn("5-Minute Strategy · SPY_0DTE_5M CALL", strategy_5m_text)
-        self.assertIn("5-Minute Strategy · SPY_0DTE_5M PUT", strategy_5m_text)
+        self.assertIn("Strategy Scorecard · 5-Minute Strategy", strategy_5m_text)
+        self.assertIn("**Closed trades:** **50**", strategy_5m_text)
         self.assertNotIn("SPY_0DTE_1M", strategy_5m_text)
 
     def test_new_trading_week_starts_a_new_weekly_scorecard(self) -> None:
