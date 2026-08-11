@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import discord_reconciliation_safety as safety
 import spy_scanner
@@ -233,6 +233,62 @@ class PerformanceScorecardTests(unittest.TestCase):
         self.assertIn("0W", latest)
         self.assertIn("0L", latest)
         self.assertNotIn("Trade History", latest)
+
+    def test_top_strategies_ranks_by_net_pl_and_ignores_side(self) -> None:
+        # Owner ask: track which strategies actually perform best over
+        # time. Grouped by play_type alone (not call/put side) - matches
+        # the "one combined card per strategy" pattern already used for
+        # results channels, not a side-by-side split.
+        base = scorecards.base
+        monday = datetime(2026, 7, 27, 14, 30, tzinfo=spy_scanner.MARKET_TZ)
+
+        def make(trade_id, play_type, side, dollars, pct):
+            row = spy_scanner.blank_row()
+            row.update(
+                {
+                    "trade_id": trade_id,
+                    "timestamp": (monday - timedelta(hours=1)).isoformat(),
+                    "closed_at": monday.isoformat(),
+                    "outcome": "WIN" if dollars > 0 else "LOSS",
+                    "play_type": play_type,
+                    "call_or_put": side,
+                    "ticker": "SPY",
+                    "realized_pl_dollars": str(dollars),
+                    "pct_gain_loss": str(pct),
+                }
+            )
+            return row
+
+        rows = [
+            make("T1", "SPY_RATCHET_29_16", "put", 44, 6),
+            make("T2", "SPY_KEY_LEVELS", "call", 104, 25),
+            make("T2b", "SPY_KEY_LEVELS", "put", -60, -19),
+            make("T3", "SPY_RATCHET_26_16", "put", 32, 4),
+            make("T4", "SPY_0DTE_5M", "call", 5, 1),
+        ]
+        lines = base.top_strategies_lines(rows)
+        self.assertEqual(lines[0], "### Top Strategies")
+        # KEY_LEVELS net = 104-60 = 44, tied with T1's 44 on raw net, but
+        # dict ordering/sort stability aside, both call+put sides must be
+        # combined under one KEY_LEVELS entry, not split.
+        joined = "\n".join(lines)
+        self.assertIn("SPY_KEY_LEVELS", joined)
+        self.assertIn("SPY_RATCHET_29_16", joined)
+        self.assertIn("SPY_RATCHET_26_16", joined)
+        self.assertNotIn("SPY_0DTE_5M", joined)  # 4th place, past the top-3 limit
+        self.assertEqual(len(lines), 4)  # header + top 3
+        self.assertIn("🥇", lines[1])
+        self.assertIn("🥈", lines[2])
+        self.assertIn("🥉", lines[3])
+
+    def test_top_strategies_empty_when_nothing_closed(self) -> None:
+        self.assertEqual(scorecards.base.top_strategies_lines([]), [])
+
+    def test_daily_recap_includes_top_strategies_section(self) -> None:
+        rows = self.make_rows()
+        report_date = date(2026, 7, 27)
+        content = scorecards.base.format_daily_recap(rows, report_date, market_open=False)
+        self.assertIn("### Top Strategies", content)
 
     def test_play_type_normalization_handles_credit_names(self) -> None:
         row = {"play_type": "CALL CREDIT", "call_or_put": ""}
