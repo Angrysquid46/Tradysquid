@@ -237,9 +237,15 @@ def install_learning_extensions() -> None:
     trade_intelligence.learning_version = _combined_learning_version
     spy_scanner.trade_learning_analysis = enhanced_trade_learning_analysis
     journal_contract.JOURNAL_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
-    journal_contract.REQUIRED_ENTRY_MARKERS = tuple(
-        dict.fromkeys((*journal_contract.REQUIRED_ENTRY_MARKERS, "Applied Decision Checklist"))
-    )
+    # NOT added to REQUIRED_ENTRY_MARKERS: create_trade_thread/refresh_trade_thread
+    # post entry_alert_text(row, summary_only=True) (the "1 card" trim - Position/
+    # Entry Plan/Risk only), which returns before ever calling
+    # trade_learning_analysis, so an open trade's journal thread can never contain
+    # "### Applied Decision Checklist". Requiring it here made journal-contract
+    # verification fail permanently for every open trade that needed a refresh,
+    # which was erroring the live options scanner every cycle. Closed trades still
+    # get this section via close_alert_text(row, closed=True) and are unaffected -
+    # only REQUIRED_ENTRY_MARKERS (open trades) had this stale requirement.
     spy_scanner.DISCORD_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
     _LEARNING_INSTALLED = True
 
