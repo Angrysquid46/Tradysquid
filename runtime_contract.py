@@ -88,7 +88,16 @@ def install_safe_intraday_history(spy_scanner: Any) -> None:
             )
         elif current < end:
             end = max(start, current - timedelta(minutes=1))
-        return start.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M")
+        # Tradier's timesales endpoint interprets naive start/end strings in
+        # America/New_York, one hour ahead of MARKET_TZ (America/Chicago) -
+        # confirmed live (see spy_scanner._et_window_str). start/end above
+        # are correct CT moments; only the string sent to Tradier needs the
+        # ET shift, so the "never ask for a future window" logic above is
+        # untouched.
+        return (
+            start.astimezone(spy_scanner.TRADIER_TIMESALES_TZ).strftime("%Y-%m-%d %H:%M"),
+            end.astimezone(spy_scanner.TRADIER_TIMESALES_TZ).strftime("%Y-%m-%d %H:%M"),
+        )
 
     def get_intraday_history(symbol: str, interval: str = "5min") -> list[dict[str, Any]]:
         start, end = intraday_session_window()
