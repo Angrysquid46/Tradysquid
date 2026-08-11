@@ -24,13 +24,24 @@ paper-trading only, zero real money.
 
 ## What this project is
 
-Tradysquid is an algorithmic options paper-trading system. Six
-semi-independent trader strategies scan live Tradier market data and manage
-their own positions:
+Tradysquid is an algorithmic options paper-trading system, SPY-only (the
+older multi-ticker/credit-spread system described in earlier versions of
+this file was erased — see PR #148, "Erase multi-ticker scanning/tracking
+capability entirely"). Independently-tracked strategies scan live Tradier
+market data and manage their own positions, each with its own Discord
+category, config flag, and $500/trade risk cap:
 
-- regular calls / regular puts (short-dated, same-session directional bets)
-- swing calls / swing puts (longer-dated, held for a multi-day move)
-- bull-put spreads / bear-call spreads (credit spreads)
+- `SPY_0DTE_1M` / `SPY_0DTE_5M` — same-day-expiration directional bets;
+  entry signal source differs (1M reads a live TradingView alert, 5M reads
+  the Python opening-range breakout on 5-minute bars), exit rules identical.
+- `SPY_KEY_LEVELS` — opening-range/VWAP/prior-day-level strategy with its
+  own FRED/Finnhub economic-catalyst check.
+- `SPY_EXPANSION_LEVEL` — EMA/MACD multi-timeframe-alignment strategy
+  (disabled by default as of its introduction; check `config/scanner.json`
+  for current state).
+- 10 `SPY_RATCHET_<step>_<stop>` variants — share `SPY_0DTE_1M`'s live
+  TradingView entry signal, differ only in exit shape (a ratchet floor that
+  locks in gains at each step instead of a fixed profit target).
 
 A Discord bot handles entry/exit alerts, dashboards, and slash commands.
 
@@ -39,44 +50,46 @@ A Discord bot handles entry/exit alerts, dashboards, and slash commands.
 - **Legacy flat-file scripts** (`spy_scanner.py`, `local_information_engine.py`,
   `discord_command_bot.py`, `tradysquid_supervisor.py`, and dozens of
   `test_*.py` files at the repo root): this is the code that is actually
-  committed to `main` and deployed. `spy_scanner.py` (~6,700 lines) holds the
-  entry scanners (`scan_single_legs`, `scan_credit_spreads`), the exit
-  models (`single_leg_exit_signal`, `spread_exit_signal`,
-  `check_time_efficiency_exit`, `check_thesis_invalidation`,
-  `apply_greeks_persistence_gate`), and the risk gates
-  (`apply_ticker_exposure_cap`, `entry_window_blocked`,
-  `days_until_earnings`, the `MAX_RISK_PER_TRADE`/delta-band/DTE constants).
-  `local_information_engine.py` runs the scheduled background jobs (market
-  snapshots, options dashboards, news, position tracking). `discord_command_bot.py`
+  committed to `main` and deployed. `spy_scanner.py` (~7,000 lines) holds
+  the entry scanners (`scan_spy_0dte_candidates`, `scan_spy_key_levels_candidates`,
+  `scan_spy_expansion_candidates`), the exit models (`spy_0dte_exit_signal`,
+  `spy_ratchet_exit_signal`, and the per-strategy `evaluate_open_*_row`
+  dispatch in `evaluate_open_row`), and the risk gates (`apply_ticker_exposure_cap`,
+  `entry_window_blocked`, `days_until_earnings`, the `MAX_RISK_PER_TRADE`/
+  delta-band/DTE constants). `local_information_engine.py` runs the
+  scheduled background jobs (market snapshots, options dashboards, news,
+  position tracking, the real-time stream-quote exit path). `discord_command_bot.py`
   is a Flask app serving Discord slash-command interactions.
 - **`tradysquid/` package** (`app.py` + `core/`, `data/`, `discord/`,
   `learning/`, `market/`, `operations/`, `providers/`, `reporting/`,
-  `scanner/`, `strategies/` (six strategy modules mirroring the list above),
-  `trading/`, `universe/`): a proper installable package (declared in
-  `pyproject.toml`) that appears to be an in-progress rewrite of the same
-  six strategies. It was committed on 2026-08-06 (previously it sat
-  uncommitted for an unknown length of time), so it now exists in git
-  history, but it still isn't what's deployed — the legacy scripts are.
-  Don't assume this package is "the current thing" just because `pytest`'s
-  default config points at it — confirm with the user/owner what it's for
-  before building on it further.
+  `scanner/`, `strategies/`, `trading/`, `universe/`): a proper installable
+  package (declared in `pyproject.toml`) that appears to be an in-progress
+  rewrite of the *old* six-strategy, multi-ticker system (its `strategies/`
+  modules are still `regular_call.py`/`regular_put.py`/`swing_call.py`/
+  `swing_put.py`/`bull_put_spread.py`/`bear_call_spread.py` — it was never
+  updated for the SPY-only pivot). It was committed on 2026-08-06
+  (previously it sat uncommitted for an unknown length of time), so it now
+  exists in git history, but it still isn't what's deployed — the legacy
+  scripts are, and they've since diverged further (SPY-only, four strategy
+  families instead of six). Don't assume this package is "the current
+  thing" just because `pytest`'s default config points at it — confirm
+  with the user/owner what it's for before building on it further.
 
 ## Testing
 
 - Run tests with the project venv, not system Python:
   `./.venv-tradysquid/Scripts/python.exe -m pytest -q`
 - `pyproject.toml` sets `testpaths = ["tests"]`, so a bare `pytest` run
-  **only** collects `tests/` (the package for the new `tradysquid/` code).
-  It silently skips every root-level `test_*.py` file — including the ones
-  that directly cover the legacy exit/entry/risk logic above
-  (`test_single_leg_exit_signal.py`, `test_spread_trader.py`,
-  `test_thesis_invalidation.py`, `test_time_efficiency_exit.py`,
-  `test_greeks_persistence_gate.py`, `test_ticker_exposure_cap.py`,
-  `test_entry_time_window.py`, `test_breakeven_expected_move.py`,
-  `test_delta_bucket_split.py`, `test_directional_spreads.py`,
-  `test_regular_swing_traders.py`, etc.). When working on `spy_scanner.py`,
-  run those explicitly by naming the files, or you'll get a false-green
-  baseline.
+  **only** collects `tests/` (the package for the orphaned `tradysquid/`
+  code). It silently skips every one of the ~58 root-level `test_*.py`
+  files — including the ones that directly cover the live exit/entry/risk
+  logic above (`test_spy_0dte.py`, `test_spy_ratchet.py`,
+  `test_ticker_exposure_cap.py`, `test_entry_time_window.py`,
+  `test_journal_contract.py`, `test_performance_reconciliation.py`,
+  `test_local_information_engine.py`, `test_runtime_contract.py`, etc.).
+  When working on `spy_scanner.py`/`local_information_engine.py`/
+  `runtime_contract.py`, run those explicitly by naming the files, or
+  you'll get a false-green baseline.
 - `.venv-tradysquid` needs `pip install -r requirements.txt -r requirements-dev.txt`
   run into it periodically — it was missing `flask` as of 2026-08-06 (fixed
   once), which blocks collection of any test importing `discord_command_bot`.
@@ -84,32 +97,29 @@ A Discord bot handles entry/exit alerts, dashboards, and slash commands.
   `docs/chain-snapshots/`, and `SETUP-RESULT.*` are gitignored — all runtime
   artifacts, not source. `backups/` in particular has held raw `.env` copies
   (real secrets) — never stage it.
-- Known baseline failures as of 2026-08-06 (confirm still true before
-  treating any as newly introduced — none of these look caused by a specific
-  recent change, they read as pre-existing gaps in tests that were never
-  actually being run due to the `testpaths` gap above):
-  - `tests/unit/test_verifier_modules.py::test_installation_verifier_runs_from_external_working_directory`
-    — fails on `database-integrity` against the live `data/tradysquid.db`
-    (`wrong # of entries in index sqlite_autoindex_discord_message_state_1`);
-    environment/data issue, not obviously a code bug.
-  - `test_single_leg_exit_signal.py::test_breakeven_locks_in_after_a_real_peak_and_pullback`
-    — asserts a peak-then-pullback-to-flat trade signals `"TAKE PROFIT"`,
-    but `single_leg_exit_signal` in `spy_scanner.py` deliberately returns
-    `"BREAKEVEN STOP"` for that case now (the function's own docstring
-    explains the rename is intentional). Test looks stale relative to the
-    code, not the other way around.
+- Known baseline failures, re-verified 2026-08-11 (confirm still true
+  before treating any as newly introduced):
   - `test_local_information_engine.py::InformationEngineTests::test_closed_trade_journal_backfill_is_canonical_and_idempotent`
-    and `::test_reporting_job_refreshes_all_closed_trade_views` — both fail
-    with `TypeError: ...Tracker.upsert_singleton_message() got an unexpected
-    keyword argument 'components'`. The real `DiscordTracker.upsert_singleton_message`
-    in `spy_scanner.py` does accept `components` (added for the archive-button
-    feature); the test's inline fake `Tracker` class was never updated to
-    match. Code looks correct, test double is stale.
+    — fails with `TypeError: ...Tracker.upsert_singleton_message() got an
+    unexpected keyword argument 'components'`. The real
+    `DiscordTracker.upsert_singleton_message` in `spy_scanner.py` does
+    accept `components` (added for the archive-button feature); the test's
+    inline fake `Tracker` class was never updated to match. Code looks
+    correct, test double is stale. (`::test_reporting_job_refreshes_all_closed_trade_views`,
+    previously listed alongside this one, now passes standalone — drop it
+    if you don't reproduce it.)
   - `test_reset_trading_data.py::test_reset_deletes_every_thread_in_the_channel_directly`
-    — `assert result["deleted_threads"] == 3` actually got `15`. Not yet
-    diagnosed; unlike the others above this one doesn't have an obvious
-    "test is stale" explanation on its face — look here first before trusting
-    `reset_all_trade_data`'s thread-deletion count.
+    — `assert result["deleted_threads"] == 3` actually got `15`. Still not
+    diagnosed; unlike the one above this doesn't have an obvious
+    "test is stale" explanation on its face — look here first before
+    trusting `reset_all_trade_data`'s thread-deletion count.
+  - `tests/unit/test_verifier_modules.py::test_installation_verifier_runs_from_external_working_directory`
+    — as of 2026-08-11 this errors on a Windows temp-directory permission
+    issue in pytest's own tmpdir fixture (`PermissionError` on
+    `C:\Users\...\Temp\pytest-of-<user>`), not the `database-integrity`
+    assertion originally documented here. Environment-specific; check
+    whether it still reproduces before assuming either description is
+    current.
 
 ## Working conventions
 
