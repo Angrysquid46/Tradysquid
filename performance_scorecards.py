@@ -34,6 +34,7 @@ STATE_PREFIXES = (
     "report-v5:",
     "daily-recap:",
     "weekly-report:",
+    "monthly-dashboard:",
     "1m-performance",
     "1m-results",
     "5m-performance",
@@ -236,6 +237,31 @@ def _sync_weekly(
     return len(weeks)
 
 
+def _sync_monthly_dashboard(
+    discord: Any,
+    state: dict[str, Any],
+    rows: list[dict[str, str]],
+    today: date,
+) -> int:
+    """Combined-across-every-strategy monthly scorecard, parallel to
+    _sync_daily/_sync_weekly above. #monthly-dashboard already existed as a
+    real Discord channel but nothing in the deployed code ever posted to it
+    - monthly performance only existed broken out per strategy via
+    _sync_monthly_variant below."""
+    months = period_months(rows, today)
+    for month in months:
+        content = clean_period_scorecard(base.format_monthly_report(rows, month))
+        _require_upsert(
+            discord,
+            "monthly_recap",
+            state,
+            f"report-v5:monthly-dashboard:{month.isoformat()}",
+            content,
+            f"Monthly Performance · {month.strftime('%B %Y')}",
+        )
+    return len(months)
+
+
 def _sync_monthly_variant(
     discord: Any,
     state: dict[str, Any],
@@ -325,6 +351,7 @@ def sync_reports(
         discord, state, rows, timestamp, market_open=market_open
     )
     weekly_count = _sync_weekly(discord, state, rows, timestamp.date())
+    monthly_dashboard_count = _sync_monthly_dashboard(discord, state, rows, timestamp.date())
 
     strategy_count = 0
     monthly_count = 0
@@ -349,6 +376,7 @@ def sync_reports(
             "performance_reconciliation_week_trades": len(current_week_rows),
             "performance_reconciliation_daily_reports": daily_count,
             "performance_reconciliation_weekly_reports": weekly_count,
+            "performance_reconciliation_monthly_dashboard_reports": monthly_dashboard_count,
             "performance_reconciliation_strategy_groups": strategy_count,
             "performance_reconciliation_monthly_reports": monthly_count,
             "performance_reconciliation_history_pages": 0,

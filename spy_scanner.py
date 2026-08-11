@@ -377,6 +377,7 @@ CHANNEL_NAMES = {
     "expired": "losses",
     "daily_recap": "daily-recap",
     "weekly_report": "weekly-report",
+    "monthly_recap": "monthly-dashboard",
     # Split per independently-tracked SPY 0DTE strategy - see
     # is_spy_0dte_play_type/SPY_0DTE_PLAY_TYPES. Owned live by
     # performance_reconciliation.py's sync_reports once it installs.
@@ -470,6 +471,7 @@ AUTOMATED_CHANNEL_KEYS = [
     "expired",
     "daily_recap",
     "weekly_report",
+    "monthly_recap",
     "performance_1m",
     "results_1m",
     "performance_5m",
@@ -1053,7 +1055,15 @@ def position_update_text(
     return "\n".join(lines)
 
 
-def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_link: str = "") -> str:
+def close_alert_text(
+    row: dict[str, str], evaluation: dict[str, Any], include_link: str = "", summary_only: bool = False
+) -> str:
+    """summary_only trims the card to Position/Entry and Exit/Result/Timing
+    (plus the journal link, if any) - what #wins/#losses/#scratches/#expired
+    show. The full learning-analysis section (owner: "we have a journal for
+    all of that") only appears in the full (summary_only=False) version,
+    which is what actually gets posted into the trade's own journal thread -
+    same split as entry_alert_text's summary_only."""
     outcome = row.get("outcome", "CLOSED")
     icon = {"WIN": "🟩", "LOSS": "🟥", "SCRATCH": "⬜"}.get(outcome, "📕")
     ticker = (row.get("ticker") or TICKER).upper()
@@ -1144,6 +1154,8 @@ def close_alert_text(row: dict[str, str], evaluation: dict[str, Any], include_li
     ]
     if include_link:
         lines.extend(["### Journal", f"[Open completed trade journal]({include_link})"])
+    if summary_only:
+        return "\n".join(lines)
     lines.append(trade_learning_analysis(row, closed=True))
     return "\n".join(lines)
 
@@ -5413,7 +5425,7 @@ def sync_closed_result_channels(
             )
             continue
         link = thread_link(row.get("discord_thread_id", ""))
-        content = close_alert_text(row, stored_close_evaluation(row), link)
+        content = close_alert_text(row, stored_close_evaluation(row), link, summary_only=True)
         discord.upsert_trade_result(result_channel, report_state, trade_id, content)
         discord.delete_trade_message("entry", report_state, "entry", trade_id)
         discord.delete_trade_message("updates", report_state, "position", trade_id)
@@ -5430,7 +5442,7 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
         return
     thread_id = row.get("discord_thread_id", "")
     link = thread_link(thread_id)
-    content = close_alert_text(row, evaluation, link)
+    content = close_alert_text(row, evaluation, link, summary_only=True)
     if thread_id:
         try:
             sequence = trade_sequence(row)
@@ -5458,7 +5470,7 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
             row["discord_thread_id"] = ""
             row["discord_status"] = ""
             link = ""
-            content = close_alert_text(row, evaluation)
+            content = close_alert_text(row, evaluation, summary_only=True)
         else:
             try:
                 discord.set_thread_status(thread_id, row["outcome"], archive=True)

@@ -1,14 +1,17 @@
 """Install the shared, non-strategy-specific Performance-category scorecard
-destinations. Monthly performance and strategy-breakdown scorecards used to
-live here too, back when there was only one live strategy - now that SPY
-0DTE is split into two independently-tracked live strategies (1-minute and
-5-minute), those two report types moved into their own per-strategy
-categories (1-MINUTE STRATEGY / 5-MINUTE STRATEGY, channels
-1m-performance/1m-results/5m-performance/5m-results) instead of being
-recreated here. Daily and weekly recaps stay here deliberately - they're
-calendar summaries across BOTH strategies combined, not something the split
-duplicated, matching the explicit "we just need 1 of all the trackers"
-direction for anything that isn't strategy-specific.
+destinations. Per-strategy monthly performance and strategy-breakdown
+scorecards live in their own per-strategy categories (1-MINUTE STRATEGY /
+5-MINUTE STRATEGY / etc, channels <slug>-performance/<slug>-results)
+instead of being recreated here. Daily, weekly, and monthly recaps stay
+here deliberately - they're calendar summaries across every live strategy
+combined, not something a per-strategy split duplicated, matching the
+explicit "we just need 1 of all the trackers" direction for anything that
+isn't strategy-specific. Monthly wired up 2026-08-11: #monthly-dashboard
+already existed as a real Discord channel but nothing in the deployed code
+ever posted to it - daily and weekly both had a combined-across-everything
+channel, monthly only existed broken out per strategy inside each
+strategy's own channel. This closes that gap using the channel name that
+was already there rather than creating a new, separate one.
 """
 
 from __future__ import annotations
@@ -24,6 +27,10 @@ PERFORMANCE_CHANNELS = (
     (
         "weekly-report",
         "One updating scorecard per trading week; a new card begins with each new trading week.",
+    ),
+    (
+        "monthly-dashboard",
+        "One updating scorecard per trading month, combined across every live strategy - P/L, wins, losses, expectancy.",
     ),
 )
 
@@ -56,6 +63,9 @@ def install(sync: Any) -> None:
             ),
             "weekly-report": (
                 "Weekly scoreboard only: one updating card for the active trading week, followed by a new card next week."
+            ),
+            "monthly-dashboard": (
+                "Monthly scoreboard only: one updating card for the active trading month, combined across every live strategy."
             ),
         }
     )

@@ -142,6 +142,34 @@ class JournalContractTests(unittest.TestCase):
         messages = [{"embeds": [entry_card]}, {"embeds": [close_card]}]
         self.assertEqual(journal_contract.missing_markers(row, messages), [])
 
+    def test_summary_close_card_drops_the_learning_essay_for_wins_losses_channels(self) -> None:
+        # Owner ask: #wins/#losses/#scratches/#expired should stay brief -
+        # the full post-trade learning analysis belongs in the trade's own
+        # journal thread only, which still gets the full (non-summary) card.
+        row = self.make_row(outcome="LOSS")
+        content = spy_scanner.close_alert_text(row, spy_scanner.stored_close_evaluation(row), summary_only=True)
+        self.assertIn("### Position", content)
+        self.assertIn("### Entry and Exit", content)
+        self.assertIn("### Result", content)
+        self.assertIn("### Timing", content)
+        self.assertIn("MFE", content)
+        self.assertIn("MAE", content)
+        self.assertNotIn("Post-Trade Learning", content)
+        self.assertNotIn("Applied Learning Center Analysis", content)
+
+    def test_summary_close_card_still_links_back_to_the_journal_thread(self) -> None:
+        row = self.make_row(outcome="WIN")
+        content = spy_scanner.close_alert_text(
+            row, spy_scanner.stored_close_evaluation(row), "https://discord.com/channels/1/2", summary_only=True
+        )
+        self.assertIn("Open completed trade journal", content)
+
+    def test_full_close_card_still_has_everything_for_the_journal_thread(self) -> None:
+        row = self.make_row(outcome="LOSS")
+        content = spy_scanner.close_alert_text(row, spy_scanner.stored_close_evaluation(row))
+        self.assertIn("Post-Trade Learning", content)
+        self.assertIn("### Applied Learning Center Analysis", content)
+
     def test_partial_journal_is_rejected(self) -> None:
         # REQUIRED_ENTRY_MARKERS was trimmed to match the now-simplified
         # single card (Position/Entry Plan/Risk only, per the owner's "1
