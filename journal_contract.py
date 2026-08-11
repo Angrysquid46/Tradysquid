@@ -182,17 +182,17 @@ def _embed_text_size(card: dict[str, Any]) -> int:
     return total
 
 
-def complete_discord_card(content: str) -> dict[str, Any]:
+def complete_discord_card(content: str, *, footer_suffix: str = "") -> dict[str, Any]:
     """Convert journal markdown without silently losing long evidence sections."""
     is_journal = (
         "### Journal Evidence Status" in content
         or "### Post-Trade Learning" in content
     )
     if not is_journal:
-        return _ORIGINAL_DISCORD_CARD(content)
+        return _ORIGINAL_DISCORD_CARD(content, footer_suffix=footer_suffix)
 
     prepared = _expand_long_sections(content)
-    card = _ORIGINAL_DISCORD_CARD(prepared)
+    card = _ORIGINAL_DISCORD_CARD(prepared, footer_suffix=footer_suffix)
     fields = list(card.get("fields") or [])
     if len(fields) > DISCORD_FIELD_COUNT_LIMIT:
         raise RuntimeError(
