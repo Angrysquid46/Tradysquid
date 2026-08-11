@@ -413,7 +413,22 @@ def static_audit() -> list[dict[str, str]]:
         result(9, "Learning Results dashboard", "Evidence Dashboard" in learning_text and "Suggested next reviews" in learning_text, "aggregate evidence dashboard renderer installed"),
         result(10, "No play-type trade-history spam", "trade_id" not in style_text and "Individual completed trades remain only in Trade Journal" in style_text, "play-type output is aggregate-only"),
         result(11, "Play-type evidence and improvements", "Evidence limit" in style_text and "Suggested improvement review" in style_text, "evidence limits, MFE/MAE and tradeoffs installed"),
-        result(12, "Expanded Learning Center and journals", len(supplements) == 27 and journal_contract.JOURNAL_FORMAT_VERSION == "16" and "Applied Decision Checklist" in journal_contract.REQUIRED_ENTRY_MARKERS, f"{len(supplements)}/27 supplements; journal format {journal_contract.JOURNAL_FORMAT_VERSION}"),
+        # "Applied Decision Checklist" is NOT required in REQUIRED_ENTRY_MARKERS:
+        # create_trade_thread/refresh_trade_thread post the "1 card" trim
+        # (summary_only=True), which never reaches trade_learning_analysis, so an
+        # open trade's actual journal thread can never contain that section -
+        # requiring it there made journal-contract verification fail permanently
+        # and errored the live options scanner every cycle. Checking the
+        # extension actually installed (trade_learning_analysis overridden)
+        # instead still proves item 12 is live, without re-encoding the fixed bug.
+        result(
+            12,
+            "Expanded Learning Center and journals",
+            len(supplements) == 27
+            and journal_contract.JOURNAL_FORMAT_VERSION == "16"
+            and spy_scanner.trade_learning_analysis is not upgrade_batch_44._ORIGINAL_TRADE_LEARNING_ANALYSIS,
+            f"{len(supplements)}/27 supplements; journal format {journal_contract.JOURNAL_FORMAT_VERSION}",
+        ),
         result(13, "Historical upgrade migration", "upgrade-request-migration" in jobs and jobs["upgrade-request-migration"].callback is reliable_upgrade_migration_job, "paginated copy-then-delete migration installed"),
     ]
 
