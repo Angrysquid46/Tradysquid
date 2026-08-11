@@ -59,6 +59,21 @@ if breakoutUp or breakoutDown
 plot(rangeEstablished ? rangeHigh : na, "Opening range high", color = color.new(color.green, 0), style = plot.style_stepline)
 plot(rangeEstablished ? rangeLow : na, "Opening range low", color = color.new(color.red, 0), style = plot.style_stepline)
 
+// Visual entry markers - the one shared signal SPY_0DTE_1M and every
+// ratchet variant actually enter on, so this arrow is exactly what
+// triggered a live entry, not a decorative approximation. There is no
+// matching exit marker here on purpose: each of the 11 variants has its
+// own different exit, computed off the OPTION's premium (entry price to
+// mark), which this underlying SPY chart has no visibility into - a
+// painted exit here would be a guess dressed up as a signal. The real,
+// accurate exit view is Discord: #held-positions while open, #wins/
+// #losses/#scratches/#expired and each variant's own -results channel
+// once closed.
+plotshape(breakoutUp, title = "Entry: breakout up", location = location.belowbar,
+  style = shape.triangleup, size = size.small, color = color.new(color.lime, 0))
+plotshape(breakoutDown, title = "Entry: breakout down", location = location.abovebar,
+  style = shape.triangledown, size = size.small, color = color.new(color.red, 0))
+
 sessionId = str.tostring(year) + str.format("{0,number,00}", month) + str.format("{0,number,00}", dayofmonth)
 
 if breakoutUp
