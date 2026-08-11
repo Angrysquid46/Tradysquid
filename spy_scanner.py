@@ -149,14 +149,22 @@ SPY_0DTE_OPENING_RANGE_MINUTES = int(os.environ.get(
 # SPY_0DTE_1M is the variant this system's TradingView webhook was actually
 # built for: its own Pine indicator (the one behind the 66.8% backtest) is
 # the live entry trigger, not the Python opening-range breakout below - that
-# math stays in place only for SPY_0DTE_5M. A fresh TradingView alert for
-# SPY older than this many seconds no longer counts as a live signal, so a
-# position doesn't reopen off a stale alert well after the fact.
+# math stays in place only for SPY_0DTE_5M. The 10 ratchet-floor variants
+# share this exact same live TradingView alert too, per owner direction -
+# they're the same entry as 1M, only their exit (the ratchet floor/stop)
+# differs, so there's no reason for them to run a separate, less accurate
+# Python approximation of the same entry when the real signal is available.
+# A fresh TradingView alert for SPY older than this many seconds no longer
+# counts as a live signal, so a position doesn't reopen off a stale alert
+# well after the fact.
 SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS = int(os.environ.get(
     "SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS",
     configured("spy_0dte_1m_tradingview_max_age_seconds", 180),
 ))
-SPY_0DTE_1M_CONSUMED_EVENT_PATH = STATE_DIR / "spy-0dte-1m-tradingview-consumed.json"
+# Keyed by play_type, not a single value - the same TradingView alert has
+# to be able to independently open SPY_0DTE_1M and every enabled ratchet
+# variant without one variant consuming it and starving the other ten.
+SPY_TRADINGVIEW_CONSUMED_EVENT_PATH = STATE_DIR / "spy-tradingview-consumed.json"
 SPY_0DTE_DELTA_MIN = float(os.environ.get(
     "SPY_0DTE_DELTA_MIN", configured("spy_0dte_delta_min", 0.40)
 ))
@@ -1767,34 +1775,50 @@ def spy_0dte_tradingview_direction(event: dict[str, Any]) -> str | None:
     return None
 
 
-def _spy_0dte_1m_already_consumed(event_id: int) -> bool:
+def _tradingview_event_already_consumed(play_type: str, event_id: int) -> bool:
     try:
-        stored = json.loads(SPY_0DTE_1M_CONSUMED_EVENT_PATH.read_text(encoding="utf-8"))
-        return int(stored.get("event_id", -1)) == event_id
+        stored = json.loads(SPY_TRADINGVIEW_CONSUMED_EVENT_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return False
+    if not isinstance(stored, dict):
+        return False
+    return int((stored.get(play_type) or {}).get("event_id", -1)) == event_id
 
 
-def _spy_0dte_1m_mark_consumed(event_id: int) -> None:
+def _tradingview_event_mark_consumed(play_type: str, event_id: int) -> None:
     try:
-        SPY_0DTE_1M_CONSUMED_EVENT_PATH.write_text(
-            json.dumps({"event_id": event_id, "at": datetime.now().astimezone().isoformat(timespec="seconds")}),
-            encoding="utf-8",
-        )
+        stored = json.loads(SPY_TRADINGVIEW_CONSUMED_EVENT_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        stored = {}
+    if not isinstance(stored, dict):
+        stored = {}
+    stored[play_type] = {
+        "event_id": event_id,
+        "at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    try:
+        SPY_TRADINGVIEW_CONSUMED_EVENT_PATH.write_text(json.dumps(stored), encoding="utf-8")
     except OSError:
         pass
 
 
-def spy_0dte_tradingview_signal(symbol: str = SPY_0DTE_TICKER) -> dict[str, Any]:
-    """SPY_0DTE_1M's actual entry signal - this is the strategy the
-    TradingView webhook was built for (the Pine indicator behind the
-    66.8% backtest fires the live alert here), not the Python opening-
-    range breakout used by SPY_0DTE_5M below. A fresh, direction-
-    parseable TradingView alert for `symbol` is the only thing that
-    qualifies an entry; no alert means no trade, regardless of what any
-    other price math says. Each alert can only qualify one entry (tracked
-    by event id in SPY_0DTE_1M_CONSUMED_EVENT_PATH) so a position that
-    opens and closes quickly can't reopen off the same stale alert."""
+def spy_0dte_tradingview_signal(
+    symbol: str = SPY_0DTE_TICKER, *, play_type: str = "SPY_0DTE_1M"
+) -> dict[str, Any]:
+    """Live TradingView-alert entry signal - this is the strategy the
+    TradingView webhook was actually built for (the Pine indicator behind
+    the 66.8% backtest fires the live alert here), not the Python opening-
+    range breakout used by SPY_0DTE_5M below. Shared by SPY_0DTE_1M and
+    every SPY_RATCHET_* variant, per owner direction: they're the same
+    entry, only their exit (ratchet floor/stop vs. 1M's own exit) differs.
+    A fresh, direction-parseable TradingView alert for `symbol` is the
+    only thing that qualifies an entry; no alert means no trade, regardless
+    of what any other price math says. Consumption is tracked per
+    play_type (not globally), so the SAME alert can independently open
+    SPY_0DTE_1M and every enabled ratchet variant without one consuming it
+    and starving the others - each play_type can still only consume a
+    given alert once, so a position that opens and closes quickly can't
+    reopen off the same stale alert."""
     try:
         event = dynamic_universe.recent_tradingview_signal(
             symbol, SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS
@@ -1809,11 +1833,11 @@ def spy_0dte_tradingview_signal(symbol: str = SPY_0DTE_TICKER) -> dict[str, Any]
             f"{SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS}s",
             "failures": ["no fresh TradingView alert"],
         }
-    if _spy_0dte_1m_already_consumed(int(event["id"])):
+    if _tradingview_event_already_consumed(play_type, int(event["id"])):
         return {
             "qualified": False,
             "regime": "NO TRADE",
-            "reason": "the latest TradingView alert already opened a trade",
+            "reason": "the latest TradingView alert already opened a trade for this variant",
             "failures": ["TradingView alert already consumed"],
         }
     direction = spy_0dte_tradingview_direction(event)
@@ -1824,7 +1848,7 @@ def spy_0dte_tradingview_signal(symbol: str = SPY_0DTE_TICKER) -> dict[str, Any]
             "reason": f"TradingView alert received but direction was not recognized: {event.get('event_type')!r}",
             "failures": ["TradingView alert direction unrecognized"],
         }
-    _spy_0dte_1m_mark_consumed(int(event["id"]))
+    _tradingview_event_mark_consumed(play_type, int(event["id"]))
     regime = "BULLISH / CONTROLLED" if direction == "BULLISH" else "BEARISH / CONTROLLED"
     return {
         "qualified": True,
@@ -6551,7 +6575,7 @@ def _run_spy_0dte_variant(
     cap, and exit rules."""
     try:
         if play_type == "SPY_0DTE_1M":
-            context = spy_0dte_tradingview_signal(TICKER)
+            context = spy_0dte_tradingview_signal(TICKER, play_type=play_type)
         else:
             context = spy_0dte_opening_range_signal(intraday_history, bar_minutes=bar_minutes)
     except Exception as exc:
@@ -6585,7 +6609,6 @@ def _run_spy_0dte_variant(
 
 def _run_spy_ratchet_variants(
     *,
-    context: dict[str, Any],
     today_str: str,
     spot_price: float,
     candidates: list[dict[str, Any]],
@@ -6593,43 +6616,21 @@ def _run_spy_ratchet_variants(
     add_candidates,
     enabled: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Run all 10 ratchet-floor variants off ONE shared entry-signal read
-    (`context`, already computed by the caller via
-    spy_0dte_opening_range_signal on 1-minute bars) - every variant shares
-    the identical entry condition, so it's read once, not 10 times. Each
-    variant still gets its own play_type-tagged candidates, its own
-    independent trade_types_enabled gate, and its own market-context entry
-    in the return dict - fully independent trades, just not a fully
-    independent entry-signal computation. Uses scan_spy_0dte_candidates
-    as-is (already generic over play_type, same delta band/risk cap as
-    SPY_0DTE - only the exit shape is new for these variants)."""
+    """Run all 10 ratchet-floor variants off the same live TradingView
+    alert SPY_0DTE_1M uses (spy_0dte_tradingview_signal) - per owner
+    direction, they're the same entry as 1M, only their exit
+    (spy_ratchet_exit_signal's floor/stop) differs, so there's no reason
+    to keep running a separate, less accurate Python approximation of the
+    same entry once the real signal is wired up and working. Consumption
+    is tracked per play_type, so the one alert can independently open 1M
+    and every enabled ratchet variant without any of them starving the
+    others. Each variant still gets its own chain fetch, its own
+    play_type-tagged candidates, and its own independent
+    trade_types_enabled gate - fully independent trades sharing one entry
+    source. Uses scan_spy_0dte_candidates as-is (already generic over
+    play_type, same delta band/risk cap as SPY_0DTE - only the exit shape
+    is new for these variants)."""
     results: dict[str, dict[str, Any]] = {}
-    if not context.get("qualified"):
-        for variant in SPY_RATCHET_VARIANTS:
-            results[variant["play_type"]] = context
-        return results
-
-    regime = context.get("regime")
-    if regime not in ("BULLISH / CONTROLLED", "BEARISH / CONTROLLED"):
-        for variant in SPY_RATCHET_VARIANTS:
-            results[variant["play_type"]] = context
-        return results
-
-    try:
-        allowed_strikes = set(filter_strikes(get_strikes(TICKER, today_str), spot_price))
-        raw_chain = get_chain(TICKER, today_str)
-        chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
-        for option in chain:
-            if option.get("symbol"):
-                quote_map[option["symbol"]] = option
-        kind = "call" if regime == "BULLISH / CONTROLLED" else "put"
-        pool = [option for option in chain if option.get("option_type") == kind]
-    except Exception as exc:
-        unavailable = _unavailable_context(f"spy ratchet variants chain fetch failed: {exc}")
-        for variant in SPY_RATCHET_VARIANTS:
-            results[variant["play_type"]] = unavailable
-        return results
-
     for variant in SPY_RATCHET_VARIANTS:
         play_type = variant["play_type"]
         config_key = play_type.lower()
@@ -6637,13 +6638,27 @@ def _run_spy_ratchet_variants(
             results[play_type] = _unavailable_context(f"{play_type} disabled in trade_types_enabled")
             continue
         try:
+            context = spy_0dte_tradingview_signal(TICKER, play_type=play_type)
+        except Exception as exc:
+            context = _unavailable_context(f"spy ratchet ({play_type}) signal errored: {exc}")
+        results[play_type] = context
+        if not context.get("qualified"):
+            continue
+        try:
+            allowed_strikes = set(filter_strikes(get_strikes(TICKER, today_str), spot_price))
+            raw_chain = get_chain(TICKER, today_str)
+            chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
+            for option in chain:
+                if option.get("symbol"):
+                    quote_map[option["symbol"]] = option
+            kind = "call" if context["regime"] == "BULLISH / CONTROLLED" else "put"
+            pool = [option for option in chain if option.get("option_type") == kind]
             add_candidates(
                 f"{play_type} {kind}s",
                 scan_spy_0dte_candidates(pool, kind, today_str, spot_price, context, play_type=play_type),
             )
         except Exception as exc:
             print(f"SPY ratchet ({play_type}) scan step failed: {exc}", file=sys.stderr)
-        results[play_type] = context
     return results
 
 
@@ -6906,19 +6921,13 @@ def scan_candidates(
             stats["spy_0dte_market_context"] = {"SPY_0DTE_5M": unavailable, "SPY_0DTE_1M": unavailable}
 
         # SPY Ratchet-floor variants: 10 more independently-tracked
-        # strategies, all sharing the SPY_0DTE_5M-style 1-minute opening-
-        # range entry signal (the exact signal the backtest that picked
-        # these 10 combos actually tested) - computed ONCE here since every
-        # variant shares the identical entry condition; only the exit shape
-        # (spy_ratchet_exit_signal) differs per variant. See
+        # strategies, sharing the SAME live TradingView alert SPY_0DTE_1M
+        # uses (spy_0dte_tradingview_signal) - per owner direction, they're
+        # the same entry as 1M, only their exit shape
+        # (spy_ratchet_exit_signal) differs. See
         # SPY_RATCHET_VARIANTS/_run_spy_ratchet_variants.
         if today_str in expirations:
-            try:
-                ratchet_context = spy_0dte_opening_range_signal(intraday_1m, bar_minutes=1)
-            except Exception as exc:
-                ratchet_context = _unavailable_context(f"spy ratchet signal errored: {exc}")
             stats["spy_ratchet_market_context"] = _run_spy_ratchet_variants(
-                context=ratchet_context,
                 today_str=today_str,
                 spot_price=spot_price,
                 candidates=candidates,

@@ -1,0 +1,95 @@
+// This file is a reference copy - TradingView reads it from the Pine
+// Editor, not from this repo. Paste this into a new Pine script on
+// TradingView, add it to a 1-minute SPY chart, then create an Alert on it
+// (see the setup notes at the bottom).
+//
+// Mirrors spy_0dte_opening_range_signal() in spy_scanner.py exactly, so
+// the live TradingView alert and the Python backtest that validated the
+// 10 ratchet-floor exit variants are reading the same entry condition,
+// not two independently-drifting approximations of "opening range
+// breakout." Owner direction: SPY_0DTE_1M and every SPY_RATCHET_* variant
+// share this one live signal; only their exits differ.
+//
+// Signal, translated 1:1 from the Python:
+//   - Build a high/low range from the first `openingRangeMinutes` minutes
+//     of the regular session (30 by default, matching
+//     SPY_0DTE_OPENING_RANGE_MINUTES).
+//   - Once that range is established, watch every bar AFTER it for the
+//     first CLOSE that trades outside the range (not just a wick through
+//     it - a genuine close beyond it, same as `price > range_high or
+//     price < range_low` in Python).
+//   - Fire once, and only once, per session. No re-firing on later bars
+//     even if price keeps trending the same direction.
+
+//@version=5
+indicator("Tradysquid SPY 0DTE Opening Range Breakout", overlay = true)
+
+openingRangeMinutes = input.int(30, "Opening range minutes", minval = 1)
+sessionInput = input.session("0930-1600", "Regular session (exchange time)")
+
+inSession = not na(time(timeframe.period, sessionInput, "America/New_York"))
+newSession = inSession and not inSession[1]
+
+var float rangeHigh = na
+var float rangeLow = na
+var int rangeBarsSeen = 0
+var bool rangeEstablished = false
+var bool breakoutFired = false
+
+if newSession
+    rangeHigh := na
+    rangeLow := na
+    rangeBarsSeen := 0
+    rangeEstablished := false
+    breakoutFired := false
+
+if inSession and not rangeEstablished
+    rangeHigh := na(rangeHigh) ? high : math.max(rangeHigh, high)
+    rangeLow := na(rangeLow) ? low : math.min(rangeLow, low)
+    rangeBarsSeen := rangeBarsSeen + 1
+    if rangeBarsSeen >= openingRangeMinutes
+        rangeEstablished := true
+
+breakoutUp = inSession and rangeEstablished and not breakoutFired and close > rangeHigh
+breakoutDown = inSession and rangeEstablished and not breakoutFired and close < rangeLow
+
+if breakoutUp or breakoutDown
+    breakoutFired := true
+
+plot(rangeEstablished ? rangeHigh : na, "Opening range high", color = color.new(color.green, 0), style = plot.style_stepline)
+plot(rangeEstablished ? rangeLow : na, "Opening range low", color = color.new(color.red, 0), style = plot.style_stepline)
+
+sessionId = str.tostring(year) + str.format("{0,number,00}", month) + str.format("{0,number,00}", dayofmonth)
+
+if breakoutUp
+    alertMessage = '{"ticker":"SPY","event":"breakout_bullish","action":"buy","reason":"First close above the ' +
+      str.tostring(openingRangeMinutes) + '-minute opening range high","id":"SPY-bull-' + sessionId +
+      '","price":"' + str.tostring(close) + '"}'
+    alert(alertMessage, alert.freq_once_per_bar_close)
+
+if breakoutDown
+    alertMessage = '{"ticker":"SPY","event":"breakout_bearish","action":"sell","reason":"First close below the ' +
+      str.tostring(openingRangeMinutes) + '-minute opening range low","id":"SPY-bear-' + sessionId +
+      '","price":"' + str.tostring(close) + '"}'
+    alert(alertMessage, alert.freq_once_per_bar_close)
+
+// ---------------------------------------------------------------------
+// Setup (one-time, on TradingView):
+//   1. Chart: SPY, 1-minute timeframe (this must match bar_minutes=1 on
+//      the Python side - a different timeframe will not line up with
+//      SPY_0DTE_1M/the ratchet variants' entry).
+//   2. Pine Editor: paste this script, "Add to chart".
+//   3. Alert (the clock/bell icon, not "Add alert on indicator" from the
+//      chart menu - use the full Create Alert dialog):
+//        Condition: "Tradysquid SPY 0DTE Opening Range Breakout" ->
+//                   "Any alert() function call"
+//        Trigger: Once Per Bar Close
+//        Expiration: open-ended (or renew periodically)
+//        Webhook URL: https://plausible-unaligned-craziness.ngrok-free.dev/tradingview?secret=<TRADINGVIEW_WEBHOOK_SECRET from .env>
+//      (Notifications tab -> Webhook URL toggle on, paste the URL above
+//      with your actual secret appended - never paste the secret itself
+//      anywhere outside this one field.)
+//   4. This ngrok URL only stays valid while the ngrok tunnel keeps
+//      running under the reserved NGROK_DOMAIN - if that ever changes,
+//      the webhook URL here needs updating to match.
+// ---------------------------------------------------------------------
