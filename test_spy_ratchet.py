@@ -262,18 +262,21 @@ def test_trade_types_enabled_actually_reads_the_config_flag_per_variant():
 
 
 def test_run_spy_ratchet_variants_gates_each_variant_independently():
+    # Ratchet variants now share SPY_0DTE_1M's live TradingView alert
+    # instead of computing their own Python opening-range signal, per
+    # owner direction - so this stubs spy_0dte_tradingview_signal directly.
     added_labels = []
 
     def add_candidates(label, found):
         added_labels.append(label)
 
-    context = {"qualified": True, "regime": "BULLISH / CONTROLLED", "reason": "test"}
     enabled = {variant["play_type"].lower(): False for variant in spy_scanner.SPY_RATCHET_VARIANTS}
     enabled[spy_scanner.SPY_RATCHET_VARIANTS[0]["play_type"].lower()] = True
 
     original_get_strikes = spy_scanner.get_strikes
     original_filter_strikes = spy_scanner.filter_strikes
     original_get_chain = spy_scanner.get_chain
+    original_tradingview_signal = spy_scanner.spy_0dte_tradingview_signal
     spy_scanner.get_strikes = lambda ticker, exp: [600.0]
     spy_scanner.filter_strikes = lambda strikes, spot: strikes
     spy_scanner.get_chain = lambda ticker, exp: [
@@ -281,15 +284,19 @@ def test_run_spy_ratchet_variants_gates_each_variant_independently():
          "bid": 1.95, "ask": 2.00, "open_interest": 500, "volume": 200,
          "greeks": {"delta": 0.50, "theta": -0.3}}
     ]
+    spy_scanner.spy_0dte_tradingview_signal = lambda symbol, *, play_type: {
+        "qualified": True, "regime": "BULLISH / CONTROLLED", "reason": "test",
+    }
     try:
         spy_scanner._run_spy_ratchet_variants(
-            context=context, today_str="2026-08-10", spot_price=600.0,
+            today_str="2026-08-10", spot_price=600.0,
             candidates=[], quote_map={}, add_candidates=add_candidates, enabled=enabled,
         )
     finally:
         spy_scanner.get_strikes = original_get_strikes
         spy_scanner.filter_strikes = original_filter_strikes
         spy_scanner.get_chain = original_get_chain
+        spy_scanner.spy_0dte_tradingview_signal = original_tradingview_signal
 
     assert len(added_labels) == 1
     assert spy_scanner.SPY_RATCHET_VARIANTS[0]["play_type"] in added_labels[0]

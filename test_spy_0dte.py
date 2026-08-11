@@ -421,8 +421,8 @@ def test_tradingview_signal_qualifies_bullish_on_a_fresh_buy_alert():
     event = _tradingview_event("buy", event_id=101)
     with (
         mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
-        mock.patch.object(spy_scanner, "_spy_0dte_1m_already_consumed", return_value=False),
-        mock.patch.object(spy_scanner, "_spy_0dte_1m_mark_consumed"),
+        mock.patch.object(spy_scanner, "_tradingview_event_already_consumed", return_value=False),
+        mock.patch.object(spy_scanner, "_tradingview_event_mark_consumed"),
     ):
         context = spy_scanner.spy_0dte_tradingview_signal("SPY")
     assert context["qualified"] is True
@@ -434,8 +434,8 @@ def test_tradingview_signal_qualifies_bearish_on_a_fresh_sell_alert():
     event = _tradingview_event("sell", event_id=102)
     with (
         mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
-        mock.patch.object(spy_scanner, "_spy_0dte_1m_already_consumed", return_value=False),
-        mock.patch.object(spy_scanner, "_spy_0dte_1m_mark_consumed"),
+        mock.patch.object(spy_scanner, "_tradingview_event_already_consumed", return_value=False),
+        mock.patch.object(spy_scanner, "_tradingview_event_mark_consumed"),
     ):
         context = spy_scanner.spy_0dte_tradingview_signal("SPY")
     assert context["qualified"] is True
@@ -446,7 +446,7 @@ def test_tradingview_signal_does_not_qualify_on_unrecognized_direction():
     event = _tradingview_event("breakout", event_id=103)
     with (
         mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
-        mock.patch.object(spy_scanner, "_spy_0dte_1m_already_consumed", return_value=False),
+        mock.patch.object(spy_scanner, "_tradingview_event_already_consumed", return_value=False),
     ):
         context = spy_scanner.spy_0dte_tradingview_signal("SPY")
     assert context["qualified"] is False
@@ -460,11 +460,35 @@ def test_tradingview_signal_does_not_reopen_off_an_already_consumed_alert():
     event = _tradingview_event("buy", event_id=104)
     with (
         mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
-        mock.patch.object(spy_scanner, "_spy_0dte_1m_already_consumed", return_value=True),
+        mock.patch.object(spy_scanner, "_tradingview_event_already_consumed", return_value=True),
     ):
         context = spy_scanner.spy_0dte_tradingview_signal("SPY")
     assert context["qualified"] is False
     assert "already opened a trade" in context["reason"]
+
+
+def test_tradingview_signal_consumption_is_tracked_per_play_type():
+    # Owner ask: the same live alert must be able to independently open
+    # SPY_0DTE_1M and every enabled ratchet variant - one variant
+    # consuming it must not starve the others.
+    import tempfile
+    from pathlib import Path
+
+    event = _tradingview_event("buy", event_id=105)
+    with tempfile.TemporaryDirectory() as tmp:
+        with (
+            mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
+            mock.patch.object(
+                spy_scanner, "SPY_TRADINGVIEW_CONSUMED_EVENT_PATH", Path(tmp) / "consumed.json"
+            ),
+        ):
+            first = spy_scanner.spy_0dte_tradingview_signal("SPY", play_type="SPY_0DTE_1M")
+            second = spy_scanner.spy_0dte_tradingview_signal("SPY", play_type="SPY_RATCHET_26_16")
+            repeat_for_1m = spy_scanner.spy_0dte_tradingview_signal("SPY", play_type="SPY_0DTE_1M")
+    assert first["qualified"] is True
+    assert second["qualified"] is True
+    assert repeat_for_1m["qualified"] is False
+    assert "already opened a trade" in repeat_for_1m["reason"]
 
 
 def test_tradingview_signal_lookup_failure_reports_unavailable_not_a_crash():
@@ -478,15 +502,17 @@ def test_consumed_event_tracking_round_trips_through_the_state_file():
     import tempfile
     from pathlib import Path
     with tempfile.TemporaryDirectory() as tmp:
-        original = spy_scanner.SPY_0DTE_1M_CONSUMED_EVENT_PATH
-        spy_scanner.SPY_0DTE_1M_CONSUMED_EVENT_PATH = Path(tmp) / "consumed.json"
+        original = spy_scanner.SPY_TRADINGVIEW_CONSUMED_EVENT_PATH
+        spy_scanner.SPY_TRADINGVIEW_CONSUMED_EVENT_PATH = Path(tmp) / "consumed.json"
         try:
-            assert spy_scanner._spy_0dte_1m_already_consumed(55) is False
-            spy_scanner._spy_0dte_1m_mark_consumed(55)
-            assert spy_scanner._spy_0dte_1m_already_consumed(55) is True
-            assert spy_scanner._spy_0dte_1m_already_consumed(56) is False
+            assert spy_scanner._tradingview_event_already_consumed("SPY_0DTE_1M", 55) is False
+            spy_scanner._tradingview_event_mark_consumed("SPY_0DTE_1M", 55)
+            assert spy_scanner._tradingview_event_already_consumed("SPY_0DTE_1M", 55) is True
+            assert spy_scanner._tradingview_event_already_consumed("SPY_0DTE_1M", 56) is False
+            # A different play_type must not see the first one's consumption.
+            assert spy_scanner._tradingview_event_already_consumed("SPY_RATCHET_26_16", 55) is False
         finally:
-            spy_scanner.SPY_0DTE_1M_CONSUMED_EVENT_PATH = original
+            spy_scanner.SPY_TRADINGVIEW_CONSUMED_EVENT_PATH = original
 
 
 def test_run_spy_0dte_variant_1m_uses_the_tradingview_signal_not_the_breakout():
