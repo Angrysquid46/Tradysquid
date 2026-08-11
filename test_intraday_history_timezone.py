@@ -17,6 +17,11 @@ from unittest import mock
 
 import spy_scanner
 
+# Captured at import time, before any test (e.g. test_runtime_contract.py's
+# install_safe_intraday_history) can permanently monkey-patch
+# spy_scanner.get_intraday_history for the rest of the process.
+_ORIGINAL_GET_INTRADAY_HISTORY = spy_scanner.get_intraday_history
+
 
 def test_et_window_str_shifts_ct_wall_clock_forward_one_hour_to_et():
     day = date(2026, 8, 11)
@@ -27,7 +32,7 @@ def test_et_window_str_shifts_ct_wall_clock_forward_one_hour_to_et():
 def test_get_intraday_history_requests_the_et_equivalent_of_the_ct_session():
     with mock.patch.object(spy_scanner, "now_ct", return_value=mock.Mock(date=lambda: date(2026, 8, 11))), \
          mock.patch.object(spy_scanner, "tradier_get", return_value={}) as fake_get:
-        spy_scanner.get_intraday_history("SPY", interval="1min")
+        _ORIGINAL_GET_INTRADAY_HISTORY("SPY", interval="1min")
 
     _, params = fake_get.call_args[0]
     assert params["start"] == "2026-08-11 09:30"

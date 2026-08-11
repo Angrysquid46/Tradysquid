@@ -38,25 +38,28 @@ class RuntimeContractTests(unittest.TestCase):
         )
 
     def test_weekend_intraday_window_uses_last_completed_weekday(self) -> None:
+        # Window bounds are computed in CT (previous-weekday fallback logic
+        # unchanged) but the string sent to Tradier must be ET-shifted - see
+        # the ET/CT mismatch fix in install_safe_intraday_history.
         runtime_contract.install_safe_intraday_history(spy_scanner)
         moment = datetime(2026, 8, 2, 7, 25, tzinfo=spy_scanner.MARKET_TZ)
         start, end = spy_scanner.intraday_session_window(moment)
-        self.assertEqual(start, "2026-07-31 08:30")
-        self.assertEqual(end, "2026-07-31 15:00")
+        self.assertEqual(start, "2026-07-31 09:30")
+        self.assertEqual(end, "2026-07-31 16:00")
 
     def test_premarket_intraday_window_never_uses_future_open(self) -> None:
         runtime_contract.install_safe_intraday_history(spy_scanner)
         moment = datetime(2026, 8, 3, 7, 0, tzinfo=spy_scanner.MARKET_TZ)
         start, end = spy_scanner.intraday_session_window(moment)
-        self.assertEqual(start, "2026-07-31 08:30")
-        self.assertEqual(end, "2026-07-31 15:00")
+        self.assertEqual(start, "2026-07-31 09:30")
+        self.assertEqual(end, "2026-07-31 16:00")
 
     def test_live_intraday_window_ends_one_minute_before_now(self) -> None:
         runtime_contract.install_safe_intraday_history(spy_scanner)
         moment = datetime(2026, 8, 3, 10, 0, tzinfo=spy_scanner.MARKET_TZ)
         start, end = spy_scanner.intraday_session_window(moment)
-        self.assertEqual(start, "2026-08-03 08:30")
-        self.assertEqual(end, "2026-08-03 09:59")
+        self.assertEqual(start, "2026-08-03 09:30")
+        self.assertEqual(end, "2026-08-03 10:59")
 
     def test_network_and_log_symptoms_never_create_code_repairs(self) -> None:
         fake_diagnostics = SimpleNamespace(
