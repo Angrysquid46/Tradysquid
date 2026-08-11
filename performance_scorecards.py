@@ -424,7 +424,10 @@ def install() -> None:
         return
     base.install()
     base.REPORT_VERSION = REPORT_VERSION
-    for logical_name in ("results_1m", "results_5m", "results_key_levels", "results_expansion"):
+    results_logical_names = ("results_1m", "results_5m", "results_key_levels", "results_expansion") + tuple(
+        results_logical for _, _, results_logical, _ in base.RATCHET_VARIANTS
+    )
+    for logical_name in results_logical_names:
         base.REPORT_MARKERS[logical_name] = tuple(
             dict.fromkeys((*base.REPORT_MARKERS[logical_name], "Strategy Scorecard ·"))
         )
