@@ -1016,7 +1016,7 @@ def full_scanner_job(connection: sqlite3.Connection) -> str:
     if not spy_scanner.DISCORD_BOT_TOKEN:
         return "waiting for local DISCORD_BOT_TOKEN"
     with POSITION_FILE_LOCK:
-        exit_code = spy_scanner.main()
+        exit_code = spy_scanner.main(position_lock=POSITION_FILE_LOCK)
     store_observation(
         connection,
         "full-scan",
@@ -1034,7 +1034,7 @@ def manual_options_scan_job(connection: sqlite3.Connection) -> str:
     if not spy_scanner.DISCORD_BOT_TOKEN:
         return "waiting for local DISCORD_BOT_TOKEN"
     with POSITION_FILE_LOCK:
-        exit_code = spy_scanner.main()
+        exit_code = spy_scanner.main(position_lock=POSITION_FILE_LOCK)
     store_observation(
         connection,
         "manual-full-scan",

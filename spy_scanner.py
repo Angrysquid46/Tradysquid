@@ -7016,6 +7016,30 @@ def scan_candidates(
     stats["qualified_candidates"] = len(candidates)
     return candidates, quote_map, stats
 
+
+def _scan_candidates_lock_released(
+    spot_price: float, position_lock: Any
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
+    """Runs scan_candidates() with position_lock released, if one was
+    passed in - scan_candidates() only reads market data and returns
+    in-memory candidates, it never calls read_log/write_log or otherwise
+    touches shared row state, so it's safe to run without holding the
+    lock. The caller is responsible for write_log(rows) right before
+    calling this (flushing anything not yet persisted) and read_log()
+    again right after it returns (picking up whatever a concurrent holder -
+    the real-time stream exit path - wrote during the released window);
+    skipping either one turns this into a lost-update race instead of a
+    safe optimization. No-op passthrough when position_lock is None, so
+    every caller that doesn't pass a lock is unaffected."""
+    if position_lock is None:
+        return scan_candidates(spot_price)
+    position_lock.release()
+    try:
+        return scan_candidates(spot_price)
+    finally:
+        position_lock.acquire()
+
+
 def report_error(discord: DiscordTracker | None, message: str) -> None:
     safe_message = message
     for secret in (TRADIER_TOKEN, DISCORD_BOT_TOKEN, DISCORD_WEBHOOK_URL):
@@ -7026,7 +7050,15 @@ def report_error(discord: DiscordTracker | None, message: str) -> None:
         safe_discord_call("error alert", lambda: discord.send_channel("errors", content=f"🚨 **{TICKER} scanner error**\n```{safe_message[:1500]}```"))
 
 
-def main(*, publish_shared: bool = True) -> int:
+def main(*, publish_shared: bool = True, position_lock: Any = None) -> int:
+    """position_lock, when passed, is released around scan_candidates() (via
+    _scan_candidates_lock_released) - the ~10+ sequential chain-fetch,
+    no-CSV-touching part of a scan cycle that empirically dominates its
+    ~25s runtime - so the separate-thread real-time stream exit path
+    (which needs the same lock) isn't blocked for the whole cycle, only
+    the repricing/Discord-posting parts that actually touch shared row
+    state. Optional and backward compatible - every other caller (tests, a
+    bare spy_scanner.main()) behaves exactly as before."""
     timestamp = now_ct()
     rows = read_log()
     write_log(rows)  # immediately migrate old CSV headers/IDs safely
@@ -7216,7 +7248,20 @@ def main(*, publish_shared: bool = True) -> int:
                     material_updates += 1
 
         # Scan for new candidates and choose the highest-quality unique set.
-        candidates, candidate_quote_map, scan_stats = scan_candidates(spot_price)
+        # scan_candidates() only reads market data and returns in-memory
+        # candidates - it never touches rows/the CSV - so the position lock
+        # (when held) is released for just this call, the slowest part of a
+        # scan cycle, so the real-time stream exit path isn't blocked for
+        # the whole cycle. See main()'s docstring and
+        # _scan_candidates_lock_released()'s for why the flush before and
+        # re-read after are both required, not optional.
+        if position_lock is not None:
+            write_log(rows)
+        candidates, candidate_quote_map, scan_stats = _scan_candidates_lock_released(
+            spot_price, position_lock
+        )
+        if position_lock is not None:
+            rows = read_log()
         eligible = [candidate for candidate in candidates if not recently_tracked(rows, candidate, timestamp)]
         # Time-of-day exclusion: the opening minutes and the midday lull
         # both distort entries for reasons that have nothing to do with
