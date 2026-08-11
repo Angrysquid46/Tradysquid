@@ -1380,7 +1380,7 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
             if evaluation.get("pl_pct") is None:
                 continue
             signal = evaluation.get("signal")
-            if signal in {"STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT"}:
+            if signal in spy_scanner.CLOSING_SIGNALS:
                 spy_scanner.close_row(row, evaluation, timestamp)
                 closed_events.append((row, evaluation))
                 changed = True
@@ -1450,9 +1450,7 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
             )
             if evaluation.get("pl_pct") is None:
                 continue
-            if evaluation.get("signal") in {
-                "STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT"
-            }:
+            if evaluation.get("signal") in spy_scanner.CLOSING_SIGNALS:
                 spy_scanner.close_row(row, evaluation, timestamp)
                 _route_stream_close(row, evaluation)
                 closed += 1

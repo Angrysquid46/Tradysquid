@@ -111,15 +111,14 @@ def test_exit_signal_forces_a_ratchet_specific_close_as_the_session_ends():
     assert signal == "RATCHET EOD CLOSE"
 
 
-def test_ratchet_eod_close_and_floor_stop_are_in_the_scan_loops_close_trigger_set():
-    # main()'s scan loop only calls close_row for a fixed set of signal
-    # strings - a new signal name that isn't in that set would silently
-    # never close a real position. Read the source directly rather than
-    # re-running the full scan loop.
-    import inspect
-    main_source = inspect.getsource(spy_scanner.main)
-    assert '"FLOOR STOP"' in main_source
-    assert '"RATCHET EOD CLOSE"' in main_source
+def test_ratchet_eod_close_and_floor_stop_are_in_the_shared_closing_signals_set():
+    # CLOSING_SIGNALS is the single source of truth every close-triggering
+    # call site (main()'s scan loop, local_information_engine.py's
+    # real-time stream handler, and its REST fallback) checks against - a
+    # new signal name missing from it would show up on the live card but
+    # never actually close the position until the next full scan cycle.
+    assert "FLOOR STOP" in spy_scanner.CLOSING_SIGNALS
+    assert "RATCHET EOD CLOSE" in spy_scanner.CLOSING_SIGNALS
 
 
 def _row(**overrides) -> dict[str, str]:

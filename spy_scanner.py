@@ -422,6 +422,31 @@ TAG_KEYS = {
     "EXPIRED",
 }
 
+# Every signal string any evaluate_open_*_row/exit_signal function can
+# return that means "close this position now" - the single source of truth
+# every close-triggering call site (main()'s scan loop, and
+# local_information_engine.py's real-time stream handler and REST fallback)
+# must check against. This exists because each new strategy family has
+# historically invented its own close-signal string (SPY_KEY_LEVELS'
+# "EXPIRATION CLOSE", SPY_EXPANSION_LEVEL's "EXPANSION EOD CLOSE", the
+# ratchet variants' "FLOOR STOP"/"RATCHET EOD CLOSE") and every call site
+# had its own separately hand-maintained copy of this set - which silently
+# drifted: two of the three call sites never got the newer strings added,
+# so a real close signal would show up on the live card but not actually
+# close the trade until the next full scan cycle, up to ~15 minutes later.
+CLOSING_SIGNALS = {
+    "STOP OUT",
+    "TAKE PROFIT",
+    "BREAKEVEN STOP",
+    "EXPIRY CLOSE",
+    "EXPIRATION CLOSE",
+    "EXPANSION EOD CLOSE",
+    "THESIS INVALIDATED",
+    "TIME DECAY EXIT",
+    "FLOOR STOP",
+    "RATCHET EOD CLOSE",
+}
+
 AUTOMATED_CHANNEL_KEYS = [
     "scanner_feed",
     "premarket",
@@ -7100,7 +7125,7 @@ def main(*, publish_shared: bool = True) -> int:
                 )
                 continue
             signal = evaluation.get("signal")
-            if signal in {"STOP OUT", "TAKE PROFIT", "BREAKEVEN STOP", "EXPIRY CLOSE", "EXPIRATION CLOSE", "EXPANSION EOD CLOSE", "THESIS INVALIDATED", "TIME DECAY EXIT", "FLOOR STOP", "RATCHET EOD CLOSE"}:
+            if signal in CLOSING_SIGNALS:
                 close_row(row, evaluation, timestamp)
                 safe_discord_call("close routing", lambda r=row, e=evaluation: post_close(r, e, discord, report_state))
                 closed_count += 1

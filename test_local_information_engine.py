@@ -1202,6 +1202,60 @@ class InformationEngineTests(unittest.TestCase):
             route_close.assert_called_once()
         spy_scanner.LOG_PATH = original_log
 
+    def test_streamed_quote_closes_a_ratchet_floor_stop_immediately(self) -> None:
+        # Real bug caught while reviewing this: the real-time stream path
+        # and position_tracker_job's REST fallback each had their own
+        # hand-maintained close-trigger set that never got "FLOOR STOP"/
+        # "RATCHET EOD CLOSE" added (nor SPY_KEY_LEVELS'/SPY_EXPANSION's own
+        # strings) - a ratchet position's floor breaking would show the
+        # correct live P/L on the card but not actually close until the
+        # next full scan cycle, up to ~15 minutes later. Fixed by having
+        # both call sites check spy_scanner.CLOSING_SIGNALS instead of
+        # their own incomplete copies - this test locks in the fix.
+        original_log = spy_scanner.LOG_PATH
+        with tempfile.TemporaryDirectory() as temp:
+            spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
+            row = {field: "" for field in spy_scanner.LOG_HEADER}
+            row.update(
+                {
+                    "trade_id": "SPY-RATCHET-STREAM-001",
+                    "ticker": "SPY",
+                    "play_type": "SPY_RATCHET_26_16",
+                    "option_symbol": "SPY260821C00500000",
+                    "expiration": spy_scanner.now_ct().date().isoformat(),
+                    "entry_price": "2.00",
+                    "outcome": "OPEN",
+                    "max_favorable_pct": "27",
+                }
+            )
+            spy_scanner.write_log([row])
+            engine.STREAM_QUOTES.clear()
+            engine.STREAM_LAST_WRITTEN.clear()
+            engine._SPY_SPOT_CACHE = (None, 0.0)
+            with (
+                patch.object(
+                    engine.spy_scanner,
+                    "market_is_open_now",
+                    return_value=(True, spy_scanner.now_ct()),
+                ),
+                patch.object(spy_scanner, "get_quote", return_value={"last": "774.50"}),
+                patch.object(engine, "_route_stream_close") as route_close,
+                patch.object(spy_scanner.trade_intelligence, "record_event"),
+            ):
+                engine._stream_quote_event(
+                    {
+                        "type": "quote",
+                        "symbol": "SPY260821C00500000",
+                        # ~+22%, below the locked 26% floor - should FLOOR STOP.
+                        "bid": 2.42,
+                        "ask": 2.46,
+                    }
+                )
+            closed = spy_scanner.read_log()[0]
+            self.assertEqual(closed["last_signal"], "FLOOR STOP")
+            route_close.assert_called_once()
+        spy_scanner.LOG_PATH = original_log
+
     def test_streamed_quote_pushes_a_live_held_card_on_the_same_tick(self) -> None:
         # Owner ask: held-positions must be genuinely live for a 0DTE desk,
         # not just refreshed every ~90s by position_tracker_job's REST
