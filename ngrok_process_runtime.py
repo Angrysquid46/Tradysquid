@@ -12,6 +12,20 @@ import time
 from typing import Any
 
 _INSTALLED = False
+# This module installs its OWN complete copy of the health-check/restart
+# loop (see install() below, which does supervisor.ensure_services =
+# health_loop) - because of override ordering in run_with_env.py
+# (ngrok_process_runtime.install() runs before run_supervisor_simple.py
+# captures its "original_ensure_services" reference), THIS function - not
+# tradysquid_supervisor.ensure_services - is the one that actually runs
+# live. Confirmed via direct diagnostic logging (2026-08-11): edits to the
+# tradysquid_supervisor.py copy never fired at all. The same
+# single-failed-probe-kills-immediately bug (see tradysquid_supervisor.py's
+# HEALTH_FAILURE_STREAK for the full writeup) lives here too and needs the
+# same debounce fix, or ngrok's own real fix is a no-op for the actual
+# running system.
+HEALTH_FAILURE_STREAK: dict[str, int] = {}
+HEALTH_FAILURE_THRESHOLD = 2
 
 
 def direct_ngrok_command(supervisor: Any) -> list[str]:
@@ -34,16 +48,29 @@ def ensure_services(supervisor: Any) -> None:
         # be launched merely because the tracked handle is absent or exited.
         if service.name == "ngrok" and healthy:
             supervisor.LAST_HEALTH[service.name] = True
+            HEALTH_FAILURE_STREAK[service.name] = 0
             if previous is False:
                 supervisor.discord_post("✅ **ngrok recovered automatically.**")
             continue
 
         if healthy and alive:
             supervisor.LAST_HEALTH[service.name] = True
+            HEALTH_FAILURE_STREAK[service.name] = 0
             continue
 
         if alive and not healthy:
+            # A single failed health probe (a bare few-second TCP/HTTP check)
+            # is not reliable enough to justify killing an otherwise-running
+            # process - require HEALTH_FAILURE_THRESHOLD consecutive
+            # failures before actually restarting. A genuinely dead process
+            # (alive is False) still restarts immediately below.
+            streak = HEALTH_FAILURE_STREAK.get(service.name, 0) + 1
+            HEALTH_FAILURE_STREAK[service.name] = streak
+            if streak < HEALTH_FAILURE_THRESHOLD:
+                continue
             supervisor.stop_process(service.name)
+
+        HEALTH_FAILURE_STREAK[service.name] = 0
         started = supervisor.start_service(service)
         if started:
             deadline = time.monotonic() + (20 if service.name != "ngrok" else 30)
