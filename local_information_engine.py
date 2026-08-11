@@ -71,7 +71,16 @@ STREAM_QUOTE_RECEIVED_AT: dict[str, float] = {}
 # (its own option OR its underlying), a quote older than this many
 # seconds gets actively refetched via REST before evaluating, instead of
 # passively waiting for the option to tick again on its own.
-STREAM_QUOTE_STALE_SECONDS = 2.0
+#
+# Started at 2.0s; caught live still leaving a real gap - a $0.16, high-
+# theta 0DTE put peaked +31% and closed -25% (target was -15%, a 10-point
+# overshoot) even through this fixed path, because the whole swing
+# happened inside one 2-second staleness window. Tightened to 0.5s: this
+# doesn't guarantee zero overshoot (no discrete-interval check can, in a
+# continuously moving market - a violent enough move inside even a
+# sub-second window would still slip through), but it bounds the worst
+# case to a quarter of what it was, not eliminates the concept.
+STREAM_QUOTE_STALE_SECONDS = 0.5
 POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
 # SPY's own spot price for Key-Levels' underlying-level stop/target check
 # (see _stream_quote_event) - cached rather than fetched on every option

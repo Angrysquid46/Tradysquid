@@ -59,6 +59,34 @@ class FakeEngine:
         self.state[f"observation:{kind}"] = payload
 
 
+class MeaningfullyDirtyTests(unittest.TestCase):
+    def test_runtime_mutable_paths_are_filtered_out(self) -> None:
+        # Real noise caught live: this check was flagging docs/index.html
+        # etc. as "dirty" even though they're already explicitly
+        # allowlisted as safe-to-be-dirty in the real deploy logic
+        # (tradysquid_supervisor.runtime_mutable) - alarming on something
+        # that never actually blocks a deploy.
+        raw = "\n".join(
+            [
+                " M docs/index.html",
+                " M docs/spy-market-chart.png",
+                " M docs/spy-market-chart.svg",
+                " M config/scanner.json",
+                " M state/discord-report-state.json",
+            ]
+        )
+        self.assertEqual(diagnostics._meaningfully_dirty(raw), "")
+
+    def test_a_genuine_source_change_still_counts_as_dirty(self) -> None:
+        raw = " M spy_scanner.py\n M docs/index.html"
+        result = diagnostics._meaningfully_dirty(raw)
+        self.assertIn("spy_scanner.py", result)
+        self.assertNotIn("docs/index.html", result)
+
+    def test_empty_status_stays_empty(self) -> None:
+        self.assertEqual(diagnostics._meaningfully_dirty(""), "")
+
+
 class DiagnosticUpgradeSystemTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
