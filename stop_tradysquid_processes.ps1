@@ -46,6 +46,29 @@ while ($currentKeepId -gt 0 -and $keepProcessIds.Add($currentKeepId)) {
     if (-not $currentKeepProcess) { break }
     $currentKeepId = [int]$currentKeepProcess.ParentProcessId
 }
+# Real bug found live (2026-08-11): this only ever walked UP the ancestor
+# chain from KeepProcessId, never down into its own children. Every time
+# the supervisor called this script at its own startup, it protected
+# itself and its parents but had no record of the command-bot/information-
+# engine children it had already spawned (or was about to spawn) - so this
+# script killed its own legitimate, currently-running services as
+# "stale" matches on every single invocation, and ensure_services()
+# immediately respawned them, producing a continuous kill/respawn loop
+# that looked like flaky health checks but was actually self-inflicted.
+# Walk DOWN from KeepProcessId too, so its whole live descendant tree
+# (children, grandchildren, ...) is protected exactly like its ancestors.
+if ($KeepProcessId -gt 0) {
+    $frontier = [System.Collections.Generic.Queue[int]]::new()
+    $frontier.Enqueue($KeepProcessId)
+    while ($frontier.Count -gt 0) {
+        $parentId = $frontier.Dequeue()
+        foreach ($child in ($allProcesses | Where-Object { [int]$_.ParentProcessId -eq $parentId })) {
+            if ($keepProcessIds.Add([int]$child.ProcessId)) {
+                $frontier.Enqueue([int]$child.ProcessId)
+            }
+        }
+    }
+}
 
 $targets = [System.Collections.Generic.HashSet[int]]::new()
 foreach ($process in $allProcesses) {

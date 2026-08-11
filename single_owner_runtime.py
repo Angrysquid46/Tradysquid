@@ -26,6 +26,21 @@ while ($current -gt 0 -and $keep.Add([int]$current)) {{
     if (-not $item) {{ break }}
     $current = [int]$item.ParentProcessId
 }}
+# Same bug found and fixed live in stop_tradysquid_processes.ps1 (2026-08-11):
+# walking only UP the ancestor chain leaves this process's own already- or
+# soon-to-be-spawned children (command-bot/information-engine) unprotected,
+# so this script would kill its own legitimate services as "stale" matches.
+# Walk DOWN from the current PID too, protecting its whole descendant tree.
+$frontier = [System.Collections.Generic.Queue[int]]::new()
+$frontier.Enqueue({current_pid})
+while ($frontier.Count -gt 0) {{
+    $parentId = $frontier.Dequeue()
+    foreach ($child in ($all | Where-Object {{ [int]$_.ParentProcessId -eq $parentId }})) {{
+        if ($keep.Add([int]$child.ProcessId)) {{
+            $frontier.Enqueue([int]$child.ProcessId)
+        }}
+    }}
+}}
 $supervisorPattern = '(?i)(^|[\\/"\s])run_supervisor_simple\.py(["\s]|$)'
 $launcherPattern = '(?i)(^|[\\/"\s])START-SUPERVISOR\.cmd(["\s]|$)'
 $servicePattern = 'discord_command_bot(_public)?\.py|local_information_engine(_public|_bootstrap)?\.py|run_ngrok\.py|ngrok(\.exe)?\s+http\s+8080'
