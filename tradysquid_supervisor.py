@@ -63,6 +63,8 @@ class Service:
 PROCESSES: dict[str, subprocess.Popen[str]] = {}
 LOG_HANDLES: dict[str, object] = {}
 LAST_HEALTH: dict[str, bool] = {}
+HEALTH_FAILURE_STREAK: dict[str, int] = {}
+HEALTH_FAILURE_THRESHOLD = 2
 DISCORD_CHANNEL_CACHE: dict[str, str] = {}
 
 RUNTIME_MUTABLE_FILES = {
@@ -686,10 +688,30 @@ def ensure_services() -> None:
 
         if healthy and alive:
             LAST_HEALTH[service.name] = True
+            HEALTH_FAILURE_STREAK[service.name] = 0
             continue
 
         if alive and not healthy:
+            # A single failed health probe (a bare few-second TCP/HTTP check,
+            # see http_healthy/port_healthy) is not reliable enough on its
+            # own to justify killing an otherwise-running process - a
+            # transient network hiccup or a moment of high load can produce
+            # a false negative, and this was confirmed live: a healthy
+            # information-engine process was observed being killed with no
+            # traceback in its log (a clean external kill, not a crash)
+            # purely off one failed probe. Require the same service to fail
+            # HEALTH_FAILURE_THRESHOLD consecutive checks (each spaced
+            # HEALTH_SECONDS apart) before actually restarting it. A
+            # genuinely dead process (alive is False, handled below this
+            # block) still restarts immediately - this debounce only
+            # protects an ALIVE process from a single flaky probe.
+            streak = HEALTH_FAILURE_STREAK.get(service.name, 0) + 1
+            HEALTH_FAILURE_STREAK[service.name] = streak
+            if streak < HEALTH_FAILURE_THRESHOLD:
+                continue
             stop_process(service.name)
+
+        HEALTH_FAILURE_STREAK[service.name] = 0
         started = start_service(service)
         if started:
             deadline = time.monotonic() + (20 if service.name != "ngrok" else 30)

@@ -312,6 +312,77 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         self.assertIn("/SC MINUTE", task_installer)
         self.assertIn("/MO 5", task_installer)
 
+    def test_ensure_services_does_not_kill_an_alive_service_on_a_single_failed_probe(self) -> None:
+        # Real bug caught live: a healthy information-engine process was
+        # killed with no traceback in its log (a clean external kill, not a
+        # crash) purely off one failed health probe - port_healthy/
+        # http_healthy are bare few-second checks with no retry, so a
+        # single transient hiccup was enough to restart an otherwise-fine
+        # process. ensure_services() now requires HEALTH_FAILURE_THRESHOLD
+        # consecutive failures on an ALIVE process before killing it.
+        fake_process = Mock()
+        fake_process.poll.return_value = None  # still alive
+        healthy_calls = {"count": 0}
+
+        def flaky_health() -> bool:
+            healthy_calls["count"] += 1
+            return False  # every probe in this test fails
+
+        fake_service = supervisor.Service("fake-service", lambda: [], flaky_health)
+        original_services = supervisor.SERVICES
+        original_processes = dict(supervisor.PROCESSES)
+        original_streak = dict(supervisor.HEALTH_FAILURE_STREAK)
+        supervisor.SERVICES = [fake_service]
+        supervisor.PROCESSES = {"fake-service": fake_process}
+        supervisor.HEALTH_FAILURE_STREAK = {}
+        try:
+            with (
+                patch.object(supervisor, "stop_process") as stop_process,
+                patch.object(supervisor, "start_service") as start_service,
+                patch.object(supervisor, "discord_post"),
+            ):
+                start_service.return_value = True
+                # First failed probe: below threshold, must NOT kill/restart.
+                supervisor.ensure_services()
+                stop_process.assert_not_called()
+                start_service.assert_not_called()
+                # Second consecutive failed probe: reaches the threshold,
+                # now it's expected to actually restart.
+                supervisor.ensure_services()
+                stop_process.assert_called_once_with("fake-service")
+                start_service.assert_called_once()
+        finally:
+            supervisor.SERVICES = original_services
+            supervisor.PROCESSES = original_processes
+            supervisor.HEALTH_FAILURE_STREAK = original_streak
+
+    def test_ensure_services_still_restarts_a_genuinely_dead_process_immediately(self) -> None:
+        # The debounce only protects an ALIVE process from a single flaky
+        # probe - a process that has actually exited must still respawn on
+        # the very next check, with no extra grace period.
+        fake_process = Mock()
+        fake_process.poll.return_value = 1  # already exited
+        fake_service = supervisor.Service("fake-service", lambda: [], lambda: False)
+        original_services = supervisor.SERVICES
+        original_processes = dict(supervisor.PROCESSES)
+        original_streak = dict(supervisor.HEALTH_FAILURE_STREAK)
+        supervisor.SERVICES = [fake_service]
+        supervisor.PROCESSES = {"fake-service": fake_process}
+        supervisor.HEALTH_FAILURE_STREAK = {}
+        try:
+            with (
+                patch.object(supervisor, "stop_process") as stop_process,
+                patch.object(supervisor, "start_service") as start_service,
+                patch.object(supervisor, "discord_post"),
+            ):
+                start_service.return_value = True
+                supervisor.ensure_services()
+                start_service.assert_called_once()
+        finally:
+            supervisor.SERVICES = original_services
+            supervisor.PROCESSES = original_processes
+            supervisor.HEALTH_FAILURE_STREAK = original_streak
+
 
 if __name__ == "__main__":
     unittest.main()
