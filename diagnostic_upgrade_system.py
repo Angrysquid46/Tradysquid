@@ -718,9 +718,31 @@ def _service_checks(state: dict[str, Any]) -> list[HealthCheck]:
     return results
 
 
+def _meaningfully_dirty(raw_status: str) -> str:
+    """Runtime-mutable files (docs/index.html, the chart images,
+    config/scanner.json, state/**) constantly drift on a live-running
+    system and are already explicitly allowlisted as safe-to-be-dirty in
+    the real deploy logic (tradysquid_supervisor.runtime_mutable) - this
+    check was flagging them anyway, alarming on something that never
+    actually blocks a deploy. Filter them out before deciding."""
+    import tradysquid_supervisor as supervisor
+
+    kept_lines = []
+    for line in raw_status.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1].strip()
+        if not supervisor.runtime_mutable(path.replace("\\", "/")):
+            kept_lines.append(line)
+    return "\n".join(kept_lines)
+
+
 def _git_checks(state: dict[str, Any]) -> list[HealthCheck]:
     branch_code, branch = _run_git("rev-parse", "--abbrev-ref", "HEAD")
-    status_code, dirty = _run_git("status", "--porcelain", "--untracked-files=no")
+    status_code, raw_dirty = _run_git("status", "--porcelain", "--untracked-files=no")
+    dirty = _meaningfully_dirty(raw_dirty) if status_code == 0 else raw_dirty
     fetch_status = str(state.get("last_fetch_status") or "UNKNOWN").upper()
     fetch_detail = str(state.get("last_fetch_detail") or "")
     local = str(state.get("local_sha") or _current_sha())[:12]
