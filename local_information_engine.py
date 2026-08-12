@@ -24,6 +24,8 @@ from typing import Any, Callable
 from urllib.parse import quote, quote_plus, urljoin
 
 import spy_scanner
+import ai_coordination
+import diagnostic_upgrade_system as diagnostics
 import dynamic_universe
 import outcome_learning
 import requests
@@ -1007,6 +1009,128 @@ def weekly_review_job(connection: sqlite3.Connection) -> str:
     return f"weekly review {'sent' if sent else 'stored locally'}"
 
 
+def _recent_changelog_entries(since: datetime, limit: int = 8) -> list[dict[str, Any]]:
+    """COMPLETE entries from the CHANGELOG.jsonl audit trail (ai_coordination.py)
+    newer than `since` - the patch log the owner asked to be able to check
+    without reading raw git history. Fails open (empty list) on any read
+    problem; a missing/corrupt changelog must never break the digest."""
+    try:
+        lines = ai_coordination.EVENTS_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in reversed(lines):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("event") != "COMPLETE":
+            continue
+        completed_at = event.get("completed_at")
+        try:
+            when = datetime.fromisoformat(str(completed_at))
+        except (TypeError, ValueError):
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=since.tzinfo)
+        if when < since:
+            break
+        entries.append(event)
+        if len(entries) >= limit:
+            break
+    return entries
+
+
+def _overshoot_rollup(rows: list[dict[str, str]], since: datetime) -> tuple[int, int, list[str]]:
+    """(stop_closes, overshoots, worst_examples) for trades closed since
+    `since` - reuses spy_scanner.compute_stop_overshoot so this rollup can
+    never drift from what the close card itself shows."""
+    stop_closes = 0
+    overshoots: list[tuple[float, str]] = []
+    for row in rows:
+        closed_at = spy_scanner.parse_iso(row.get("closed_at"))
+        if not closed_at or closed_at < since:
+            continue
+        if spy_scanner.stop_overshoot_target_pct(row) is None:
+            continue
+        stop_closes += 1
+        slip = spy_scanner.compute_stop_overshoot(row)
+        if slip is not None:
+            overshoots.append((slip, str(row.get("trade_id") or "")))
+    overshoots.sort()
+    worst = [
+        f"{trade_id} slipped {abs(slip):.0f} pts" for slip, trade_id in overshoots[:3]
+    ]
+    return stop_closes, len(overshoots), worst
+
+
+def system_digest_job(connection: sqlite3.Connection) -> str:
+    """Once-daily, single upserted card (never a new message per run) that
+    rolls up what the owner asked to be able to check without hunting
+    through Discord: trading-logic anomalies (stop/floor overshoots),
+    infra health (from diagnostic_upgrade_system's existing 5-minute
+    checks), and the patch log (CHANGELOG.jsonl) - all in one place,
+    posted to #system-health where the rest of this system's status cards
+    already live."""
+    tracker = discord_tracker()
+    if not tracker:
+        return "Discord tracker unavailable"
+    now = spy_scanner.now_ct()
+    since = now - timedelta(hours=24)
+    with POSITION_FILE_LOCK:
+        rows = spy_scanner.read_log()
+    stop_closes, overshoot_count, worst = _overshoot_rollup(rows, since)
+    health = diagnostics.diagnostics_summary()
+    open_issues = health.get("open", [])
+    changelog_entries = _recent_changelog_entries(since)
+
+    lines = [
+        "## Daily System Digest",
+        f"**Window:** last 24h, checked {spy_scanner.portable_strftime(now, '%m/%d/%y %-I:%M %p CT')}",
+        "### Trading Anomalies",
+        (
+            f"**Stop overshoots:** {overshoot_count} of {stop_closes} stop/floor closes"
+            if stop_closes
+            else "No stop/floor closes in this window."
+        ),
+    ]
+    if worst:
+        lines.append("Worst: " + " · ".join(worst))
+    lines.append("### Infra Health")
+    if open_issues:
+        lines.append(
+            f"**{len(open_issues)} open issue(s):** "
+            + " · ".join(str(issue.get("signature_key") or "unknown") for issue in open_issues[:5])
+        )
+    else:
+        lines.append("No open infra issues (see #upgrade-review for the live checklist).")
+    lines.append("### Patch Log")
+    if changelog_entries:
+        lines.append(f"**{len(changelog_entries)} change(s) in this window:**")
+        lines.extend(
+            f"- {entry.get('task', 'unlabeled change')[:140]}" for entry in changelog_entries
+        )
+    else:
+        lines.append("No changes recorded in this window.")
+
+    content = "\n".join(lines)
+    report_state = spy_scanner.read_report_state()
+    tracker.upsert_channel_message(
+        "status",
+        report_state,
+        "system-digest",
+        content,
+        search_token="Daily System Digest",
+    )
+    spy_scanner.write_report_state(report_state)
+    store_observation(
+        connection,
+        "system-digest",
+        {"stop_closes": stop_closes, "overshoots": overshoot_count, "open_issues": len(open_issues)},
+    )
+    return f"{stop_closes} stop closes · {overshoot_count} overshoots · {len(open_issues)} open infra issue(s)"
+
+
 def full_scanner_job(connection: sqlite3.Connection) -> str:
     """This system trades SPY exclusively - a direct spy_scanner.main() call,
     not a loop over a ticker universe. See multi_ticker_scan.py's removal:
@@ -1920,6 +2044,13 @@ JOBS = [
         market_hours_only=True,
         background=True,
         provider_heavy=True,
+    ),
+    Job(
+        "system-digest",
+        timedelta(hours=24),
+        system_digest_job,
+        background=True,
+        retry_interval=timedelta(hours=1),
     ),
 ]
 

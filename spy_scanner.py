@@ -1070,6 +1070,47 @@ def position_update_text(
     return "\n".join(lines)
 
 
+def stop_overshoot_target_pct(row: dict[str, str], close_reason: str | None = None) -> float | None:
+    """The configured stop/floor target_pct a closed trade should have
+    exited at, or None when the trade didn't close via a stop/floor signal
+    or is a retired SPREAD row. Extracted so both the "Stop overshoot" card
+    line below and a daily rollup (system_digest_job in
+    local_information_engine.py) compute this from one place instead of
+    two copies drifting apart. close_reason defaults to the row's stored
+    last_signal (the only source available for an already-closed historical
+    row); close_alert_text passes its own evaluation-preferring local
+    instead, since a fresh live evaluation can be more current than what's
+    been persisted yet."""
+    close_reason = str(close_reason if close_reason is not None else (row.get("last_signal") or ""))
+    play_type = str(row.get("play_type") or "")
+    if close_reason not in ("STOP OUT", "BREAKEVEN STOP", "FLOOR STOP") or play_type == "SPREAD":
+        return None
+    if is_spy_0dte_play_type(play_type):
+        return -(SPY_0DTE_STOP_PCT * 100) if close_reason == "STOP OUT" else SPY_0DTE_FLOOR_PCT
+    if is_spy_ratchet_play_type(play_type):
+        variant = SPY_RATCHET_VARIANT_BY_PLAY_TYPE.get(play_type, {})
+        step_pct = variant.get("step_pct", 0.0) or 0.0
+        stop_pct = variant.get("stop_pct", 0.0) or 0.0
+        if close_reason == "STOP OUT":
+            return stop_pct
+        peak_pct = as_float(row.get("max_favorable_pct"), 0.0) or 0.0
+        return (peak_pct // step_pct) * step_pct if step_pct else 0.0
+    configured_stop = SWING_STOP_PCT if play_type == "SWING" else SINGLE_STOP_PCT
+    return -(configured_stop * 100) if close_reason == "STOP OUT" else 0.0
+
+
+def compute_stop_overshoot(row: dict[str, str]) -> float | None:
+    """How far a closed stop/floor trade's realized pl_pct slipped past its
+    configured target_pct. None when not applicable, or when the stop held
+    (overshoot >= -0.5)."""
+    target_pct = stop_overshoot_target_pct(row)
+    if target_pct is None:
+        return None
+    pl_pct = as_float(row.get("pct_gain_loss"), 0.0) or 0.0
+    overshoot = pl_pct - target_pct
+    return overshoot if overshoot < -0.5 else None
+
+
 def close_alert_text(
     row: dict[str, str], evaluation: dict[str, Any], include_link: str = "", summary_only: bool = False
 ) -> str:
@@ -1125,30 +1166,8 @@ def close_alert_text(
     # illiquid contract) can let the realized loss run past the configured
     # threshold before the exit ever fires. Showing the overshoot plainly
     # here answers "did the stop actually hold" at a glance, every time.
-    if close_reason in ("STOP OUT", "BREAKEVEN STOP", "FLOOR STOP") and play_type != "SPREAD":
-        if is_spy_0dte_play_type(play_type):
-            # "BREAKEVEN STOP" for SPY_0DTE means the one-time-raised floor
-            # fired, not a return to flat - the real target is the floor
-            # level itself, SPY_0DTE_FLOOR_PCT, not 0.0.
-            target_pct = (
-                -(SPY_0DTE_STOP_PCT * 100) if close_reason == "STOP OUT" else SPY_0DTE_FLOOR_PCT
-            )
-        elif is_spy_ratchet_play_type(play_type):
-            # "FLOOR STOP" for a ratchet variant means the trade's own
-            # step-derived floor fired, not a fixed level - re-derive it
-            # from the peak this row actually reached (same math as
-            # spy_ratchet_exit_signal), not a single constant.
-            variant = SPY_RATCHET_VARIANT_BY_PLAY_TYPE.get(play_type, {})
-            step_pct = variant.get("step_pct", 0.0) or 0.0
-            stop_pct = variant.get("stop_pct", 0.0) or 0.0
-            if close_reason == "STOP OUT":
-                target_pct = stop_pct
-            else:
-                peak_pct = as_float(row.get("max_favorable_pct"), 0.0) or 0.0
-                target_pct = (peak_pct // step_pct) * step_pct if step_pct else 0.0
-        else:
-            configured_stop = SWING_STOP_PCT if play_type == "SWING" else SINGLE_STOP_PCT
-            target_pct = -(configured_stop * 100) if close_reason == "STOP OUT" else 0.0
+    target_pct = stop_overshoot_target_pct(row, close_reason)
+    if target_pct is not None:
         overshoot = pl_pct - target_pct
         if overshoot < -0.5:
             result_lines.append(
