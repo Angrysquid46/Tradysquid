@@ -87,6 +87,72 @@ class MeaningfullyDirtyTests(unittest.TestCase):
         self.assertEqual(diagnostics._meaningfully_dirty(""), "")
 
 
+class LogFailureEvidenceTests(unittest.TestCase):
+    def test_a_healthy_status_line_reporting_zero_failures_is_not_suspicious(self) -> None:
+        # Real bug caught live: this flagged log-information-engine.log
+        # DEGRADED with 27 consecutive failures, but the check's own stored
+        # evidence read "trade-intelligence-health: OK - 0 failed syncs" -
+        # a routine healthy status line that happened to contain the word
+        # "failed" while reporting zero of them.
+        line = "trade-intelligence-health: OK - 25 trades checked; 0 failed syncs; 0 research items awaiting review"
+        self.assertFalse(diagnostics._line_has_genuine_failure_evidence(line))
+
+    def test_zero_qualified_error_and_timeout_are_also_not_suspicious(self) -> None:
+        self.assertFalse(diagnostics._line_has_genuine_failure_evidence("scan complete: 0 errors, 0 timeouts"))
+
+    def test_a_genuine_nonzero_failure_count_is_still_flagged(self) -> None:
+        self.assertTrue(diagnostics._line_has_genuine_failure_evidence("sync run: 3 failed syncs"))
+
+    def test_a_real_traceback_line_is_still_flagged(self) -> None:
+        self.assertTrue(diagnostics._line_has_genuine_failure_evidence("Traceback (most recent call last):"))
+
+    def test_a_real_exception_message_is_still_flagged(self) -> None:
+        self.assertTrue(diagnostics._line_has_genuine_failure_evidence("ConnectionError: timeout connecting to provider"))
+
+    def test_zero_count_elsewhere_on_the_line_does_not_mask_a_real_failure(self) -> None:
+        # "0 trades processed, 3 failed" - the zero qualifies a different
+        # metric, not the failure count right before "failed".
+        self.assertTrue(diagnostics._line_has_genuine_failure_evidence("0 trades processed, 3 failed"))
+
+
+class TcpOpenRetryTests(unittest.TestCase):
+    def test_succeeds_immediately_when_the_port_is_open(self) -> None:
+        with patch.object(diagnostics.socket, "create_connection") as fake_connect:
+            fake_connect.return_value.__enter__ = Mock(return_value=Mock())
+            fake_connect.return_value.__exit__ = Mock(return_value=False)
+            with patch.object(diagnostics.time, "sleep") as fake_sleep:
+                self.assertTrue(diagnostics._tcp_open(8876))
+            fake_sleep.assert_not_called()
+            self.assertEqual(fake_connect.call_count, 1)
+
+    def test_retries_past_a_transient_backlog_race_before_succeeding(self) -> None:
+        # tradysquid_supervisor.py's lock port is a pure mutex with a
+        # listen(1) backlog and no accept() loop - multiple independent,
+        # uncoordinated health-checkers probing it at once (this 5-minute
+        # diagnostic cycle, the 2-minute watchdog loop) can genuinely lose
+        # the race for that single slot even though the service is
+        # completely healthy. Confirmed live as the cause of
+        # service-supervisor showing FAILED with the service actually up.
+        calls = {"n": 0}
+
+        def flaky_connect(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise OSError("backlog full")
+            return Mock(__enter__=Mock(return_value=Mock()), __exit__=Mock(return_value=False))
+
+        with patch.object(diagnostics.socket, "create_connection", side_effect=flaky_connect):
+            with patch.object(diagnostics.time, "sleep"):
+                self.assertTrue(diagnostics._tcp_open(8876))
+        self.assertEqual(calls["n"], 3)
+
+    def test_a_genuinely_down_service_still_fails_after_all_retries(self) -> None:
+        with patch.object(diagnostics.socket, "create_connection", side_effect=OSError("refused")):
+            with patch.object(diagnostics.time, "sleep") as fake_sleep:
+                self.assertFalse(diagnostics._tcp_open(8876, attempts=3, retry_delay=0.01))
+            self.assertEqual(fake_sleep.call_count, 2)
+
+
 class DiagnosticUpgradeSystemTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
