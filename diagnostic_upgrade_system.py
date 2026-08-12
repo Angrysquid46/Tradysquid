@@ -590,12 +590,27 @@ def record_recovery(
             connection.close()
 
 
-def _tcp_open(port: int) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=2):
-            return True
-    except OSError:
-        return False
+def _tcp_open(port: int, *, attempts: int = 3, retry_delay: float = 0.5) -> bool:
+    """The supervisor's own lock port (tradysquid_supervisor.py's
+    acquire_instance_lock) is a pure single-instance mutex with a
+    deliberately tiny listen(1) backlog - it never calls accept(), so at
+    most one probe's connection can sit in that backlog at a time.
+    Confirmed live: this system has several independent, uncoordinated
+    probers of that same port (this 5-minute diagnostic cycle, the
+    2-minute Startup-folder watchdog loop, etc.), so a probe that loses
+    the race for that single slot gets a genuine (if transient) OSError
+    even though the service is completely healthy - not a bug in this
+    check's logic, a real backlog race between multiple health-checkers.
+    A short retry absorbs that without masking an actually-down service,
+    which would fail every attempt, not just the first."""
+    for attempt in range(attempts):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2):
+                return True
+        except OSError:
+            if attempt < attempts - 1:
+                time.sleep(retry_delay)
+    return False
 
 
 def _run_git(*args: str) -> tuple[int, str]:
@@ -952,6 +967,27 @@ def _job_checks(engine_connection: sqlite3.Connection) -> list[HealthCheck]:
     return results
 
 
+_LOG_FAILURE_KEYWORDS = re.compile(
+    r"(?i)(traceback|exception|\berror\b|failed|timeout|restart loop|rolled back)"
+)
+_ZERO_COUNT_QUALIFIER = re.compile(r"\b0\s*$")
+
+
+def _line_has_genuine_failure_evidence(line: str) -> bool:
+    """A routine status line reporting "0 failed syncs" or "0 errors" is
+    healthy evidence, not failure evidence - confirmed live: this flagged
+    log-information-engine.log-failure DEGRADED with 27 consecutive
+    failures whose own evidence read "trade-intelligence-health: OK ·
+    0 failed syncs", stuck that way because every future healthy status
+    line kept re-triggering the same naive keyword match. Only count a
+    keyword match as genuine evidence when it isn't immediately preceded
+    by a literal zero count of that same thing."""
+    for match in _LOG_FAILURE_KEYWORDS.finditer(line):
+        if not _ZERO_COUNT_QUALIFIER.search(line[: match.start()]):
+            return True
+    return False
+
+
 def _log_checks(store: sqlite3.Connection) -> list[HealthCheck]:
     paths = [
         LOG_DIR / "supervisor.log",
@@ -977,11 +1013,7 @@ def _log_checks(store: sqlite3.Connection) -> list[HealthCheck]:
             text = raw.decode("utf-8", errors="replace")
         except (OSError, ValueError):
             continue
-        suspicious = [
-            line
-            for line in text.splitlines()
-            if re.search(r"(?i)(traceback|exception|\berror\b|failed|timeout|restart loop|rolled back)", line)
-        ]
+        suspicious = [line for line in text.splitlines() if _line_has_genuine_failure_evidence(line)]
         if not suspicious:
             continue
         sample = "\n".join(suspicious[-12:])
