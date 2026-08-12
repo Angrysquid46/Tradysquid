@@ -208,7 +208,9 @@ def _try_open_new_position(
     )
     vix = market_features.vix_on_or_before(today_str, vix_series)
     sentiment = market_features.market_sentiment_for_date(today_str)
-    model_score = model_scoring.score_candidate(best, context, market_condition, vix, sentiment, put_call_ratio)
+    explanation = model_scoring.explain_score(best, context, market_condition, vix, sentiment, put_call_ratio)
+    model_score = explanation["score"] if explanation else None
+    model_narrative = model_scoring.build_model_narrative(explanation)
 
     # Scoring always happens (see MODEL_FILTER_ENABLED's docstring above);
     # only this skip is gated. A candidate the rule-based signal already
@@ -251,6 +253,7 @@ def _try_open_new_position(
             "sentiment_at_entry": "" if sentiment is None else str(sentiment),
             "put_call_ratio_at_entry": "" if put_call_ratio is None else str(put_call_ratio),
             "model_score_at_entry": "" if model_score is None else str(model_score),
+            "model_narrative_at_entry": model_narrative,
             "thesis": build_thesis(best, context, market_condition),
             "outcome": "OPEN",
             "max_favorable_pct": "0",

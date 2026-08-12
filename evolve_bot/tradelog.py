@@ -42,6 +42,7 @@ HEADER = [
     "sentiment_at_entry",
     "put_call_ratio_at_entry",
     "model_score_at_entry",
+    "model_narrative_at_entry",
     "thesis",
     # Outcome
     "outcome",

@@ -51,7 +51,10 @@ def test_try_open_shadow_position_logs_a_row_with_a_model_score_and_no_bankroll_
         mock.patch.object(shadow.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(shadow.market_features, "vix_on_or_before", return_value=15.5),
         mock.patch.object(shadow.market_features, "market_sentiment_for_date", return_value=0.1),
-        mock.patch.object(shadow.model_scoring, "score_candidate", return_value=0.63),
+        mock.patch.object(
+            shadow.model_scoring, "explain_score",
+            return_value={"score": 0.63, "contributions": [{"feature": "vix_at_entry", "shap_value": 0.2, "display_value": "15.5"}]},
+        ),
     ):
         row = shadow._try_open_shadow_position([], datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
@@ -59,6 +62,7 @@ def test_try_open_shadow_position_logs_a_row_with_a_model_score_and_no_bankroll_
     assert row["outcome"] == "OPEN"
     assert row["option_symbol"] == "SPY260812P00600000"
     assert row["model_score"] == "0.63"
+    assert "63.0%" in row["model_narrative"]
     assert row["vix_at_entry"] == "15.5"
     assert "contracts" not in shadow.HEADER
     assert "balance_before" not in shadow.HEADER
@@ -107,7 +111,10 @@ def test_run_shadow_cycle_end_to_end_with_a_qualified_candidate():
             mock.patch.object(shadow.market_features, "fetch_vix_series", return_value=[]),
             mock.patch.object(shadow.market_features, "vix_on_or_before", return_value=None),
             mock.patch.object(shadow.market_features, "market_sentiment_for_date", return_value=None),
-            mock.patch.object(shadow.model_scoring, "score_candidate", return_value=0.55),
+            mock.patch.object(
+                shadow.model_scoring, "explain_score",
+                return_value={"score": 0.55, "contributions": []},
+            ),
         ):
             result = shadow.run_shadow_cycle()
 
@@ -118,3 +125,4 @@ def test_run_shadow_cycle_end_to_end_with_a_qualified_candidate():
         saved_rows = shadow.read_log(log_path)
         assert len(saved_rows) == 1
         assert saved_rows[0]["outcome"] == "OPEN"
+        assert "55.0%" in saved_rows[0]["model_narrative"]

@@ -40,7 +40,7 @@ HEADER = [
     "entry_price", "spot_price_at_entry", "delta_at_entry", "iv_at_entry",
     "market_regime", "market_condition_at_entry",
     "vix_at_entry", "sentiment_at_entry", "put_call_ratio_at_entry",
-    "model_score", "thesis",
+    "model_score", "model_narrative", "thesis",
     "outcome", "exit_price", "closed_at", "last_signal", "pl_pct",
     "max_favorable_pct", "max_adverse_pct", "last_evaluated_at",
 ]
@@ -132,7 +132,9 @@ def _try_open_shadow_position(rows: list[dict[str, str]], timestamp, spot_price:
     )
     vix = market_features.vix_on_or_before(today_str, vix_series)
     sentiment = market_features.market_sentiment_for_date(today_str)
-    model_score = model_scoring.score_candidate(best, context, market_condition, vix, sentiment, put_call_ratio)
+    explanation = model_scoring.explain_score(best, context, market_condition, vix, sentiment, put_call_ratio)
+    model_score = explanation["score"] if explanation else None
+    model_narrative = model_scoring.build_model_narrative(explanation)
 
     row = blank_row()
     row.update(
@@ -153,6 +155,7 @@ def _try_open_shadow_position(rows: list[dict[str, str]], timestamp, spot_price:
             "sentiment_at_entry": "" if sentiment is None else str(sentiment),
             "put_call_ratio_at_entry": "" if put_call_ratio is None else str(put_call_ratio),
             "model_score": "" if model_score is None else str(model_score),
+            "model_narrative": model_narrative,
             "thesis": engine.build_thesis(best, context, market_condition),
             "outcome": "OPEN",
             "max_favorable_pct": "0",

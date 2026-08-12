@@ -144,7 +144,7 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=15.5),
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=0.12),
-        mock.patch.object(engine.model_scoring, "score_candidate", return_value=0.71),
+        mock.patch.object(engine.model_scoring, "explain_score", return_value={"score": 0.71, "contributions": []}),
     ):
         row, updated_bank = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
@@ -189,7 +189,7 @@ def test_try_open_new_position_leaves_market_features_blank_when_unavailable():
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=None),
-        mock.patch.object(engine.model_scoring, "score_candidate", return_value=None),
+        mock.patch.object(engine.model_scoring, "explain_score", return_value=None),
     ):
         row, _ = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
@@ -230,7 +230,7 @@ def test_try_open_new_position_ignores_a_low_model_score_when_filter_is_disabled
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=None),
-        mock.patch.object(engine.model_scoring, "score_candidate", return_value=0.02),
+        mock.patch.object(engine.model_scoring, "explain_score", return_value={"score": 0.02, "contributions": []}),
     ):
         row, _ = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
@@ -267,7 +267,7 @@ def test_try_open_new_position_skips_a_low_model_score_when_filter_is_enabled():
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=None),
-        mock.patch.object(engine.model_scoring, "score_candidate", return_value=0.02),
+        mock.patch.object(engine.model_scoring, "explain_score", return_value={"score": 0.02, "contributions": []}),
     ):
         row, updated_bank = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
@@ -303,7 +303,7 @@ def test_try_open_new_position_opens_a_high_model_score_when_filter_is_enabled()
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=None),
-        mock.patch.object(engine.model_scoring, "score_candidate", return_value=0.9),
+        mock.patch.object(engine.model_scoring, "explain_score", return_value={"score": 0.9, "contributions": []}),
     ):
         row, _ = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
@@ -342,7 +342,7 @@ def test_try_open_new_position_never_blocks_on_a_missing_model_score_even_when_f
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=None),
-        mock.patch.object(engine.model_scoring, "score_candidate", return_value=None),
+        mock.patch.object(engine.model_scoring, "explain_score", return_value=None),
     ):
         row, _ = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
