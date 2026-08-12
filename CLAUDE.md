@@ -109,10 +109,12 @@ A Discord bot handles entry/exit alerts, dashboards, and slash commands.
     previously listed alongside this one, now passes standalone — drop it
     if you don't reproduce it.)
   - `test_reset_trading_data.py::test_reset_deletes_every_thread_in_the_channel_directly`
-    — `assert result["deleted_threads"] == 3` actually got `15`. Still not
-    diagnosed; unlike the one above this doesn't have an obvious
-    "test is stale" explanation on its face — look here first before
-    trusting `reset_all_trade_data`'s thread-deletion count.
+    — fixed 2026-08-11. `wipe_channel_threads` retries up to 5 passes on
+    purpose (survives a rate-limit burst or a thread created mid-wipe); the
+    test's `fake_request` mock was static and kept returning already-
+    "deleted" threads on every pass, so 5 passes x 3 threads counted as 15.
+    `reset_all_trade_data` itself was never buggy — real Discord reflects
+    real deletions, a static mock doesn't. Made the mock stateful instead.
   - `tests/unit/test_verifier_modules.py::test_installation_verifier_runs_from_external_working_directory`
     — as of 2026-08-11 this errors on a Windows temp-directory permission
     issue in pytest's own tmpdir fixture (`PermissionError` on

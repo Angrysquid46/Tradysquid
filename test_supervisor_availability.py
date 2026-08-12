@@ -321,6 +321,7 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         # process. ensure_services() now requires HEALTH_FAILURE_THRESHOLD
         # consecutive failures on an ALIVE process before killing it.
         fake_process = Mock()
+        fake_process.pid = 40001  # a real process always has one; JSON-serializable, unlike a bare Mock
         fake_process.poll.return_value = None  # still alive
         healthy_calls = {"count": 0}
 
@@ -361,6 +362,7 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         # probe - a process that has actually exited must still respawn on
         # the very next check, with no extra grace period.
         fake_process = Mock()
+        fake_process.pid = 40002  # a real process always has one; JSON-serializable, unlike a bare Mock
         fake_process.poll.return_value = 1  # already exited
         fake_service = supervisor.Service("fake-service", lambda: [], lambda: False)
         original_services = supervisor.SERVICES
