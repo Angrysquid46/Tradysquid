@@ -149,6 +149,41 @@ class DiagnosticReviewRuntimeTests(unittest.TestCase):
         self.assertEqual(len(second), 1)
         self.assertEqual(second[0].key, "log-supervisor.log-discord-connectivity")
 
+    def test_log_scan_does_not_flag_a_healthy_status_line_reporting_zero_failures(self) -> None:
+        # Real bug caught live: log_checks here is a complete independent
+        # duplicate of diagnostic_upgrade_system.py's own _log_checks
+        # (installed to shadow it), so fixing only the base copy's keyword
+        # matching left this one - the one actually running live - still
+        # flagging "trade-intelligence-health: OK - 0 failed syncs" purely
+        # for containing the word "failed", stuck DEGRADED forever since
+        # every future healthy status line re-triggered the same match.
+        log_dir = self.root / "logs"
+        log_dir.mkdir()
+        startup = self.root / "supervisor-startup.log"
+        watchdog = self.root / "supervisor-watchdog.log"
+        (log_dir / "information-engine.log").write_text(
+            "engine started\n", encoding="utf-8"
+        )
+        with (
+            patch.object(diagnostics, "ROOT", self.root),
+            patch.object(diagnostics, "LOG_DIR", log_dir),
+            patch.object(diagnostics, "STARTUP_LOG", startup),
+            patch.object(diagnostics, "WATCHDOG_LOG", watchdog),
+        ):
+            store = diagnostics.connect_store()
+            try:
+                first = review.log_checks(store)  # seeds the cursor
+                with (log_dir / "information-engine.log").open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        "trade-intelligence-health: OK - 25 trades checked; 0 failed syncs; "
+                        "0 research items awaiting review\n"
+                    )
+                second = review.log_checks(store)
+            finally:
+                store.close()
+        self.assertEqual(first, [])
+        self.assertEqual(second, [])
+
     def test_summary_exposes_only_actionable_records_as_open(self) -> None:
         with patch.object(
             bridge,
