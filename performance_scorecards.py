@@ -372,17 +372,22 @@ def sync_reports(
 
 
 def validate_reconciliation() -> dict[str, int]:
+    # Cycles through every currently-live play_type (base.STRATEGY_VARIANTS -
+    # both SPY_0DTE variants, Key-Levels, Expansion-Level, and all 10 ratchet
+    # variants), not just the two SPY_0DTE variants - a synthetic self-test
+    # that only ever exercised 2 of 14 live strategies gave no real coverage
+    # for the other 12, including whichever one the owner most recently
+    # added. Real bug once found this way: this used to run against the
+    # retired REGULAR/SWING/SPREAD/"F" (Ford) system, silently validating
+    # nothing about the SPY-only strategies actually live today.
+    variants = base.STRATEGY_VARIANTS
     rows: list[dict[str, str]] = []
     monday = datetime(2026, 7, 27, 14, 30, tzinfo=spy_scanner.MARKET_TZ)
-    strategies = (
-        ("SPY_0DTE_1M", "call"),
-        ("SPY_0DTE_1M", "put"),
-        ("SPY_0DTE_5M", "call"),
-        ("SPY_0DTE_5M", "put"),
-    )
+    sides = ("call", "put")
     for index in range(100):
         closed_at = monday + timedelta(days=index % 5, minutes=index)
-        play_type, side = strategies[index % len(strategies)]
+        play_type = variants[index % len(variants)][0]
+        side = sides[index % len(sides)]
         outcome = "WIN" if index % 3 else "LOSS"
         row = spy_scanner.blank_row()
         row.update(
@@ -410,21 +415,24 @@ def validate_reconciliation() -> dict[str, int]:
     if sum(len(group) for group in groups.values()) != 100:
         raise RuntimeError("Synthetic play-type scorecards lost trades")
     # The real point of the split: each variant's own filtered group must
-    # never leak the other variant's trades into it.
-    rows_1m = [row for row in rows if row.get("play_type") == "SPY_0DTE_1M"]
-    rows_5m = [row for row in rows if row.get("play_type") == "SPY_0DTE_5M"]
-    if len(canonical_rows(rows_1m)) + len(canonical_rows(rows_5m)) != 100:
-        raise RuntimeError("SPY_0DTE_1M / SPY_0DTE_5M filtering lost or duplicated trades")
-    if set(canonical_rows(rows_1m)[0].keys()) and any(
-        row.get("play_type") == "SPY_0DTE_5M" for row in rows_1m
-    ):
-        raise RuntimeError("SPY_0DTE_1M filter leaked a SPY_0DTE_5M trade")
+    # never leak another variant's trades into it, for every live variant,
+    # not just the first two.
+    rows_by_variant = {
+        play_type: [row for row in rows if row.get("play_type") == play_type]
+        for play_type, *_ in variants
+    }
+    if sum(len(canonical_rows(v)) for v in rows_by_variant.values() if v) != 100:
+        raise RuntimeError("Per-variant filtering lost or duplicated trades")
+    for play_type, variant_rows in rows_by_variant.items():
+        if any(row.get("play_type") != play_type for row in variant_rows):
+            raise RuntimeError(f"{play_type} filter leaked another variant's trade")
     return {
         "closed_trades": 100,
         "daily_scorecards": len(period_dates(rows, date(2026, 8, 1))),
         "weekly_scorecards": len(period_weeks(rows, date(2026, 8, 1))),
-        "monthly_scorecards": len(period_months(rows_1m, date(2026, 8, 1)))
-        + len(period_months(rows_5m, date(2026, 8, 1))),
+        "monthly_scorecards": sum(
+            len(period_months(v, date(2026, 8, 1))) for v in rows_by_variant.values() if v
+        ),
         "strategy_scorecards": len(groups),
         "history_pages": 0,
     }

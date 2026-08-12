@@ -396,15 +396,20 @@ def sync_all_trade_journals(
 
 
 def validate_contract() -> dict[str, Any]:
+    # play_type/ticker must be a currently-live combination, not the
+    # retired REGULAR/Ford one this used to test with - entry_alert_text
+    # branches by play_type (SPY_0DTE vs ratchet vs the generic default),
+    # so validating with a retired play_type silently skipped whichever
+    # branch every real live trade actually renders through.
     row = spy_scanner.blank_row()
     row.update(
         {
             "trade_id": "TEST-JOURNAL-001",
             "timestamp": datetime.now().astimezone().isoformat(),
-            "play_type": "REGULAR",
-            "ticker": "F",
+            "play_type": "SPY_0DTE_1M",
+            "ticker": "SPY",
             "call_or_put": "call",
-            "strike": "12",
+            "strike": "600",
             "expiration": "2026-08-21",
             "entry_price": "0.50",
             "max_risk": "50",
