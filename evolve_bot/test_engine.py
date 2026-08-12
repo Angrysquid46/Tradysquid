@@ -140,6 +140,10 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
         mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=0.85),
+        mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
+        mock.patch.object(engine.market_features, "vix_on_or_before", return_value=15.5),
+        mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=0.12),
     ):
         row, updated_bank = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
@@ -148,10 +152,48 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
     assert row["option_symbol"] == "SPY260812P00600000"
     assert row["market_condition_at_entry"] == "CHOPPY / NORMAL VOL"
     assert "BEARISH" in row["thesis"]
+    assert row["vix_at_entry"] == "15.5"
+    assert row["sentiment_at_entry"] == "0.12"
+    assert row["put_call_ratio_at_entry"] == "0.85"
     # $1000 balance * 15% = $150 position size; $0.50 premium -> $50/contract -> 3 contracts
     assert row["contracts"] == "3"
     # cost = 0.50 * 100 * 3 = $150, debited from the starting $1000
     assert updated_bank["balance"] == bankroll.STARTING_BALANCE - 150.0
+
+
+def test_try_open_new_position_leaves_market_features_blank_when_unavailable():
+    bank = bankroll.default_state()
+    candidate = {
+        "call_or_put": "put", "strike": "600", "expiration": "2026-08-12",
+        "entry_price": 0.50, "delta": -0.42, "theta": -0.05, "iv": 0.35,
+        "open_interest": 500, "option_volume": 200, "option_symbol": "SPY260812P00600000",
+        "score": 42,
+    }
+    with (
+        mock.patch.object(engine.s, "entry_window_blocked", return_value=""),
+        mock.patch.object(engine.s, "get_expirations", return_value=["2026-08-12"]),
+        mock.patch.object(engine.s, "get_daily_history", return_value=[]),
+        mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "UNKNOWN"}),
+        mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
+        mock.patch.object(
+            engine.s, "spy_0dte_opening_range_signal",
+            return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "x", "range_high": 601.0, "range_low": 599.0},
+        ),
+        mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
+        mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
+        mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
+        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=None),
+        mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
+        mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
+        mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=None),
+    ):
+        row, _ = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
+
+    assert row is not None
+    assert row["vix_at_entry"] == ""
+    assert row["sentiment_at_entry"] == ""
+    assert row["put_call_ratio_at_entry"] == ""
 
 
 def test_try_open_new_position_skips_when_no_candidates_pass_the_filters():

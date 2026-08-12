@@ -38,6 +38,9 @@ HEADER = [
     "market_condition_at_entry",
     "opening_range_high",
     "opening_range_low",
+    "vix_at_entry",
+    "sentiment_at_entry",
+    "put_call_ratio_at_entry",
     "thesis",
     # Outcome
     "outcome",

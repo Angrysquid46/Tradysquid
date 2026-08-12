@@ -20,6 +20,7 @@ show).
 from __future__ import annotations
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import spy_scanner as s  # noqa: E402 - path must be set up first
 
 import bankroll
+import market_features
 import tradelog
 
 PLAY_TYPE = "SPY_EVOLVE"
@@ -130,6 +132,13 @@ def _try_open_new_position(
     candidates.sort(key=lambda candidate: candidate.get("score", 0), reverse=True)
     best = candidates[0]
 
+    put_call_ratio = market_features.put_call_ratio_from_chain(chain)
+    vix_series = market_features.fetch_vix_series(
+        (timestamp.date() - timedelta(days=10)).isoformat(), today_str
+    )
+    vix = market_features.vix_on_or_before(today_str, vix_series)
+    sentiment = market_features.market_sentiment_for_date(today_str)
+
     size_dollars = bankroll.position_size_dollars(bank)
     contracts = bankroll.contracts_affordable(size_dollars, best["entry_price"])
     if contracts < 1:
@@ -160,6 +169,9 @@ def _try_open_new_position(
             "market_condition_at_entry": market_condition,
             "opening_range_high": str(context.get("range_high", "")),
             "opening_range_low": str(context.get("range_low", "")),
+            "vix_at_entry": "" if vix is None else str(vix),
+            "sentiment_at_entry": "" if sentiment is None else str(sentiment),
+            "put_call_ratio_at_entry": "" if put_call_ratio is None else str(put_call_ratio),
             "thesis": build_thesis(best, context, market_condition),
             "outcome": "OPEN",
             "max_favorable_pct": "0",

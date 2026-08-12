@@ -78,6 +78,9 @@ def test_run_backtest_for_day_generates_rows_for_a_qualified_bullish_day():
         mock.patch.object(backtest.robinhood_cache, "load_equity_bars", return_value=bars),
         mock.patch.object(backtest.robinhood_cache, "load_option_bars", return_value=None),
         mock.patch.object(backtest.s, "get_daily_history", return_value=_flat_daily_history("2026-07-06")),
+        mock.patch.object(backtest.market_features, "fetch_vix_series", return_value=[]),
+        mock.patch.object(backtest.market_features, "vix_on_or_before", return_value=16.2),
+        mock.patch.object(backtest.market_features, "market_sentiment_for_date", return_value=0.05),
     ):
         rows = backtest.run_backtest_for_day("2026-07-06")
 
@@ -89,6 +92,9 @@ def test_run_backtest_for_day_generates_rows_for_a_qualified_bullish_day():
     # Every candidate x every variant.
     candidate_symbols = {row["option_symbol"] for row in rows}
     assert len(rows) == len(candidate_symbols) * len(backtest.DEFAULT_VARIANTS)
+    assert all(row["vix_at_entry"] == 16.2 for row in rows)
+    assert all(row["sentiment_at_entry"] == 0.05 for row in rows)
+    assert all(row["put_call_ratio_at_entry"] == "" for row in rows)
 
 
 def test_run_backtest_for_day_uses_real_price_when_cached():
@@ -103,6 +109,9 @@ def test_run_backtest_for_day_uses_real_price_when_cached():
         mock.patch.object(backtest.robinhood_cache, "load_equity_bars", return_value=bars),
         mock.patch.object(backtest.robinhood_cache, "load_option_bars", side_effect=fake_option_bars),
         mock.patch.object(backtest.s, "get_daily_history", return_value=_flat_daily_history("2026-07-06")),
+        mock.patch.object(backtest.market_features, "fetch_vix_series", return_value=[]),
+        mock.patch.object(backtest.market_features, "vix_on_or_before", return_value=None),
+        mock.patch.object(backtest.market_features, "market_sentiment_for_date", return_value=None),
     ):
         rows = backtest.run_backtest_for_day("2026-07-06")
 
@@ -122,6 +131,9 @@ def test_run_backtest_is_idempotent_on_rerun():
             mock.patch.object(backtest.robinhood_cache, "load_equity_bars", return_value=bars),
             mock.patch.object(backtest.robinhood_cache, "load_option_bars", return_value=None),
             mock.patch.object(backtest.s, "get_daily_history", return_value=_flat_daily_history("2026-07-06")),
+            mock.patch.object(backtest.market_features, "fetch_vix_series", return_value=[]),
+            mock.patch.object(backtest.market_features, "vix_on_or_before", return_value=None),
+            mock.patch.object(backtest.market_features, "market_sentiment_for_date", return_value=None),
         ):
             first = backtest.run_backtest(["2026-07-06"])
             second = backtest.run_backtest(["2026-07-06"])

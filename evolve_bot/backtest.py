@@ -24,13 +24,14 @@ from __future__ import annotations
 
 import csv
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import backtest_exit
 import chain_synthesis
+import market_features
 import robinhood_cache
 import synthetic_pricing as pricing
 
@@ -47,7 +48,15 @@ BACKTEST_TRADES_PATH = DATA_DIR / "backtest_trades.csv"
 HEADER = [
     "trade_id", "trading_day", "variant_label", "call_or_put", "strike", "option_symbol",
     "entry_price", "price_source_at_entry", "delta_at_entry", "iv_at_entry", "spot_at_entry",
-    "market_condition", "regime", "thesis",
+    "market_condition", "regime",
+    # vix_at_entry/sentiment_at_entry are real historical values (FRED/
+    # Finnhub, confirmed to cover this backtest's date range). put_call_ratio_at_entry
+    # is deliberately left blank for every backtest row - it's computed
+    # live from an already-fetched real chain (see market_features.py's
+    # module docstring), and no historical chain exists for an expired
+    # SPY expiration, so there is no honest way to backfill it here.
+    "vix_at_entry", "sentiment_at_entry", "put_call_ratio_at_entry",
+    "thesis",
     "stop_pct", "target_pct", "floor_pct", "floor_trigger_pct",
     "outcome", "exit_price", "last_signal", "pl_pct", "max_favorable_pct", "max_adverse_pct",
 ]
@@ -193,6 +202,15 @@ def run_backtest_for_day(trading_day: str, variants: list[dict[str, Any]] | None
     iv = pricing.estimate_implied_volatility(daily_bars)
     years_to_expiry = pricing.years_remaining_in_trading_day(entry_moment_ct, close_time_ct)
 
+    # Day-level features - computed once per trading_day, not per
+    # candidate/variant, since VIX and sentiment don't vary within a day
+    # at this granularity.
+    vix_series = market_features.fetch_vix_series(
+        (entry_moment_ct.date() - timedelta(days=10)).isoformat(), trading_day
+    )
+    vix = market_features.vix_on_or_before(trading_day, vix_series)
+    sentiment = market_features.market_sentiment_for_date(trading_day)
+
     candidates = chain_synthesis.build_candidates(
         spot_price, call_or_put, trading_day, years_to_expiry, iv,
         moment_iso=entry_bar["timestamp"], play_type="SPY_EVOLVE_BACKTEST",
@@ -225,6 +243,9 @@ def run_backtest_for_day(trading_day: str, variants: list[dict[str, Any]] | None
                     "spot_at_entry": candidate["spot_at_entry"],
                     "market_condition": market_condition,
                     "regime": signal["regime"],
+                    "vix_at_entry": "" if vix is None else vix,
+                    "sentiment_at_entry": "" if sentiment is None else sentiment,
+                    "put_call_ratio_at_entry": "",
                     "thesis": thesis,
                     "stop_pct": variant["stop_pct"],
                     "target_pct": variant["target_pct"],
