@@ -49,6 +49,45 @@ def build_thesis(candidate: dict[str, Any], context: dict[str, Any], market_cond
     )
 
 
+def evaluate_exit_for_row(row: dict[str, str], quote: dict[str, Any] | None, timestamp) -> dict[str, Any] | None:
+    """Pure exit-evaluation step for one open row against one real quote -
+    no bankroll logic, so shadow.py (Phase 6) can reuse this identically
+    against its own hypothetical open rows instead of re-implementing the
+    exit-signal walk. Mutates the row's running peak/trough tracking
+    fields as a side effect (needed for the NEXT evaluation regardless of
+    whether this one closes the position) but never the outcome/close
+    fields - only the caller, which knows whether real capital is
+    involved, does that. Returns None when there's nothing usable to
+    evaluate (missing/unreliable quote, or no real entry price)."""
+    if not quote or not s.quote_is_reliable_for_exit(quote):
+        return None
+    entry = s.as_float(row.get("entry_price"), 0.0) or 0.0
+    if entry <= 0:
+        return None
+    mark = s.conservative_option_exit(quote)
+    close_time = timestamp.replace(
+        hour=s.MARKET_CLOSE[0], minute=s.MARKET_CLOSE[1], second=0, microsecond=0
+    )
+    minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
+    pnl_pct = (mark - entry) / entry * 100
+    peak_pct = max(s.as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct, pnl_pct)
+    trough_pct = min(s.as_float(row.get("max_adverse_pct"), pnl_pct) or pnl_pct, pnl_pct)
+    signal, note = s.spy_0dte_exit_signal(entry, mark, minutes_remaining, peak_pct)
+    row["last_evaluated_at"] = timestamp.isoformat()
+    row["max_favorable_pct"] = str(round(peak_pct))
+    row["max_adverse_pct"] = str(round(trough_pct))
+    return {
+        "signal": signal,
+        "note": note,
+        "mark": mark,
+        "entry": entry,
+        "pnl_pct": pnl_pct,
+        "peak_pct": peak_pct,
+        "trough_pct": trough_pct,
+        "should_close": signal in s.CLOSING_SIGNALS,
+    }
+
+
 def _close_open_positions(
     rows: list[dict[str, str]], bank: dict[str, Any], timestamp
 ) -> tuple[dict[str, Any], int]:
@@ -60,40 +99,72 @@ def _close_open_positions(
         include_greeks=True,
     )
     closed_count = 0
-    close_time = timestamp.replace(
-        hour=s.MARKET_CLOSE[0], minute=s.MARKET_CLOSE[1], second=0, microsecond=0
-    )
-    minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
     for row in open_rows:
         quote = quote_map.get(row.get("option_symbol", ""))
-        if not quote or not s.quote_is_reliable_for_exit(quote):
-            continue
-        mark = s.conservative_option_exit(quote)
-        entry = s.as_float(row.get("entry_price"), 0.0) or 0.0
-        if entry <= 0:
-            continue
-        pnl_pct = (mark - entry) / entry * 100
-        peak_pct = max(s.as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct, pnl_pct)
-        trough_pct = min(s.as_float(row.get("max_adverse_pct"), pnl_pct) or pnl_pct, pnl_pct)
-        signal, note = s.spy_0dte_exit_signal(entry, mark, minutes_remaining, peak_pct)
-        row["last_evaluated_at"] = timestamp.isoformat()
-        row["max_favorable_pct"] = str(round(peak_pct))
-        row["max_adverse_pct"] = str(round(trough_pct))
-        if signal not in s.CLOSING_SIGNALS:
+        result = evaluate_exit_for_row(row, quote, timestamp)
+        if result is None or not result["should_close"]:
             continue
         contracts = int(row.get("contracts") or 0)
-        proceeds = round(mark * 100 * contracts, 2)
-        pl_dollars = round((mark - entry) * 100 * contracts, 2)
+        proceeds = round(result["mark"] * 100 * contracts, 2)
+        pl_dollars = round((result["mark"] - result["entry"]) * 100 * contracts, 2)
         row["outcome"] = "WIN" if pl_dollars > 0 else ("LOSS" if pl_dollars < 0 else "SCRATCH")
-        row["exit_price"] = str(round(mark, 2))
+        row["exit_price"] = str(round(result["mark"], 2))
         row["closed_at"] = timestamp.isoformat()
-        row["last_signal"] = signal
+        row["last_signal"] = result["signal"]
         row["pl_dollars"] = str(pl_dollars)
-        row["pl_pct"] = str(round(pnl_pct))
+        row["pl_pct"] = str(round(result["pnl_pct"]))
         bank = bankroll.credit_exit(bank, proceeds)
         row["balance_after"] = str(bank["balance"])
         closed_count += 1
     return bank, closed_count
+
+
+def find_candidate(timestamp, spot_price: float, play_type: str = PLAY_TYPE) -> dict[str, Any]:
+    """Pure market-detection step - real entry-window check, real signal,
+    real chain, real candidate scoring - with no bankroll/capital logic
+    and no dependency on whether a real position is already open. Split
+    out from _try_open_new_position specifically so shadow.py (Phase 6)
+    can reuse the IDENTICAL real detection logic instead of maintaining a
+    second copy that could drift from this one (the same class of bug
+    this project has hit before with CLOSING_SIGNALS and the diagnostic
+    log-check duplication)."""
+    if s.entry_window_blocked(timestamp):
+        return {"qualified": False, "reason": "entry window blocked"}
+    today_str = timestamp.date().isoformat()
+    if today_str not in s.get_expirations(s.TICKER):
+        return {"qualified": False, "reason": "no expiration listed for today", "today_str": today_str}
+
+    history = s.get_daily_history(s.TICKER, days=120)
+    market_condition = s.classify_market_condition(history)["label"]
+    intraday_1m = s.get_intraday_history(s.TICKER, interval="1min")
+    context = s.spy_0dte_opening_range_signal(intraday_1m, bar_minutes=1)
+    if not context.get("qualified"):
+        return {
+            "qualified": False, "reason": "opening range signal not qualified",
+            "context": context, "today_str": today_str,
+        }
+
+    allowed_strikes = set(s.filter_strikes(s.get_strikes(s.TICKER, today_str), spot_price))
+    raw_chain = s.get_chain(s.TICKER, today_str)
+    chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
+    kind = "call" if context["regime"] == "BULLISH / CONTROLLED" else "put"
+    pool = [option for option in chain if option.get("option_type") == kind]
+    candidates = s.scan_spy_0dte_candidates(pool, kind, today_str, spot_price, context, play_type=play_type)
+    if not candidates:
+        return {
+            "qualified": False, "reason": "no candidates passed filters",
+            "context": context, "chain": chain, "today_str": today_str,
+        }
+    candidates.sort(key=lambda candidate: candidate.get("score", 0), reverse=True)
+    best = candidates[0]
+    return {
+        "qualified": True,
+        "candidate": best,
+        "context": context,
+        "market_condition": market_condition,
+        "chain": chain,
+        "today_str": today_str,
+    }
 
 
 def _try_open_new_position(
@@ -108,29 +179,14 @@ def _try_open_new_position(
     # core loop is proven, not a phase-1 requirement.
     if tradelog.open_rows(rows):
         return None, bank
-    if s.entry_window_blocked(timestamp):
+    found = find_candidate(timestamp, spot_price)
+    if not found["qualified"]:
         return None, bank
-    today_str = timestamp.date().isoformat()
-    if today_str not in s.get_expirations(s.TICKER):
-        return None, bank
-
-    history = s.get_daily_history(s.TICKER, days=120)
-    market_condition = s.classify_market_condition(history)["label"]
-    intraday_1m = s.get_intraday_history(s.TICKER, interval="1min")
-    context = s.spy_0dte_opening_range_signal(intraday_1m, bar_minutes=1)
-    if not context.get("qualified"):
-        return None, bank
-
-    allowed_strikes = set(s.filter_strikes(s.get_strikes(s.TICKER, today_str), spot_price))
-    raw_chain = s.get_chain(s.TICKER, today_str)
-    chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
-    kind = "call" if context["regime"] == "BULLISH / CONTROLLED" else "put"
-    pool = [option for option in chain if option.get("option_type") == kind]
-    candidates = s.scan_spy_0dte_candidates(pool, kind, today_str, spot_price, context, play_type=PLAY_TYPE)
-    if not candidates:
-        return None, bank
-    candidates.sort(key=lambda candidate: candidate.get("score", 0), reverse=True)
-    best = candidates[0]
+    best = found["candidate"]
+    context = found["context"]
+    market_condition = found["market_condition"]
+    chain = found["chain"]
+    today_str = found["today_str"]
 
     put_call_ratio = market_features.put_call_ratio_from_chain(chain)
     vix_series = market_features.fetch_vix_series(
