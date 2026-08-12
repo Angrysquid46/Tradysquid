@@ -1,0 +1,48 @@
+Run the Tradysquid evolve bot's weekly review. This is a read-and-report
+task only - do not modify any file outside evolve_bot/reviews/, do not
+touch git, do not commit or push anything.
+
+1. In C:\Tradysquid\evolve_bot, run:
+   ..\.venv-evolve\Scripts\python.exe -c "import weekly_review, json; print(json.dumps(weekly_review.gather_review_data(), indent=2))"
+
+   Context you won't otherwise have (this runs as a fresh session with no
+   memory of how the bot was built): price_source_at_entry == "synthetic"
+   on most backtest rows is EXPECTED and deliberate, not a gap - real
+   historical 0DTE option prices don't exist once expired, so most
+   training rows are priced with a Black-Scholes model against real
+   underlying data instead. Only flag n_real_priced_rows as a problem if
+   it's suspiciously zero, not just a minority.
+
+2. If a previous review exists in evolve_bot\reviews\, read the most
+   recent one first so you can note what actually changed since then -
+   more real trading days, more closed shadow trades, a new retrain, a
+   bankroll change, etc.
+
+3. Read the real numbers from step 1 and write a genuine, honest
+   assessment - not a template, not filler. Cover, using only what the
+   real numbers actually show:
+   - Live trading: bankroll trajectory, real closed-trade count and win
+     rate. If there's barely any real trade volume yet, say that plainly
+     rather than padding the review with speculation.
+   - Shadow mode: how many real closed shadow trades exist now, and ONLY
+     if there are enough on both the WIN and LOSS side to compare
+     (score_calibration.enough_data_to_compare == true), whether higher
+     model scores are actually tracking more real wins. If there isn't
+     enough data yet, say exactly that - do not simulate or estimate a
+     trend that isn't really there.
+   - Backtest training data: how many real trading days/rows exist now,
+     whether this grew since the last review.
+   - Retraining: whether a new retrain happened, and if so, how its
+     metrics compare to the previous one - report this as a genuinely
+     small, noisy sample until real data volume is much larger (dozens of
+     real trading days, not the low double digits), not as a validated
+     trend.
+   - One clear, concrete next step - the thing most worth doing before
+     the next review.
+
+4. Save the review as a new file at
+   C:\Tradysquid\evolve_bot\reviews\<today's date as YYYY-MM-DD>_weekly_review.md
+
+Be honest and specific. A short, accurate review that says "not much
+changed, still waiting on more real trading days" is more useful than a
+long one that manufactures insight from too little data.
