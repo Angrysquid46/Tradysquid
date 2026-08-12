@@ -19,6 +19,7 @@ show).
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -29,6 +30,7 @@ import spy_scanner as s  # noqa: E402 - path must be set up first
 
 import bankroll
 import market_features
+import model_scoring
 import tradelog
 
 PLAY_TYPE = "SPY_EVOLVE"
@@ -36,6 +38,18 @@ ROOT = Path(__file__).resolve().parent
 STATE_DIR = ROOT / "state"
 BANKROLL_PATH = STATE_DIR / "bankroll.json"
 TRADELOG_PATH = STATE_DIR / "trades.csv"
+
+# Phase 7, deliberately OFF by default: shadow mode (Phase 6) has logged
+# exactly one real prediction as of 2026-08-12, nowhere near enough
+# closed shadow trades to know whether the model's scores track real
+# outcomes. The model_score_at_entry column below is always populated on
+# every real trade regardless of this flag - purely informational, zero
+# behavior change - so historical trades already carry the model's
+# opinion for later analysis. Only the actual skip-the-trade behavior is
+# gated. Flip EVOLVE_MODEL_FILTER_ENABLED=true once shadow mode has
+# enough history to trust; nothing else about this file needs to change.
+MODEL_FILTER_ENABLED = os.environ.get("EVOLVE_MODEL_FILTER_ENABLED", "false").strip().lower() == "true"
+MODEL_MIN_WIN_PROBABILITY = float(os.environ.get("EVOLVE_MODEL_MIN_WIN_PROBABILITY", "0.5"))
 
 
 def build_thesis(candidate: dict[str, Any], context: dict[str, Any], market_condition: str) -> str:
@@ -194,6 +208,14 @@ def _try_open_new_position(
     )
     vix = market_features.vix_on_or_before(today_str, vix_series)
     sentiment = market_features.market_sentiment_for_date(today_str)
+    model_score = model_scoring.score_candidate(best, context, market_condition, vix, sentiment, put_call_ratio)
+
+    # Scoring always happens (see MODEL_FILTER_ENABLED's docstring above);
+    # only this skip is gated. A candidate the rule-based signal already
+    # qualified never gets blocked just because scoring failed open
+    # (model_score is None) - only an actual low score does.
+    if MODEL_FILTER_ENABLED and model_score is not None and model_score < MODEL_MIN_WIN_PROBABILITY:
+        return None, bank
 
     size_dollars = bankroll.position_size_dollars(bank)
     contracts = bankroll.contracts_affordable(size_dollars, best["entry_price"])
@@ -228,6 +250,7 @@ def _try_open_new_position(
             "vix_at_entry": "" if vix is None else str(vix),
             "sentiment_at_entry": "" if sentiment is None else str(sentiment),
             "put_call_ratio_at_entry": "" if put_call_ratio is None else str(put_call_ratio),
+            "model_score_at_entry": "" if model_score is None else str(model_score),
             "thesis": build_thesis(best, context, market_condition),
             "outcome": "OPEN",
             "max_favorable_pct": "0",

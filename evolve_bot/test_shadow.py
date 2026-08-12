@@ -11,19 +11,6 @@ import shadow
 CT = ZoneInfo("America/Chicago")
 
 
-def test_score_candidate_returns_none_when_no_model_exists():
-    with tempfile.TemporaryDirectory() as temp:
-        with (
-            mock.patch.object(shadow.train, "MODEL_PATH", Path(temp) / "nope.txt"),
-            mock.patch.object(shadow.train, "METADATA_PATH", Path(temp) / "nope.json"),
-        ):
-            score = shadow.score_candidate(
-                {"delta": 0.5, "iv": 0.2, "call_or_put": "call"},
-                {"regime": "BULLISH / CONTROLLED"}, "CHOPPY / LOW VOL", 15.0, 0.05, None,
-            )
-    assert score is None
-
-
 def test_next_shadow_id_increments_within_the_same_day():
     timestamp = datetime(2026, 8, 12, 10, 0, tzinfo=CT)
     rows = [{"shadow_id": "SHADOW-20260812-001"}]
@@ -64,7 +51,7 @@ def test_try_open_shadow_position_logs_a_row_with_a_model_score_and_no_bankroll_
         mock.patch.object(shadow.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(shadow.market_features, "vix_on_or_before", return_value=15.5),
         mock.patch.object(shadow.market_features, "market_sentiment_for_date", return_value=0.1),
-        mock.patch.object(shadow, "score_candidate", return_value=0.63),
+        mock.patch.object(shadow.model_scoring, "score_candidate", return_value=0.63),
     ):
         row = shadow._try_open_shadow_position([], datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
@@ -120,7 +107,7 @@ def test_run_shadow_cycle_end_to_end_with_a_qualified_candidate():
             mock.patch.object(shadow.market_features, "fetch_vix_series", return_value=[]),
             mock.patch.object(shadow.market_features, "vix_on_or_before", return_value=None),
             mock.patch.object(shadow.market_features, "market_sentiment_for_date", return_value=None),
-            mock.patch.object(shadow, "score_candidate", return_value=0.55),
+            mock.patch.object(shadow.model_scoring, "score_candidate", return_value=0.55),
         ):
             result = shadow.run_shadow_cycle()
 

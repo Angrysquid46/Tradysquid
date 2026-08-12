@@ -12,24 +12,22 @@ influence a real decision.
 Reuses engine.find_candidate and engine.evaluate_exit_for_row - the exact
 same real entry-detection and exit-evaluation logic the live bot runs -
 rather than maintaining a second copy that could silently drift from it.
+Also reuses model_scoring.score_candidate, shared with engine.py's own
+(dormant, Phase 7) model filter - split into its own module specifically
+to avoid a circular import between this file and engine.py.
 """
 
 from __future__ import annotations
 
 import csv
-import json
 import tempfile
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-import lightgbm as lgb
-import numpy as np
-
 import engine
-import features
 import market_features
-import train
+import model_scoring
 from engine import s  # the same spy_scanner import engine.py already set up
 
 PLAY_TYPE = "SPY_EVOLVE_SHADOW"
@@ -90,52 +88,6 @@ def next_shadow_id(rows: list[dict[str, str]], timestamp) -> str:
     return f"{prefix}{len(existing) + 1:03d}"
 
 
-def score_candidate(
-    candidate: dict[str, Any], context: dict[str, Any], market_condition: str,
-    vix: float | None, sentiment: float | None, put_call_ratio: float | None,
-) -> float | None:
-    """Loads the current trained model fresh every call - Phase 5's
-    retrain loop may have produced a newer one since the last score, and
-    a LightGBM text-format model is cheap enough to reload that caching
-    isn't worth the staleness risk. Returns None (never a fabricated
-    score) when no model has been trained yet.
-
-    variant_label/price_source_at_entry are backtest-only concepts this
-    live candidate genuinely doesn't have a value for - left as
-    placeholders the model's own vocabulary maps to its UNKNOWN category
-    code, which is the honest outcome, not a workaround. stop_pct/
-    target_pct/floor_pct/floor_trigger_pct use the live SPY_0DTE
-    constants directly, since shadow mode's hypothetical exit is
-    evaluated with the exact same real exit signal the live bot uses."""
-    if not train.MODEL_PATH.exists() or not train.METADATA_PATH.exists():
-        return None
-    try:
-        metadata = json.loads(train.METADATA_PATH.read_text(encoding="utf-8"))
-        model = lgb.Booster(model_file=str(train.MODEL_PATH))
-    except (OSError, ValueError, lgb.basic.LightGBMError):
-        return None
-    vocabulary = metadata.get("vocabulary", {})
-    row = {
-        "delta_at_entry": str(candidate.get("delta", "")),
-        "iv_at_entry": str(candidate.get("iv", "")),
-        "vix_at_entry": "" if vix is None else str(vix),
-        "sentiment_at_entry": "" if sentiment is None else str(sentiment),
-        "put_call_ratio_at_entry": "" if put_call_ratio is None else str(put_call_ratio),
-        "stop_pct": str(s.SPY_0DTE_STOP_PCT),
-        "target_pct": str(s.SPY_0DTE_TARGET_PCT),
-        "floor_pct": str(s.SPY_0DTE_FLOOR_PCT),
-        "floor_trigger_pct": str(s.SPY_0DTE_FLOOR_TRIGGER_PCT),
-        "call_or_put": candidate.get("call_or_put", ""),
-        "market_condition": market_condition or "",
-        "regime": context.get("regime", ""),
-        "variant_label": "live",
-        "price_source_at_entry": "real",
-    }
-    vector = features.row_to_feature_vector(row, vocabulary)
-    prediction = model.predict(np.array([vector], dtype=float))
-    return round(float(prediction[0]), 4)
-
-
 def _close_open_shadow_rows(rows: list[dict[str, str]], timestamp) -> int:
     open_shadow_rows = open_rows(rows)
     if not open_shadow_rows:
@@ -180,7 +132,7 @@ def _try_open_shadow_position(rows: list[dict[str, str]], timestamp, spot_price:
     )
     vix = market_features.vix_on_or_before(today_str, vix_series)
     sentiment = market_features.market_sentiment_for_date(today_str)
-    model_score = score_candidate(best, context, market_condition, vix, sentiment, put_call_ratio)
+    model_score = model_scoring.score_candidate(best, context, market_condition, vix, sentiment, put_call_ratio)
 
     row = blank_row()
     row.update(
