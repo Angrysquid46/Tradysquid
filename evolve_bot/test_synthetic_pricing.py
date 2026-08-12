@@ -103,6 +103,32 @@ def test_estimate_implied_volatility_is_positive_for_real_looking_bars():
     assert vol > 0.0
 
 
+def test_black_scholes_delta_call_is_between_zero_and_one():
+    delta = pricing.black_scholes_delta(600.0, 605.0, 0.002, 0.20, "call")
+    assert 0.0 < delta < 1.0
+
+
+def test_black_scholes_delta_put_is_between_negative_one_and_zero():
+    delta = pricing.black_scholes_delta(600.0, 605.0, 0.002, 0.20, "put")
+    assert -1.0 < delta < 0.0
+
+
+def test_black_scholes_delta_call_increases_with_spot():
+    low = pricing.black_scholes_delta(590.0, 605.0, 0.002, 0.20, "call")
+    high = pricing.black_scholes_delta(615.0, 605.0, 0.002, 0.20, "call")
+    assert high > low
+
+
+def test_black_scholes_delta_falls_back_to_fully_itm_at_zero_time_to_expiry():
+    assert pricing.black_scholes_delta(610.0, 600.0, 0.0, 0.20, "call") == 1.0
+    assert pricing.black_scholes_delta(590.0, 600.0, 0.0, 0.20, "call") == 0.0
+
+
+def test_black_scholes_delta_put_falls_back_to_fully_itm_at_zero_time_to_expiry():
+    assert pricing.black_scholes_delta(590.0, 600.0, 0.0, 0.20, "put") == -1.0
+    assert pricing.black_scholes_delta(610.0, 600.0, 0.0, 0.20, "put") == 0.0
+
+
 def test_estimate_implied_volatility_scales_up_with_the_risk_premium_multiplier():
     bars = [{"close": 600.0 + (i % 3) * 2.0} for i in range(25)]  # some real variance
     low_premium = pricing.estimate_implied_volatility(bars, risk_premium_multiplier=1.0)

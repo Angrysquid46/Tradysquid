@@ -63,6 +63,35 @@ def black_scholes_price(
     return max(price, 0.0)
 
 
+def black_scholes_delta(
+    spot: float,
+    strike: float,
+    years_to_expiry: float,
+    volatility: float,
+    call_or_put: str,
+    rate: float = RISK_FREE_RATE,
+) -> float:
+    """Black-Scholes delta (N(d1) for a call, N(d1) - 1 for a put). Used to
+    build a synthetic chain for historical days - Tradier doesn't serve a
+    chain for an expired expiration, so there's no real delta to read for
+    backtest candidate selection, only one to estimate the same way the
+    premium itself is estimated. Falls back to a fully-ITM/OTM delta at or
+    past expiration or for degenerate volatility, matching
+    black_scholes_price's own fallback to intrinsic value in that case."""
+    if years_to_expiry <= 0 or volatility <= 0 or spot <= 0 or strike <= 0:
+        in_the_money = spot > strike if call_or_put == "call" else spot < strike
+        if call_or_put == "call":
+            return 1.0 if in_the_money else 0.0
+        return -1.0 if in_the_money else 0.0
+    sqrt_t = math.sqrt(years_to_expiry)
+    d1 = (math.log(spot / strike) + (rate + 0.5 * volatility**2) * years_to_expiry) / (
+        volatility * sqrt_t
+    )
+    if call_or_put == "call":
+        return _norm_cdf(d1)
+    return _norm_cdf(d1) - 1.0
+
+
 def years_remaining_in_trading_day(moment: datetime, close_time: datetime) -> float:
     """Fraction of a trading YEAR remaining until close, for a 0DTE option
     expiring at today's close. Clamped to zero rather than going negative
