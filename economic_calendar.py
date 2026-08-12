@@ -31,12 +31,24 @@ import os
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "").strip()
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/releases/dates"
 SESSION = requests.Session()
+
+# Matches spy_scanner.MARKET_TZ - not imported directly to avoid a circular
+# import (spy_scanner imports this module). FRED release dates are
+# day-granularity calendar days tied to the US market's own trading day,
+# not raw UTC - using UTC's "today" instead of the market's own put this
+# module's day boundary up to 5 hours off from the rest of the system's
+# (confirmed live: at 7:55pm CT/00:55 UTC, UTC's calendar date was already
+# tomorrow relative to Central's, which silently dropped a same-day
+# release from the 0 <= days_until <= window_days check for the rest of
+# the evening, every day).
+MARKET_TZ = ZoneInfo("America/Chicago")
 
 # Release-name substrings (case-insensitive) that count as high-impact for
 # this strategy's purposes - matches the source spec's examples (Fed
@@ -69,7 +81,7 @@ def _fetch_release_dates() -> list[dict[str, Any]]:
         return _cache[1]
     if not FRED_API_KEY:
         return []
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(MARKET_TZ).date()
     params = {
         "api_key": FRED_API_KEY,
         "file_type": "json",
@@ -95,7 +107,7 @@ def _fred_catalyst(window_days: int) -> dict[str, Any] | None:
         events = _fetch_release_dates()
     except Exception:
         return None
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(MARKET_TZ).date()
     best: dict[str, Any] | None = None
     best_days_until: int | None = None
     for event in events:

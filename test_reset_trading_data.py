@@ -87,20 +87,35 @@ def test_reset_deletes_every_thread_in_the_channel_directly():
         tracker.ready = True
         tracker.channels = {"forum": "journal-channel-id"}
         calls: list[tuple[str, str]] = []
+        # wipe_channel_threads retries up to 5 passes specifically to
+        # survive a burst hitting a rate limit or a thread created mid-wipe
+        # - a real Discord list call reflects real deletions, so a static
+        # mock that keeps returning already-deleted threads makes every
+        # pass "find" them again and overcounts (a real bug this test once
+        # had: asserted deleted_threads == 3 but got 15, exactly 5 passes x
+        # 3 threads - the reset code was correct, the mock wasn't
+        # simulating deletion). Track live thread ids explicitly instead.
+        live_threads = {"thread-1", "orphaned-thread-999", "unrelated-thread-1", "archived-thread-42"}
 
         def fake_request(method, path, *a, **k):
             calls.append((method, path))
+            if method == "DELETE" and path.startswith("/channels/"):
+                live_threads.discard(path.rsplit("/", 1)[-1])
+                return {}
             if path == "/guilds/fake-guild/threads/active":
-                return {"threads": [
+                active = [
                     {"id": "thread-1", "parent_id": "journal-channel-id"},
                     {"id": "orphaned-thread-999", "parent_id": "journal-channel-id"},
                     # A different forum channel's active thread - must NOT
                     # be touched, since the guild-wide endpoint returns
                     # threads from every channel, not just this one.
                     {"id": "unrelated-thread-1", "parent_id": "some-other-channel"},
-                ]}
+                ]
+                return {"threads": [t for t in active if t["id"] in live_threads]}
             if path.startswith("/channels/journal-channel-id/threads/archived/public"):
-                return {"threads": [{"id": "archived-thread-42"}], "has_more": False}
+                if "archived-thread-42" in live_threads:
+                    return {"threads": [{"id": "archived-thread-42"}], "has_more": False}
+                return {"threads": [], "has_more": False}
             return None
 
         with mock.patch.object(spy_scanner.DiscordTracker, "_request", side_effect=fake_request):
