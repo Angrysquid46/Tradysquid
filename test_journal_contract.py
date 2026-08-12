@@ -209,6 +209,19 @@ class JournalContractTests(unittest.TestCase):
         self.assertGreater(result["rendered_fields"], 0)
         self.assertEqual(result["missing"], 0)
 
+    def test_contract_self_validation_exercises_a_live_play_type_not_the_retired_regular_ford_one(self) -> None:
+        # validate_contract() used to build its synthetic row with
+        # play_type="REGULAR"/ticker="F" (Ford, retired) - entry_alert_text
+        # branches by play_type (SPY_0DTE vs ratchet vs the generic
+        # default), so this self-test never actually exercised any branch a
+        # real live trade renders through.
+        import inspect
+
+        source = inspect.getsource(journal_contract.validate_contract)
+        self.assertNotIn('"REGULAR"', source)
+        self.assertNotIn('"F"', source)
+        self.assertIn("SPY_0DTE", source)
+
     def test_entry_card_title_names_which_strategy_opened_it(self) -> None:
         # Owner ask: every position card must show which strategy/trader
         # opened it, not just "LONG CALL" with no indication of which of

@@ -854,18 +854,21 @@ def install() -> None:
 
 
 def validate_reconciliation() -> dict[str, int]:
+    # Ticker/play_types must be currently-live ones (SPY_0DTE/Key-Levels/
+    # Expansion/ratchet variants via STRATEGY_VARIANTS) - this used to test
+    # against the retired REGULAR/SWING/SPREAD play types and ticker "F"
+    # (Ford), silently validating a system that no longer exists. In the
+    # installed system this is shadowed by performance_scorecards.py's own
+    # validate_reconciliation (see its install()), so this mainly matters
+    # if this module is ever exercised standalone (its own __main__ below).
+    variants = STRATEGY_VARIANTS
     rows: list[dict[str, str]] = []
     monday = datetime(2026, 7, 27, 14, 30, tzinfo=spy_scanner.MARKET_TZ)
-    strategies = (
-        ("REGULAR", "call"),
-        ("REGULAR", "put"),
-        ("SWING", "call"),
-        ("SWING", "put"),
-        ("SPREAD", "call"),
-    )
+    sides = ("call", "put")
     for index in range(100):
         closed_at = monday + timedelta(days=index % 5, minutes=index)
-        play_type, side = strategies[index % len(strategies)]
+        play_type = variants[index % len(variants)][0]
+        side = sides[index % len(sides)]
         row = spy_scanner.blank_row()
         row.update(
             {
@@ -876,8 +879,8 @@ def validate_reconciliation() -> dict[str, int]:
                 "outcome": "WIN" if index % 3 else "LOSS",
                 "play_type": play_type,
                 "call_or_put": side,
-                "ticker": "F",
-                "strike": "12" if play_type != "SPREAD" else "12/11",
+                "ticker": "SPY",
+                "strike": "600",
                 "entry_price": "0.50",
                 "exit_price": "0.60" if index % 3 else "0.40",
                 "realized_pl_dollars": "10" if index % 3 else "-10",
