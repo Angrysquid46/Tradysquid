@@ -329,6 +329,14 @@ LOG_HEADER = [
     "setup_score",
     "setup_reason",
     "market_regime",
+    # Universal, cross-strategy market-condition tag (trend + volatility
+    # bucket, e.g. "TRENDING_UP / HIGH VOL") - distinct from market_regime
+    # above, which is each strategy's own directional call, not comparable
+    # across strategies. Computed once per scan cycle from SPY's own daily
+    # price action (classify_market_condition) and stamped on every trade
+    # opened that cycle, so results can be broken down by market condition
+    # the same way regardless of which strategy opened the trade.
+    "market_condition_at_entry",
     "thesis",
     "entry_confirmation",
     "invalidation",
@@ -992,6 +1000,7 @@ def entry_alert_text(row: dict[str, str], include_link: str = "", summary_only: 
         "### Why This Qualified",
         (
             f"**Regime:** {row.get('market_regime') or 'CONTROLLED'}\n"
+            f"**Market condition:** {row.get('market_condition_at_entry') or 'UNKNOWN'}\n"
             f"**Score:** {row.get('setup_score') or '—'} *(ranking only; not a win probability)*\n"
             f"**Evidence:** {row.get('setup_reason') or 'Conservative directional filters passed'}"
         ),
@@ -1702,6 +1711,81 @@ def directional_market_context(
         "failures": failures,
     }
 
+
+# Owner ask, sourced from a Reddit suggestion: track performance across
+# market conditions, not just per-strategy. Distinct from market_regime
+# (each strategy's own directional call) - this is one universal tag
+# computed from SPY's own daily price action, applied uniformly to every
+# trade regardless of which strategy opened it, so results are genuinely
+# comparable across strategies ("how does the whole system do on choppy
+# vs trending days"), not just within one.
+MARKET_CONDITION_TREND_EFFICIENCY = float(os.environ.get(
+    "MARKET_CONDITION_TREND_EFFICIENCY", configured("market_condition_trend_efficiency", 0.6)
+))
+MARKET_CONDITION_VOL_HIGH_RATIO = float(os.environ.get(
+    "MARKET_CONDITION_VOL_HIGH_RATIO", configured("market_condition_vol_high_ratio", 1.3)
+))
+MARKET_CONDITION_VOL_LOW_RATIO = float(os.environ.get(
+    "MARKET_CONDITION_VOL_LOW_RATIO", configured("market_condition_vol_low_ratio", 0.7)
+))
+MARKET_CONDITION_VOL_LOOKBACK_DAYS = int(os.environ.get(
+    "MARKET_CONDITION_VOL_LOOKBACK_DAYS", configured("market_condition_vol_lookback_days", 20)
+))
+
+
+def classify_market_condition(history: list[dict[str, Any]]) -> dict[str, Any]:
+    """Classifies today's trading session along two independent axes, using
+    only the daily bars already fetched for the market chart - no extra API
+    calls. Trend: how much of today's high/low range was covered as a net
+    directional move (a big one-way day vs. a round trip). Volatility:
+    today's range against the trailing MARKET_CONDITION_VOL_LOOKBACK_DAYS
+    average range. Returns "UNKNOWN" on both axes when there isn't enough
+    history to compute a trailing baseline or today's bar isn't available
+    yet - never guesses."""
+    unknown = {"trend": "UNKNOWN", "volatility": "UNKNOWN", "label": "UNKNOWN"}
+    if len(history) < MARKET_CONDITION_VOL_LOOKBACK_DAYS + 1:
+        return unknown
+    today = history[-1]
+    open_ = as_float(today.get("open"))
+    close = as_float(today.get("close"))
+    high = as_float(today.get("high"))
+    low = as_float(today.get("low"))
+    if None in (open_, close, high, low):
+        return unknown
+    day_range = high - low
+    if day_range <= 0:
+        return unknown
+
+    net_move = close - open_
+    efficiency = abs(net_move) / day_range
+    if efficiency >= MARKET_CONDITION_TREND_EFFICIENCY:
+        trend = "TRENDING_UP" if net_move > 0 else "TRENDING_DOWN"
+    else:
+        trend = "CHOPPY"
+
+    prior_ranges = [
+        prior_high - prior_low
+        for day in history[-(MARKET_CONDITION_VOL_LOOKBACK_DAYS + 1):-1]
+        if (prior_high := as_float(day.get("high"))) is not None
+        and (prior_low := as_float(day.get("low"))) is not None
+        and prior_high > prior_low
+    ]
+    average_range = (sum(prior_ranges) / len(prior_ranges)) if prior_ranges else None
+    if not average_range:
+        return unknown
+    ratio = day_range / average_range
+    if ratio >= MARKET_CONDITION_VOL_HIGH_RATIO:
+        volatility = "HIGH"
+    elif ratio <= MARKET_CONDITION_VOL_LOW_RATIO:
+        volatility = "LOW"
+    else:
+        volatility = "NORMAL"
+
+    return {
+        "trend": trend,
+        "volatility": volatility,
+        "label": f"{trend} / {volatility} VOL",
+    }
 
 
 
@@ -3729,7 +3813,13 @@ def save_chain_snapshot(
         print(f"Could not save chain snapshot for {row.get('trade_id')}: {exc}", file=sys.stderr)
 
 
-def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], timestamp: datetime) -> dict[str, str]:
+def candidate_to_row(
+    candidate: dict[str, Any],
+    rows: list[dict[str, str]],
+    timestamp: datetime,
+    *,
+    market_condition: str = "",
+) -> dict[str, str]:
     row = blank_row()
     row.update(
         {
@@ -3759,6 +3849,7 @@ def candidate_to_row(candidate: dict[str, Any], rows: list[dict[str, str]], time
             "setup_score": round_or_blank(as_float(candidate.get("score")), 1),
             "setup_reason": str(candidate.get("setup_reason", "")),
             "market_regime": str(candidate.get("market_regime", "")),
+            "market_condition_at_entry": market_condition,
             "thesis": (
                 f"{candidate['play_type'].lower()} {candidate['call_or_put'].lower()} on {TICKER}: "
                 f"{candidate.get('setup_reason') or 'controlled scanner qualification'}"
@@ -5881,6 +5972,34 @@ def format_strategy_results(rows: list[dict[str, str]], play_type: str, label: s
     return "\n".join(lines)[:2000]
 
 
+def format_market_condition_breakdown(rows: list[dict[str, str]]) -> str:
+    """Owner ask, sourced from a Reddit suggestion: how does the whole
+    system perform across different market conditions, not just per
+    strategy. Groups every closed trade (any play_type) by its universal
+    market_condition_at_entry tag - unlike format_strategy_results' "by
+    entry regime" section above, this is comparable across every strategy
+    since the tag doesn't come from any one strategy's own signal."""
+    completed = closed_rows(rows)
+    lines = ["**By Market Condition**"]
+    tagged = [row for row in completed if row.get("market_condition_at_entry")]
+    if not tagged:
+        lines.append("No completed trades with a recorded market condition yet.")
+        return "\n".join(lines)
+
+    by_condition: dict[str, list[dict[str, str]]] = {}
+    for row in tagged:
+        condition = row.get("market_condition_at_entry") or "UNKNOWN"
+        by_condition.setdefault(condition, []).append(row)
+
+    for condition, group in sorted(by_condition.items(), key=lambda item: -result_metrics(item[1])["total_pnl"]):
+        metrics = result_metrics(group)
+        lines.append(
+            f"**{condition}** — {int(metrics['wins'])}W / {int(metrics['losses'])}L · "
+            f"{metrics['win_rate']:.0f}% win rate · Net {fmt_metric_money(metrics, 'total_pnl')}"
+        )
+    return "\n".join(lines)
+
+
 def format_ticker_results(rows: list[dict[str, str]]) -> str:
     groups: dict[str, list[dict[str, str]]] = {}
     for row in closed_rows(rows):
@@ -7207,6 +7326,7 @@ def main(*, publish_shared: bool = True, position_lock: Any = None) -> int:
             raise TradierError(f"{TICKER} spot quote was unavailable")
         spot_price = float(spot["last"])
         history = get_daily_history(TICKER, days=120)
+        market_condition = classify_market_condition(history)["label"]
         if history:
             render_market_chart(history, spot_price)
             safe_discord_call(
@@ -7303,7 +7423,7 @@ def main(*, publish_shared: bool = True, position_lock: Any = None) -> int:
 
         new_rows: list[dict[str, str]] = []
         for candidate in selected:
-            row = candidate_to_row(candidate, rows, timestamp)
+            row = candidate_to_row(candidate, rows, timestamp, market_condition=market_condition)
             rows.append(row)
             new_rows.append(row)
             save_chain_snapshot(row, candidates, timestamp)

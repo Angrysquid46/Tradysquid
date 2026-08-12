@@ -140,6 +140,7 @@ def test_system_digest_job_posts_one_upserted_card_with_all_three_sections():
     assert state_key == "system-digest"
     assert search_token == "Daily System Digest"
     assert "Trading Anomalies" in content
+    assert "By Market Condition" in content
     assert "Infra Health" in content
     assert "Patch Log" in content
     assert "1 of 1 stop/floor closes" in content
