@@ -469,6 +469,17 @@ CLOSING_SIGNALS = {
     "TIME DECAY EXIT",
     "FLOOR STOP",
     "RATCHET EOD CLOSE",
+    # spy_0dte_exit_signal's own bare "EOD CLOSE" (both its real 15-minutes-
+    # to-close branch and its own error-fallback branch) - the exact bug
+    # this set exists to prevent, missed from this set itself: a SPY_0DTE_1M/
+    # 5M position that reaches the closing window without hitting a stop/
+    # target/floor would show "EOD CLOSE" as last_signal on its live card
+    # but never actually get closed by any of the three call sites, since
+    # none of them recognized this specific string. Confirmed live: zero
+    # occurrences in the trade log so far, meaning every 0DTE trade to date
+    # has happened to hit a real stop/target/floor before reaching this
+    # branch - not evidence it can't happen, just that it hasn't yet.
+    "EOD CLOSE",
 }
 
 AUTOMATED_CHANNEL_KEYS = [
