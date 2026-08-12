@@ -1096,6 +1096,7 @@ def system_digest_job(connection: sqlite3.Connection) -> str:
     ]
     if worst:
         lines.append("Worst: " + " · ".join(worst))
+    lines.append(spy_scanner.format_market_condition_breakdown(rows))
     lines.append("### Infra Health")
     if open_issues:
         lines.append(
