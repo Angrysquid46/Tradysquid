@@ -61,17 +61,48 @@ HEADER = [
     "outcome", "exit_price", "last_signal", "pl_pct", "max_favorable_pct", "max_adverse_pct",
 ]
 
-# Parameter variants swept per real trading day - centered on the live
-# SPY_0DTE defaults (the middle row) with a spread of tighter/looser
-# stops and targets around them, so the same real price path yields
-# several labeled outcomes instead of just one.
-DEFAULT_VARIANTS = [
-    {"label": "tight_30_40", "stop_pct": 0.30, "target_pct": 0.40, "floor_pct": -10.0, "floor_trigger_pct": 20.0},
-    {"label": "moderate_40_50", "stop_pct": 0.40, "target_pct": 0.50, "floor_pct": -12.0, "floor_trigger_pct": 25.0},
-    {"label": "live_default_50_50", "stop_pct": 0.50, "target_pct": 0.50, "floor_pct": -15.0, "floor_trigger_pct": 30.0},
-    {"label": "wide_target_50_75", "stop_pct": 0.50, "target_pct": 0.75, "floor_pct": -15.0, "floor_trigger_pct": 30.0},
-    {"label": "loose_60_100", "stop_pct": 0.60, "target_pct": 1.00, "floor_pct": -20.0, "floor_trigger_pct": 40.0},
-]
+# Parameter GRID swept per real trading day - candidates stay scoped to
+# exactly what the live strategy's own delta band (0.40-0.60) would offer
+# the model (confirmed with the owner: don't widen the strike net, since
+# the model will never be asked to score a candidate outside that live
+# filter) - so this is the honest lever for more training volume from the
+# same real days: replay the SAME real/synthetic price path through many
+# more exit-rule variants, the same technique already proven on the
+# ratchet-floor backtest (1,680 combos over one real dataset). 5x5 = 25
+# combos (up from 5 hand-picked ones), a real multiplier on data already
+# cached - no new pulls needed.
+#
+# floor_pct/floor_trigger_pct are derived from stop_pct/target_pct by a
+# fixed, documented rule rather than hand-picked per combo, since a grid
+# this size can't be hand-authored sensibly: floor_trigger fires 60% of
+# the way to target, and locks in half of what the stop would have lost -
+# the same rough shape the original 5 hand-picked variants used, just
+# made systematic. STOP_GRID/TARGET_GRID both include 0.50, so the live
+# SPY_0DTE default (0.50/0.50) is still exactly represented in the grid,
+# not just approximated.
+STOP_GRID = [0.20, 0.35, 0.50, 0.65, 0.80]
+TARGET_GRID = [0.30, 0.50, 0.75, 1.00, 1.50]
+FLOOR_TRIGGER_FRACTION_OF_TARGET = 0.6
+FLOOR_FRACTION_OF_STOP = 0.5
+
+
+def _build_variant_grid(stop_grid: list[float], target_grid: list[float]) -> list[dict[str, Any]]:
+    variants = []
+    for stop_pct in stop_grid:
+        for target_pct in target_grid:
+            variants.append(
+                {
+                    "label": f"stop_{int(round(stop_pct * 100))}_target_{int(round(target_pct * 100))}",
+                    "stop_pct": stop_pct,
+                    "target_pct": target_pct,
+                    "floor_pct": round(-FLOOR_FRACTION_OF_STOP * stop_pct * 100, 1),
+                    "floor_trigger_pct": round(FLOOR_TRIGGER_FRACTION_OF_TARGET * target_pct * 100, 1),
+                }
+            )
+    return variants
+
+
+DEFAULT_VARIANTS = _build_variant_grid(STOP_GRID, TARGET_GRID)
 
 
 def _find_breakout_index(bars: list[dict[str, Any]]) -> int | None:
