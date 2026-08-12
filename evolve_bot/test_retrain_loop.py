@@ -30,6 +30,42 @@ def test_should_retrain_is_true_when_a_new_day_appears():
     assert retrain_loop.should_retrain(current, last_state) is True
 
 
+def test_should_retrain_is_true_when_row_content_changed_but_count_and_days_did_not():
+    """Regression guard for the real bug found from live behavior: a
+    real-price backfill (Robinhood data replacing a synthetic-priced row
+    for a day/candidate already in the file) changes existing rows'
+    pl_pct/outcome without changing row count or the day set - the old
+    row-count/day-set-only check silently missed this, should_retrain
+    returned False on genuinely changed data."""
+    current = {"n_rows": 100, "n_days": 5, "days": ["2026-07-06", "2026-07-07"], "file_hash": "abc123"}
+    last_state = {"n_rows": 100, "n_days": 5, "days": ["2026-07-06", "2026-07-07"], "file_hash": "def456"}
+    assert retrain_loop.should_retrain(current, last_state) is True
+
+
+def test_should_retrain_is_false_when_file_hash_is_identical():
+    current = {"n_rows": 100, "n_days": 5, "days": ["2026-07-06", "2026-07-07"], "file_hash": "abc123"}
+    last_state = {"n_rows": 100, "n_days": 5, "days": ["2026-07-06", "2026-07-07"], "file_hash": "abc123"}
+    assert retrain_loop.should_retrain(current, last_state) is False
+
+
+def test_current_data_signature_includes_a_real_file_hash():
+    with tempfile.TemporaryDirectory() as temp:
+        csv_path = Path(temp) / "backtest_trades.csv"
+        csv_path.write_text("trade_id,trading_day\nBT1,2026-07-06\n", encoding="utf-8")
+        with mock.patch.object(retrain_loop.backtest, "BACKTEST_TRADES_PATH", csv_path):
+            signature = retrain_loop._current_data_signature()
+    assert signature["file_hash"] is not None
+    assert isinstance(signature["file_hash"], str)
+
+
+def test_current_data_signature_file_hash_is_none_when_file_is_missing():
+    with tempfile.TemporaryDirectory() as temp:
+        missing_path = Path(temp) / "nope.csv"
+        with mock.patch.object(retrain_loop.backtest, "BACKTEST_TRADES_PATH", missing_path):
+            signature = retrain_loop._current_data_signature()
+    assert signature["file_hash"] is None
+
+
 def test_run_retrain_cycle_skips_when_data_is_unchanged():
     with tempfile.TemporaryDirectory() as temp:
         temp_path = Path(temp)

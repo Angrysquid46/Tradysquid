@@ -19,11 +19,13 @@ actually helping, rather than trusting any single run's numbers.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
 from typing import Any
 
+import backtest
 import train
 
 ROOT = Path(__file__).resolve().parent
@@ -32,10 +34,30 @@ RETRAIN_STATE_PATH = MODELS_DIR / "retrain_state.json"
 RETRAIN_HISTORY_PATH = MODELS_DIR / "retrain_history.jsonl"
 
 
+def _training_file_hash() -> str | None:
+    """Hash of the raw training CSV's bytes - catches ANY row-level
+    change, not just a row-count or day-set change. Found necessary from
+    real behavior, not by inspection: a real-price backfill (Robinhood
+    data replacing a synthetic-priced row for a day/candidate that was
+    already in the file) changes existing rows' pl_pct/outcome without
+    changing the row count or the set of trading days, so the row-count/
+    day-set check alone silently missed it - should_retrain returned
+    False even though the training data had genuinely changed."""
+    try:
+        return hashlib.sha256(backtest.BACKTEST_TRADES_PATH.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
 def _current_data_signature() -> dict[str, Any]:
     rows = train.load_training_rows()
     days = sorted({row["trading_day"] for row in rows if row.get("trading_day")})
-    return {"n_rows": len(rows), "n_days": len(days), "days": days}
+    return {
+        "n_rows": len(rows),
+        "n_days": len(days),
+        "days": days,
+        "file_hash": _training_file_hash(),
+    }
 
 
 def _load_state() -> dict[str, Any] | None:
@@ -58,13 +80,18 @@ def _append_history(entry: dict[str, Any]) -> None:
 
 def should_retrain(current: dict[str, Any] | None = None, last_state: dict[str, Any] | None = None) -> bool:
     """True the first time (no prior state), or whenever the training
-    data's row count or day set has changed since the last retrain -
-    never on an unchanged dataset, since that would just reproduce the
-    same model."""
+    data has actually changed since the last retrain - checked primarily
+    via a content hash of the raw training file (catches row-level
+    changes like a real-price backfill), with the row-count/day-set
+    fields kept as a fallback for a last_state saved before file_hash
+    existed. Never True on a genuinely unchanged dataset, since that
+    would just reproduce the same model."""
     current = current if current is not None else _current_data_signature()
     last_state = last_state if last_state is not None else _load_state()
     if last_state is None:
         return True
+    if "file_hash" in last_state or "file_hash" in current:
+        return current.get("file_hash") != last_state.get("file_hash")
     return current["n_rows"] != last_state.get("n_rows") or current["days"] != last_state.get("days")
 
 
