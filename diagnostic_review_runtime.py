@@ -293,14 +293,17 @@ def log_checks(store: Any) -> list[diagnostics.HealthCheck]:
             text = raw.decode("utf-8", errors="replace")
         except (OSError, ValueError):
             continue
-        suspicious = [
-            line
-            for line in text.splitlines()
-            if re.search(
-                r"(?i)(traceback|exception|\berror\b|failed|timeout|restart loop|rolled back)",
-                line,
-            )
-        ]
+        # Reuses diagnostics._line_has_genuine_failure_evidence rather than
+        # its own copy of the keyword regex - this function is a complete
+        # independent duplicate of diagnostic_upgrade_system.py's own
+        # _log_checks (installed here to shadow it, see install() below),
+        # and both used to have the identical bug: a routine healthy status
+        # line like "0 failed syncs" got flagged purely for containing the
+        # word "failed" while reporting zero of them. Fixing only the base
+        # copy left this one - the one actually running live - still
+        # broken, confirmed live (log-information-engine.log-failure fired
+        # again immediately after the base-only fix deployed).
+        suspicious = [line for line in text.splitlines() if diagnostics._line_has_genuine_failure_evidence(line)]
         if not suspicious:
             continue
         category = _log_category(suspicious)
