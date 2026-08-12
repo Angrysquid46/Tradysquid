@@ -1,0 +1,204 @@
+"""One scan cycle for the evolve bot: reprice/close open positions, then
+look for one new entry if capital allows. Phase 1 deliberately reuses
+spy_scanner's already-proven 0DTE opening-range signal, exit rules, and
+contract-selection logic (delta band, liquidity, ask-price sanity bounds)
+rather than reimplementing them from scratch - "trades on existing
+rule-based signals from day one" per the design. Self-tuning (a later
+phase) is what's meant to evolve these away from spy_scanner's defaults
+over time.
+
+spy_scanner is imported directly for its Tradier data-fetch and signal
+math only - confirmed its own imports (and everything it imports) are
+pure stdlib + requests, no Flask/PyNaCl/openai/Pillow, so this works
+cleanly from evolve_bot's own isolated venv with no dependency conflict.
+Never touches spy_scanner's Discord/state paths - those all require a
+live DiscordTracker this bot deliberately doesn't have yet (Phase 1 is
+explicitly local-only, no Discord wiring until there's something real to
+show).
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import spy_scanner as s  # noqa: E402 - path must be set up first
+
+import bankroll
+import tradelog
+
+PLAY_TYPE = "SPY_EVOLVE"
+ROOT = Path(__file__).resolve().parent
+STATE_DIR = ROOT / "state"
+BANKROLL_PATH = STATE_DIR / "bankroll.json"
+TRADELOG_PATH = STATE_DIR / "trades.csv"
+
+
+def build_thesis(candidate: dict[str, Any], context: dict[str, Any], market_condition: str) -> str:
+    """A real thesis grounded in the actual signal values behind this
+    trade, not invented after the fact - the owner's explicit ask."""
+    return (
+        f"{candidate['call_or_put'].upper()} on the {context['regime']} opening-range breakout "
+        f"({context.get('reason', '')}). Delta {candidate['delta']}, IV "
+        f"{candidate['iv'] if candidate['iv'] != '' else 'n/a'}, market condition at entry: "
+        f"{market_condition}."
+    )
+
+
+def _close_open_positions(
+    rows: list[dict[str, str]], bank: dict[str, Any], timestamp
+) -> tuple[dict[str, Any], int]:
+    open_rows = tradelog.open_rows(rows)
+    if not open_rows:
+        return bank, 0
+    quote_map = s.get_quotes(
+        [row["option_symbol"] for row in open_rows if row.get("option_symbol")],
+        include_greeks=True,
+    )
+    closed_count = 0
+    close_time = timestamp.replace(
+        hour=s.MARKET_CLOSE[0], minute=s.MARKET_CLOSE[1], second=0, microsecond=0
+    )
+    minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
+    for row in open_rows:
+        quote = quote_map.get(row.get("option_symbol", ""))
+        if not quote or not s.quote_is_reliable_for_exit(quote):
+            continue
+        mark = s.conservative_option_exit(quote)
+        entry = s.as_float(row.get("entry_price"), 0.0) or 0.0
+        if entry <= 0:
+            continue
+        pnl_pct = (mark - entry) / entry * 100
+        peak_pct = max(s.as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct, pnl_pct)
+        trough_pct = min(s.as_float(row.get("max_adverse_pct"), pnl_pct) or pnl_pct, pnl_pct)
+        signal, note = s.spy_0dte_exit_signal(entry, mark, minutes_remaining, peak_pct)
+        row["last_evaluated_at"] = timestamp.isoformat()
+        row["max_favorable_pct"] = str(round(peak_pct))
+        row["max_adverse_pct"] = str(round(trough_pct))
+        if signal not in s.CLOSING_SIGNALS:
+            continue
+        contracts = int(row.get("contracts") or 0)
+        proceeds = round(mark * 100 * contracts, 2)
+        pl_dollars = round((mark - entry) * 100 * contracts, 2)
+        row["outcome"] = "WIN" if pl_dollars > 0 else ("LOSS" if pl_dollars < 0 else "SCRATCH")
+        row["exit_price"] = str(round(mark, 2))
+        row["closed_at"] = timestamp.isoformat()
+        row["last_signal"] = signal
+        row["pl_dollars"] = str(pl_dollars)
+        row["pl_pct"] = str(round(pnl_pct))
+        bank = bankroll.credit_exit(bank, proceeds)
+        row["balance_after"] = str(bank["balance"])
+        closed_count += 1
+    return bank, closed_count
+
+
+def _try_open_new_position(
+    rows: list[dict[str, str]], bank: dict[str, Any], timestamp, spot_price: float
+) -> tuple[dict[str, str] | None, dict[str, Any]]:
+    """Returns (new_row_or_None, possibly-updated bank) - explicit return
+    rather than mutating the caller's bank dict in place, so the entry-
+    debit accounting stays as easy to follow as _close_open_positions'
+    exit-credit accounting above."""
+    # One position at a time for phase 1 - the simplest correct starting
+    # point; concurrent positions are a natural later increment once this
+    # core loop is proven, not a phase-1 requirement.
+    if tradelog.open_rows(rows):
+        return None, bank
+    if s.entry_window_blocked(timestamp):
+        return None, bank
+    today_str = timestamp.date().isoformat()
+    if today_str not in s.get_expirations(s.TICKER):
+        return None, bank
+
+    history = s.get_daily_history(s.TICKER, days=120)
+    market_condition = s.classify_market_condition(history)["label"]
+    intraday_1m = s.get_intraday_history(s.TICKER, interval="1min")
+    context = s.spy_0dte_opening_range_signal(intraday_1m, bar_minutes=1)
+    if not context.get("qualified"):
+        return None, bank
+
+    allowed_strikes = set(s.filter_strikes(s.get_strikes(s.TICKER, today_str), spot_price))
+    raw_chain = s.get_chain(s.TICKER, today_str)
+    chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
+    kind = "call" if context["regime"] == "BULLISH / CONTROLLED" else "put"
+    pool = [option for option in chain if option.get("option_type") == kind]
+    candidates = s.scan_spy_0dte_candidates(pool, kind, today_str, spot_price, context, play_type=PLAY_TYPE)
+    if not candidates:
+        return None, bank
+    candidates.sort(key=lambda candidate: candidate.get("score", 0), reverse=True)
+    best = candidates[0]
+
+    size_dollars = bankroll.position_size_dollars(bank)
+    contracts = bankroll.contracts_affordable(size_dollars, best["entry_price"])
+    if contracts < 1:
+        return None, bank
+    cost = round(best["entry_price"] * 100 * contracts, 2)
+
+    row = tradelog.blank_row()
+    row.update(
+        {
+            "trade_id": tradelog.next_trade_id(rows, bank["run_number"], timestamp),
+            "run_number": str(bank["run_number"]),
+            "timestamp": timestamp.isoformat(),
+            "option_symbol": best["option_symbol"],
+            "call_or_put": best["call_or_put"],
+            "strike": str(best["strike"]),
+            "expiration": best["expiration"],
+            "entry_price": str(best["entry_price"]),
+            "contracts": str(contracts),
+            "position_size_dollars": str(size_dollars),
+            "balance_before": str(bank["balance"]),
+            "spot_price_at_entry": str(round(spot_price, 2)),
+            "delta_at_entry": str(best["delta"]),
+            "theta_at_entry": str(best["theta"]),
+            "iv_at_entry": str(best["iv"]),
+            "open_interest_at_entry": str(best["open_interest"]),
+            "volume_at_entry": str(best["option_volume"]),
+            "market_regime": context["regime"],
+            "market_condition_at_entry": market_condition,
+            "opening_range_high": str(context.get("range_high", "")),
+            "opening_range_low": str(context.get("range_low", "")),
+            "thesis": build_thesis(best, context, market_condition),
+            "outcome": "OPEN",
+            "max_favorable_pct": "0",
+            "max_adverse_pct": "0",
+            "last_evaluated_at": timestamp.isoformat(),
+        }
+    )
+    bank = bankroll.debit_entry(bank, cost)
+    rows.append(row)
+    return row, bank
+
+
+def run_cycle() -> dict[str, Any]:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    bank = bankroll.load_state(BANKROLL_PATH)
+    rows = tradelog.read_log(TRADELOG_PATH)
+
+    is_open, timestamp = s.market_is_open_now()
+    if not is_open:
+        return {"status": "market closed"}
+
+    spot = s.get_quote(s.TICKER)
+    if not spot or s.as_float(spot.get("last")) is None:
+        return {"status": "spot quote unavailable"}
+    spot_price = float(spot["last"])
+
+    bank, closed_count = _close_open_positions(rows, bank, timestamp)
+    opened_row, bank = _try_open_new_position(rows, bank, timestamp, spot_price)
+
+    tradelog.write_log(TRADELOG_PATH, rows)
+    bankroll.save_state(BANKROLL_PATH, bank)
+    return {
+        "status": "ok",
+        "closed": closed_count,
+        "opened": bool(opened_row),
+        "balance": bank["balance"],
+        "run_number": bank["run_number"],
+    }
+
+
+if __name__ == "__main__":
+    print(run_cycle())

@@ -31,6 +31,10 @@ docs/trade-snapshots/
 docs/tickers/
 docs/chain-snapshots/
 .venv-tradysquid/
+.venv-evolve/
+evolve_bot/state/
+evolve_bot/data/
+evolve_bot/models/
 /state/
 /data/
 /logs/
