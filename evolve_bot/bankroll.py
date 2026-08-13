@@ -62,10 +62,14 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     temp.replace(path)
 
 
-def position_size_dollars(state: dict[str, Any]) -> float:
+def position_size_dollars(state: dict[str, Any], position_size_pct: float = POSITION_SIZE_PCT) -> float:
     """How much to risk on the next trade - a % of the balance right now,
-    not a fixed cap, so it compounds on wins and shrinks on losses."""
-    return round(state["balance"] * POSITION_SIZE_PCT, 2)
+    not a fixed cap, so it compounds on wins and shrinks on losses.
+    position_size_pct defaults to the module constant but is overridable
+    so self_tuning.py's bounded, logged nudges (Phase 11) can move it over
+    time without this module needing to know self_tuning.py exists -
+    bankroll.py stays dependency-free, per its own module docstring."""
+    return round(state["balance"] * position_size_pct, 2)
 
 
 def contracts_affordable(position_size: float, premium_per_contract: float) -> int:

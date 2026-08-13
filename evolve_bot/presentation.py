@@ -39,12 +39,11 @@ def _money(amount: float) -> str:
 ROOT = Path(__file__).resolve().parent
 PRESENTATION_DIR = ROOT / "presentation_output"
 
-# Phase 11 (rules-based self-tuning) doesn't exist yet, so this file has no
-# real entries and reading it returns []. It's declared here, not in
-# Phase 11's own module, because the log's shape is presentation's
-# concern: Phase 11 just needs to append one JSON object per line here -
-# {"timestamp": ..., "change": ..., "reasoning": ...} - no new
-# presentation code required when it starts.
+# Phase 11 (self_tuning.py) is the real writer of this file now - it owns
+# an identical copy of this same path constant (STATE_DIR /
+# "self_tuning_log.jsonl") rather than importing this module, since
+# presentation -> weekly_review -> engine -> self_tuning would otherwise
+# import back to presentation and cycle. This module only ever reads it.
 SELF_TUNING_LOG_PATH = ROOT / "state" / "self_tuning_log.jsonl"
 
 # Visual identity - dark, high-contrast, deliberately chosen (not

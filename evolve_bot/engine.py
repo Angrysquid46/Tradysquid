@@ -31,6 +31,7 @@ import spy_scanner as s  # noqa: E402 - path must be set up first
 import bankroll
 import market_features
 import model_scoring
+import self_tuning
 import tradelog
 
 PLAY_TYPE = "SPY_EVOLVE"
@@ -219,7 +220,7 @@ def _try_open_new_position(
     if MODEL_FILTER_ENABLED and model_score is not None and model_score < MODEL_MIN_WIN_PROBABILITY:
         return None, bank
 
-    size_dollars = bankroll.position_size_dollars(bank)
+    size_dollars = bankroll.position_size_dollars(bank, self_tuning.current_position_size_pct())
     contracts = bankroll.contracts_affordable(size_dollars, best["entry_price"])
     if contracts < 1:
         return None, bank
@@ -281,6 +282,14 @@ def run_cycle() -> dict[str, Any]:
     spot_price = float(spot["last"])
 
     bank, closed_count = _close_open_positions(rows, bank, timestamp)
+
+    # Evaluated right after closing (in memory, off the same `rows` list -
+    # no extra disk read needed), so a trade that just closed this very
+    # cycle is immediately eligible to inform the next sizing decision.
+    # Cheap and idempotent either way (see evaluate_tuning's docstring) -
+    # safe to call every cycle regardless of whether anything closed now.
+    tuning_result = self_tuning.evaluate_tuning(tradelog.closed_rows(rows))
+
     opened_row, bank = _try_open_new_position(rows, bank, timestamp, spot_price)
 
     tradelog.write_log(TRADELOG_PATH, rows)
@@ -291,6 +300,7 @@ def run_cycle() -> dict[str, Any]:
         "opened": bool(opened_row),
         "balance": bank["balance"],
         "run_number": bank["run_number"],
+        "tuning": tuning_result["status"],
     }
 
 
