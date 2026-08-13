@@ -3,9 +3,16 @@ look for one new entry if capital allows. Phase 1 deliberately reuses
 spy_scanner's already-proven 0DTE opening-range signal, exit rules, and
 contract-selection logic (delta band, liquidity, ask-price sanity bounds)
 rather than reimplementing them from scratch - "trades on existing
-rule-based signals from day one" per the design. Self-tuning (a later
-phase) is what's meant to evolve these away from spy_scanner's defaults
-over time.
+rule-based signals from day one" per the design.
+
+The exit rule specifically is evolvable as of Phase 12: evaluate_exit_for_row
+below calls logic_state.current_exit_signal instead of spy_scanner's exit
+function directly, so an owner-approved Phase 12 proposal (applied via
+apply_proposal.py) can override the live stop/target/floor levels for
+this bot's own trades without touching spy_scanner.py at all. Until a
+proposal is ever applied, logic_state falls straight back to
+spy_scanner's own live constants - identical behavior to every earlier
+phase.
 
 spy_scanner is imported directly for its Tradier data-fetch and signal
 math only - confirmed its own imports (and everything it imports) are
@@ -29,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import spy_scanner as s  # noqa: E402 - path must be set up first
 
 import bankroll
+import logic_state
 import market_features
 import model_scoring
 import self_tuning
@@ -87,7 +95,7 @@ def evaluate_exit_for_row(row: dict[str, str], quote: dict[str, Any] | None, tim
     pnl_pct = (mark - entry) / entry * 100
     peak_pct = max(s.as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct, pnl_pct)
     trough_pct = min(s.as_float(row.get("max_adverse_pct"), pnl_pct) or pnl_pct, pnl_pct)
-    signal, note = s.spy_0dte_exit_signal(entry, mark, minutes_remaining, peak_pct)
+    signal, note = logic_state.current_exit_signal(entry, mark, minutes_remaining, peak_pct)
     row["last_evaluated_at"] = timestamp.isoformat()
     row["max_favorable_pct"] = str(round(peak_pct))
     row["max_adverse_pct"] = str(round(trough_pct))
