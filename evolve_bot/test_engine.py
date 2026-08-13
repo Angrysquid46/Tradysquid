@@ -78,13 +78,14 @@ def test_close_open_positions_posts_a_real_discord_alert_on_close():
         mock.patch.object(engine.s, "get_quotes", return_value={"SPY260812P00770000": {"bid": 0.20, "ask": 0.22}}),
         mock.patch.object(engine.s, "quote_is_reliable_for_exit", return_value=True),
         mock.patch.object(engine.s, "conservative_option_exit", return_value=0.20),
-        mock.patch.object(engine.discord_post, "post_message") as fake_post,
+        mock.patch.object(engine.discord_post, "upsert_message") as fake_upsert,
     ):
         engine._close_open_positions(rows, bank, timestamp)
 
-    fake_post.assert_called_once()
-    channel_key, content = fake_post.call_args[0]
+    fake_upsert.assert_called_once()
+    channel_key, card_key, content = fake_upsert.call_args[0]
     assert channel_key == "trades"
+    assert card_key == "trade:EVOLVE-20260812-001"
     assert "LOSS" in content
     assert "SPY260812P00770000" in content
     assert "STOP OUT" in content
@@ -93,7 +94,10 @@ def test_close_open_positions_posts_a_real_discord_alert_on_close():
 def test_close_open_positions_upserts_a_live_held_position_card_when_not_closing():
     """Owner: "why can I track its live pl like all the other stuff?" -
     a position that's evaluated but doesn't close yet should get its
-    live P/L card refreshed (upserted, not a new message each cycle)."""
+    live P/L card refreshed (upserted, not a new message each cycle),
+    under the SAME card key the entry card used - one card per trade,
+    not a second 'held' card next to it (owner: "why's it showing 2
+    cards for every trade?")."""
     row = tradelog.blank_row()
     row.update({
         "trade_id": "EVOLVE-20260813-001", "outcome": "OPEN",
@@ -119,12 +123,17 @@ def test_close_open_positions_upserts_a_live_held_position_card_when_not_closing
     fake_upsert.assert_called_once()
     channel_key, card_key, content = fake_upsert.call_args[0]
     assert channel_key == "trades"
-    assert card_key == "held:EVOLVE-20260813-001"
+    assert card_key == "trade:EVOLVE-20260813-001"
     assert "SPY260813C00777000" in content
     assert "0.81" in content or "+7%" in content  # real live mark/P&L, not a placeholder
 
 
-def test_close_open_positions_clears_the_held_card_when_a_position_closes():
+def test_close_open_positions_updates_the_same_trade_card_on_close_instead_of_deleting_it():
+    """Owner: "why's it showing 2 cards for every trade?" - closing a
+    position must update the SAME trade:<id> card the entry/held
+    updates already used (one persistent card for the trade's whole
+    lifecycle), not delete a separate 'held' card and post yet another
+    standalone close message."""
     row = tradelog.blank_row()
     row.update({
         "trade_id": "EVOLVE-20260812-001", "outcome": "OPEN",
@@ -139,12 +148,16 @@ def test_close_open_positions_clears_the_held_card_when_a_position_closes():
         mock.patch.object(engine.s, "get_quotes", return_value={"SPY260812P00770000": {"bid": 0.20, "ask": 0.22}}),
         mock.patch.object(engine.s, "quote_is_reliable_for_exit", return_value=True),
         mock.patch.object(engine.s, "conservative_option_exit", return_value=0.20),
-        mock.patch.object(engine.discord_post, "post_message"),
+        mock.patch.object(engine.discord_post, "upsert_message") as fake_upsert,
         mock.patch.object(engine.discord_post, "delete_card") as fake_delete,
     ):
         engine._close_open_positions(rows, bank, timestamp)
 
-    fake_delete.assert_called_once_with("trades", "held:EVOLVE-20260812-001")
+    fake_delete.assert_not_called()
+    fake_upsert.assert_called_once()
+    channel_key, card_key, content = fake_upsert.call_args[0]
+    assert channel_key == "trades"
+    assert card_key == "trade:EVOLVE-20260812-001"
 
 
 def test_close_open_positions_never_raises_when_discord_posting_fails():
@@ -164,7 +177,7 @@ def test_close_open_positions_never_raises_when_discord_posting_fails():
         mock.patch.object(engine.s, "get_quotes", return_value={"SPY260812P00770000": {"bid": 0.20, "ask": 0.22}}),
         mock.patch.object(engine.s, "quote_is_reliable_for_exit", return_value=True),
         mock.patch.object(engine.s, "conservative_option_exit", return_value=0.20),
-        mock.patch.object(engine.discord_post, "post_message", side_effect=engine.discord_post.DiscordPostError("down")),
+        mock.patch.object(engine.discord_post, "upsert_message", side_effect=engine.discord_post.DiscordPostError("down")),
     ):
         updated_bank, closed = engine._close_open_positions(rows, bank, timestamp)
 
@@ -360,14 +373,15 @@ def test_try_open_new_position_posts_a_real_discord_alert_on_entry():
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=15.5),
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=0.12),
         mock.patch.object(engine.model_scoring, "explain_score", return_value={"score": 0.71, "contributions": []}),
-        mock.patch.object(engine.discord_post, "post_message") as fake_post,
+        mock.patch.object(engine.discord_post, "upsert_message") as fake_upsert,
     ):
         row, _ = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
     assert row is not None
-    fake_post.assert_called_once()
-    channel_key, content = fake_post.call_args[0]
+    fake_upsert.assert_called_once()
+    channel_key, card_key, content = fake_upsert.call_args[0]
     assert channel_key == "trades"
+    assert card_key == f"trade:{row['trade_id']}"
     assert "PUT" in content
     assert "SPY_EVOLVE opened" in content
 
