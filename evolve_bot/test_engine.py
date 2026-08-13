@@ -90,6 +90,63 @@ def test_close_open_positions_posts_a_real_discord_alert_on_close():
     assert "STOP OUT" in content
 
 
+def test_close_open_positions_upserts_a_live_held_position_card_when_not_closing():
+    """Owner: "why can I track its live pl like all the other stuff?" -
+    a position that's evaluated but doesn't close yet should get its
+    live P/L card refreshed (upserted, not a new message each cycle)."""
+    row = tradelog.blank_row()
+    row.update({
+        "trade_id": "EVOLVE-20260813-001", "outcome": "OPEN",
+        "option_symbol": "SPY260813C00777000", "entry_price": "0.76", "contracts": "2",
+    })
+    rows = [row]
+    bank = bankroll.default_state()
+    timestamp = datetime(2026, 8, 13, 13, 0, tzinfo=CT)
+
+    with (
+        mock.patch.object(engine.s, "get_quotes", return_value={"SPY260813C00777000": {"bid": 0.80, "ask": 0.82}}),
+        mock.patch.object(engine.s, "quote_is_reliable_for_exit", return_value=True),
+        mock.patch.object(engine.s, "conservative_option_exit", return_value=0.81),
+        mock.patch.object(engine.logic_state, "current_exit_signal", return_value=("HOLD", "no exit condition met")),
+        mock.patch.object(engine.discord_post, "upsert_message") as fake_upsert,
+        mock.patch.object(engine.discord_post, "delete_card") as fake_delete,
+    ):
+        updated_bank, closed = engine._close_open_positions(rows, bank, timestamp)
+
+    assert closed == 0
+    assert row["outcome"] == "OPEN"
+    fake_delete.assert_not_called()
+    fake_upsert.assert_called_once()
+    channel_key, card_key, content = fake_upsert.call_args[0]
+    assert channel_key == "trades"
+    assert card_key == "held:EVOLVE-20260813-001"
+    assert "SPY260813C00777000" in content
+    assert "0.81" in content or "+7%" in content  # real live mark/P&L, not a placeholder
+
+
+def test_close_open_positions_clears_the_held_card_when_a_position_closes():
+    row = tradelog.blank_row()
+    row.update({
+        "trade_id": "EVOLVE-20260812-001", "outcome": "OPEN",
+        "option_symbol": "SPY260812P00770000", "entry_price": "0.50", "contracts": "2",
+    })
+    rows = [row]
+    bank = bankroll.default_state()
+    bank = bankroll.debit_entry(bank, 100.0)
+    timestamp = datetime(2026, 8, 12, 10, 0, tzinfo=CT)
+
+    with (
+        mock.patch.object(engine.s, "get_quotes", return_value={"SPY260812P00770000": {"bid": 0.20, "ask": 0.22}}),
+        mock.patch.object(engine.s, "quote_is_reliable_for_exit", return_value=True),
+        mock.patch.object(engine.s, "conservative_option_exit", return_value=0.20),
+        mock.patch.object(engine.discord_post, "post_message"),
+        mock.patch.object(engine.discord_post, "delete_card") as fake_delete,
+    ):
+        engine._close_open_positions(rows, bank, timestamp)
+
+    fake_delete.assert_called_once_with("trades", "held:EVOLVE-20260812-001")
+
+
 def test_close_open_positions_never_raises_when_discord_posting_fails():
     """A Discord outage must never break a real trade close - posting is
     a side effect of the trade, not a precondition for it."""

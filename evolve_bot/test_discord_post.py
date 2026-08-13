@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -186,3 +187,120 @@ def test_post_file_uploads_a_real_png_with_multipart():
         assert result == {"id": "msg-file-1"}
         assert captured["url"].endswith("/channels/chan-d/messages")
         assert "files[0]" in captured["files"]
+
+
+def test_upsert_message_posts_fresh_with_no_prior_tracked_message():
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
+        posted = []
+
+        def fake_request(method, url, headers=None, json=None, timeout=None):
+            if method == "GET":
+                return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
+                                             {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
+            posted.append((method, url))
+            return _fake_response(200, {"id": "msg-1"})
+
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+            mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+        ):
+            result = discord_post.upsert_message("trades", "held-position", "current P/L: +$10")
+
+        assert result == {"id": "msg-1"}
+        assert not any(method == "DELETE" for method, _ in posted)  # nothing to delete yet
+        saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert saved_state["trades:held-position"] == "msg-1"
+
+
+def test_upsert_message_deletes_the_previous_card_before_posting_the_new_one():
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
+        state_path.write_text(json.dumps({"trades:held-position": "old-msg-1"}), encoding="utf-8")
+        calls = []
+
+        def fake_request(method, url, headers=None, json=None, timeout=None):
+            if method == "GET":
+                return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
+                                             {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
+            calls.append((method, url))
+            if method == "DELETE":
+                return _fake_response(204, content=b"")
+            return _fake_response(200, {"id": "new-msg-2"})
+
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+            mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+        ):
+            result = discord_post.upsert_message("trades", "held-position", "current P/L: +$20")
+
+        assert result == {"id": "new-msg-2"}
+        assert ("DELETE", f"{discord_post.API_BASE}/channels/chan-t/messages/old-msg-1") in calls
+        saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert saved_state["trades:held-position"] == "new-msg-2"
+
+
+def test_upsert_message_tolerates_deleting_an_already_gone_message():
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
+        state_path.write_text(json.dumps({"trades:held-position": "already-gone"}), encoding="utf-8")
+
+        def fake_request(method, url, headers=None, json=None, timeout=None):
+            if method == "GET":
+                return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
+                                             {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
+            if method == "DELETE":
+                raise discord_post.DiscordPostError("Discord HTTP 404 for /channels/chan-t/messages/already-gone: not found")
+            return _fake_response(200, {"id": "new-msg-3"})
+
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+            mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+        ):
+            result = discord_post.upsert_message("trades", "held-position", "current P/L: +$30")
+
+        assert result == {"id": "new-msg-3"}  # a 404 on delete doesn't block the new post
+
+
+def test_upsert_file_keeps_one_card_per_card_key():
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
+        png_path = Path(temp) / "chart.png"
+        png_path.write_bytes(b"\x89PNG\r\n\x1a\nfakepngdata")
+
+        def fake_request(method, url, headers=None, json=None, timeout=None):
+            return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
+                                         {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
+
+        def fake_post(url, headers=None, data=None, files=None, timeout=None):
+            return _fake_response(200, {"id": "file-msg-1"})
+
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+            mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+            mock.patch.object(discord_post.requests, "post", side_effect=fake_post),
+        ):
+            discord_post.upsert_file("dashboard", "stats_card", png_path, content="stats")
+
+        saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert saved_state["dashboard:stats_card"] == "file-msg-1"

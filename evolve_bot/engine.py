@@ -149,6 +149,39 @@ def _post_trade_alert(content: str) -> None:
         pass
 
 
+def _post_held_position_update(row: dict[str, str], result: dict[str, Any]) -> None:
+    """Live-updates a single persistent 'currently held' card per
+    trade_id (upserted, not reposted each cycle) so a real open
+    position's unrealized P/L is trackable the same way the main
+    system's held-positions channel already works - owner: "why can I
+    track its live pl like all the other stuff?" Same fail-soft
+    contract as _post_trade_alert: a Discord problem here must never
+    affect the real position tracking that already happened above."""
+    trade_id = row.get("trade_id", "")
+    if not trade_id:
+        return
+    pnl_pct = result.get("pnl_pct") or 0.0
+    emoji = "\U0001F7E2" if pnl_pct >= 0 else "\U0001F534"
+    content = (
+        f"{emoji} SPY_EVOLVE HELD · {row.get('option_symbol')}\n"
+        f"Entry ${result['entry']:.2f} → Mark ${result['mark']:.2f} ({pnl_pct:+.0f}%)\n"
+        f"Peak {result['peak_pct']:+.0f}% · Trough {result['trough_pct']:+.0f}% · {result.get('note', '')}"
+    )
+    try:
+        discord_post.upsert_message("trades", f"held:{trade_id}", content)
+    except discord_post.DiscordPostError:
+        pass
+
+
+def _clear_held_position_card(trade_id: str) -> None:
+    if not trade_id:
+        return
+    try:
+        discord_post.delete_card("trades", f"held:{trade_id}")
+    except discord_post.DiscordPostError:
+        pass
+
+
 def _close_open_positions(
     rows: list[dict[str, str]], bank: dict[str, Any], timestamp
 ) -> tuple[dict[str, Any], int]:
@@ -163,8 +196,12 @@ def _close_open_positions(
     for row in open_rows:
         quote = quote_map.get(row.get("option_symbol", ""))
         result = evaluate_exit_for_row(row, quote, timestamp)
-        if result is None or not result["should_close"]:
+        if result is None:
             continue
+        if not result["should_close"]:
+            _post_held_position_update(row, result)
+            continue
+        _clear_held_position_card(row.get("trade_id", ""))
         contracts = int(row.get("contracts") or 0)
         proceeds = round(result["mark"] * 100 * contracts, 2)
         pl_dollars = round((result["mark"] - result["entry"]) * 100 * contracts, 2)
