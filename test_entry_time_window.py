@@ -1,8 +1,11 @@
 """Tests for the time-of-day entry exclusion: the opening minutes carry
-elevated volatility as the market digests overnight news, and the midday
-window sees materially thinner participation - both distort entries for
-reasons unrelated to the actual thesis. This only ever blocks new entries,
-never exits or position management."""
+elevated volatility as the market digests overnight news, so entries are
+still blocked there. The midday liquidity-lull exclusion was removed
+2026-08-13 (owner: real, rare TradingView alerts were getting lost to
+this window with no way to recover them once it cleared) - entries are
+allowed there now, tested explicitly below so a future change can't
+silently reintroduce the block without a visible test failure. This
+only ever blocks new entries, never exits or position management."""
 
 from __future__ import annotations
 
@@ -37,13 +40,17 @@ def test_midmorning_well_clear_of_both_windows_is_allowed():
     assert reason == ""
 
 
-def test_inside_the_midday_lull_is_blocked():
+def test_the_former_midday_lull_window_is_now_allowed():
+    """Regression guard: the midday liquidity-lull exclusion (10:30am-
+    12:00pm CT) was deliberately removed 2026-08-13 - a real TradingView
+    alert landed inside this window and was lost, since by the time the
+    window cleared the alert had already gone stale. Entries must stay
+    allowed here unless the owner explicitly asks for this back."""
     reason = spy_scanner.entry_window_blocked(_ct(11, 0))
-    assert reason != ""
-    assert "lull" in reason
+    assert reason == ""
 
 
-def test_afternoon_after_the_lull_is_allowed_again():
+def test_afternoon_is_allowed():
     reason = spy_scanner.entry_window_blocked(_ct(13, 30))
     assert reason == ""
 
