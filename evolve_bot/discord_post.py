@@ -231,3 +231,93 @@ def post_file(
             raise DiscordPostError(f"Discord file upload HTTP {response.status_code}: {body}")
         return response.json()
     raise DiscordPostError("Discord file upload retries exhausted")
+
+
+# Tracks one Discord message id per (channel_key, card_key) so
+# upsert_message/upsert_file can keep exactly ONE card per real "thing"
+# (the dashboard's stats card, a specific open position's live P/L card)
+# instead of the channel accumulating a new message every single refresh.
+# Deliberately a plain local JSON file, not a Discord-side search (unlike
+# the main system's DiscordTracker.upsert_channel_message, which re-scans
+# the channel's own message history) - this module has no per-channel
+# message-history search machinery, and a local file is simpler and
+# sufficient since this process is the only writer.
+MESSAGE_STATE_PATH = ROOT / "state" / "discord_message_state.json"
+
+
+def _load_message_state() -> dict[str, str]:
+    try:
+        return json.loads(MESSAGE_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_message_state(state: dict[str, str]) -> None:
+    MESSAGE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MESSAGE_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _delete_tracked_message(channel_key: str, card_key: str, state: dict[str, str]) -> None:
+    tracked_id = state.get(f"{channel_key}:{card_key}")
+    if not tracked_id:
+        return
+    channel_id = ensure_channels()[channel_key]
+    try:
+        _request("DELETE", f"/channels/{channel_id}/messages/{tracked_id}")
+    except DiscordPostError as exc:
+        if "HTTP 404" not in str(exc):
+            raise
+
+
+def delete_card(channel_key: str, card_key: str) -> None:
+    """Removes a previously upserted card with no replacement - for a
+    card whose "thing" is genuinely done (a position's held-P/L card once
+    it closes; the close alert is its own separate message and already
+    covers that event), not for a card that'll be refreshed again later
+    (use upsert_message/upsert_file for that)."""
+    if not enabled():
+        return
+    state = _load_message_state()
+    key = f"{channel_key}:{card_key}"
+    if key not in state:
+        return
+    _delete_tracked_message(channel_key, card_key, state)
+    del state[key]
+    _save_message_state(state)
+
+
+def upsert_message(channel_key: str, card_key: str, content: str) -> dict[str, Any] | None:
+    """Like post_message, but keeps exactly one message per card_key in
+    the channel - deletes the previous tracked version (if any) before
+    posting the new one, rather than letting the channel accumulate a
+    new message every refresh. Real history isn't lost by doing this:
+    the underlying real data (trades.csv, bankroll.json) stays the
+    actual source of truth regardless of what's currently posted."""
+    if not enabled():
+        return None
+    state = _load_message_state()
+    _delete_tracked_message(channel_key, card_key, state)
+    result = post_message(channel_key, content)
+    if result and result.get("id"):
+        state[f"{channel_key}:{card_key}"] = result["id"]
+        _save_message_state(state)
+    return result
+
+
+def upsert_file(
+    channel_key: str, card_key: str, file_path: Path, content: str = "", mime_type: str = "image/png"
+) -> dict[str, Any] | None:
+    """File-attachment version of upsert_message - same one-card-per-
+    card_key guarantee. Discord's message-edit API doesn't reliably
+    support replacing an attached file in place, so this deletes the
+    previous tracked message and posts a fresh one rather than
+    attempting an in-place PATCH with a new attachment."""
+    if not enabled() or not file_path.exists():
+        return None
+    state = _load_message_state()
+    _delete_tracked_message(channel_key, card_key, state)
+    result = post_file(channel_key, file_path, content=content, mime_type=mime_type)
+    if result and result.get("id"):
+        state[f"{channel_key}:{card_key}"] = result["id"]
+        _save_message_state(state)
+    return result

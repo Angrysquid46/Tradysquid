@@ -14,6 +14,7 @@ is not.
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -331,6 +332,7 @@ def render_self_tuning_log(output_path: Path) -> Path | None:
 
 
 DASHBOARD_POST_STATE_PATH = ROOT / "state" / "dashboard_post_state.json"
+PRESENTATION_HISTORY_DIR = PRESENTATION_DIR / "history"
 
 
 def _load_dashboard_post_state() -> dict[str, Any] | None:
@@ -345,6 +347,21 @@ def _save_dashboard_post_state(state: dict[str, Any]) -> None:
     DASHBOARD_POST_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
+def _archive_dated_copy(source_path: Path, card_name: str, date_str: str) -> None:
+    """Keeps a dated local copy of each real render, independent of what's
+    posted to Discord - owner: "still be able to track its history" once
+    Discord itself only shows one current card per thing (see
+    discord_post.upsert_file). Nothing about switching Discord to upsert
+    actually loses data: the source CSVs/bankroll.json are always the
+    real history regardless, and every one of these cards is already a
+    full cumulative snapshot (the equity curve line already shows the
+    whole history), not a daily delta - this archive exists purely for
+    someone who wants to visually compare "what did the dashboard look
+    like on a specific day" without digging through Discord."""
+    PRESENTATION_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source_path, PRESENTATION_HISTORY_DIR / f"{card_name}_{date_str}.png")
+
+
 def post_dashboard(force: bool = False) -> dict[str, Any]:
     """Renders the current real dashboard (stats card, milestones, equity
     curve when available) and posts it to Discord's #evolve-dashboard -
@@ -354,6 +371,15 @@ def post_dashboard(force: bool = False) -> dict[str, Any]:
     state file is the guard here, not Discord's own message history -
     this process is the only writer, so re-fetching Discord state every
     call just to check "did I already post today" would be pure waste.
+
+    Each card is upserted (discord_post.upsert_file), not freshly
+    posted - owner: "just have 1 card for each thing that updates vs
+    spamming the feed with new cards" - so the channel always shows
+    exactly one current stats card, one current milestones card, one
+    current equity curve, refreshed in place rather than accumulating a
+    new trio of messages every single day. _archive_dated_copy keeps a
+    local historical copy of each render so nothing is actually lost by
+    doing this.
 
     Fails soft the same way engine.py's trade alerts do: if Discord isn't
     configured, discord_post.enabled() is False and this is a clean
@@ -378,13 +404,16 @@ def post_dashboard(force: bool = False) -> dict[str, Any]:
 
     posted = []
     try:
-        discord_post.post_file("dashboard", stats_path, content=f"**SPY_EVOLVE — {today}**")
+        discord_post.upsert_file("dashboard", "stats_card", stats_path, content=f"**SPY_EVOLVE — {today}**")
         posted.append("stats_card")
-        discord_post.post_file("dashboard", milestones_path)
+        _archive_dated_copy(stats_path, "stats_card", today)
+        discord_post.upsert_file("dashboard", "milestones", milestones_path)
         posted.append("milestones")
+        _archive_dated_copy(milestones_path, "milestones", today)
         if curve_path:
-            discord_post.post_file("dashboard", curve_path)
+            discord_post.upsert_file("dashboard", "equity_curve", curve_path)
             posted.append("equity_curve")
+            _archive_dated_copy(curve_path, "equity_curve", today)
     except discord_post.DiscordPostError as exc:
         return {"status": "render succeeded, post failed", "error": str(exc), "posted": posted}
 

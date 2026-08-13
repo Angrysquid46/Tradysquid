@@ -187,7 +187,7 @@ def test_post_dashboard_posts_and_saves_state_when_enabled():
 
         with (
             mock.patch.object(presentation.discord_post, "enabled", return_value=True),
-            mock.patch.object(presentation.discord_post, "post_file", side_effect=lambda *a, **k: posted.append(a[0])),
+            mock.patch.object(presentation.discord_post, "upsert_file", side_effect=lambda *a, **k: posted.append(a[0])),
             mock.patch.object(presentation, "DASHBOARD_POST_STATE_PATH", state_path),
             mock.patch.object(presentation, "PRESENTATION_DIR", temp_path),
             mock.patch.object(presentation.engine, "TRADELOG_PATH", log_path),
@@ -200,6 +200,36 @@ def test_post_dashboard_posts_and_saves_state_when_enabled():
         assert "stats_card" in result["posted"]
         assert "milestones" in result["posted"]
         assert state_path.exists()
+
+
+def test_post_dashboard_archives_a_dated_local_copy_of_each_card():
+    """Owner: "still be able to track its history" once Discord itself
+    only shows one current card per thing. Nothing in Discord's own
+    history should be relied on for this - a local dated copy is the
+    real mechanism."""
+    with tempfile.TemporaryDirectory() as temp:
+        temp_path = Path(temp)
+        bank_path = temp_path / "bankroll.json"
+        log_path = temp_path / "trades.csv"
+        state_path = temp_path / "dashboard_post_state.json"
+        history_dir = temp_path / "history"
+
+        with (
+            mock.patch.object(presentation.discord_post, "enabled", return_value=True),
+            mock.patch.object(presentation.discord_post, "upsert_file", return_value={"id": "msg-1"}),
+            mock.patch.object(presentation, "DASHBOARD_POST_STATE_PATH", state_path),
+            mock.patch.object(presentation, "PRESENTATION_DIR", temp_path),
+            mock.patch.object(presentation, "PRESENTATION_HISTORY_DIR", history_dir),
+            mock.patch.object(presentation.engine, "TRADELOG_PATH", log_path),
+            mock.patch.object(presentation.engine, "BANKROLL_PATH", bank_path),
+            mock.patch.object(presentation.weekly_review, "gather_review_data", return_value=_FAKE_REVIEW_DATA),
+        ):
+            result = presentation.post_dashboard()
+
+        assert result["status"] == "posted"
+        archived = sorted(p.name for p in history_dir.glob("*.png"))
+        assert any(name.startswith("stats_card_") for name in archived)
+        assert any(name.startswith("milestones_") for name in archived)
 
 
 def test_post_dashboard_does_not_post_twice_in_the_same_day():
