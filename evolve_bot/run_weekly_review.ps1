@@ -1,12 +1,11 @@
 # Invoked by the "Tradysquid Evolve Bot Weekly Review" scheduled task
 # (weekly, Monday morning, before market open). Three real steps, in
 # order:
-#   1. Refresh anything that only changes when the underlying data
-#      changes (retrain_loop, logic_proposals - both cheap/idempotent
-#      no-ops most weeks, see their own module docstrings) and refresh
-#      the Discord dashboard. This was never wired to run automatically
-#      anywhere before this script - found and fixed the same session as
-#      the trading-loop scheduling gap.
+#   1. refresh_pipeline.run_refresh() - the same real pipeline the daily
+#      refresh task (run_daily_refresh.ps1) already runs every day now,
+#      called again here unforced (so it's a cheap no-op if that day's
+#      daily refresh already handled it) purely as a safety net so the
+#      weekly narrative review is never written against stale numbers.
 #   2. A non-interactive `claude -p` session that reads weekly_review.py's
 #      real numbers and writes a genuine assessment to evolve_bot/reviews/.
 #      Read-only against everything except that one new file per run; the
@@ -41,7 +40,7 @@ $startedAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 Add-Content -Path $logPath -Value "=== Weekly review run started $startedAt ==="
 
 $python = "..\.venv-evolve\Scripts\python.exe"
-$step1 = & $python -c "import json, retrain_loop, logic_proposals, presentation; print(json.dumps({'retrain': retrain_loop.run_retrain_cycle()['status'], 'proposals': logic_proposals.run_proposal_cycle()['status'], 'dashboard': presentation.post_dashboard()['status']}))" 2>&1
+$step1 = & $python -c "import json, refresh_pipeline, presentation; print(json.dumps({'refresh': refresh_pipeline.run_refresh(), 'dashboard': presentation.post_dashboard()['status']}))" 2>&1
 Add-Content -Path $logPath -Value "--- refresh step: $step1 ---"
 
 Set-Location "C:\Tradysquid"

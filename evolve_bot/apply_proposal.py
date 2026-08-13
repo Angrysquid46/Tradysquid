@@ -107,6 +107,7 @@ def apply_proposal(proposal_id: str) -> dict[str, Any]:
     target["applied_at"] = timestamp
     proposals[target_index] = target
     _write_proposals(proposals)
+    logic_proposals.record_resolution(proposal_id, "applied")
 
     return {"status": "applied", "proposal_id": proposal_id, "variant_label": variant_label}
 

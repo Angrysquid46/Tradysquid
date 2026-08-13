@@ -81,6 +81,42 @@ def test_apply_proposal_refuses_an_unrecognized_category():
         assert "don't know how to apply category" in result["status"]
 
 
+def test_apply_proposal_updates_logic_proposals_own_pending_state():
+    """Regression guard for a real bug: apply_proposal() used to only
+    update the proposal's own record in the queue file, leaving
+    logic_proposals.py's internal tracking state stuck reporting
+    "already proposed, awaiting owner review" forever for a proposal
+    that had actually already been applied - found by actually running
+    run_daily_refresh.ps1 against real data, not from a unit test."""
+    with tempfile.TemporaryDirectory() as temp:
+        temp_path = Path(temp)
+        proposals_path = temp_path / "logic_proposals.jsonl"
+        override_path = temp_path / "active_exit_override.json"
+        proposal_state_path = temp_path / "logic_proposal_state.json"
+        _write_proposals(proposals_path, [_pending_proposal()])
+        proposal_state_path.write_text(
+            json.dumps(
+                {
+                    "last_considered_file_hash": "abc123",
+                    "last_proposed_variant": "stop_20_target_50",
+                    "last_proposal_status": "pending_owner_review",
+                    "last_proposal_id": "LOGIC-TEST-1",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with (
+            mock.patch.object(apply_proposal.logic_proposals, "LOGIC_PROPOSALS_PATH", proposals_path),
+            mock.patch.object(apply_proposal.logic_proposals, "PROPOSAL_STATE_PATH", proposal_state_path),
+            mock.patch.object(logic_state, "ACTIVE_OVERRIDE_PATH", override_path),
+        ):
+            apply_proposal.apply_proposal("LOGIC-TEST-1")
+
+        saved_state = json.loads(proposal_state_path.read_text(encoding="utf-8"))
+        assert saved_state["last_proposal_status"] == "applied"
+
+
 def test_apply_proposal_does_not_touch_other_proposals_in_the_queue():
     with tempfile.TemporaryDirectory() as temp:
         temp_path = Path(temp)

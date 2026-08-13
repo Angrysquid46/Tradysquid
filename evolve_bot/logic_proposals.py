@@ -192,6 +192,23 @@ def _append_proposal(entry: dict[str, Any]) -> None:
         handle.write(json.dumps(entry) + "\n")
 
 
+def record_resolution(proposal_id: str, new_status: str) -> None:
+    """Called by apply_proposal.py once a proposal has actually been
+    applied (or otherwise resolved) - keeps this module's OWN
+    already-pending tracking in sync with the real record. Without this,
+    run_proposal_cycle() would keep reporting "already proposed,
+    awaiting owner review" forever for a proposal that's since been
+    applied, since its internal state only ever tracked
+    last_proposal_status at generation time and had no way to learn it
+    later changed. Only touches the state if it's still about the SAME
+    proposal currently tracked (last_proposal_id matches) - a newer
+    proposal generated in the meantime should never have its own pending
+    status clobbered by a resolution event for an older one."""
+    state = _load_state()
+    if state and state.get("last_proposal_id") == proposal_id:
+        _save_state({**state, "last_proposal_status": new_status})
+
+
 def _build_proposal(result: dict[str, Any]) -> dict[str, Any]:
     proposed = result["proposed_stats"]
     baseline = result["baseline_stats"]
