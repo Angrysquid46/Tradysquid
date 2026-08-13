@@ -15,6 +15,7 @@ OWNER_ONLY_COMMANDS = {
     "reset-trading-data",
     "clear-chat-history",
     "scan-now",
+    "close-profitable",
 }
 
 TICKER_ARGUMENT = {
@@ -72,6 +73,12 @@ COMMANDS = [
                 "required": True
             }
         ]
+    },
+    {
+        "name": "close-profitable",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: manually close every open position that's currently in profit, locking in real gains now",
     },
     {
         "name": "clear-chat-history",
