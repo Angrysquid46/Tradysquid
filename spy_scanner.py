@@ -1344,10 +1344,18 @@ def entry_window_blocked(now: datetime) -> str:
             f"within the first {OPENING_RANGE_EXCLUSION_MINUTES} minutes of the "
             "session - still settling from overnight news, not a clean read yet"
         )
-    lull_start = now.replace(hour=MIDDAY_LULL_START_CT[0], minute=MIDDAY_LULL_START_CT[1], second=0, microsecond=0)
-    lull_end = now.replace(hour=MIDDAY_LULL_END_CT[0], minute=MIDDAY_LULL_END_CT[1], second=0, microsecond=0)
-    if lull_start <= now <= lull_end:
-        return "inside the midday liquidity lull - participation is thin here"
+    # Midday lull exclusion removed 2026-08-13 (owner: "midday spy is not
+    # slow by any means... how do we test strategies if they don't fire
+    # off?") - real cost was concrete, not theoretical: a real, correctly
+    # parsed TradingView alert landed inside this window and was lost,
+    # since by the time the window cleared the alert had already gone
+    # stale (SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS). TradingView alerts
+    # are already rare (roughly 1-2/day observed); losing one to this
+    # window is a real cost these strategies can't afford while they're
+    # still building up real trade history to learn from.
+    # MIDDAY_LULL_START_CT/MIDDAY_LULL_END_CT are kept (unused) rather
+    # than deleted in case this needs to come back for a specific
+    # strategy later - nothing currently reads them.
     return ""
 
 
