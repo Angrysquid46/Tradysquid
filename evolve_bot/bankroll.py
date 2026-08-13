@@ -21,8 +21,11 @@ STARTING_BALANCE = 1000.0
 # than the other strategies' fixed $500/trade cap, since this bot is meant
 # to size up as it wins and down as it loses. This is a starting default,
 # not a permanent constant - Phase 11 (rules-based self-tuning) is meant to
-# adjust this over time based on trailing results.
-POSITION_SIZE_PCT = 0.15
+# adjust this over time based on trailing results. Raised from 0.15 to
+# 0.25 on 2026-08-12 (owner: "it should be trading aggressively") - still
+# bounded by self_tuning.MIN/MAX_POSITION_SIZE_PCT, still paper money with
+# a real auto-reset safety net below, not an unbounded change.
+POSITION_SIZE_PCT = 0.25
 
 # Balance at or below this triggers a reset. Not exactly zero - a few
 # dollars left over isn't enough to realistically buy even one 0DTE
@@ -62,10 +65,14 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     temp.replace(path)
 
 
-def position_size_dollars(state: dict[str, Any]) -> float:
+def position_size_dollars(state: dict[str, Any], position_size_pct: float = POSITION_SIZE_PCT) -> float:
     """How much to risk on the next trade - a % of the balance right now,
-    not a fixed cap, so it compounds on wins and shrinks on losses."""
-    return round(state["balance"] * POSITION_SIZE_PCT, 2)
+    not a fixed cap, so it compounds on wins and shrinks on losses.
+    position_size_pct defaults to the module constant but is overridable
+    so self_tuning.py's bounded, logged nudges (Phase 11) can move it over
+    time without this module needing to know self_tuning.py exists -
+    bankroll.py stays dependency-free, per its own module docstring."""
+    return round(state["balance"] * position_size_pct, 2)
 
 
 def contracts_affordable(position_size: float, premium_per_contract: float) -> int:

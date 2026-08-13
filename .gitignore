@@ -35,6 +35,8 @@ docs/chain-snapshots/
 evolve_bot/state/
 evolve_bot/data/
 evolve_bot/models/
+evolve_bot/reviews/
+evolve_bot/presentation_output/
 /state/
 /data/
 /logs/
