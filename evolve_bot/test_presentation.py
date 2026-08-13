@@ -232,20 +232,70 @@ def test_post_dashboard_archives_a_dated_local_copy_of_each_card():
         assert any(name.startswith("milestones_") for name in archived)
 
 
-def test_post_dashboard_does_not_post_twice_in_the_same_day():
+def test_post_dashboard_posts_every_call_even_within_the_same_day():
+    """Once the cards are upserted (see discord_post.upsert_file), a
+    repeat post costs zero extra Discord messages - it just refreshes
+    the same card in place - so there's no longer a reason to skip
+    posting on a repeat same-day call. engine.run_cycle calls this every
+    ~3 minutes; owner, after a day with 6 real trades while the
+    dashboard still showed the morning's stale numbers: "these don't
+    look right."."""
     with tempfile.TemporaryDirectory() as temp:
         temp_path = Path(temp)
+        bank_path = temp_path / "bankroll.json"
+        log_path = temp_path / "trades.csv"
         state_path = temp_path / "dashboard_post_state.json"
         import time as time_module
 
         state_path.write_text(
-            '{"last_posted_date": "' + time_module.strftime("%Y-%m-%d") + '"}', encoding="utf-8"
+            '{"last_archived_date": "' + time_module.strftime("%Y-%m-%d") + '"}', encoding="utf-8"
+        )
+        posted = []
+
+        with (
+            mock.patch.object(presentation.discord_post, "enabled", return_value=True),
+            mock.patch.object(presentation.discord_post, "upsert_file", side_effect=lambda *a, **k: posted.append(a[0])),
+            mock.patch.object(presentation, "DASHBOARD_POST_STATE_PATH", state_path),
+            mock.patch.object(presentation, "PRESENTATION_DIR", temp_path),
+            mock.patch.object(presentation.engine, "TRADELOG_PATH", log_path),
+            mock.patch.object(presentation.engine, "BANKROLL_PATH", bank_path),
+            mock.patch.object(presentation.weekly_review, "gather_review_data", return_value=_FAKE_REVIEW_DATA),
+        ):
+            result = presentation.post_dashboard()
+
+        assert result["status"] == "posted"
+        assert "stats_card" in result["posted"]
+
+
+def test_post_dashboard_only_archives_once_per_real_day():
+    """The dated local archive is the real "track its history" mechanism
+    (see _archive_dated_copy) - it must stay capped at once/day even
+    though the Discord post itself now happens every cycle, or
+    presentation_output/history fills up with near-identical copies
+    every 3 minutes."""
+    with tempfile.TemporaryDirectory() as temp:
+        temp_path = Path(temp)
+        bank_path = temp_path / "bankroll.json"
+        log_path = temp_path / "trades.csv"
+        state_path = temp_path / "dashboard_post_state.json"
+        history_dir = temp_path / "history"
+        import time as time_module
+
+        state_path.write_text(
+            '{"last_archived_date": "' + time_module.strftime("%Y-%m-%d") + '"}', encoding="utf-8"
         )
 
         with (
             mock.patch.object(presentation.discord_post, "enabled", return_value=True),
+            mock.patch.object(presentation.discord_post, "upsert_file", return_value={"id": "msg-1"}),
             mock.patch.object(presentation, "DASHBOARD_POST_STATE_PATH", state_path),
+            mock.patch.object(presentation, "PRESENTATION_DIR", temp_path),
+            mock.patch.object(presentation, "PRESENTATION_HISTORY_DIR", history_dir),
+            mock.patch.object(presentation.engine, "TRADELOG_PATH", log_path),
+            mock.patch.object(presentation.engine, "BANKROLL_PATH", bank_path),
+            mock.patch.object(presentation.weekly_review, "gather_review_data", return_value=_FAKE_REVIEW_DATA),
         ):
             result = presentation.post_dashboard()
 
-        assert result["status"] == "already posted today"
+        assert result["status"] == "posted"
+        assert not history_dir.exists() or not list(history_dir.glob("*.png"))

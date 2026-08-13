@@ -177,18 +177,49 @@ def write_learning_channel_map(tracker: spy_scanner.DiscordTracker) -> dict[str,
     return mapping
 
 
+# evolve_bot owns its own Discord presence (category "SPY_EVOLVE") and
+# deliberately posts plain content, not this styling - its cards get
+# upserted in place by evolve_bot/discord_post.py, and a PATCH from this
+# migration landing between two of evolve_bot's own upserts visually
+# turned one message into what looked like two separate "things" (an
+# image plus a distinct styled caption card) - owner: "still other
+# things so it's not 1 card". Excluded here rather than made to call
+# discord_cards.message_is_backed-compatible code, since evolve_bot was
+# explicitly built to NOT couple with the main system's card machinery.
+EXCLUDED_CATEGORY_NAMES = {"SPY_EVOLVE"}
+
+
 def _message_channels(tracker: spy_scanner.DiscordTracker) -> list[dict[str, Any]]:
     guild_channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
+    excluded_category_ids = {
+        str(item.get("id"))
+        for item in guild_channels
+        if item.get("type") == 4
+        and str(item.get("name") or "").upper() in EXCLUDED_CATEGORY_NAMES
+    }
     channels = [
         item
         for item in guild_channels
         if item.get("type") in {0, 5, 10, 11, 12}
+        and str(item.get("parent_id") or "") not in excluded_category_ids
     ]
+    # Threads parent to a CHANNEL id, not a category id, so a thread
+    # inside an excluded category has to be matched via its channel's own
+    # id, not the category id directly.
+    excluded_channel_ids = {
+        str(item.get("id"))
+        for item in guild_channels
+        if str(item.get("parent_id") or "") in excluded_category_ids
+    }
     try:
         active = tracker._request("GET", f"/guilds/{tracker.guild_id}/threads/active")
     except spy_scanner.DiscordError:
         active = {}
-    channels.extend((active or {}).get("threads") or [])
+    channels.extend(
+        thread
+        for thread in ((active or {}).get("threads") or [])
+        if str(thread.get("parent_id") or "") not in excluded_channel_ids
+    )
     unique: dict[str, dict[str, Any]] = {}
     for channel in channels:
         channel_id = str(channel.get("id") or "")
