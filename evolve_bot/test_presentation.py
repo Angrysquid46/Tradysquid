@@ -91,6 +91,50 @@ def test_render_equity_curve_writes_a_real_png_with_real_data():
         assert output_path.stat().st_size > 0
 
 
+def test_render_milestones_always_writes_a_real_png():
+    rows = [_closed_row("2026-08-01T10:00:00", "1000.0", "850.0", "LOSS")]
+    bank_state = bankroll.default_state()
+    with tempfile.TemporaryDirectory() as temp:
+        output_path = Path(temp) / "milestones.png"
+        result = presentation.render_milestones(rows, bank_state, output_path)
+        assert result == output_path
+        assert output_path.exists()
+        assert output_path.stat().st_size > 0
+
+
+def test_render_milestones_writes_a_real_png_with_no_data_yet():
+    with tempfile.TemporaryDirectory() as temp:
+        output_path = Path(temp) / "milestones.png"
+        result = presentation.render_milestones([], bankroll.default_state(), output_path)
+        assert result == output_path
+        assert output_path.exists()
+
+
+def test_render_self_tuning_log_returns_none_when_log_is_missing(monkeypatch):
+    with tempfile.TemporaryDirectory() as temp:
+        missing_path = Path(temp) / "does_not_exist.jsonl"
+        monkeypatch.setattr(presentation, "SELF_TUNING_LOG_PATH", missing_path)
+        output_path = Path(temp) / "tuning.png"
+        result = presentation.render_self_tuning_log(output_path)
+    assert result is None
+    assert not output_path.exists()
+
+
+def test_render_self_tuning_log_writes_a_real_png_when_events_exist(monkeypatch):
+    with tempfile.TemporaryDirectory() as temp:
+        log_path = Path(temp) / "self_tuning_log.jsonl"
+        log_path.write_text(
+            '{"timestamp": "2026-08-12T10:00:00", "change": "stop_pct 0.50 -> 0.45", "reasoning": "backtest showed fewer stop-outs"}\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(presentation, "SELF_TUNING_LOG_PATH", log_path)
+        output_path = Path(temp) / "tuning.png"
+        result = presentation.render_self_tuning_log(output_path)
+        assert result == output_path
+        assert output_path.exists()
+        assert output_path.stat().st_size > 0
+
+
 def test_render_stats_card_always_writes_a_real_png():
     data = {
         "live_trading": {

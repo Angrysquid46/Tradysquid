@@ -15,6 +15,7 @@ is not.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,14 @@ def _money(amount: float) -> str:
 
 ROOT = Path(__file__).resolve().parent
 PRESENTATION_DIR = ROOT / "presentation_output"
+
+# Phase 11 (rules-based self-tuning) doesn't exist yet, so this file has no
+# real entries and reading it returns []. It's declared here, not in
+# Phase 11's own module, because the log's shape is presentation's
+# concern: Phase 11 just needs to append one JSON object per line here -
+# {"timestamp": ..., "change": ..., "reasoning": ...} - no new
+# presentation code required when it starts.
+SELF_TUNING_LOG_PATH = ROOT / "state" / "self_tuning_log.jsonl"
 
 # Visual identity - dark, high-contrast, deliberately chosen (not
 # matplotlib defaults) to give this bot its own look, distinct from the
@@ -223,6 +232,96 @@ def render_stats_card(data: dict[str, Any], output_path: Path) -> Path:
         size = 16 if text == "SPY_EVOLVE" else 10.5
         ax.text(0.04, y, text, color=color, fontsize=size, fontfamily=MONO_FONT, fontweight=weight, transform=ax.transAxes)
         y -= 0.075
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, facecolor=BACKGROUND)
+    plt.close(fig)
+    return output_path
+
+
+def render_milestones(rows: list[dict[str, str]], bank_state: dict[str, Any], output_path: Path) -> Path:
+    """A checklist card of compute_milestones()'s real, checkable
+    milestones - achieved ones lit up in the win color with a filled
+    marker, unachieved ones dimmed with a hollow marker and their real
+    current progress shown alongside (e.g. "3/10"), never hidden. Always
+    renders, same as the stats card - "0 of 5 achieved" is still a real,
+    honest thing to show early on."""
+    milestones = compute_milestones(rows, bank_state)
+
+    fig, ax = plt.subplots(figsize=(8, 4.5), dpi=150)
+    fig.patch.set_facecolor(BACKGROUND)
+    ax.set_facecolor(BACKGROUND)
+    ax.axis("off")
+
+    ax.text(
+        0.04, 0.95, "SPY_EVOLVE — Milestones", color=ACCENT_COLOR, fontsize=16,
+        fontfamily=MONO_FONT, fontweight="bold", transform=ax.transAxes,
+    )
+
+    y = 0.78
+    for milestone in milestones:
+        marker = "[x]" if milestone["achieved"] else "[ ]"
+        color = WIN_COLOR if milestone["achieved"] else MUTED_TEXT
+        ax.text(
+            0.04, y, f"{marker}  {milestone['label']}", color=color, fontsize=12,
+            fontfamily=MONO_FONT, transform=ax.transAxes,
+        )
+        ax.text(
+            0.62, y, milestone["detail"], color=MUTED_TEXT, fontsize=10.5,
+            fontfamily=MONO_FONT, transform=ax.transAxes,
+        )
+        y -= 0.16
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, facecolor=BACKGROUND)
+    plt.close(fig)
+    return output_path
+
+
+def _read_self_tuning_log() -> list[dict[str, Any]]:
+    if not SELF_TUNING_LOG_PATH.exists():
+        return []
+    events = []
+    for line in SELF_TUNING_LOG_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            events.append(json.loads(line))
+    return events
+
+
+def render_self_tuning_log(output_path: Path) -> Path | None:
+    """Public self-tuning log card - reads Phase 11's real logged
+    parameter-nudge events. Returns None and writes nothing when the log
+    is missing or empty, same as the equity curve's "not enough real
+    points yet" rule: Phase 11 (rules-based self-tuning) hasn't been built
+    yet as of this writing, so this function is correctly inert until it
+    exists and starts appending real events - a placeholder entry here
+    would fabricate a tuning history that never happened."""
+    events = _read_self_tuning_log()
+    if not events:
+        return None
+
+    fig, ax = plt.subplots(figsize=(8, max(4.5, 0.9 + 0.35 * len(events))), dpi=150)
+    fig.patch.set_facecolor(BACKGROUND)
+    ax.set_facecolor(BACKGROUND)
+    ax.axis("off")
+
+    ax.text(
+        0.04, 0.96, "SPY_EVOLVE — Self-Tuning Log", color=ACCENT_COLOR, fontsize=16,
+        fontfamily=MONO_FONT, fontweight="bold", transform=ax.transAxes,
+    )
+
+    y = 0.86
+    step = 0.9 / max(len(events), 1)
+    for event in events[-20:]:
+        timestamp = event.get("timestamp", "?")
+        change = event.get("change", "?")
+        reasoning = event.get("reasoning", "")
+        ax.text(0.04, y, f"{timestamp}  {change}", color=TEXT_COLOR, fontsize=11, fontfamily=MONO_FONT, transform=ax.transAxes)
+        if reasoning:
+            y -= step * 0.5
+            ax.text(0.06, y, reasoning, color=MUTED_TEXT, fontsize=9.5, fontfamily=MONO_FONT, transform=ax.transAxes)
+        y -= step
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, facecolor=BACKGROUND)
