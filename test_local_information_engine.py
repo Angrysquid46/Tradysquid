@@ -536,7 +536,10 @@ class InformationEngineTests(unittest.TestCase):
         self.assertIn("1 closed indexed; 1 changed", result)
 
     def test_scanner_outputs_use_consolidated_channels(self) -> None:
-        self.assertEqual(spy_scanner.CHANNEL_NAMES["qualified"], "new-positions")
+        # "qualified" (scanner results that haven't become real trades yet)
+        # deliberately shares scanner-feed, not new-positions - the owner
+        # wants new-positions to show only real entries, nothing else.
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["qualified"], "scanner-feed")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["scratches"], "losses")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["charts"], "charts-and-levels")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["universe_watch"], "universe-watch")

@@ -390,7 +390,11 @@ CHANNEL_NAMES = {
     "risk_desk": "scanner-controls",
     "news_events": "news-and-events",
     "sec_filings": "news-and-events",
-    "qualified": "new-positions",
+    # Moved off new-positions (owner: "if they are qualified i just want to
+    # see the active trades nothing else in here") - qualified-but-not-yet-
+    # entered scanner results now share scanner-feed with the rest of the
+    # scan-activity content, not the channel meant to show real entries.
+    "qualified": "scanner-feed",
     "entry": "new-positions",
     "updates": "held-positions",
     "exit": "held-positions",
