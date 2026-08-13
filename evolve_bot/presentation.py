@@ -365,21 +365,25 @@ def _archive_dated_copy(source_path: Path, card_name: str, date_str: str) -> Non
 def post_dashboard(force: bool = False) -> dict[str, Any]:
     """Renders the current real dashboard (stats card, milestones, equity
     curve when available) and posts it to Discord's #evolve-dashboard -
-    but only once per real calendar day (or when force=True), so a
-    caller can invoke this on any cadence (the weekly review script, in
-    practice) without ever risking a duplicate same-day post. A local
-    state file is the guard here, not Discord's own message history -
-    this process is the only writer, so re-fetching Discord state every
-    call just to check "did I already post today" would be pure waste.
+    every time this is called, not just once a day. Each card is
+    upserted (discord_post.upsert_file), not freshly posted - owner:
+    "just have 1 card for each thing that updates vs spamming the feed
+    with new cards" - so the channel always shows exactly one current
+    stats card, one current milestones card, one current equity curve,
+    refreshed in place. Because upserting the same card costs zero extra
+    messages, there is no reason left to gate the POST on a calendar day
+    (that gate predated the upsert mechanism, back when this posted a
+    fresh message every call) - engine.run_cycle calls this every ~3
+    minutes during market hours so the dashboard tracks real activity
+    instead of going stale mid-day. Owner, seeing a dashboard from
+    hours earlier while trades kept opening/closing: "these don't look
+    right."
 
-    Each card is upserted (discord_post.upsert_file), not freshly
-    posted - owner: "just have 1 card for each thing that updates vs
-    spamming the feed with new cards" - so the channel always shows
-    exactly one current stats card, one current milestones card, one
-    current equity curve, refreshed in place rather than accumulating a
-    new trio of messages every single day. _archive_dated_copy keeps a
-    local historical copy of each render so nothing is actually lost by
-    doing this.
+    The dated local archive (_archive_dated_copy) is still capped at
+    once per real day (or force=True) so a caller invoking this every
+    few minutes doesn't fill presentation_output/history with dozens of
+    near-identical copies - one dated snapshot per day is still the
+    real "track its history" mechanism.
 
     Fails soft the same way engine.py's trade alerts do: if Discord isn't
     configured, discord_post.enabled() is False and this is a clean
@@ -390,9 +394,8 @@ def post_dashboard(force: bool = False) -> dict[str, Any]:
         return {"status": "discord not configured"}
 
     today = time.strftime("%Y-%m-%d")
-    state = _load_dashboard_post_state()
-    if not force and state and state.get("last_posted_date") == today:
-        return {"status": "already posted today", "date": today}
+    state = _load_dashboard_post_state() or {}
+    should_archive = force or state.get("last_archived_date") != today
 
     live_rows = engine.tradelog.read_log(engine.TRADELOG_PATH)
     bank_state = bankroll.load_state(engine.BANKROLL_PATH)
@@ -406,16 +409,19 @@ def post_dashboard(force: bool = False) -> dict[str, Any]:
     try:
         discord_post.upsert_file("dashboard", "stats_card", stats_path, content=f"**SPY_EVOLVE — {today}**")
         posted.append("stats_card")
-        _archive_dated_copy(stats_path, "stats_card", today)
         discord_post.upsert_file("dashboard", "milestones", milestones_path)
         posted.append("milestones")
-        _archive_dated_copy(milestones_path, "milestones", today)
         if curve_path:
             discord_post.upsert_file("dashboard", "equity_curve", curve_path)
             posted.append("equity_curve")
-            _archive_dated_copy(curve_path, "equity_curve", today)
     except discord_post.DiscordPostError as exc:
         return {"status": "render succeeded, post failed", "error": str(exc), "posted": posted}
 
-    _save_dashboard_post_state({"last_posted_date": today})
+    if should_archive:
+        _archive_dated_copy(stats_path, "stats_card", today)
+        _archive_dated_copy(milestones_path, "milestones", today)
+        if curve_path:
+            _archive_dated_copy(curve_path, "equity_curve", today)
+        _save_dashboard_post_state({"last_archived_date": today})
+
     return {"status": "posted", "date": today, "posted": posted}

@@ -35,6 +35,28 @@ def test_run_cycle_returns_early_when_spot_quote_is_unavailable():
     assert result == {"status": "spot quote unavailable"}
 
 
+def test_refresh_dashboard_calls_post_dashboard():
+    """engine.run_cycle wires this in so the #evolve-dashboard cards
+    track real activity every ~3 minutes instead of once a day - owner,
+    after a day with 6 real trades closing while the dashboard still
+    showed the morning's stale numbers: "these don't look right."."""
+    import presentation
+
+    with mock.patch.object(presentation, "post_dashboard") as fake_post:
+        engine._refresh_dashboard()
+
+    fake_post.assert_called_once()
+
+
+def test_refresh_dashboard_never_raises_when_discord_posting_fails():
+    import presentation
+
+    with mock.patch.object(
+        presentation, "post_dashboard", side_effect=engine.discord_post.DiscordPostError("down")
+    ):
+        engine._refresh_dashboard()  # must not raise
+
+
 def test_close_open_positions_credits_bankroll_and_marks_loss_on_a_stop_out():
     row = tradelog.blank_row()
     row.update({

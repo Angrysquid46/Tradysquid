@@ -157,6 +157,24 @@ def _post_trade_card(trade_id: str, content: str) -> None:
         pass
 
 
+def _refresh_dashboard() -> None:
+    """Keeps the #evolve-dashboard cards (stats/milestones/equity curve)
+    current every trading cycle, not just once a day - owner, after a
+    day with 6 real trades closing while the dashboard still showed the
+    morning's stale "1 closed": "these don't look right." presentation.py
+    already upserts these cards in place, so calling this every ~3
+    minutes costs zero extra Discord messages, only a refreshed render.
+    Imported locally, not at module scope - presentation.py imports this
+    module (for TRADELOG_PATH/BANKROLL_PATH), so a top-level import here
+    would be circular."""
+    import presentation
+
+    try:
+        presentation.post_dashboard()
+    except discord_post.DiscordPostError:
+        pass
+
+
 def _post_held_position_update(row: dict[str, str], result: dict[str, Any]) -> None:
     trade_id = row.get("trade_id", "")
     if not trade_id:
@@ -377,6 +395,7 @@ def run_cycle() -> dict[str, Any]:
 
     tradelog.write_log(TRADELOG_PATH, rows)
     bankroll.save_state(BANKROLL_PATH, bank)
+    _refresh_dashboard()
     return {
         "status": "ok",
         "closed": closed_count,
