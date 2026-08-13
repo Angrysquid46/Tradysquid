@@ -1,9 +1,24 @@
 from __future__ import annotations
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import bankroll
 import presentation
+
+
+_FAKE_REVIEW_DATA = {
+    "live_trading": {
+        "bankroll": {"balance": 822.0, "starting_balance": 1000.0, "all_time_high_balance": 1000.0, "run_number": 1, "total_resets": 0},
+        "n_open": 1, "n_closed": 1, "win_rate": 0.0,
+    },
+    "shadow_mode": {
+        "n_total_logged": 1, "n_closed": 0,
+        "score_calibration": {"enough_data_to_compare": False},
+    },
+    "backtest_training_data": {"n_rows": 2575, "n_trading_days": 27, "n_real_priced_rows": 103},
+    "retraining": {"n_retrains_recorded": 3, "most_recent": {"result": {"metrics": {"auc": 0.88}}}},
+}
 
 
 def _closed_row(closed_at: str, balance_before: str, balance_after: str, outcome: str) -> dict[str, str]:
@@ -154,3 +169,53 @@ def test_render_stats_card_always_writes_a_real_png():
         assert result == output_path
         assert output_path.exists()
         assert output_path.stat().st_size > 0
+
+
+def test_post_dashboard_returns_early_when_discord_is_not_configured():
+    with mock.patch.object(presentation.discord_post, "enabled", return_value=False):
+        result = presentation.post_dashboard()
+    assert result["status"] == "discord not configured"
+
+
+def test_post_dashboard_posts_and_saves_state_when_enabled():
+    with tempfile.TemporaryDirectory() as temp:
+        temp_path = Path(temp)
+        bank_path = temp_path / "bankroll.json"
+        log_path = temp_path / "trades.csv"
+        state_path = temp_path / "dashboard_post_state.json"
+        posted = []
+
+        with (
+            mock.patch.object(presentation.discord_post, "enabled", return_value=True),
+            mock.patch.object(presentation.discord_post, "post_file", side_effect=lambda *a, **k: posted.append(a[0])),
+            mock.patch.object(presentation, "DASHBOARD_POST_STATE_PATH", state_path),
+            mock.patch.object(presentation, "PRESENTATION_DIR", temp_path),
+            mock.patch.object(presentation.engine, "TRADELOG_PATH", log_path),
+            mock.patch.object(presentation.engine, "BANKROLL_PATH", bank_path),
+            mock.patch.object(presentation.weekly_review, "gather_review_data", return_value=_FAKE_REVIEW_DATA),
+        ):
+            result = presentation.post_dashboard()
+
+        assert result["status"] == "posted"
+        assert "stats_card" in result["posted"]
+        assert "milestones" in result["posted"]
+        assert state_path.exists()
+
+
+def test_post_dashboard_does_not_post_twice_in_the_same_day():
+    with tempfile.TemporaryDirectory() as temp:
+        temp_path = Path(temp)
+        state_path = temp_path / "dashboard_post_state.json"
+        import time as time_module
+
+        state_path.write_text(
+            '{"last_posted_date": "' + time_module.strftime("%Y-%m-%d") + '"}', encoding="utf-8"
+        )
+
+        with (
+            mock.patch.object(presentation.discord_post, "enabled", return_value=True),
+            mock.patch.object(presentation, "DASHBOARD_POST_STATE_PATH", state_path),
+        ):
+            result = presentation.post_dashboard()
+
+        assert result["status"] == "already posted today"

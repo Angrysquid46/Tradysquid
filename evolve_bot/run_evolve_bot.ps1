@@ -14,8 +14,23 @@
 #
 # Fully separate from the live Tradysquid supervisor (frozen per
 # CLAUDE.md) - this only ever touches evolve_bot's own isolated state.
+#
+# Loads .env at the PowerShell level (not via discord_post.py itself -
+# see that module's docstring for why auto-loading at Python import time
+# was tried and reverted) so DISCORD_BOT_TOKEN/DISCORD_GUILD_ID reach the
+# python subprocess below without ever risking a test suite accidentally
+# picking up real credentials.
 
 $ErrorActionPreference = "Continue"
+Get-Content "C:\Tradysquid\.env" | ForEach-Object {
+    $line = $_.Trim()
+    if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+        $parts = $line.Split("=", 2)
+        if (-not (Test-Path "env:$($parts[0].Trim())")) {
+            Set-Item -Path "env:$($parts[0].Trim())" -Value $parts[1].Trim()
+        }
+    }
+}
 Set-Location "C:\Tradysquid\evolve_bot"
 
 $logPath = "C:\Tradysquid\evolve_bot\state\trading_loop_log.txt"

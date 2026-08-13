@@ -1,11 +1,9 @@
 """Phase 10: presentation layer - real charts and a stats card built from
 real data (tradelog.py's closed live trades, weekly_review.py's
-aggregated stats). NOT wired to Discord yet - deliberately deferred
-until there's real trade volume worth showing, per the original design
-("attach it to Discord last, not immediately"). These functions produce
-real PNG artifacts from real data now, so the eventual Discord-posting
-step is just "call this already-working function from a scheduled job,"
-not new work.
+aggregated stats). Wired to Discord (post_dashboard, below) now that the
+trading loop is actually running and there's real trade volume worth
+showing - deliberately deferred until then, per the original design
+("attach it to Discord last, not immediately").
 
 Every function here returns None (renders nothing) rather than a
 fabricated/empty chart when there isn't enough real data yet - a missing
@@ -16,6 +14,7 @@ is not.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +24,9 @@ matplotlib.use("Agg")  # no display backend in this environment - render to file
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
+import bankroll
+import discord_post
+import engine
 import weekly_review
 
 # matplotlib treats a literal "$" in any ax.text()/title/label string as a
@@ -326,3 +328,65 @@ def render_self_tuning_log(output_path: Path) -> Path | None:
     fig.savefig(output_path, facecolor=BACKGROUND)
     plt.close(fig)
     return output_path
+
+
+DASHBOARD_POST_STATE_PATH = ROOT / "state" / "dashboard_post_state.json"
+
+
+def _load_dashboard_post_state() -> dict[str, Any] | None:
+    try:
+        return json.loads(DASHBOARD_POST_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _save_dashboard_post_state(state: dict[str, Any]) -> None:
+    DASHBOARD_POST_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DASHBOARD_POST_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def post_dashboard(force: bool = False) -> dict[str, Any]:
+    """Renders the current real dashboard (stats card, milestones, equity
+    curve when available) and posts it to Discord's #evolve-dashboard -
+    but only once per real calendar day (or when force=True), so a
+    caller can invoke this on any cadence (the weekly review script, in
+    practice) without ever risking a duplicate same-day post. A local
+    state file is the guard here, not Discord's own message history -
+    this process is the only writer, so re-fetching Discord state every
+    call just to check "did I already post today" would be pure waste.
+
+    Fails soft the same way engine.py's trade alerts do: if Discord isn't
+    configured, discord_post.enabled() is False and this is a clean
+    no-op; if Discord is configured but unreachable, the real charts
+    still get rendered to disk (that part never depended on Discord),
+    only the posting step is skipped."""
+    if not discord_post.enabled():
+        return {"status": "discord not configured"}
+
+    today = time.strftime("%Y-%m-%d")
+    state = _load_dashboard_post_state()
+    if not force and state and state.get("last_posted_date") == today:
+        return {"status": "already posted today", "date": today}
+
+    live_rows = engine.tradelog.read_log(engine.TRADELOG_PATH)
+    bank_state = bankroll.load_state(engine.BANKROLL_PATH)
+    data = weekly_review.gather_review_data()
+
+    stats_path = render_stats_card(data, PRESENTATION_DIR / "stats_card.png")
+    milestones_path = render_milestones(live_rows, bank_state, PRESENTATION_DIR / "milestones.png")
+    curve_path = render_equity_curve(live_rows, PRESENTATION_DIR / "equity_curve.png")
+
+    posted = []
+    try:
+        discord_post.post_file("dashboard", stats_path, content=f"**SPY_EVOLVE — {today}**")
+        posted.append("stats_card")
+        discord_post.post_file("dashboard", milestones_path)
+        posted.append("milestones")
+        if curve_path:
+            discord_post.post_file("dashboard", curve_path)
+            posted.append("equity_curve")
+    except discord_post.DiscordPostError as exc:
+        return {"status": "render succeeded, post failed", "error": str(exc), "posted": posted}
+
+    _save_dashboard_post_state({"last_posted_date": today})
+    return {"status": "posted", "date": today, "posted": posted}

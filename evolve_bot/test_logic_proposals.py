@@ -149,6 +149,62 @@ def test_run_proposal_cycle_writes_a_real_proposal_to_the_queue():
         assert len(proposal["caveats"]) == 3
 
 
+def test_run_proposal_cycle_posts_a_new_proposal_to_discord_when_enabled():
+    baseline = _baseline_label()
+    days = _days(30)
+    rows = _mixed_rows(baseline, days, 20.0, -20.0, 24)
+    rows += _mixed_rows("stop_20_target_150", days, 50.0, -20.0, 29)
+
+    with tempfile.TemporaryDirectory() as temp:
+        temp_path = Path(temp)
+        backtest_csv = temp_path / "backtest_trades.csv"
+        _write_backtest_csv(backtest_csv, rows)
+
+        with (
+            mock.patch.object(logic_proposals.backtest, "BACKTEST_TRADES_PATH", backtest_csv),
+            mock.patch.object(logic_proposals, "LOGIC_PROPOSALS_PATH", temp_path / "logic_proposals.jsonl"),
+            mock.patch.object(logic_proposals, "PROPOSAL_STATE_PATH", temp_path / "logic_proposal_state.json"),
+            mock.patch.object(logic_proposals.discord_post, "post_message") as fake_post,
+        ):
+            logic_proposals.run_proposal_cycle()
+
+        fake_post.assert_called_once()
+        channel_key, content = fake_post.call_args[0]
+        assert channel_key == "reviews"
+        assert "stop_20_target_150" in content
+        assert "Pending owner review" in content
+
+
+def test_run_proposal_cycle_still_writes_the_proposal_when_discord_posting_fails():
+    """A Discord outage must never prevent a real, evidence-backed
+    proposal from landing in the review queue - the queue file is the
+    actual source of truth, posting is just a notification."""
+    baseline = _baseline_label()
+    days = _days(30)
+    rows = _mixed_rows(baseline, days, 20.0, -20.0, 24)
+    rows += _mixed_rows("stop_20_target_150", days, 50.0, -20.0, 29)
+
+    with tempfile.TemporaryDirectory() as temp:
+        temp_path = Path(temp)
+        backtest_csv = temp_path / "backtest_trades.csv"
+        _write_backtest_csv(backtest_csv, rows)
+        proposals_path = temp_path / "logic_proposals.jsonl"
+
+        with (
+            mock.patch.object(logic_proposals.backtest, "BACKTEST_TRADES_PATH", backtest_csv),
+            mock.patch.object(logic_proposals, "LOGIC_PROPOSALS_PATH", proposals_path),
+            mock.patch.object(logic_proposals, "PROPOSAL_STATE_PATH", temp_path / "logic_proposal_state.json"),
+            mock.patch.object(
+                logic_proposals.discord_post, "post_message",
+                side_effect=logic_proposals.discord_post.DiscordPostError("down"),
+            ),
+        ):
+            result = logic_proposals.run_proposal_cycle()
+
+        assert result["status"] == "proposed"
+        assert proposals_path.exists()
+
+
 def test_run_proposal_cycle_does_not_duplicate_a_still_pending_proposal():
     baseline = _baseline_label()
     days = _days(30)

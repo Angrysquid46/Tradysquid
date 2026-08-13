@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import spy_scanner as s  # noqa: E402 - path must be set up first
 
 import bankroll
+import discord_post
 import logic_state
 import market_features
 import model_scoring
@@ -111,6 +112,18 @@ def evaluate_exit_for_row(row: dict[str, str], quote: dict[str, Any] | None, tim
     }
 
 
+def _post_trade_alert(content: str) -> None:
+    """Posting is a side effect of a real trade, never a precondition for
+    one - a Discord outage or bad credentials must never prevent a real
+    open/close from being recorded. discord_post.post_message already
+    no-ops when Discord isn't configured; this only needs to guard
+    against a real network/API failure once credentials ARE present."""
+    try:
+        discord_post.post_message("trades", content)
+    except discord_post.DiscordPostError:
+        pass
+
+
 def _close_open_positions(
     rows: list[dict[str, str]], bank: dict[str, Any], timestamp
 ) -> tuple[dict[str, Any], int]:
@@ -139,6 +152,12 @@ def _close_open_positions(
         bank = bankroll.credit_exit(bank, proceeds)
         row["balance_after"] = str(bank["balance"])
         closed_count += 1
+        emoji = "\U0001F7E2" if row["outcome"] == "WIN" else ("\U0001F534" if row["outcome"] == "LOSS" else "⚪")
+        _post_trade_alert(
+            f"{emoji} SPY_EVOLVE closed {row['option_symbol']}: {row['outcome']} "
+            f"{row['pl_pct']}% (${pl_dollars:,.2f}) — {result['signal']}\n"
+            f"Balance: ${bank['balance']:,.2f}"
+        )
     return bank, closed_count
 
 
@@ -272,6 +291,10 @@ def _try_open_new_position(
     )
     bank = bankroll.debit_entry(bank, cost)
     rows.append(row)
+    _post_trade_alert(
+        f"\U0001F7E2 SPY_EVOLVE opened {row['call_or_put'].upper()} {row['strike']} exp {row['expiration']} "
+        f"@ ${row['entry_price']} x{contracts} (${cost:,.2f} risked)\n{row['thesis']}"
+    )
     return row, bank
 
 

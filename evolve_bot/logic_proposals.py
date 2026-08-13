@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 import backtest
+import discord_post
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import spy_scanner as s  # noqa: E402 - path must be set up first
@@ -257,7 +258,30 @@ def run_proposal_cycle() -> dict[str, Any]:
             "last_proposal_id": proposal["proposal_id"],
         }
     )
+    _post_new_proposal_to_discord(proposal)
     return {**result, "status": "proposed", "proposal_id": proposal["proposal_id"]}
+
+
+def _post_new_proposal_to_discord(proposal: dict[str, Any]) -> None:
+    """Posting is a side effect of a real proposal existing, never a
+    precondition for it - a Discord outage must never prevent a real,
+    evidence-backed proposal from landing in the review queue file,
+    which is the actual source of truth (weekly_review.py reads it
+    directly regardless of whether this post succeeds)."""
+    lines = [
+        f"**New Phase 12 proposal: {proposal['proposal_id']}**",
+        f"`{proposal['current']['variant']}` → `{proposal['proposed']['variant']}`",
+        proposal["reasoning"],
+        "",
+        "Caveats:",
+        *[f"- {caveat}" for caveat in proposal["caveats"]],
+        "",
+        "Pending owner review - not applied.",
+    ]
+    try:
+        discord_post.post_message("reviews", "\n".join(lines))
+    except discord_post.DiscordPostError:
+        pass
 
 
 if __name__ == "__main__":
