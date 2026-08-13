@@ -137,26 +137,27 @@ def evaluate_exit_for_row(row: dict[str, str], quote: dict[str, Any] | None, tim
     }
 
 
-def _post_trade_alert(content: str) -> None:
-    """Posting is a side effect of a real trade, never a precondition for
-    one - a Discord outage or bad credentials must never prevent a real
-    open/close from being recorded. discord_post.post_message already
-    no-ops when Discord isn't configured; this only needs to guard
-    against a real network/API failure once credentials ARE present."""
+def _post_trade_card(trade_id: str, content: str) -> None:
+    """One upserted card per trade_id, edited in place across its whole
+    lifecycle (open -> live-held updates -> final close), instead of a
+    separate permanent 'opened' message plus a separate 'held' card -
+    owner: "why's it showing 2 cards for every trade?" (both landed in
+    the single #evolve-trades channel, since this bot - unlike the main
+    system's separate entry/updates/exit channels - only has one trades
+    channel). Once a trade closes this key is never upserted again, so
+    the final message simply stays put as that trade's permanent record
+    - satisfies "still be able to track history" without a second card.
+    Same fail-soft contract as before: a Discord problem here must never
+    affect the real position tracking that already happened above."""
+    if not trade_id:
+        return
     try:
-        discord_post.post_message("trades", content)
+        discord_post.upsert_message("trades", f"trade:{trade_id}", content)
     except discord_post.DiscordPostError:
         pass
 
 
 def _post_held_position_update(row: dict[str, str], result: dict[str, Any]) -> None:
-    """Live-updates a single persistent 'currently held' card per
-    trade_id (upserted, not reposted each cycle) so a real open
-    position's unrealized P/L is trackable the same way the main
-    system's held-positions channel already works - owner: "why can I
-    track its live pl like all the other stuff?" Same fail-soft
-    contract as _post_trade_alert: a Discord problem here must never
-    affect the real position tracking that already happened above."""
     trade_id = row.get("trade_id", "")
     if not trade_id:
         return
@@ -167,19 +168,7 @@ def _post_held_position_update(row: dict[str, str], result: dict[str, Any]) -> N
         f"Entry ${result['entry']:.2f} → Mark ${result['mark']:.2f} ({pnl_pct:+.0f}%)\n"
         f"Peak {result['peak_pct']:+.0f}% · Trough {result['trough_pct']:+.0f}% · {result.get('note', '')}"
     )
-    try:
-        discord_post.upsert_message("trades", f"held:{trade_id}", content)
-    except discord_post.DiscordPostError:
-        pass
-
-
-def _clear_held_position_card(trade_id: str) -> None:
-    if not trade_id:
-        return
-    try:
-        discord_post.delete_card("trades", f"held:{trade_id}")
-    except discord_post.DiscordPostError:
-        pass
+    _post_trade_card(trade_id, content)
 
 
 def _close_open_positions(
@@ -201,7 +190,6 @@ def _close_open_positions(
         if not result["should_close"]:
             _post_held_position_update(row, result)
             continue
-        _clear_held_position_card(row.get("trade_id", ""))
         contracts = int(row.get("contracts") or 0)
         proceeds = round(result["mark"] * 100 * contracts, 2)
         pl_dollars = round((result["mark"] - result["entry"]) * 100 * contracts, 2)
@@ -215,10 +203,11 @@ def _close_open_positions(
         row["balance_after"] = str(bank["balance"])
         closed_count += 1
         emoji = "\U0001F7E2" if row["outcome"] == "WIN" else ("\U0001F534" if row["outcome"] == "LOSS" else "⚪")
-        _post_trade_alert(
+        _post_trade_card(
+            row.get("trade_id", ""),
             f"{emoji} SPY_EVOLVE closed {row['option_symbol']}: {row['outcome']} "
             f"{row['pl_pct']}% (${pl_dollars:,.2f}) — {result['signal']}\n"
-            f"Balance: ${bank['balance']:,.2f}"
+            f"Balance: ${bank['balance']:,.2f}",
         )
     return bank, closed_count
 
@@ -353,9 +342,10 @@ def _try_open_new_position(
     )
     bank = bankroll.debit_entry(bank, cost)
     rows.append(row)
-    _post_trade_alert(
+    _post_trade_card(
+        row["trade_id"],
         f"\U0001F7E2 SPY_EVOLVE opened {row['call_or_put'].upper()} {row['strike']} exp {row['expiration']} "
-        f"@ ${row['entry_price']} x{contracts} (${cost:,.2f} risked)\n{row['thesis']}"
+        f"@ ${row['entry_price']} x{contracts} (${cost:,.2f} risked)\n{row['thesis']}",
     )
     return row, bank
 
