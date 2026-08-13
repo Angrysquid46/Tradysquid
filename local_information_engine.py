@@ -86,8 +86,16 @@ STREAM_QUOTE_STALE_SECONDS = 0.5
 POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
 # SPY's own spot price for Key-Levels' underlying-level stop/target check
 # (see _stream_quote_event) - cached rather than fetched on every option
-# tick, since ticks can arrive many times a second and this only needs to
-# be roughly as fresh as the 2s STREAM_LAST_WRITTEN debounce already is.
+# tick, since ticks can arrive many times a second. Staleness bound
+# shares STREAM_QUOTE_STALE_SECONDS (not a separate hardcoded value) as
+# of 2026-08-13 - this cache used to allow up to 2s of staleness, four
+# times looser than the 0.5s bound the option-quote path was tightened
+# to on 2026-08-11 (PR #173) after a real overshoot got caught live.
+# Real evidence this second gap existed too, not just a theoretical
+# inconsistency: SPY_KEY_LEVELS trades kept overshooting by 20+ points
+# (2026-08-12 14:35, well after the #173 fix) while 0DTE trades'
+# overshoot shrank as intended - Key-Levels' stop/target check runs off
+# THIS cache, which the #173 fix never touched.
 _SPY_SPOT_CACHE: tuple[float | None, float] = (None, 0.0)
 
 
@@ -1502,7 +1510,7 @@ def _position_symbols() -> list[str]:
 def _cached_spy_spot() -> float | None:
     global _SPY_SPOT_CACHE
     price, fetched_at = _SPY_SPOT_CACHE
-    if time.monotonic() - fetched_at < 2:
+    if time.monotonic() - fetched_at < STREAM_QUOTE_STALE_SECONDS:
         return price
     try:
         quote = spy_scanner.get_quote(spy_scanner.TICKER)

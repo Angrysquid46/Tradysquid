@@ -1655,7 +1655,7 @@ class InformationEngineTests(unittest.TestCase):
         get_quote.assert_called_with(spy_scanner.TICKER)
         self.assertEqual(received["underlying_spot_price"], 774.50)
 
-    def test_cached_spy_spot_refreshes_after_two_seconds(self) -> None:
+    def test_cached_spy_spot_refreshes_once_stale(self) -> None:
         engine._SPY_SPOT_CACHE = (None, 0.0)
         calls = []
 
@@ -1672,4 +1672,29 @@ class InformationEngineTests(unittest.TestCase):
             third = engine._cached_spy_spot()
             self.assertEqual(len(calls), 2)
             self.assertNotEqual(third, first)
+
+    def test_cached_spy_spot_shares_the_tightened_option_quote_staleness_bound(self) -> None:
+        """Regression guard for a real overshoot bug: this cache used to
+        allow up to 2s of staleness, four times looser than the 0.5s
+        STREAM_QUOTE_STALE_SECONDS bound the option-quote path was
+        tightened to in PR #173 - real SPY_KEY_LEVELS trades kept
+        overshooting their stop by 20+ points afterward because this
+        specific cache's own staleness bound was never tightened to
+        match. A cache entry just past STREAM_QUOTE_STALE_SECONDS old
+        must be treated as stale, not silently reused for another
+        1.5+ seconds."""
+        engine._SPY_SPOT_CACHE = (None, 0.0)
+        calls = []
+
+        def fake_get_quote(symbol):
+            calls.append(symbol)
+            return {"last": str(700.0 + len(calls))}
+
+        with patch.object(spy_scanner, "get_quote", side_effect=fake_get_quote):
+            engine._cached_spy_spot()
+            self.assertEqual(len(calls), 1)
+            just_past_bound = time.monotonic() - (engine.STREAM_QUOTE_STALE_SECONDS + 0.05)
+            engine._SPY_SPOT_CACHE = (engine._SPY_SPOT_CACHE[0], just_past_bound)
+            engine._cached_spy_spot()
+            self.assertEqual(len(calls), 2)
 
