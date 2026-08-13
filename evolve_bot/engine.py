@@ -84,6 +84,31 @@ def evaluate_exit_for_row(row: dict[str, str], quote: dict[str, Any] | None, tim
     involved, does that. Returns None when there's nothing usable to
     evaluate (missing/unreliable quote, or no real entry price)."""
     if not quote or not s.quote_is_reliable_for_exit(quote):
+        # A 0DTE option that's already past its own expiration date will
+        # NEVER get a usable quote again - Tradier purges expired symbols
+        # almost immediately (confirmed empirically in Phase 2). Without
+        # this fallback, a position whose quote went bad right as it
+        # should have force-closed (e.g. a widening spread in the final
+        # minutes before expiry) gets orphaned forever: no quote means
+        # this function always returns None, which means it's never
+        # re-evaluated, which means it can never close. Found live
+        # 2026-08-13: EVOLVE-20260812-002 sat OPEN a full day past its
+        # own expiration, silently blocking every new entry since this
+        # bot only holds one position at a time.
+        expiration = row.get("expiration", "")
+        if expiration and expiration < timestamp.date().isoformat():
+            entry = s.as_float(row.get("entry_price"), 0.0) or 0.0
+            row["last_evaluated_at"] = timestamp.isoformat()
+            return {
+                "signal": "EXPIRATION CLOSE",
+                "note": "Forced closed: past its own expiration date with no final quote available.",
+                "mark": 0.0,
+                "entry": entry,
+                "pnl_pct": -100.0,
+                "peak_pct": s.as_float(row.get("max_favorable_pct"), 0.0) or 0.0,
+                "trough_pct": s.as_float(row.get("max_adverse_pct"), 0.0) or 0.0,
+                "should_close": True,
+            }
         return None
     entry = s.as_float(row.get("entry_price"), 0.0) or 0.0
     if entry <= 0:

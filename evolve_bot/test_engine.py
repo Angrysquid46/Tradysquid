@@ -132,6 +132,63 @@ def test_close_open_positions_skips_a_row_with_an_unreliable_quote():
     assert updated_bank == bank
 
 
+def test_close_open_positions_force_closes_a_position_past_its_own_expiration_with_no_quote():
+    """Regression guard for a real bug found live 2026-08-13:
+    EVOLVE-20260812-002 (expiration 2026-08-12) sat OPEN a full day into
+    2026-08-13 because its option symbol expired and Tradier stopped
+    serving quotes for it - with no quote, evaluate_exit_for_row always
+    returned None, so the position could never be re-evaluated or
+    closed, silently blocking every new entry (single-position-at-a-time
+    gate) indefinitely."""
+    row = tradelog.blank_row()
+    row.update({
+        "trade_id": "EVOLVE-20260812-002", "outcome": "OPEN",
+        "option_symbol": "SPY260812P00773000", "entry_price": "0.33", "contracts": "1",
+        "expiration": "2026-08-12",
+    })
+    rows = [row]
+    bank = bankroll.default_state()
+    bank = bankroll.debit_entry(bank, 33.0)
+    timestamp = datetime(2026, 8, 13, 10, 0, tzinfo=CT)  # a full day after expiration
+
+    with (
+        mock.patch.object(engine.s, "get_quotes", return_value={}),
+        mock.patch.object(engine.s, "quote_is_reliable_for_exit", return_value=False),
+    ):
+        updated_bank, closed = engine._close_open_positions(rows, bank, timestamp)
+
+    assert closed == 1
+    assert row["outcome"] == "LOSS"
+    assert row["last_signal"] == "EXPIRATION CLOSE"
+    assert row["exit_price"] == "0.0"
+    assert row["closed_at"]
+    assert updated_bank["balance"] == bank["balance"]  # mark=0 proceeds - nothing credited back
+
+
+def test_close_open_positions_does_not_force_close_same_day_expiration_with_no_quote():
+    """A position expiring TODAY (not yet past its own expiration) with a
+    temporarily bad quote should still just wait for the next cycle, not
+    get force-closed as if it were an orphan."""
+    row = tradelog.blank_row()
+    row.update({
+        "trade_id": "T1", "outcome": "OPEN",
+        "option_symbol": "SPY260813C00780000", "entry_price": "0.50", "contracts": "1",
+        "expiration": "2026-08-13",
+    })
+    rows = [row]
+    bank = bankroll.default_state()
+    timestamp = datetime(2026, 8, 13, 10, 0, tzinfo=CT)
+
+    with (
+        mock.patch.object(engine.s, "get_quotes", return_value={}),
+        mock.patch.object(engine.s, "quote_is_reliable_for_exit", return_value=False),
+    ):
+        updated_bank, closed = engine._close_open_positions(rows, bank, timestamp)
+
+    assert closed == 0
+    assert row["outcome"] == "OPEN"
+
+
 def test_try_open_new_position_skips_when_a_position_is_already_open():
     existing = tradelog.blank_row()
     existing.update({"trade_id": "T1", "outcome": "OPEN"})
