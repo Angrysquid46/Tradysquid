@@ -67,7 +67,11 @@ TRAILING_WINDOW = 10
 # regardless of how many nudges accumulate over time.
 STEP = 0.02
 MIN_POSITION_SIZE_PCT = 0.05
-MAX_POSITION_SIZE_PCT = 0.30
+# Raised from 0.30 to 0.40 on 2026-08-12 alongside bankroll.POSITION_SIZE_PCT's
+# 0.15 -> 0.25 bump (owner: "it should be trading aggressively") - more
+# real headroom for a genuine winning streak to size up into, still a
+# hard ceiling, not unbounded.
+MAX_POSITION_SIZE_PCT = 0.40
 
 # A dead zone around 50% win rate on purpose - without one, a trailing
 # win rate that's genuinely just noise around a coin flip would nudge the

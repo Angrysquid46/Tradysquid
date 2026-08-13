@@ -208,10 +208,15 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
     assert row["sentiment_at_entry"] == "0.12"
     assert row["put_call_ratio_at_entry"] == "0.85"
     assert row["model_score_at_entry"] == "0.71"
-    # $1000 balance * 15% = $150 position size; $0.50 premium -> $50/contract -> 3 contracts
-    assert row["contracts"] == "3"
-    # cost = 0.50 * 100 * 3 = $150, debited from the starting $1000
-    assert updated_bank["balance"] == bankroll.STARTING_BALANCE - 150.0
+    # Derived from the real bankroll.POSITION_SIZE_PCT constant rather than
+    # a hardcoded percentage, so this test doesn't silently drift out of
+    # sync (and start asserting the WRONG number instead of failing) if
+    # that constant is ever tuned.
+    expected_size_dollars = bankroll.STARTING_BALANCE * bankroll.POSITION_SIZE_PCT
+    expected_contracts = int(expected_size_dollars // 50.0)  # $0.50 premium -> $50/contract
+    expected_cost = 0.50 * 100 * expected_contracts
+    assert row["contracts"] == str(expected_contracts)
+    assert updated_bank["balance"] == bankroll.STARTING_BALANCE - expected_cost
 
 
 def test_try_open_new_position_posts_a_real_discord_alert_on_entry():

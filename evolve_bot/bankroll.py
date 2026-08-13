@@ -21,8 +21,11 @@ STARTING_BALANCE = 1000.0
 # than the other strategies' fixed $500/trade cap, since this bot is meant
 # to size up as it wins and down as it loses. This is a starting default,
 # not a permanent constant - Phase 11 (rules-based self-tuning) is meant to
-# adjust this over time based on trailing results.
-POSITION_SIZE_PCT = 0.15
+# adjust this over time based on trailing results. Raised from 0.15 to
+# 0.25 on 2026-08-12 (owner: "it should be trading aggressively") - still
+# bounded by self_tuning.MIN/MAX_POSITION_SIZE_PCT, still paper money with
+# a real auto-reset safety net below, not an unbounded change.
+POSITION_SIZE_PCT = 0.25
 
 # Balance at or below this triggers a reset. Not exactly zero - a few
 # dollars left over isn't enough to realistically buy even one 0DTE
