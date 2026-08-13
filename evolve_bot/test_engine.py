@@ -345,6 +345,12 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=15.5),
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=0.12),
         mock.patch.object(engine.model_scoring, "explain_score", return_value={"score": 0.71, "contributions": []}),
+        # Isolates this test from the REAL self_tuning state on disk -
+        # position sizing self-tunes based on real closed trades (see
+        # self_tuning.py), so without this the expected-contracts math
+        # below would silently drift whenever real live trading actually
+        # adjusts it, exactly as happened on 2026-08-13 (0.25 -> 0.21).
+        mock.patch.object(engine.self_tuning, "current_position_size_pct", return_value=bankroll.POSITION_SIZE_PCT),
     ):
         row, updated_bank = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 

@@ -42,6 +42,7 @@ import backtest
 import logic_proposals
 import retrain_loop
 import robinhood_cache
+import tradier_equity_cache
 
 ROOT = Path(__file__).resolve().parent
 STATE_DIR = ROOT / "state"
@@ -70,11 +71,26 @@ def run_refresh(force: bool = False) -> dict[str, Any]:
     retrain_loop hashes the training file, logic_proposals tracks its
     own already-considered state, post_dashboard gates on the calendar
     day) - this function's own job is just running them in the right
-    order and reporting what actually happened."""
+    order and reporting what actually happened.
+
+    tradier_equity_cache.fill_missing_recent_days runs first, every
+    call, so the "new cached days" check right below it actually has
+    something new to see without a manual Robinhood MCP pull - owner:
+    "I'd like it automated so I don't have to ask for it to do its job
+    ... so we don't miss anything." A day someone already pulled from
+    Robinhood by hand (real option pricing, not just equity bars) is
+    left untouched; this only ever fills in what would otherwise be
+    missing."""
+    fill_result = tradier_equity_cache.fill_missing_recent_days("SPY")
+
     cached_days = sorted(robinhood_cache.cached_equity_days("SPY"))
     state = _load_state()
     if not force and state and state.get("last_seen_days") == cached_days:
-        return {"status": "no new cached days since last refresh", "n_cached_days": len(cached_days)}
+        return {
+            "status": "no new cached days since last refresh",
+            "n_cached_days": len(cached_days),
+            "tradier_fill": fill_result,
+        }
 
     backtest_result = backtest.run_backtest()
     retrain_result = retrain_loop.run_retrain_cycle()
@@ -85,6 +101,7 @@ def run_refresh(force: bool = False) -> dict[str, Any]:
     return {
         "status": "refreshed",
         "n_cached_days": len(cached_days),
+        "tradier_fill": fill_result,
         "backtest": backtest_result,
         "retrain": retrain_result["status"],
         "proposals": proposal_result["status"],
