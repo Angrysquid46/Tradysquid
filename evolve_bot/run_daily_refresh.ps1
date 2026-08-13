@@ -1,11 +1,24 @@
 # Invoked by the "Tradysquid Evolve Bot Daily Refresh" scheduled task
-# (daily, every day including weekends, before market open) - the
-# owner's explicit ask: "I want it daily so we catch everything" after
-# learning that regenerating the backtest / retraining / checking for
-# new logic proposals only ever happened on the Monday weekly review
-# before this. Also directly runnable by hand right after a manual
-# Robinhood MCP pull (`powershell -File run_daily_refresh.ps1`) instead
-# of waiting for the next scheduled run - same script either way.
+# (daily, every day including weekends, 3:30pm CT) - the owner's
+# explicit ask: "I want it daily so we catch everything" after learning
+# that regenerating the backtest / retraining / checking for new logic
+# proposals only ever happened on the Monday weekly review before this.
+# Also directly runnable by hand right after a manual Robinhood MCP pull
+# (`powershell -File run_daily_refresh.ps1`) instead of waiting for the
+# next scheduled run - same script either way.
+#
+# 3:30pm CT specifically (not before market open) - moved there on the
+# owner's request, for two real reasons: (1) SPY_EVOLVE's own EOD CLOSE
+# rule forces every open position shut by 2:45pm CT at the latest
+# (spy_scanner.MARKET_CLOSE is 3:00pm CT), so same-day trade outcomes
+# are already final well before 3:30pm - no need to wait until the next
+# morning to see them. (2) The trading loop's own scheduled window
+# (run_evolve_bot.ps1, "Tradysquid Evolve Bot Trading Loop") runs
+# through 3:15pm CT - starting this at 3:30pm means the two scheduled
+# tasks never run concurrently, so this script's own real Tradier API
+# calls (inside backtest.run_backtest(), when there's new data to
+# process) never compete with the live loop's real-time entry/exit
+# decisions for API capacity.
 #
 # Two real steps: refresh_pipeline.run_refresh() (backtest regen ->
 # retrain -> proposals, skipped cheaply when no new Robinhood data
