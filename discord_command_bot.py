@@ -33,6 +33,7 @@ OWNER_ONLY_COMMANDS = {
     "reset-trading-data",
     "clear-chat-history",
     "scan-now",
+    "close-profitable",
 }
 TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
 
@@ -397,6 +398,67 @@ def reset_trading_data_reply(interaction: dict[str, Any]) -> str:
         "Held positions, wins, losses, and performance dashboards will show empty "
         "on their next refresh - they render from the live log, not a separate store."
     )
+    return "\n".join(lines)
+
+
+def close_profitable_reply(interaction: dict[str, Any]) -> str:
+    """Owner-initiated manual profit-take - closes every currently open
+    position that is genuinely in profit right now, using the exact same
+    evaluate_open_row/close_row/post_close functions the automated scan
+    cycle uses for a real stop/target/floor exit (see spy_scanner.py
+    main()'s own close-routing loop). The only difference from an
+    automated close is WHO decided to close it and WHEN - the realized
+    price, P/L math, and Discord posting are identical, not a separate
+    parallel path that could drift from the real one.
+
+    A position whose live evaluation isn't currently profitable (or
+    whose quote is unreliable/unavailable) is left open, never force-
+    closed at a loss - this command only ever locks in real gains that
+    already exist, matching the owner's own framing ("claim profits when
+    they exist")."""
+    require_ticker_admin(interaction)
+    timestamp = spy_scanner.now_ct()
+    rows = spy_scanner.read_log()
+    open_positions = spy_scanner.open_rows(rows)
+    if not open_positions:
+        return "No open positions right now - nothing to close."
+
+    quotes = spy_scanner.get_quotes(spy_scanner.symbols_for_rows(open_positions), include_greeks=True)
+    spot = spy_scanner.get_quote(spy_scanner.TICKER)
+    spot_price = spy_scanner.as_float(spot.get("last")) if spot else None
+
+    closed: list[tuple[dict[str, str], dict[str, Any], str, float]] = []
+    for row in open_positions:
+        evaluation = spy_scanner.evaluate_open_row(row, quotes, timestamp, underlying_spot_price=spot_price)
+        pl_dollars = spy_scanner.as_float(evaluation.get("pl_dollars"))
+        if pl_dollars is None or pl_dollars <= 0:
+            continue
+        manual_evaluation = {
+            **evaluation,
+            "signal": "MANUAL CLOSE",
+            "note": "Manually closed via /close-profitable while in profit.",
+        }
+        outcome = spy_scanner.close_row(row, manual_evaluation, timestamp)
+        closed.append((row, manual_evaluation, outcome, pl_dollars))
+
+    spy_scanner.write_log(rows)
+
+    if not closed:
+        return f"Checked {len(open_positions)} open position(s) - none are currently profitable. Nothing closed."
+
+    tracker = spy_scanner.initialize_discord()
+    report_state = spy_scanner.read_report_state()
+    lines = [f"✅ **Manually closed {len(closed)} profitable position(s)**"]
+    total = 0.0
+    for row, evaluation, outcome, pl_dollars in closed:
+        total += pl_dollars
+        spy_scanner.safe_discord_call(
+            "manual close routing",
+            lambda r=row, e=evaluation: spy_scanner.post_close(r, e, tracker, report_state),
+        )
+        lines.append(f"- {row.get('play_type')} {row.get('option_symbol')}: {outcome} ${pl_dollars:,.0f}")
+    spy_scanner.write_report_state(report_state)
+    lines.append(f"**Total realized: ${total:,.0f}** across {len(closed)} position(s).")
     return "\n".join(lines)
 
 
@@ -780,6 +842,10 @@ def process_command(interaction: dict[str, Any]) -> None:
         elif name == "clear-chat-history":
             patch_original(
                 application_id, token, content=clear_chat_history_reply(interaction)
+            )
+        elif name == "close-profitable":
+            patch_original(
+                application_id, token, content=close_profitable_reply(interaction)
             )
         elif name == "chart":
             days = int(option_value(interaction, "days", 90))
