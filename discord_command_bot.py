@@ -439,6 +439,14 @@ def close_profitable_reply(interaction: dict[str, Any]) -> str:
             "note": "Manually closed via /close-profitable while in profit.",
         }
         outcome = spy_scanner.close_row(row, manual_evaluation, timestamp)
+        # close_row does NOT write last_signal itself - that field is only
+        # ever set inside evaluate_open_row's own apply_evaluation_to_row
+        # side effect, using the REAL rule-based signal (e.g. "HOLD" for a
+        # position nothing automated wanted to close yet). Without this
+        # line the row's last_signal silently stays "HOLD" even though
+        # this command closed it - found from real closed rows in
+        # state/spy-plays-log.csv, not from a test.
+        row["last_signal"] = "MANUAL CLOSE"
         closed.append((row, manual_evaluation, outcome, pl_dollars))
 
     spy_scanner.write_log(rows)

@@ -120,12 +120,25 @@ def test_closes_only_the_profitable_positions_and_leaves_losers_open():
 
 
 def test_signal_is_relabeled_manual_close_not_the_real_exit_reason():
+    """Regression guard for a real bug: close_row() does NOT itself write
+    row["last_signal"] - that field is only ever set earlier, inside
+    evaluate_open_row's own apply_evaluation_to_row side effect, using
+    the real rule-based signal (e.g. "HOLD"). The first version of this
+    command passed signal="MANUAL CLOSE" into close_row and assumed that
+    was enough, but the row's own last_signal silently stayed "HOLD" -
+    found from real closed rows in state/spy-plays-log.csv, not from a
+    test, because this test originally only checked the dict passed
+    INTO close_row, never the row's own field afterward. fake_close_row
+    below deliberately mirrors the real function's behavior (does NOT
+    touch last_signal) so this test actually exercises the same gap."""
     row = {"outcome": "OPEN", "option_symbol": "SPY260813C00780000", "play_type": "SPY_0DTE_5M"}
     captured_evaluation = {}
 
     def fake_close_row(r, evaluation, timestamp):
         captured_evaluation.update(evaluation)
         r["outcome"] = "WIN"
+        # Deliberately does NOT set r["last_signal"] - matches the real
+        # close_row's actual behavior.
         return "WIN"
 
     with (
@@ -145,3 +158,4 @@ def test_signal_is_relabeled_manual_close_not_the_real_exit_reason():
         bot.close_profitable_reply(_owner_interaction())
 
     assert captured_evaluation["signal"] == "MANUAL CLOSE"
+    assert row["last_signal"] == "MANUAL CLOSE"  # the row itself, not just what was passed to close_row
