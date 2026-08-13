@@ -37,6 +37,16 @@ touch git, do not commit or push anything.
      small, noisy sample until real data volume is much larger (dozens of
      real trading days, not the low double digits), not as a validated
      trend.
+   - Pending logic proposals (logic_proposals.pending): these are
+     evidence-backed trading-LOGIC change proposals (Phase 12), NOT
+     auto-applied - they sit here until the owner explicitly reviews and
+     decides. If the list is non-empty, this is the most important thing
+     to surface clearly at the top of the review, not buried at the
+     bottom: state what's proposed, the real evidence and profit-factor
+     comparison behind it, and its caveats (small sample, multiple-
+     comparisons risk) plainly. If it's empty, a one-line "no pending
+     logic proposals" is enough - do not manufacture a proposal-shaped
+     summary when there isn't one.
    - One clear, concrete next step - the thing most worth doing before
      the next review.
 

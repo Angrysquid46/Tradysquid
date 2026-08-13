@@ -30,6 +30,7 @@ from typing import Any
 import backtest
 import bankroll
 import engine
+import logic_proposals
 import retrain_loop
 import shadow
 
@@ -127,6 +128,15 @@ def gather_review_data() -> dict[str, Any]:
         "retraining": {
             "n_retrains_recorded": len(retrain_history),
             "most_recent": retrain_history[-1] if retrain_history else None,
+        },
+        # Phase 12's review queue - real, evidence-backed trading-logic
+        # proposals awaiting explicit owner sign-off, never auto-applied.
+        "logic_proposals": {
+            "pending": [
+                proposal
+                for proposal in _read_jsonl(logic_proposals.LOGIC_PROPOSALS_PATH)
+                if proposal.get("status") == "pending_owner_review"
+            ],
         },
     }
 
