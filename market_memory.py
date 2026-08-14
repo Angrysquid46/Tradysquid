@@ -10,18 +10,25 @@ importing get_features/get_recent_patterns/pattern_stats explicitly.
 Three real layers, all pure math on OHLCV bars (no chart images, no
 "AI vibes"):
 
-1. Bars - daily history goes back SPY_DAILY_HISTORY_DAYS (~2 years) in
-   one backfill, refreshed incrementally after that. Intraday (5-minute)
-   history is backfilled as far back as Tradier's own timesales
-   retention actually allows (confirmed live: ~2 months, not just
-   "today" - that was this module's own earlier, overly conservative
-   assumption, corrected once actually tested against the real API -
-   see backfill_historical_intraday, which detects the real boundary by
-   reading it out of Tradier's own rejection error rather than guessing
-   or hardcoding a date that would go stale). Anything older than that
-   boundary genuinely isn't retrievable at 5-minute resolution from this
-   provider - not a design choice, a real data-availability limit, and
-   pretending otherwise would be dishonest about what's actually here.
+1. Bars - daily history goes back as far as Tradier's own /markets/
+   history will return in one response (confirmed live by probing
+   progressively larger ranges: caps at 8,000 rows, landing on
+   1994-10-31 - about 1.5 years short of SPY's real 1993-01-29
+   inception, a real gap this provider's "N days back" parameter can't
+   close). Intraday (5-minute) history is backfilled from TWO real
+   sources: Tradier's own timesales retention (confirmed live: back to
+   2026-06-18, not just "today" - that was this module's earlier, overly
+   conservative assumption - see backfill_historical_intraday, which
+   detects the real boundary from Tradier's own rejection error rather
+   than guessing or hardcoding a date that would go stale) plus a
+   one-time manual Robinhood MCP pull (see ingest_robinhood_equity_dump)
+   extending real coverage back to ~2026-03-02, confirmed by directly
+   probing for the point where Robinhood stops returning fake
+   interpolated placeholder bars and starts returning real prints.
+   Anything older than these real boundaries genuinely isn't retrievable
+   from either provider - not a design choice, a real data-availability
+   limit, and pretending otherwise would be dishonest about what's
+   actually here.
 
 2. Features - SMA(20/50/200) + EMA(9/20/50/200)/MACD/RSI/ATR(+percentile
    rank)/Bollinger (reusing spy_scanner.py's own shared math, not
@@ -73,7 +80,17 @@ DB_PATH = ROOT / "state" / "market_memory.db"
 DAILY_CSV_PATH = ROOT / "state" / "market_memory_daily.csv"
 INTRADAY_CSV_PATH = ROOT / "state" / "market_memory_intraday_5min.csv"
 
-SPY_DAILY_HISTORY_DAYS = 730
+# Tradier's /markets/history caps a single response at 8,000 rows -
+# confirmed live by probing progressively larger day-counts: 12,500+
+# calendar days all land on the identical 8,000-bar response starting
+# 1994-10-31, not SPY's real 1993-01-29 inception (a genuine ~1.5-year
+# gap this can't close - the endpoint doesn't support fetching an
+# explicit older date range beyond that cap, only "N days back from
+# today"). 15000 safely clears the cap threshold so every collection
+# cycle always pulls the maximum available, not the owner's original
+# ~2-year guess (SPY_DAILY_HISTORY_DAYS was 730 before this was tested
+# against the real API).
+SPY_DAILY_HISTORY_DAYS = 15000
 FORWARD_RETURN_HORIZONS = (5, 10, 20)
 NR7_LOOKBACK = 7
 VOLUME_CLIMAX_MULTIPLE = 2.0
