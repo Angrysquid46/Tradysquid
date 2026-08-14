@@ -85,7 +85,7 @@ COMMANDS = [
         "name": "force-trade",
         "type": 1,
         "default_member_permissions": "0",
-        "description": "Owner: force-open the best real SPY 0DTE call/put right now, then manage it under standard exit rules",
+        "description": "Owner: force-open the best real SPY 0DTE call/put now, managed under standard exit rules",
         "options": [{
             "name": "direction",
             "description": "call or put",
