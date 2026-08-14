@@ -319,7 +319,7 @@ def test_upsert_message_patches_with_an_embed_when_one_already_exists():
             discord_post.upsert_message("trades", "held-position", "plain fallback", embed=embed)
 
         patch_payloads = [j for m, j in payloads if m == "PATCH"]
-        assert patch_payloads == [{"embeds": [embed], "allowed_mentions": {"parse": []}}]
+        assert patch_payloads == [{"content": "", "embeds": [embed], "allowed_mentions": {"parse": []}}]
 
 
 def test_upsert_message_falls_back_to_a_fresh_post_when_the_tracked_message_is_gone():
