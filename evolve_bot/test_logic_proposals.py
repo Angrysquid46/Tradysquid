@@ -164,15 +164,20 @@ def test_run_proposal_cycle_posts_a_new_proposal_to_discord_when_enabled():
             mock.patch.object(logic_proposals.backtest, "BACKTEST_TRADES_PATH", backtest_csv),
             mock.patch.object(logic_proposals, "LOGIC_PROPOSALS_PATH", temp_path / "logic_proposals.jsonl"),
             mock.patch.object(logic_proposals, "PROPOSAL_STATE_PATH", temp_path / "logic_proposal_state.json"),
-            mock.patch.object(logic_proposals.discord_post, "post_message") as fake_post,
+            mock.patch.object(logic_proposals.discord_post, "upsert_message") as fake_upsert,
         ):
             logic_proposals.run_proposal_cycle()
 
-        fake_post.assert_called_once()
-        channel_key, content = fake_post.call_args[0]
+        # Upserted under one stable key, not posted fresh - owner: "it
+        # keeps spamming the same thing over and over, we just need 1."
+        fake_upsert.assert_called_once()
+        channel_key, card_key, content = fake_upsert.call_args[0]
         assert channel_key == "reviews"
+        assert card_key == "pending-proposal"
         assert "stop_20_target_150" in content
         assert "Pending owner review" in content
+        embed = fake_upsert.call_args[1]["embed"]
+        assert "New Phase 12 Proposal" in embed["title"]
 
 
 def test_run_proposal_cycle_still_writes_the_proposal_when_discord_posting_fails():
@@ -195,7 +200,7 @@ def test_run_proposal_cycle_still_writes_the_proposal_when_discord_posting_fails
             mock.patch.object(logic_proposals, "LOGIC_PROPOSALS_PATH", proposals_path),
             mock.patch.object(logic_proposals, "PROPOSAL_STATE_PATH", temp_path / "logic_proposal_state.json"),
             mock.patch.object(
-                logic_proposals.discord_post, "post_message",
+                logic_proposals.discord_post, "upsert_message",
                 side_effect=logic_proposals.discord_post.DiscordPostError("down"),
             ),
         ):
