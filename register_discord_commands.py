@@ -16,6 +16,7 @@ OWNER_ONLY_COMMANDS = {
     "clear-chat-history",
     "scan-now",
     "close-profitable",
+    "force-trade",
 }
 
 TICKER_ARGUMENT = {
@@ -79,6 +80,22 @@ COMMANDS = [
         "type": 1,
         "default_member_permissions": "0",
         "description": "Owner: manually close every open position that's currently in profit, locking in real gains now",
+    },
+    {
+        "name": "force-trade",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: force-open the best real SPY 0DTE call/put right now, then manage it under standard exit rules",
+        "options": [{
+            "name": "direction",
+            "description": "call or put",
+            "type": 3,
+            "required": True,
+            "choices": [
+                {"name": "Call", "value": "call"},
+                {"name": "Put", "value": "put"},
+            ],
+        }],
     },
     {
         "name": "clear-chat-history",
