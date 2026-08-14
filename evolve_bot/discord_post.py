@@ -269,6 +269,46 @@ def _delete_tracked_message(channel_key: str, card_key: str, state: dict[str, st
             raise
 
 
+def _patch_message(channel_id: str, message_id: str, content: str) -> dict[str, Any] | None:
+    return _request(
+        "PATCH",
+        f"/channels/{channel_id}/messages/{message_id}",
+        {"content": content[:2000], "allowed_mentions": {"parse": []}},
+    )
+
+
+def _patch_message_with_file(
+    channel_id: str, message_id: str, file_path: Path, content: str = "", mime_type: str = "image/png"
+) -> dict[str, Any] | None:
+    url = f"{API_BASE}/channels/{channel_id}/messages/{message_id}"
+    # attachments: [] clears the message's existing attachment in the
+    # same request - without it Discord keeps the old file alongside the
+    # new one instead of replacing it.
+    payload = {"content": content[:2000], "allowed_mentions": {"parse": []}, "attachments": []}
+    for attempt in range(4):
+        with file_path.open("rb") as handle:
+            response = requests.request(
+                "PATCH",
+                url,
+                headers=_headers(content_type=None),
+                data={"payload_json": json.dumps(payload)},
+                files={"files[0]": (file_path.name, handle, mime_type)},
+                timeout=30,
+            )
+        if response.status_code == 429:
+            retry_after = float(response.json().get("retry_after", 1.0)) if response.content else 1.0
+            time.sleep(min(retry_after + 0.25, 65))
+            continue
+        if response.status_code >= 500 and attempt < 3:
+            time.sleep(2**attempt)
+            continue
+        if not response.ok:
+            body = response.text[:700].replace(BOT_TOKEN, "[REDACTED]")
+            raise DiscordPostError(f"Discord file edit HTTP {response.status_code}: {body}")
+        return response.json()
+    raise DiscordPostError("Discord file edit retries exhausted")
+
+
 def delete_card(channel_key: str, card_key: str) -> None:
     """Removes a previously upserted card with no replacement - for a
     card whose "thing" is genuinely done (a position's held-P/L card once
@@ -288,18 +328,31 @@ def delete_card(channel_key: str, card_key: str) -> None:
 
 def upsert_message(channel_key: str, card_key: str, content: str) -> dict[str, Any] | None:
     """Like post_message, but keeps exactly one message per card_key in
-    the channel - deletes the previous tracked version (if any) before
-    posting the new one, rather than letting the channel accumulate a
-    new message every refresh. Real history isn't lost by doing this:
-    the underlying real data (trades.csv, bankroll.json) stays the
-    actual source of truth regardless of what's currently posted."""
+    the channel - edits the existing tracked message in place (a true
+    PATCH) when one already exists, rather than deleting and posting a
+    fresh one. That distinction matters beyond appearances: Discord
+    sends a push notification for a new message but not for an edit, so
+    a delete+repost cycle notified on every single refresh regardless of
+    whether anything real changed. Owner: "it's spamming the fuck out of
+    me even without trades." Falls back to creating a fresh message only
+    the first time, or if the tracked message was deleted out from under
+    this process (a real 404, not the expected path)."""
     if not enabled():
         return None
     state = _load_message_state()
-    _delete_tracked_message(channel_key, card_key, state)
+    key = f"{channel_key}:{card_key}"
+    tracked_id = state.get(key)
+    if tracked_id:
+        channel_id = ensure_channels()[channel_key]
+        try:
+            return _patch_message(channel_id, tracked_id, content)
+        except DiscordPostError as exc:
+            if "HTTP 404" not in str(exc):
+                raise
+            del state[key]
     result = post_message(channel_key, content)
     if result and result.get("id"):
-        state[f"{channel_key}:{card_key}"] = result["id"]
+        state[key] = result["id"]
         _save_message_state(state)
     return result
 
@@ -307,17 +360,26 @@ def upsert_message(channel_key: str, card_key: str, content: str) -> dict[str, A
 def upsert_file(
     channel_key: str, card_key: str, file_path: Path, content: str = "", mime_type: str = "image/png"
 ) -> dict[str, Any] | None:
-    """File-attachment version of upsert_message - same one-card-per-
-    card_key guarantee. Discord's message-edit API doesn't reliably
-    support replacing an attached file in place, so this deletes the
-    previous tracked message and posts a fresh one rather than
-    attempting an in-place PATCH with a new attachment."""
+    """File-attachment version of upsert_message - same true-edit-in-
+    place behavior (Discord's message-edit endpoint supports replacing
+    an attachment via attachments: [] in the same PATCH, see
+    _patch_message_with_file), same reason: a delete+repost cycle
+    notified on every refresh even when nothing real had changed."""
     if not enabled() or not file_path.exists():
         return None
     state = _load_message_state()
-    _delete_tracked_message(channel_key, card_key, state)
+    key = f"{channel_key}:{card_key}"
+    tracked_id = state.get(key)
+    if tracked_id:
+        channel_id = ensure_channels()[channel_key]
+        try:
+            return _patch_message_with_file(channel_id, tracked_id, file_path, content=content, mime_type=mime_type)
+        except DiscordPostError as exc:
+            if "HTTP 404" not in str(exc):
+                raise
+            del state[key]
     result = post_file(channel_key, file_path, content=content, mime_type=mime_type)
     if result and result.get("id"):
-        state[f"{channel_key}:{card_key}"] = result["id"]
+        state[key] = result["id"]
         _save_message_state(state)
     return result

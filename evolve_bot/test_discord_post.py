@@ -218,7 +218,12 @@ def test_upsert_message_posts_fresh_with_no_prior_tracked_message():
         assert saved_state["trades:held-position"] == "msg-1"
 
 
-def test_upsert_message_deletes_the_previous_card_before_posting_the_new_one():
+def test_upsert_message_patches_the_existing_card_in_place():
+    """The whole point: Discord push-notifies on a new message but not
+    on an edit, so a repeat upsert must PATCH the existing tracked
+    message (keeping its id) rather than delete-then-repost (a fresh id
+    every time) - owner: "it's spamming the fuck out of me... it simply
+    needs to update per trade.\""""
     _reset_cache()
     with tempfile.TemporaryDirectory() as temp:
         state_path = Path(temp) / "discord_message_state.json"
@@ -232,9 +237,7 @@ def test_upsert_message_deletes_the_previous_card_before_posting_the_new_one():
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             calls.append((method, url))
-            if method == "DELETE":
-                return _fake_response(204, content=b"")
-            return _fake_response(200, {"id": "new-msg-2"})
+            return _fake_response(200, {"id": "old-msg-1"})
 
         with (
             mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
@@ -244,13 +247,14 @@ def test_upsert_message_deletes_the_previous_card_before_posting_the_new_one():
         ):
             result = discord_post.upsert_message("trades", "held-position", "current P/L: +$20")
 
-        assert result == {"id": "new-msg-2"}
-        assert ("DELETE", f"{discord_post.API_BASE}/channels/chan-t/messages/old-msg-1") in calls
+        assert result == {"id": "old-msg-1"}
+        assert not any(method == "DELETE" for method, _ in calls)
+        assert ("PATCH", f"{discord_post.API_BASE}/channels/chan-t/messages/old-msg-1") in calls
         saved_state = json.loads(state_path.read_text(encoding="utf-8"))
-        assert saved_state["trades:held-position"] == "new-msg-2"
+        assert saved_state["trades:held-position"] == "old-msg-1"  # same id, never churned
 
 
-def test_upsert_message_tolerates_deleting_an_already_gone_message():
+def test_upsert_message_falls_back_to_a_fresh_post_when_the_tracked_message_is_gone():
     _reset_cache()
     with tempfile.TemporaryDirectory() as temp:
         state_path = Path(temp) / "discord_message_state.json"
@@ -262,7 +266,7 @@ def test_upsert_message_tolerates_deleting_an_already_gone_message():
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
-            if method == "DELETE":
+            if method == "PATCH":
                 raise discord_post.DiscordPostError("Discord HTTP 404 for /channels/chan-t/messages/already-gone: not found")
             return _fake_response(200, {"id": "new-msg-3"})
 
@@ -274,7 +278,9 @@ def test_upsert_message_tolerates_deleting_an_already_gone_message():
         ):
             result = discord_post.upsert_message("trades", "held-position", "current P/L: +$30")
 
-        assert result == {"id": "new-msg-3"}  # a 404 on delete doesn't block the new post
+        assert result == {"id": "new-msg-3"}  # a 404 on the edit doesn't block a fresh post
+        saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert saved_state["trades:held-position"] == "new-msg-3"
 
 
 def test_upsert_file_keeps_one_card_per_card_key():
@@ -304,3 +310,47 @@ def test_upsert_file_keeps_one_card_per_card_key():
 
         saved_state = json.loads(state_path.read_text(encoding="utf-8"))
         assert saved_state["dashboard:stats_card"] == "file-msg-1"
+
+
+def test_upsert_file_patches_the_existing_card_in_place():
+    """Same PATCH-in-place fix as upsert_message, for the file-attached
+    dashboard cards specifically - these are exactly the cards the owner
+    was seeing spam from. attachments: [] in the PATCH payload is what
+    actually replaces the old image instead of Discord keeping both."""
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
+        state_path.write_text(json.dumps({"dashboard:stats_card": "old-file-msg"}), encoding="utf-8")
+        png_path = Path(temp) / "chart.png"
+        png_path.write_bytes(b"\x89PNG\r\n\x1a\nfakepngdata")
+        calls = []
+
+        def fake_request(method, url, headers=None, json=None, data=None, files=None, timeout=None):
+            if method == "GET":
+                return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
+                                             {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
+            calls.append((method, url, data))
+            return _fake_response(200, {"id": "old-file-msg"})
+
+        def fake_post(url, headers=None, data=None, files=None, timeout=None):
+            raise AssertionError("must not fall back to a fresh post when the tracked message still exists")
+
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+            mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+            mock.patch.object(discord_post.requests, "post", side_effect=fake_post),
+        ):
+            result = discord_post.upsert_file("dashboard", "stats_card", png_path, content="stats")
+
+        assert result == {"id": "old-file-msg"}
+        patch_calls = [c for c in calls if c[0] == "PATCH"]
+        assert len(patch_calls) == 1
+        assert patch_calls[0][1] == f"{discord_post.API_BASE}/channels/chan-d/messages/old-file-msg"
+        payload = json.loads(patch_calls[0][2]["payload_json"])
+        assert payload["attachments"] == []  # clears the old image so it's replaced, not duplicated
+        saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert saved_state["dashboard:stats_card"] == "old-file-msg"  # same id, never churned

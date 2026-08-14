@@ -159,14 +159,22 @@ def _post_trade_card(trade_id: str, content: str) -> None:
 
 def _refresh_dashboard() -> None:
     """Keeps the #evolve-dashboard cards (stats/milestones/equity curve)
-    current every trading cycle, not just once a day - owner, after a
-    day with 6 real trades closing while the dashboard still showed the
-    morning's stale "1 closed": "these don't look right." presentation.py
-    already upserts these cards in place, so calling this every ~3
-    minutes costs zero extra Discord messages, only a refreshed render.
-    Imported locally, not at module scope - presentation.py imports this
-    module (for TRADELOG_PATH/BANKROLL_PATH), so a top-level import here
-    would be circular."""
+    current - called only when a trade actually opened or closed this
+    cycle (see run_cycle), not on every ~3-minute tick regardless of
+    activity. Originally ran unconditionally every cycle (fixing a
+    different complaint: the dashboard going stale mid-day under the old
+    once-a-day gate), but upsert_message/upsert_file used to delete and
+    repost a brand-new message on every refresh - Discord push-notifies
+    on a new message but not on an edit, so posting on a fixed timer
+    regardless of activity meant a real phone notification every ~3
+    minutes even on a day with zero trades. Owner: "it's spamming the
+    fuck out of me even without trades... it simply needs to update per
+    trade." Now gated on real activity AND upsert_message/upsert_file
+    edit the existing message in place (see discord_post.py) - both
+    matter, since even an edit-in-place still doesn't need to happen
+    when nothing changed. Imported locally, not at module scope -
+    presentation.py imports this module (for TRADELOG_PATH/BANKROLL_PATH),
+    so a top-level import here would be circular."""
     import presentation
 
     try:
@@ -395,7 +403,8 @@ def run_cycle() -> dict[str, Any]:
 
     tradelog.write_log(TRADELOG_PATH, rows)
     bankroll.save_state(BANKROLL_PATH, bank)
-    _refresh_dashboard()
+    if closed_count or opened_row:
+        _refresh_dashboard()
     return {
         "status": "ok",
         "closed": closed_count,
