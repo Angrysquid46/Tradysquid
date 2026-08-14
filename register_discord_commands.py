@@ -18,6 +18,7 @@ OWNER_ONLY_COMMANDS = {
     "close-profitable",
     "force-trade",
     "force-sell",
+    "evolve-audit-duplicates",
 }
 
 TICKER_ARGUMENT = {
@@ -113,6 +114,12 @@ COMMANDS = [
                 {"name": "Put", "value": "put"},
             ],
         }],
+    },
+    {
+        "name": "evolve-audit-duplicates",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: find and repair duplicate/wrong evolve-bot trade cards across all its channels",
     },
     {
         "name": "clear-chat-history",
