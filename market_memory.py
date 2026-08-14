@@ -59,6 +59,7 @@ Three real layers, all pure math on OHLCV bars (no chart images, no
 from __future__ import annotations
 
 import csv
+import json
 import sqlite3
 import sys
 from datetime import date, datetime, time as dt_time, timedelta
@@ -302,6 +303,72 @@ def backfill_historical_intraday(
     }
 
 
+# ---------------------------------------------------------------------------
+# Robinhood MCP dump ingestion - a SECOND real historical source, reaching
+# further back than Tradier's own timesales retention. Robinhood's
+# get_equity_historicals MCP tool is only reachable from an interactive
+# Claude session (no HTTP endpoint a standalone scheduled script can hit
+# on its own - same real constraint evolve_bot's robinhood_cache.py/
+# _ingest_robinhood_dump.py already document and work around), so this is
+# a deliberate manual step, not part of run_collection_cycle. Confirmed
+# live by direct probing (not assumed): Robinhood's real (non-
+# interpolated) 5-minute bars go back to early March 2026, vs Tradier's
+# confirmed June 18 2026 boundary - about 3.5 extra real months.
+# Robinhood also silently returns FAKE flat-price "interpolated": true
+# placeholder bars for dates before ITS OWN real window, rather than
+# erroring the way Tradier does - _normalize_robinhood_bars drops those,
+# so accidentally including a too-early range just yields zero real rows
+# instead of contaminating the store with synthetic data.
+# ---------------------------------------------------------------------------
+
+def _normalize_robinhood_bars(raw_bars: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drops interpolated (synthetic gap-fill, not real prints - see
+    Robinhood's own MCP tool guidance) and malformed bars, and renames
+    Robinhood's raw field names (open_price/high_price/low_price/
+    close_price/begins_at) into the time/open/high/low/close/volume
+    shape _intraday_bar_rows already expects, so a Robinhood dump can
+    feed the exact same ingestion path as a Tradier fetch."""
+    normalized = []
+    for raw in raw_bars:
+        if raw.get("interpolated"):
+            continue
+        try:
+            normalized.append({
+                "time": raw["begins_at"],
+                "open": float(raw["open_price"]),
+                "high": float(raw["high_price"]),
+                "low": float(raw["low_price"]),
+                "close": float(raw["close_price"]),
+                "volume": float(raw.get("volume") or 0),
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+    return normalized
+
+
+def ingest_robinhood_equity_dump(
+    conn: sqlite3.Connection, ticker: str, timeframe: str, dump_path: Path
+) -> dict[str, Any]:
+    """Reads a raw get_equity_historicals MCP result (saved to a file by
+    Claude Code when a result is too large to return inline - see
+    dump_path's own tool-results directory), normalizes it, and feeds it
+    through the same _ingest_and_process pipeline every other bar source
+    uses. Safe to run on overlapping ranges or re-run on the same dump -
+    store_bars is INSERT OR IGNORE."""
+    payload = json.loads(Path(dump_path).read_text(encoding="utf-8"))
+    results = payload.get("data", {}).get("results") or []
+    raw_bars: list[dict[str, Any]] = []
+    for result in results:
+        raw_bars.extend(result.get("bars") or [])
+    normalized = _normalize_robinhood_bars(raw_bars)
+    result = _ingest_and_process(conn, ticker, timeframe, _intraday_bar_rows(normalized))
+    return {
+        "raw_bars_in_dump": len(raw_bars),
+        "real_bars_normalized": len(normalized),
+        **result,
+    }
+
+
 def store_bars(conn: sqlite3.Connection, ticker: str, timeframe: str, rows: list[tuple]) -> int:
     """INSERT OR IGNORE - a bar already stored (same ticker/timeframe/
     bar_time) is never overwritten, so re-running collection on a day
@@ -327,51 +394,199 @@ def load_bars(conn: sqlite3.Connection, ticker: str, timeframe: str, limit: int 
 # Feature computation
 # ---------------------------------------------------------------------------
 
-def compute_features_for_window(bars: list[sqlite3.Row], index: int) -> dict[str, Any]:
+def _simple_moving_average_series(values: list[float], period: int) -> list[float | None]:
+    """O(N) rolling-sum SMA series - one value per input point, matching
+    spy_scanner.simple_moving_average(values[:i+1], period) at every i
+    exactly (SMA only ever depends on its own trailing window, so this
+    causal streaming computation is bit-identical to recomputing fresh
+    at every point, just without redoing the summation from scratch)."""
+    series: list[float | None] = [None] * len(values)
+    if len(values) < period:
+        return series
+    window_sum = sum(values[:period])
+    series[period - 1] = window_sum / period
+    for i in range(period, len(values)):
+        window_sum += values[i] - values[i - period]
+        series[i] = window_sum / period
+    return series
+
+
+def _true_range_series(highs: list[float], lows: list[float], closes: list[float]) -> list[float]:
+    return [
+        max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        for i in range(1, len(closes))
+    ]
+
+
+def _build_series_cache(bars: list[sqlite3.Row]) -> dict[str, Any]:
+    """Precomputes every moving-average-family series ONCE for the whole
+    bars list, instead of compute_features_for_window's original
+    approach of re-slicing bars[:index+1] and rebuilding every series
+    from scratch for EVERY bar - that was O(bar_count^2) and made a bulk
+    historical backfill of a few thousand bars take minutes. EMA/SMA/RSI/
+    ATR/Bollinger are all causal (only ever depend on values already
+    seen), so a series built once over the FULL closes list gives, at
+    every index, EXACTLY the value the old per-bar recomputation would
+    have produced from bars[:index+1] alone - this is a real performance
+    fix, not an approximation. See test_market_memory.py's parity test,
+    which confirms the cached and uncached code paths agree bar for bar
+    on a synthetic dataset covering every indicator."""
+    closes = [row["close"] for row in bars]
+    highs = [row["high"] for row in bars]
+    lows = [row["low"] for row in bars]
+    volumes = [row["volume"] for row in bars]
+
+    sma_20 = _simple_moving_average_series(closes, 20)
+    sma_50 = _simple_moving_average_series(closes, 50)
+    sma_200 = _simple_moving_average_series(closes, 200)
+    ema_9 = s.exponential_moving_average_series(closes, 9)
+    ema_20 = s.exponential_moving_average_series(closes, 20)
+    ema_50 = s.exponential_moving_average_series(closes, 50)
+    ema_200 = s.exponential_moving_average_series(closes, 200)
+
+    fast_ema = s.exponential_moving_average_series(closes, s.SPY_EXPANSION_MACD_FAST_PERIOD)
+    slow_ema = s.exponential_moving_average_series(closes, s.SPY_EXPANSION_MACD_SLOW_PERIOD)
+    macd_line = [
+        f - sl if f is not None and sl is not None else None
+        for f, sl in zip(fast_ema, slow_ema)
+    ]
+    # spy_expansion_macd_histogram computes the signal line as an EMA of
+    # the MACD line's own valid (non-None) values, compacted - since
+    # macd_line only ever transitions from None to real values once (a
+    # single contiguous non-None tail, never gaps), reproducing that same
+    # compact-then-EMA step here, once, gives the identical histogram at
+    # every index the old per-bar call would have produced.
+    valid_start = next((i for i, v in enumerate(macd_line) if v is not None), len(macd_line))
+    compacted = macd_line[valid_start:]
+    signal_compacted = s.exponential_moving_average_series(compacted, s.SPY_EXPANSION_MACD_SIGNAL_PERIOD)
+    # raw_histogram never suppresses anything - every position where a
+    # real signal value exists gets a real histogram value. This is what
+    # "previous" reads: spy_expansion_macd_histogram's own "need >= 2
+    # valid histogram entries" rule is evaluated FRESH at whichever bar
+    # is being treated as "current" - a bar that was itself suppressed to
+    # None when IT was current (not enough trailing context yet) still
+    # has a real underlying value once a LATER bar looks back at it with
+    # more context available. Only the reported "current" value for the
+    # very first-ever valid bar is genuinely suppressed (see below).
+    raw_histogram: list[float | None] = [None] * len(macd_line)
+    for j, sig in enumerate(signal_compacted):
+        if sig is not None:
+            raw_histogram[valid_start + j] = compacted[j] - sig
+    macd_histogram: list[float | None] = [None] * len(macd_line)  # "current", as reported when this bar is the latest
+    macd_histogram_previous: list[float | None] = [None] * len(macd_line)
+    seen_valid = False
+    prior_raw = None
+    for i, raw in enumerate(raw_histogram):
+        if raw is not None:
+            if seen_valid:
+                macd_histogram[i] = raw
+                macd_histogram_previous[i] = prior_raw
+            seen_valid = True
+            prior_raw = raw
+    macd_signal = [
+        (macd_line[i] - macd_histogram[i]) if macd_histogram[i] is not None else None
+        for i in range(len(macd_line))
+    ]
+
+    true_ranges = _true_range_series(highs, lows, closes)  # true_ranges[i] is the true range ending at bars[i+1]
+    atr_14 = [None] + _simple_moving_average_series(true_ranges, 14)  # re-align to bars' own indices
+
+    return {
+        "closes": closes, "highs": highs, "lows": lows, "volumes": volumes,
+        "sma_20": sma_20, "sma_50": sma_50, "sma_200": sma_200,
+        "ema_9": ema_9, "ema_20": ema_20, "ema_50": ema_50, "ema_200": ema_200,
+        "macd_line": macd_line, "macd_signal": macd_signal, "macd_histogram": macd_histogram,
+        "macd_histogram_previous": macd_histogram_previous,
+        "atr_14": atr_14,
+    }
+
+
+def compute_features_for_window(
+    bars: list[sqlite3.Row], index: int, *, cache: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Every feature computable using only bars[:index+1] - never looks
     ahead, so features stored for a historical bar are exactly what a
-    strategy running live ON that bar would have seen."""
-    window = bars[: index + 1]
-    closes = [row["close"] for row in window]
-    highs = [row["high"] for row in window]
-    lows = [row["low"] for row in window]
-    volumes = [row["volume"] for row in window]
-    current = window[-1]
+    strategy running live ON that bar would have seen.
 
-    sma_20 = s.simple_moving_average(closes, 20)
-    sma_50 = s.simple_moving_average(closes, 50)
-    sma_200 = s.simple_moving_average(closes, 200)
+    cache is an optional pre-built _build_series_cache(bars) result - a
+    bulk caller (see _ingest_and_process) builds it once and passes it
+    through every bar instead of paying compute_features_for_window's
+    own O(bar_count) re-slicing cost bar_count times over. Omitting it
+    (the default) still works correctly for a single ad-hoc call - just
+    slower for bulk use, which is why every real caller in this module
+    passes one."""
+    current = bars[index]
 
-    ema_9 = s.exponential_moving_average(closes, 9)
-    ema_20 = s.exponential_moving_average(closes, 20)
-    ema_50 = s.exponential_moving_average(closes, 50)
-    ema_200 = s.exponential_moving_average(closes, 200)
+    if cache is not None:
+        sma_20, sma_50, sma_200 = cache["sma_20"][index], cache["sma_50"][index], cache["sma_200"][index]
+        ema_9, ema_20, ema_50, ema_200 = cache["ema_9"][index], cache["ema_20"][index], cache["ema_50"][index], cache["ema_200"][index]
+        macd_line = cache["macd_line"][index]
+        macd_current = cache["macd_histogram"][index]
+        macd_previous = cache["macd_histogram_previous"][index]
+        macd_signal = cache["macd_signal"][index]
+        atr_14 = cache["atr_14"][index]
+        closes_full, highs_full, lows_full, volumes_full = cache["closes"], cache["highs"], cache["lows"], cache["volumes"]
+        rsi_14 = s.relative_strength_index(closes_full[max(0, index - 14):index + 1], 14)
+        bb_window = closes_full[max(0, index - 19):index + 1]
+        bb_upper, bb_mid, bb_lower = s.bollinger_bands(bb_window, 20, 2.0)
+        atr_percentile = _atr_percentile_from_series(cache["atr_14"], index, atr_14)
+        prior_sma_50 = cache["sma_50"][index - 1] if index >= 1 else None
+        prior_sma_200 = cache["sma_200"][index - 1] if index >= 1 else None
+        volume_window = volumes_full[max(0, index - 20):index]
+        relative_volume = None
+        if len(volume_window) == 20:
+            trailing_avg = sum(volume_window) / 20
+            if trailing_avg > 0:
+                relative_volume = volumes_full[index] / trailing_avg
+    else:
+        window = bars[: index + 1]
+        closes = [row["close"] for row in window]
+        highs = [row["high"] for row in window]
+        lows = [row["low"] for row in window]
+        volumes = [row["volume"] for row in window]
 
-    macd_current, macd_previous = s.spy_expansion_macd_histogram(closes) if len(closes) > 1 else (None, None)
+        sma_20 = s.simple_moving_average(closes, 20)
+        sma_50 = s.simple_moving_average(closes, 50)
+        sma_200 = s.simple_moving_average(closes, 200)
+
+        ema_9 = s.exponential_moving_average(closes, 9)
+        ema_20 = s.exponential_moving_average(closes, 20)
+        ema_50 = s.exponential_moving_average(closes, 50)
+        ema_200 = s.exponential_moving_average(closes, 200)
+
+        macd_current, macd_previous = s.spy_expansion_macd_histogram(closes) if len(closes) > 1 else (None, None)
+        fast_ema = s.exponential_moving_average(closes, s.SPY_EXPANSION_MACD_FAST_PERIOD)
+        slow_ema = s.exponential_moving_average(closes, s.SPY_EXPANSION_MACD_SLOW_PERIOD)
+        macd_line = (fast_ema - slow_ema) if fast_ema is not None and slow_ema is not None else None
+        macd_signal = (macd_line - macd_current) if macd_line is not None and macd_current is not None else None
+
+        rsi_14 = s.relative_strength_index(closes, 14)
+        atr_14 = s.average_true_range(highs, lows, closes, 14)
+        atr_percentile = _atr_percentile(bars, index, atr_14)
+        bb_upper, bb_mid, bb_lower = s.bollinger_bands(closes, 20, 2.0)
+
+        prior_sma_50 = prior_sma_200 = None
+        if index >= 1:
+            prior_closes = closes[:-1]
+            prior_sma_50 = s.simple_moving_average(prior_closes, 50)
+            prior_sma_200 = s.simple_moving_average(prior_closes, 200)
+
+        relative_volume = None
+        if len(volumes) > 20:
+            trailing_avg = sum(volumes[-21:-1]) / 20
+            if trailing_avg > 0:
+                relative_volume = volumes[-1] / trailing_avg
+
     macd_color = s.spy_expansion_macd_color(macd_current, macd_previous) if macd_current is not None else "UNKNOWN"
-    fast_ema = s.exponential_moving_average(closes, s.SPY_EXPANSION_MACD_FAST_PERIOD)
-    slow_ema = s.exponential_moving_average(closes, s.SPY_EXPANSION_MACD_SLOW_PERIOD)
-    macd_line = (fast_ema - slow_ema) if fast_ema is not None and slow_ema is not None else None
-    macd_signal = (macd_line - macd_current) if macd_line is not None and macd_current is not None else None
-
-    rsi_14 = s.relative_strength_index(closes, 14)
-    atr_14 = s.average_true_range(highs, lows, closes, 14)
-    atr_percentile = _atr_percentile(bars, index, atr_14)
-    bb_upper, bb_mid, bb_lower = s.bollinger_bands(closes, 20, 2.0)
     bb_width_pct = ((bb_upper - bb_lower) / bb_mid * 100) if bb_upper is not None and bb_mid else None
 
     # Golden/death cross - the classic long-term trend-shift marker (SMA50
     # crossing SMA200), only meaningful the FIRST bar it happens, so this
     # also needs the prior bar's SMAs, not just the current ones.
     golden_cross = death_cross = None
-    if index >= 1:
-        prior_window = bars[:index]
-        prior_closes = [row["close"] for row in prior_window]
-        prior_sma_50 = s.simple_moving_average(prior_closes, 50)
-        prior_sma_200 = s.simple_moving_average(prior_closes, 200)
-        if None not in (sma_50, sma_200, prior_sma_50, prior_sma_200):
-            golden_cross = int(prior_sma_50 <= prior_sma_200 and sma_50 > sma_200)
-            death_cross = int(prior_sma_50 >= prior_sma_200 and sma_50 < sma_200)
+    if index >= 1 and None not in (sma_50, sma_200, prior_sma_50, prior_sma_200):
+        golden_cross = int(prior_sma_50 <= prior_sma_200 and sma_50 > sma_200)
+        death_cross = int(prior_sma_50 >= prior_sma_200 and sma_50 < sma_200)
 
     price_above_sma_200 = int(current["close"] > sma_200) if sma_200 is not None else None
     price_above_ema_200 = int(current["close"] > ema_200) if ema_200 is not None else None
@@ -384,12 +599,6 @@ def compute_features_for_window(bars: list[sqlite3.Row], index: int) -> dict[str
     medium_term_trend = _trend_direction(ema_20, sma_50)
     long_term_trend = _trend_direction(sma_50, sma_200)
     trend_label = f"SHORT:{short_term_trend} MEDIUM:{medium_term_trend} LONG:{long_term_trend}"
-
-    relative_volume = None
-    if len(volumes) > 20:
-        trailing_avg = sum(volumes[-21:-1]) / 20
-        if trailing_avg > 0:
-            relative_volume = volumes[-1] / trailing_avg
 
     higher_high = higher_low = lower_high = lower_low = None
     if index >= 1:
@@ -455,7 +664,10 @@ def _atr_percentile(bars: list[sqlite3.Row], index: int, current_atr: float | No
     itself" in a way a raw ATR dollar figure doesn't, since SPY's normal
     ATR level has drifted a lot over the years (regime dependence -
     comparing today's ATR directly to 2023's ATR isn't apples to apples,
-    ranking against a rolling window is)."""
+    ranking against a rolling window is). Slow path (recomputes ATR from
+    scratch for every bar in the lookback window) - only used by
+    compute_features_for_window's uncached single-call branch; bulk
+    callers use _atr_percentile_from_series instead."""
     if current_atr is None or index < 14:
         return None
     history: list[float] = []
@@ -468,6 +680,23 @@ def _atr_percentile(bars: list[sqlite3.Row], index: int, current_atr: float | No
         )
         if atr is not None:
             history.append(atr)
+    if len(history) < 2:
+        return None
+    rank = sum(1 for value in history if value <= current_atr)
+    return rank / len(history) * 100
+
+
+def _atr_percentile_from_series(
+    atr_series: list[float | None], index: int, current_atr: float | None, lookback: int = 100
+) -> float | None:
+    """Same ranking as _atr_percentile, but reads from an already-built
+    full ATR series (see _build_series_cache) instead of recomputing ATR
+    from scratch for every bar in the lookback window - O(lookback) per
+    bar instead of O(lookback * bar_count)."""
+    if current_atr is None or index < 14:
+        return None
+    start = max(14, index - lookback + 1)
+    history = [value for value in atr_series[start:index + 1] if value is not None]
     if len(history) < 2:
         return None
     rank = sum(1 for value in history if value <= current_atr)
@@ -907,13 +1136,18 @@ def _ingest_and_process(conn: sqlite3.Connection, ticker: str, timeframe: str, r
             "SELECT bar_time FROM features WHERE ticker = ? AND timeframe = ?", (ticker, timeframe)
         ).fetchall()
     }
+    # Built once for the whole bars list, not once per bar - see
+    # _build_series_cache's own docstring for why this matters (a bulk
+    # historical backfill of a few thousand bars going from minutes to
+    # seconds).
+    series_cache = _build_series_cache(bars)
     features_computed = 0
     patterns_detected = 0
     market_condition = None
     for index, bar in enumerate(bars):
         if bar["bar_time"] in existing_feature_times:
             continue
-        features = compute_features_for_window(bars, index)
+        features = compute_features_for_window(bars, index, cache=series_cache)
         store_features(conn, ticker, timeframe, bar["bar_time"], features, market_condition)
         features_computed += 1
         pattern_names = detect_patterns_for_bar(bars, features, index)
@@ -971,8 +1205,6 @@ def run_collection_cycle(ticker: str = "SPY") -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    import json
-
     from run_with_env import load_env
 
     load_env()

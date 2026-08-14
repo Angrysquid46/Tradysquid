@@ -7,6 +7,7 @@ never the real state/market_memory.db."""
 
 from __future__ import annotations
 
+import json
 import tempfile
 from datetime import datetime as real_datetime
 from pathlib import Path
@@ -99,6 +100,55 @@ def test_compute_features_never_looks_ahead():
         assert features_full["ema_9"] == features_truncated["ema_9"]
         assert features_full["rsi_14"] == features_truncated["rsi_14"]
         conn.close()
+
+
+def test_cached_and_uncached_feature_computation_agree_bar_for_bar():
+    """The real correctness requirement behind the whole performance
+    rewrite: _build_series_cache lets _ingest_and_process compute every
+    bar's features in a single O(bar_count) pass instead of the original
+    O(bar_count^2) re-slice-and-recompute-from-scratch approach (a bulk
+    backfill of a few thousand real bars was taking minutes of CPU time).
+    That's only safe if the cached path produces IDENTICAL output to the
+    original slow path at every single bar - this is that check, run
+    across a synthetic dataset with real trend, volatility, and volume
+    variation so every indicator (SMA/EMA/MACD/RSI/ATR/ATR percentile/
+    Bollinger/golden-cross/relative volume) actually gets exercised, not
+    just left at None throughout."""
+    import math
+
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = []
+        price = 400.0
+        for i in range(260):
+            # A real-ish wiggling path: a slow drift plus a faster
+            # oscillation, so highs/lows/volume all vary meaningfully
+            # instead of sitting flat (which would leave ATR/Bollinger/
+            # NR7 trivially degenerate and not a real test).
+            price += 0.3 + 2.0 * math.sin(i / 7.0)
+            high = price + 1.5 + abs(math.sin(i / 3.0))
+            low = price - 1.5 - abs(math.cos(i / 5.0))
+            volume = 1_000_000 + (i % 17) * 50_000
+            rows.append(_bar(f"d{i:04d}", price - 0.4, high, low, price, volume))
+        mm.store_bars(conn, "SPY", "daily", rows)
+        bars = mm.load_bars(conn, "SPY", "daily")
+
+        cache = mm._build_series_cache(bars)
+        mismatches = []
+        for index in range(len(bars)):
+            cached = mm.compute_features_for_window(bars, index, cache=cache)
+            uncached = mm.compute_features_for_window(bars, index)
+            for key in cached:
+                cv, uv = cached[key], uncached[key]
+                if isinstance(cv, float) and isinstance(uv, float):
+                    if not math.isclose(cv, uv, rel_tol=1e-9, abs_tol=1e-9):
+                        mismatches.append((index, key, cv, uv))
+                elif cv != uv:
+                    mismatches.append((index, key, cv, uv))
+        conn.close()
+
+    assert mismatches == [], f"cached vs uncached diverged at {len(mismatches)} (index, key, cached, uncached) points, e.g. {mismatches[:5]}"
 
 
 def test_short_medium_long_term_trend_label_reflects_a_real_uptrend():
@@ -530,3 +580,91 @@ def test_run_collection_cycle_includes_the_historical_backfill_and_survives_its_
     # daily layer (already proven reliable) still has to succeed.
     assert result["daily"]["new_bars"] == 5
     assert "failed" in result["intraday_historical_backfill"]["status"]
+
+
+# ---------------------------------------------------------------------------
+# Robinhood MCP dump ingestion - a second real historical source
+# ---------------------------------------------------------------------------
+
+def _robinhood_bar(begins_at: str, close: float, *, interpolated: bool = False) -> dict:
+    bar = {
+        "begins_at": begins_at, "open_price": str(close - 0.1), "high_price": str(close + 0.2),
+        "low_price": str(close - 0.2), "close_price": str(close), "volume": 0 if interpolated else 100000,
+        "session": "reg",
+    }
+    if interpolated:
+        bar["interpolated"] = True
+    return bar
+
+
+def test_normalize_robinhood_bars_drops_interpolated_placeholders():
+    """The real gap this closes: Robinhood silently returns fake flat-
+    price bars for dates before its own real coverage instead of
+    erroring the way Tradier does - these must never enter the store as
+    if they were real prints."""
+    raw = [
+        _robinhood_bar("2026-03-02T14:30:00Z", 680.5),
+        _robinhood_bar("2025-08-14T14:30:00Z", 776.31, interpolated=True),
+    ]
+    normalized = mm._normalize_robinhood_bars(raw)
+    assert len(normalized) == 1
+    assert normalized[0]["time"] == "2026-03-02T14:30:00Z"
+    assert normalized[0]["close"] == 680.5
+
+
+def test_normalize_robinhood_bars_renames_fields_to_match_intraday_bar_rows():
+    raw = [_robinhood_bar("2026-03-02T14:30:00Z", 680.5)]
+    normalized = mm._normalize_robinhood_bars(raw)
+    rows = mm._intraday_bar_rows(normalized)
+    assert len(rows) == 1
+    assert rows[0][0] == "2026-03-02T14:30:00Z"  # bar_time
+    assert rows[0][4] == 680.5  # close
+
+
+def test_normalize_robinhood_bars_skips_malformed_entries_without_crashing():
+    raw = [{"begins_at": "2026-03-02T14:30:00Z"}]  # missing price fields
+    assert mm._normalize_robinhood_bars(raw) == []
+
+
+def test_ingest_robinhood_equity_dump_stores_only_real_bars():
+    temp_dir, patcher = _isolated_db()
+    dump_dir = tempfile.TemporaryDirectory()
+    dump_path = Path(dump_dir.name) / "dump.json"
+    dump_path.write_text(json.dumps({
+        "data": {"results": [{"symbol": "SPY", "bars": [
+            _robinhood_bar("2026-03-02T14:30:00Z", 680.5),
+            _robinhood_bar("2026-03-02T14:35:00Z", 681.0),
+            _robinhood_bar("2025-08-14T14:30:00Z", 776.31, interpolated=True),
+        ]}]},
+        "guide": "...",
+    }), encoding="utf-8")
+
+    with temp_dir, patcher, dump_dir:
+        conn = mm.connect()
+        result = mm.ingest_robinhood_equity_dump(conn, "SPY", "5min", dump_path)
+        bars = mm.load_bars(conn, "SPY", "5min")
+        conn.close()
+
+    assert result["raw_bars_in_dump"] == 3
+    assert result["real_bars_normalized"] == 2
+    assert result["new_bars"] == 2
+    assert len(bars) == 2
+    assert result["features_computed"] == 2
+
+
+def test_ingest_robinhood_equity_dump_is_idempotent_on_rerun():
+    temp_dir, patcher = _isolated_db()
+    dump_dir = tempfile.TemporaryDirectory()
+    dump_path = Path(dump_dir.name) / "dump.json"
+    dump_path.write_text(json.dumps({
+        "data": {"results": [{"symbol": "SPY", "bars": [_robinhood_bar("2026-03-02T14:30:00Z", 680.5)]}]},
+    }), encoding="utf-8")
+
+    with temp_dir, patcher, dump_dir:
+        conn = mm.connect()
+        first = mm.ingest_robinhood_equity_dump(conn, "SPY", "5min", dump_path)
+        second = mm.ingest_robinhood_equity_dump(conn, "SPY", "5min", dump_path)
+        conn.close()
+
+    assert first["new_bars"] == 1
+    assert second["new_bars"] == 0
