@@ -302,6 +302,112 @@ def test_exit_signal_takes_profit_on_a_call_target():
     assert signal == "TAKE PROFIT"
 
 
+def test_exit_signal_stops_out_on_the_premium_backstop_even_when_underlying_hasnt_hit_its_level():
+    """Real incident 2026-08-14: three positions round-tripped from +12%
+    to -42%/-46%/-50% of premium overnight while the underlying-level
+    stop (only SPY_KEY_LEVELS_STOP_BUFFER_PCT away) stayed silent the
+    whole time - theta plus a small adverse move ate the position with
+    no backstop at all. current_underlying_price here is nowhere near
+    either level, proving this fires purely off real premium loss."""
+    signal, note = spy_scanner.spy_key_levels_exit_signal(
+        side="call", stop_underlying_price=598.0, target_underlying_price=610.0,
+        current_underlying_price=602.0, expiration_tier="WEEKLY",
+        is_expiration_day=False, minutes_remaining=500,
+        pnl_pct=-51.0, peak_pct=5.0,
+    )
+    assert signal == "STOP OUT"
+    assert "backstop" in note
+
+
+def test_exit_signal_does_not_backstop_a_position_still_within_the_normal_stop_pct():
+    signal, _ = spy_scanner.spy_key_levels_exit_signal(
+        side="call", stop_underlying_price=598.0, target_underlying_price=610.0,
+        current_underlying_price=602.0, expiration_tier="WEEKLY",
+        is_expiration_day=False, minutes_remaining=500,
+        pnl_pct=-30.0, peak_pct=5.0,
+    )
+    assert signal == "HOLD"
+
+
+def test_exit_signal_locks_in_a_floor_once_a_real_favorable_move_has_shown():
+    """Same real incident - a position that peaked at +12% (above the
+    floor trigger) and has since round-tripped back to breakeven or
+    worse should stop protecting the proven move instead of riding it
+    all the way down to the underlying-level stop."""
+    signal, note = spy_scanner.spy_key_levels_exit_signal(
+        side="call", stop_underlying_price=598.0, target_underlying_price=610.0,
+        current_underlying_price=602.0, expiration_tier="WEEKLY",
+        is_expiration_day=False, minutes_remaining=500,
+        pnl_pct=-2.0, peak_pct=12.0,
+    )
+    assert signal == "BREAKEVEN STOP"
+    assert "peaked at 12%" in note
+
+
+def test_exit_signal_floor_does_not_fire_below_the_trigger_peak():
+    # Never showed enough real profit to earn floor protection.
+    signal, _ = spy_scanner.spy_key_levels_exit_signal(
+        side="call", stop_underlying_price=598.0, target_underlying_price=610.0,
+        current_underlying_price=602.0, expiration_tier="WEEKLY",
+        is_expiration_day=False, minutes_remaining=500,
+        pnl_pct=-2.0, peak_pct=5.0,
+    )
+    assert signal == "HOLD"
+
+
+def test_exit_signal_floor_does_not_fire_while_still_above_the_floor_pct():
+    # Peaked well above the trigger but hasn't actually round-tripped
+    # down to the floor level yet - still just a normal HOLD.
+    signal, _ = spy_scanner.spy_key_levels_exit_signal(
+        side="call", stop_underlying_price=598.0, target_underlying_price=610.0,
+        current_underlying_price=602.0, expiration_tier="WEEKLY",
+        is_expiration_day=False, minutes_remaining=500,
+        pnl_pct=8.0, peak_pct=12.0,
+    )
+    assert signal == "HOLD"
+
+
+def test_exit_signal_underlying_level_stop_still_takes_priority_over_premium_checks():
+    # The underlying-level read is still the primary exit model - it
+    # must fire first even when the premium numbers would also qualify.
+    signal, note = spy_scanner.spy_key_levels_exit_signal(
+        side="call", stop_underlying_price=598.0, target_underlying_price=610.0,
+        current_underlying_price=597.0, expiration_tier="WEEKLY",
+        is_expiration_day=False, minutes_remaining=500,
+        pnl_pct=-51.0, peak_pct=12.0,
+    )
+    assert signal == "STOP OUT"
+    assert "broke back through the traded level" in note
+
+
+def test_evaluate_open_row_wires_real_premium_loss_into_the_backstop():
+    """End-to-end regression guard for the real incident: entry_price
+    and a real quote produce a real pnl_pct, which has to actually reach
+    spy_key_levels_exit_signal's premium backstop - not just work in the
+    standalone signal test above."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    row = spy_scanner.blank_row()
+    row.update({
+        "trade_id": "SPY-TEST-001", "play_type": "SPY_KEY_LEVELS", "call_or_put": "call",
+        "option_symbol": "SPY260818C00776000", "entry_price": "4.31",
+        "underlying_stop_price": "598.0", "underlying_target_price": "700.0",
+        "expiration": "2026-08-18", "expiration_tier": "WEEKLY",
+        "max_favorable_pct": "0",
+    })
+    quotes = {"SPY260818C00776000": {"bid": 2.1, "ask": 2.2, "last": 2.15}}
+    timestamp = datetime(2026, 8, 14, 10, 0, tzinfo=ZoneInfo("America/Chicago"))
+
+    result = spy_scanner.evaluate_open_spy_key_levels_row(row, quotes, timestamp, underlying_spot_price=650.0)
+
+    # mark=2.1 (bid), entry=4.31 -> pnl_pct ~= -51%, well past the underlying
+    # level (650 is nowhere near either 598 or 700) - only the premium
+    # backstop explains this firing.
+    assert result["signal"] == "STOP OUT"
+    assert "backstop" in result["exit_note"]
+
+
 def test_exit_signal_holds_a_1_3dte_position_overnight_without_eod_force_close():
     signal, _ = spy_scanner.spy_key_levels_exit_signal(
         side="call", stop_underlying_price=598.0, target_underlying_price=604.0,
