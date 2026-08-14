@@ -1605,6 +1605,55 @@ def relative_strength_index(values: list[float], period: int = 14) -> float | No
     return 100 - (100 / (1 + gains / losses))
 
 
+def average_true_range(
+    highs: list[float], lows: list[float], closes: list[float], period: int = 14
+) -> float | None:
+    """Wilder's ATR - true range is the largest of (high-low), (high-prior
+    close), (prior close-low), which matters specifically because a gap
+    (SPY opening well above/below yesterday's close) would otherwise
+    understate that bar's real range using high-low alone. Needs one
+    extra prior close to seed the first true-range value, so requires
+    period+1 bars, not just period. Lives alongside simple_moving_average/
+    exponential_moving_average/relative_strength_index as shared math
+    with no strategy identity."""
+    if len(closes) < period + 1 or len(highs) != len(closes) or len(lows) != len(closes):
+        return None
+    true_ranges = []
+    for i in range(1, len(closes)):
+        true_ranges.append(max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        ))
+    if len(true_ranges) < period:
+        return None
+    return sum(true_ranges[-period:]) / period
+
+
+def standard_deviation(values: list[float]) -> float | None:
+    if len(values) < 2:
+        return None
+    mean = sum(values) / len(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return variance ** 0.5
+
+
+def bollinger_bands(
+    closes: list[float], period: int = 20, num_std: float = 2.0
+) -> tuple[float | None, float | None, float | None]:
+    """Returns (upper, mid, lower) - mid is the plain SMA, upper/lower are
+    mid +/- num_std standard deviations of the SAME lookback window (not
+    the whole history), the standard definition."""
+    if len(closes) < period:
+        return None, None, None
+    window = closes[-period:]
+    mid = sum(window) / period
+    deviation = standard_deviation(window)
+    if deviation is None:
+        return None, mid, None
+    return mid + num_std * deviation, mid, mid - num_std * deviation
+
+
 def directional_market_context(
     history: list[dict[str, Any]],
     spot_price: float,
