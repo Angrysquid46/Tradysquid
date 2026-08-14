@@ -227,6 +227,25 @@ def test_candidate_builder_rejects_a_contract_over_its_own_risk_cap():
     assert spy_scanner.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0) == []
 
 
+def test_candidate_builder_carries_the_tradingview_event_id_through():
+    """Needed so a candidate that becomes a real row can tell main()'s
+    open loop which alert to mark consumed (_mark_tradingview_event_if_opened) -
+    without this, there'd be no way to know, at the point a row is
+    actually created, which TradingView alert it came from."""
+    chain = [_option(delta=0.50, ask=2.00)]
+    context = {"regime": "BULLISH / CONTROLLED", "reason": "buy alert", "tradingview_event_id": 42}
+    candidates = spy_scanner.scan_spy_0dte_candidates(
+        chain, "call", "2026-08-10", 600.0, market_context=context, play_type="SPY_0DTE_1M"
+    )
+    assert candidates[0]["tradingview_event_id"] == 42
+
+
+def test_candidate_builder_leaves_tradingview_event_id_none_without_a_market_context():
+    chain = [_option(delta=0.50, ask=2.00)]
+    candidates = spy_scanner.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0)
+    assert candidates[0]["tradingview_event_id"] is None
+
+
 def test_candidate_survives_candidate_to_row_without_a_keyerror():
     # candidate_to_row reads cost_or_credit/pop/max_profit/max_risk/
     # breakeven/option_symbol directly off every candidate regardless of
@@ -422,12 +441,18 @@ def test_tradingview_signal_qualifies_bullish_on_a_fresh_buy_alert():
     with (
         mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
         mock.patch.object(spy_scanner, "_tradingview_event_already_consumed", return_value=False),
-        mock.patch.object(spy_scanner, "_tradingview_event_mark_consumed"),
+        mock.patch.object(spy_scanner, "_tradingview_event_mark_consumed") as fake_mark,
     ):
         context = spy_scanner.spy_0dte_tradingview_signal("SPY")
     assert context["qualified"] is True
     assert context["regime"] == "BULLISH / CONTROLLED"
     assert context["tradingview_event_id"] == 101
+    # Qualifying must NOT burn the alert - only a candidate that actually
+    # becomes a real open row does that (see _mark_tradingview_event_if_opened
+    # in main()'s open loop). Real incident: 2026-08-13, all 11
+    # TradingView-gated strategies marked the same alert consumed the
+    # instant they read it, then zero of them ever opened a trade that day.
+    fake_mark.assert_not_called()
 
 
 def test_tradingview_signal_qualifies_bearish_on_a_fresh_sell_alert():
@@ -435,11 +460,12 @@ def test_tradingview_signal_qualifies_bearish_on_a_fresh_sell_alert():
     with (
         mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
         mock.patch.object(spy_scanner, "_tradingview_event_already_consumed", return_value=False),
-        mock.patch.object(spy_scanner, "_tradingview_event_mark_consumed"),
+        mock.patch.object(spy_scanner, "_tradingview_event_mark_consumed") as fake_mark,
     ):
         context = spy_scanner.spy_0dte_tradingview_signal("SPY")
     assert context["qualified"] is True
     assert context["regime"] == "BEARISH / CONTROLLED"
+    fake_mark.assert_not_called()
 
 
 def test_tradingview_signal_does_not_qualify_on_unrecognized_direction():
@@ -470,7 +496,11 @@ def test_tradingview_signal_does_not_reopen_off_an_already_consumed_alert():
 def test_tradingview_signal_consumption_is_tracked_per_play_type():
     # Owner ask: the same live alert must be able to independently open
     # SPY_0DTE_1M and every enabled ratchet variant - one variant
-    # consuming it must not starve the others.
+    # consuming it must not starve the others. Consumption is now marked
+    # by the caller (main()'s open loop, once a real row exists), not by
+    # spy_0dte_tradingview_signal itself - so this simulates that by
+    # calling _tradingview_event_mark_consumed directly after SPY_0DTE_1M
+    # "opens", the same way _mark_tradingview_event_if_opened would.
     import tempfile
     from pathlib import Path
 
@@ -483,12 +513,38 @@ def test_tradingview_signal_consumption_is_tracked_per_play_type():
             ),
         ):
             first = spy_scanner.spy_0dte_tradingview_signal("SPY", play_type="SPY_0DTE_1M")
+            spy_scanner._tradingview_event_mark_consumed("SPY_0DTE_1M", first["tradingview_event_id"])
             second = spy_scanner.spy_0dte_tradingview_signal("SPY", play_type="SPY_RATCHET_26_16")
             repeat_for_1m = spy_scanner.spy_0dte_tradingview_signal("SPY", play_type="SPY_0DTE_1M")
     assert first["qualified"] is True
     assert second["qualified"] is True
     assert repeat_for_1m["qualified"] is False
     assert "already opened a trade" in repeat_for_1m["reason"]
+
+
+def test_tradingview_signal_stays_available_for_retry_when_nothing_opened_yet():
+    """The core fix: a candidate that scanned OK but got filtered out
+    later (exposure cap, entry window, dedup - none of which
+    spy_0dte_tradingview_signal itself knows about) must leave the alert
+    available for a LATER, still-fresh scan cycle to retry, instead of
+    being permanently burned on the first look."""
+    import tempfile
+    from pathlib import Path
+
+    event = _tradingview_event("buy", event_id=106)
+    with tempfile.TemporaryDirectory() as tmp:
+        with (
+            mock.patch.object(dynamic_universe, "recent_tradingview_signal", return_value=event),
+            mock.patch.object(
+                spy_scanner, "SPY_TRADINGVIEW_CONSUMED_EVENT_PATH", Path(tmp) / "consumed.json"
+            ),
+        ):
+            first_look = spy_scanner.spy_0dte_tradingview_signal("SPY", play_type="SPY_0DTE_1M")
+            # No trade actually opened this cycle (candidate filtered out
+            # downstream) - nothing calls _tradingview_event_mark_consumed.
+            second_look = spy_scanner.spy_0dte_tradingview_signal("SPY", play_type="SPY_0DTE_1M")
+    assert first_look["qualified"] is True
+    assert second_look["qualified"] is True
 
 
 def test_tradingview_signal_lookup_failure_reports_unavailable_not_a_crash():
@@ -513,6 +569,25 @@ def test_consumed_event_tracking_round_trips_through_the_state_file():
             assert spy_scanner._tradingview_event_already_consumed("SPY_RATCHET_26_16", 55) is False
         finally:
             spy_scanner.SPY_TRADINGVIEW_CONSUMED_EVENT_PATH = original
+
+
+def test_mark_tradingview_event_if_opened_marks_consumed_when_present():
+    with mock.patch.object(spy_scanner, "_tradingview_event_mark_consumed") as fake_mark:
+        spy_scanner._mark_tradingview_event_if_opened(
+            {"play_type": "SPY_0DTE_1M", "tradingview_event_id": 77}
+        )
+    fake_mark.assert_called_once_with("SPY_0DTE_1M", 77)
+
+
+def test_mark_tradingview_event_if_opened_does_nothing_for_a_non_tradingview_candidate():
+    # SPY_0DTE_5M/Key-Levels/Expansion-Level candidates never carry a
+    # tradingview_event_id (see the candidate builder's None default) -
+    # this must be a clean no-op for them, not a KeyError or a spurious mark.
+    with mock.patch.object(spy_scanner, "_tradingview_event_mark_consumed") as fake_mark:
+        spy_scanner._mark_tradingview_event_if_opened(
+            {"play_type": "SPY_0DTE_5M", "tradingview_event_id": None}
+        )
+    fake_mark.assert_not_called()
 
 
 def test_run_spy_0dte_variant_1m_uses_the_tradingview_signal_not_the_breakout():
