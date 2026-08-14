@@ -209,7 +209,11 @@ def post_message(channel_key: str, content: str, *, embed: dict[str, Any] | None
         return None
     channel_id = ensure_channels()[channel_key]
     if embed:
-        payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
+        # content: "" explicitly, not omitted - a PATCH only updates the
+        # fields it actually includes, so leaving content out of this
+        # payload left a message's OLD plain-content text sitting behind
+        # the new embed instead of clearing it.
+        payload = {"content": "", "embeds": [embed], "allowed_mentions": {"parse": []}}
     else:
         payload = {"content": content[:2000], "allowed_mentions": {"parse": []}}
     return _request(
@@ -290,7 +294,11 @@ def _patch_message(
     channel_id: str, message_id: str, content: str, *, embed: dict[str, Any] | None = None
 ) -> dict[str, Any] | None:
     if embed:
-        payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
+        # content: "" explicitly, not omitted - a PATCH only updates the
+        # fields it actually includes, so leaving content out of this
+        # payload left a message's OLD plain-content text sitting behind
+        # the new embed instead of clearing it.
+        payload = {"content": "", "embeds": [embed], "allowed_mentions": {"parse": []}}
     else:
         payload = {"content": content[:2000], "allowed_mentions": {"parse": []}}
     return _request(
