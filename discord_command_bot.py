@@ -36,8 +36,12 @@ OWNER_ONLY_COMMANDS = {
     "close-profitable",
     "force-trade",
     "force-sell",
+    "evolve-audit-duplicates",
 }
 TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
+ROOT = Path(__file__).resolve().parent
+EVOLVE_DIR = ROOT / "evolve_bot"
+EVOLVE_PYTHON = ROOT / ".venv-evolve" / "Scripts" / "python.exe"
 
 APP = Flask(__name__)
 CHART_LOCK = threading.Lock()
@@ -553,6 +557,60 @@ def force_sell_reply(interaction: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def evolve_audit_duplicates_reply(interaction: dict[str, Any]) -> str:
+    """Owner-only: sweeps evolve_bot's #evolve-trades/#evolve-wins/
+    #evolve-losses for duplicate or wrong-channel trade cards against
+    state/trades.csv (the real source of truth) and repairs anything
+    found - deletes every bad copy, reposts exactly one correct card.
+    Owner: "make a discord bot command to duplicatedelete across all
+    tabs and shit keeping the proper formatting shit and removing the
+    bad copies" - built after finding by hand a stale OPEN card for a
+    trade that had actually closed 2 days earlier, plus 6 duplicate/
+    wrong-numbers cards for two other real trades.
+
+    Runs as a subprocess against evolve_bot's own .venv-evolve, not an
+    in-process import - evolve_bot's engine.py pulls in real ML
+    dependencies (lightgbm/shap) that aren't installed in this bot's own
+    venv, unlike /scan-now's direct in-process call into
+    local_information_engine (same venv, no cross-boundary needed)."""
+    require_ticker_admin(interaction)
+    try:
+        completed = subprocess.run(
+            [str(EVOLVE_PYTHON), "duplicate_audit.py"],
+            cwd=str(EVOLVE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except Exception as exc:
+        return f"❌ Could not run the evolve-bot duplicate audit: {exc}"
+    if completed.returncode != 0:
+        return f"❌ Duplicate audit failed:\n```{completed.stderr[-1500:]}```"
+    try:
+        result = json.loads(completed.stdout)
+    except ValueError:
+        return f"⚠️ Audit ran but produced no valid output:\n```{completed.stdout[-1500:]}```"
+
+    lines = [
+        "✅ **Evolve-bot duplicate audit complete**",
+        f"Checked **{result['trade_ids_checked']}** trade card(s) across #evolve-trades/#evolve-wins/#evolve-losses.",
+    ]
+    if result["trade_ids_repaired"] == 0 and result["orphaned_cards_removed"] == 0:
+        lines.append("Nothing to fix - every trade has exactly one correctly-placed card.")
+    else:
+        lines.append(
+            f"Repaired **{result['trade_ids_repaired']}** trade(s): removed {result['cards_removed']} "
+            f"bad/duplicate card(s), reposted {result['cards_reposted']} correct one(s)."
+        )
+        if result["misplaced_channel_hits"]:
+            lines.append(f"{result['misplaced_channel_hits']} card(s) were sitting in the wrong channel entirely.")
+        if result["orphaned_cards_removed"]:
+            lines.append(f"Removed {result['orphaned_cards_removed']} orphaned card(s) with no matching trade in the ledger.")
+        if result["repaired"]:
+            lines.append("Trade IDs: " + ", ".join(result["repaired"][:20]))
+    return "\n".join(lines)[:1900]
+
+
 def force_trade_reply(interaction: dict[str, Any]) -> str:
     """Owner-forced manual entry - finds the best real SPY 0DTE contract
     matching the requested direction using the exact same contract-
@@ -1033,6 +1091,10 @@ def process_command(interaction: dict[str, Any]) -> None:
         elif name == "force-sell":
             patch_original(
                 application_id, token, content=force_sell_reply(interaction)
+            )
+        elif name == "evolve-audit-duplicates":
+            patch_original(
+                application_id, token, content=evolve_audit_duplicates_reply(interaction)
             )
         elif name == "chart":
             days = int(option_value(interaction, "days", 90))
