@@ -407,23 +407,21 @@ CHANNEL_NAMES = {
     "daily_recap": "daily-recap",
     "weekly_report": "weekly-report",
     "monthly_recap": "monthly-dashboard",
-    # Split per independently-tracked SPY 0DTE strategy - see
-    # is_spy_0dte_play_type/SPY_0DTE_PLAY_TYPES. Owned live by
-    # performance_reconciliation.py's sync_reports once it installs.
-    "performance_1m": "1m-performance",
-    "results_1m": "1m-results",
-    "performance_5m": "5m-performance",
-    "results_5m": "5m-results",
-    # SPY Key-Levels/ORB/VWAP - a second, independent SPY strategy. See
-    # SPY_KEY_LEVELS_PLAY_TYPE. Owned live by performance_reconciliation.py's
-    # sync_reports, same as the two SPY_0DTE channel pairs above.
-    "performance_key_levels": "key-levels-performance",
-    "results_key_levels": "key-levels-results",
-    # SPY 0-1 DTE Expansion-Level - a third, independent SPY strategy. See
-    # SPY_EXPANSION_PLAY_TYPE. Owned live by performance_reconciliation.py's
-    # sync_reports, same as the other strategy channel pairs above.
-    "performance_expansion": "expansion-performance",
-    "results_expansion": "expansion-results",
+    # 1-Minute, 5-Minute, Key-Levels, and Expansion-Level each keep their
+    # own logical key, own state tracking, and own search-marker text (see
+    # performance_reconciliation.py) - only the REAL channel every key
+    # resolves to is shared now, mirroring the ratchet consolidation.
+    # Owner: "do the ratchet thing but instead all the other trades
+    # tradebot makes... tabs can stay meaningful and not scattered
+    # craziness."
+    "performance_1m": "strategies-dashboard",
+    "results_1m": "strategies-results",
+    "performance_5m": "strategies-dashboard",
+    "results_5m": "strategies-results",
+    "performance_key_levels": "strategies-dashboard",
+    "results_key_levels": "strategies-results",
+    "performance_expansion": "strategies-dashboard",
+    "results_expansion": "strategies-results",
     "ticker_results": "ticker-results",
     "learning_results": "learning-results",
     "examples_reviews": "examples-and-reviews",
@@ -544,6 +542,12 @@ for _ratchet_variant in SPY_RATCHET_VARIANTS:
 # format_ratchet_leaderboard.
 CHANNEL_NAMES["ratchet_leaderboard"] = "ratchet-dashboard"
 AUTOMATED_CHANNEL_KEYS.append("ratchet_leaderboard")
+# Same idea for the other 4 live strategies (1-Minute, 5-Minute,
+# Key-Levels, Expansion-Level) - a leaderboard ranking them against each
+# other in the shared strategies-dashboard channel. See
+# performance_reconciliation.py's format_strategy_leaderboard.
+CHANNEL_NAMES["strategy_leaderboard"] = "strategies-dashboard"
+AUTOMATED_CHANNEL_KEYS.append("strategy_leaderboard")
 
 SYSTEM_CHANNEL_KEYS = {
     "status",

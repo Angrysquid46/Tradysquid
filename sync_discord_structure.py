@@ -69,16 +69,27 @@ _OLD_RATCHET_CATEGORY_NAMES = [
     f"{variant['label'].upper()} STRATEGY" for variant in spy_scanner.SPY_RATCHET_VARIANTS
 ]
 
+# Same consolidation as the ratchet variants, applied to the other 4 live
+# strategies (1-Minute, 5-Minute, Key-Levels, Expansion-Level) - owner:
+# "do the ratchet thing but instead all the other trades tradebot makes
+# and just have a similar dashboard for the other trader types so the
+# homepage can be clean and we can still see all the results... tabs can
+# stay meaningful and not scattered craziness." Each strategy still gets
+# its own independently-tracked card (see spy_scanner.CHANNEL_NAMES and
+# performance_reconciliation.REPORT_ROUTES) - only the real channel every
+# strategy's logical key resolves to changed.
+STRATEGIES_CATEGORY_NAME = "STRATEGIES"
+_OLD_STRATEGY_CATEGORY_NAMES = [
+    "1-MINUTE STRATEGY", "5-MINUTE STRATEGY", "KEY-LEVELS STRATEGY", "EXPANSION-LEVEL STRATEGY",
+]
+
 CATEGORY_ORDER = [
     "START HERE",
     "COMMUNITY",
     "LIVE TRADING DESK",
     "MARKET INTELLIGENCE",
     "LEARNING CENTER",
-    "1-MINUTE STRATEGY",
-    "5-MINUTE STRATEGY",
-    "KEY-LEVELS STRATEGY",
-    "EXPANSION-LEVEL STRATEGY",
+    STRATEGIES_CATEGORY_NAME,
     RATCHET_CATEGORY_NAME,
     "PERFORMANCE",
     "SYSTEM",
@@ -104,14 +115,8 @@ CHANNELS = [
     ChannelSpec("MARKET INTELLIGENCE", "news-and-events", "Cached company and market news with timestamps."),
     ChannelSpec("MARKET INTELLIGENCE", "market-regime", "Broad-market context, trend, and volatility conditions."),
     ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "SPY off-hours screen status and on-demand snapshot."),
-    ChannelSpec("1-MINUTE STRATEGY", "1m-performance", "Lifecycle totals and recorded paper performance for the 1-minute-bar SPY 0DTE opening-range strategy only."),
-    ChannelSpec("1-MINUTE STRATEGY", "1m-results", "1-minute strategy results by direction and entry regime."),
-    ChannelSpec("5-MINUTE STRATEGY", "5m-performance", "Lifecycle totals and recorded paper performance for the 5-minute-bar SPY 0DTE opening-range strategy only."),
-    ChannelSpec("5-MINUTE STRATEGY", "5m-results", "5-minute strategy results by direction and entry regime."),
-    ChannelSpec("KEY-LEVELS STRATEGY", "key-levels-performance", "Lifecycle totals and recorded paper performance for the SPY Key-Levels/ORB/VWAP strategy only - fully independent of both SPY 0DTE strategies."),
-    ChannelSpec("KEY-LEVELS STRATEGY", "key-levels-results", "Key-Levels strategy results by direction and entry regime."),
-    ChannelSpec("EXPANSION-LEVEL STRATEGY", "expansion-performance", "Lifecycle totals and recorded paper performance for the SPY 0-1 DTE Expansion-Level strategy only - fully independent of every other live SPY strategy."),
-    ChannelSpec("EXPANSION-LEVEL STRATEGY", "expansion-results", "Expansion-Level strategy results by direction and entry regime."),
+    ChannelSpec(STRATEGIES_CATEGORY_NAME, "strategies-dashboard", "Leaderboard comparing the 1-Minute, 5-Minute, Key-Levels, and Expansion-Level strategies, plus each one's own monthly performance index."),
+    ChannelSpec(STRATEGIES_CATEGORY_NAME, "strategies-results", "Every strategy's results, each tracked and tagged separately in one feed."),
     ChannelSpec("PERFORMANCE", "ticker-results", "Results by underlying, combined across every live SPY strategy."),
     ChannelSpec("PERFORMANCE", "learning-results", "Evidence summaries that never change filters automatically."),
     ChannelSpec("LEARNING CENTER", "learning-index", "Complete organized curriculum and recommended learning path."),
@@ -195,11 +200,18 @@ DELETE_CHANNELS = {
     # pair above - owner: "all the ratchet stratagies in a single catagory
     # instead of 11 different channels."
     *_OLD_RATCHET_CHANNEL_NAMES,
+    # Retired in favor of the single shared strategies-dashboard/
+    # strategies-results pair above - owner: "do the ratchet thing but
+    # instead all the other trades tradebot makes."
+    "1m-performance", "1m-results", "5m-performance", "5m-results",
+    "key-levels-performance", "key-levels-results",
+    "expansion-performance", "expansion-results",
 }
 
 DELETE_CATEGORIES = {
     "ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE",
     *_OLD_RATCHET_CATEGORY_NAMES,
+    *_OLD_STRATEGY_CATEGORY_NAMES,
 }
 
 CHANNEL_STARTERS = {
@@ -214,14 +226,8 @@ CHANNEL_STARTERS = {
     "news-and-events": "Updated by scheduled news checks and `/events` requests.",
     "market-regime": "Updated with broad-market and scanner context.",
     "universe-watch": "Updated by the SPY off-hours screen and on-demand scans.",
-    "1m-performance": "Updated as the 1-minute strategy's paper trades open and close.",
-    "1m-results": "Updated from the 1-minute strategy's recorded paper-trade outcomes.",
-    "5m-performance": "Updated as the 5-minute strategy's paper trades open and close.",
-    "5m-results": "Updated from the 5-minute strategy's recorded paper-trade outcomes.",
-    "key-levels-performance": "Updated as the Key-Levels strategy's paper trades open and close.",
-    "key-levels-results": "Updated from the Key-Levels strategy's recorded paper-trade outcomes.",
-    "expansion-performance": "Updated as the Expansion-Level strategy's paper trades open and close.",
-    "expansion-results": "Updated from the Expansion-Level strategy's recorded paper-trade outcomes.",
+    "strategies-dashboard": "Updated as the 1-Minute/5-Minute/Key-Levels/Expansion-Level strategies' paper trades open and close, plus a leaderboard ranking all 4.",
+    "strategies-results": "Updated from every one of those strategies' recorded paper-trade outcomes, each tagged with its own strategy.",
     "ticker-results": "Updated from recorded outcomes grouped by underlying, combined across every live strategy.",
     "learning-results": "Updated by the local learning review.",
     "ask-tradebot": "Use `/ask` or `/explain`; general conversation belongs in #general-chat.",
