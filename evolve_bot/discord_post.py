@@ -309,6 +309,62 @@ def _patch_message_with_file(
     raise DiscordPostError("Discord file edit retries exhausted")
 
 
+def create_thread(channel_key: str, card_key: str, message_id: str, name: str) -> str:
+    """Creates a Discord thread off an already-posted message and
+    remembers its id in the same local state file used for message
+    tracking, keyed separately (thread: prefix) - evolve_bot's
+    scheduled cycles are each a fresh process invocation, so nothing
+    survives in memory between them; this is how a later cycle finds
+    the same thread again to link back to it or post more detail into
+    it. Owner: "only show the important stuff anything else can be in
+    journal." Fails soft: returns "" if Discord isn't configured or the
+    request fails, same contract as everything else here."""
+    if not enabled():
+        return ""
+    channel_id = ensure_channels()[channel_key]
+    try:
+        created = _request(
+            "POST",
+            f"/channels/{channel_id}/messages/{message_id}/threads",
+            {"name": name[:100], "auto_archive_duration": 1440},
+        )
+    except DiscordPostError:
+        return ""
+    thread_id = (created or {}).get("id", "")
+    if thread_id:
+        state = _load_message_state()
+        state[f"{channel_key}:thread:{card_key}"] = thread_id
+        _save_message_state(state)
+    return thread_id
+
+
+def get_thread(channel_key: str, card_key: str) -> str:
+    if not enabled():
+        return ""
+    state = _load_message_state()
+    return state.get(f"{channel_key}:thread:{card_key}", "")
+
+
+def get_message_id(channel_key: str, card_key: str) -> str:
+    if not enabled():
+        return ""
+    state = _load_message_state()
+    return state.get(f"{channel_key}:{card_key}", "")
+
+
+def send_thread_message(thread_id: str, content: str) -> dict[str, Any] | None:
+    if not enabled() or not thread_id:
+        return None
+    try:
+        return _request(
+            "POST",
+            f"/channels/{thread_id}/messages",
+            {"content": content[:2000], "allowed_mentions": {"parse": []}},
+        )
+    except DiscordPostError:
+        return None
+
+
 def delete_card(channel_key: str, card_key: str) -> None:
     """Removes a previously upserted card with no replacement - for a
     card whose "thing" is genuinely done (a position's held-P/L card once
