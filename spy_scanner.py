@@ -2260,6 +2260,30 @@ SPY_KEY_LEVELS_TARGET_R_MULTIPLE = float(os.environ.get(
 SPY_KEY_LEVELS_STOP_BUFFER_PCT = float(os.environ.get(
     "SPY_KEY_LEVELS_STOP_BUFFER_PCT", configured("spy_key_levels_stop_buffer_pct", 0.15)
 ))
+# Real incident 2026-08-14: three positions opened 08-13, held overnight
+# (WEEKLY tier), peaked at +10-12% the next morning, then round-tripped
+# all the way to -42%/-46%/-50% before the underlying finally crossed
+# its stop level (only SPY_KEY_LEVELS_STOP_BUFFER_PCT = 0.15% away) at
+# 10:51am - theta plus a small adverse move ate the whole position while
+# the underlying-only stop had nothing to say about it. Unlike SPY_0DTE
+# (a hard -50% premium stop, plus a floor that locks in once a trade
+# proves itself), Key-Levels previously had ZERO premium-based backstop
+# at all - a position could bleed to any loss for however long it takes
+# the underlying to reach its level. These two constants close that gap,
+# same shape as SPY_0DTE_STOP_PCT/FLOOR_TRIGGER_PCT/FLOOR_PCT. Values
+# are a reasoned first pass, not backtested against a real Key-Levels
+# sample the way 0DTE's floor was (62 trades) - the underlying-level
+# stop/target stay the strategy's primary exit; these only step in when
+# real premium loss/gain has already happened regardless of level.
+SPY_KEY_LEVELS_STOP_PCT = float(os.environ.get(
+    "SPY_KEY_LEVELS_STOP_PCT", configured("spy_key_levels_stop_pct", 0.50)
+))
+SPY_KEY_LEVELS_FLOOR_TRIGGER_PCT = float(os.environ.get(
+    "SPY_KEY_LEVELS_FLOOR_TRIGGER_PCT", configured("spy_key_levels_floor_trigger_pct", 10.0)
+))
+SPY_KEY_LEVELS_FLOOR_PCT = float(os.environ.get(
+    "SPY_KEY_LEVELS_FLOOR_PCT", configured("spy_key_levels_floor_pct", 0.0)
+))
 
 
 def spy_key_levels_wick_range(bars: list[dict[str, Any]]) -> tuple[float | None, float | None]:
@@ -2531,13 +2555,23 @@ def spy_key_levels_exit_signal(
     expiration_tier: str,
     is_expiration_day: bool,
     minutes_remaining: float,
+    pnl_pct: float = 0.0,
+    peak_pct: float = 0.0,
 ) -> tuple[str, str]:
     """Underlying-price-based stop/target - this strategy's own exit model,
     not the %-of-premium model the SPY_0DTE strategies use. Only forces a
     same-day close on the actual expiration date; a 1-3DTE/weekly position
     holds overnight until it hits its stop, target, or its own expiration
     day, per the spec's "additional time, flexibility, and room for error"
-    framing of the longer-dated tiers."""
+    framing of the longer-dated tiers.
+
+    pnl_pct/peak_pct back the two premium-based checks below them, added
+    after a real incident (see SPY_KEY_LEVELS_STOP_PCT's own comment):
+    three positions round-tripped from +12% to -42%/-46%/-50% of premium
+    overnight while the underlying-level stop, only
+    SPY_KEY_LEVELS_STOP_BUFFER_PCT away, stayed silent the whole time.
+    Those checks are a backstop, not a replacement - the underlying-level
+    read above still runs first and still owns the normal case."""
     if side == "call":
         if current_underlying_price <= stop_underlying_price:
             return "STOP OUT", (
@@ -2560,6 +2594,16 @@ def spy_key_levels_exit_signal(
                 f"SPY reached ${current_underlying_price:.2f}, past the "
                 f"${target_underlying_price:.2f} target"
             )
+    if pnl_pct <= -SPY_KEY_LEVELS_STOP_PCT * 100:
+        return "STOP OUT", (
+            f"down {pnl_pct:.0f}% of premium, past the {SPY_KEY_LEVELS_STOP_PCT * 100:.0f}% "
+            "backstop regardless of the underlying level"
+        )
+    if peak_pct >= SPY_KEY_LEVELS_FLOOR_TRIGGER_PCT and pnl_pct <= SPY_KEY_LEVELS_FLOOR_PCT:
+        return "BREAKEVEN STOP", (
+            f"peaked at {peak_pct:.0f}% of premium, down to {pnl_pct:.0f}% - protecting the "
+            "proven move instead of riding it back through the underlying-level stop"
+        )
     if is_expiration_day and minutes_remaining <= 15:
         # Named "EXPIRATION CLOSE" (not SPY_0DTE's "EOD CLOSE" string) so
         # this strategy's forced-close signal is its own distinct value in
@@ -4086,6 +4130,14 @@ def evaluate_open_spy_key_levels_row(
     is_expiration_day = row.get("expiration") == timestamp.date().isoformat()
     close_time = timestamp.replace(hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1], second=0, microsecond=0)
     minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
+    # Computed before the exit-signal call (not after, like the original
+    # version) - the premium-based backstop/floor checks inside
+    # spy_key_levels_exit_signal need pnl_pct/peak_pct to evaluate
+    # against, on top of the underlying-level read.
+    pnl_pct = ((mark - entry) / entry * 100) if entry else 0.0
+    previous_peak = as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct
+    peak_pct = max(previous_peak, pnl_pct)
+    row["max_favorable_pct"] = round_or_blank(peak_pct, 0)
     if stop_underlying is None or target_underlying is None:
         signal, exit_note = "EXPIRATION CLOSE", "fallback: forced close (missing stored stop/target level)"
     else:
@@ -4098,15 +4150,13 @@ def evaluate_open_spy_key_levels_row(
                 expiration_tier=expiration_tier,
                 is_expiration_day=is_expiration_day,
                 minutes_remaining=minutes_remaining,
+                pnl_pct=pnl_pct,
+                peak_pct=peak_pct,
             )
         except Exception as exc:
             print(f"spy_key_levels_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
             signal = "EXPIRATION CLOSE"
             exit_note = "fallback: forced close (smart exit errored)"
-
-    pnl_pct = ((mark - entry) / entry * 100) if entry else 0.0
-    previous_peak = as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct
-    row["max_favorable_pct"] = round_or_blank(max(previous_peak, pnl_pct), 0)
     rounded_mark = round(mark, 2)
     rounded_pnl = rounded_mark - entry
     rounded_pnl_pct = (rounded_pnl / entry * 100) if entry else 0.0
