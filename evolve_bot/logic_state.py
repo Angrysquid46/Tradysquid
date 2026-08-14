@@ -50,6 +50,35 @@ def clear_active_override() -> None:
         ACTIVE_OVERRIDE_PATH.unlink()
 
 
+def active_variant_params() -> dict[str, Any]:
+    """The full (variant_label, stop_pct, target_pct, floor_pct,
+    floor_trigger_pct) the live bot is ACTUALLY trading right now - the
+    override's own values when one is active, else the live spy_scanner
+    default with no floor (the real default exit signal has no floor
+    concept at all, unlike every backtest-simulated variant, which always
+    carries some floor_pct/floor_trigger_pct even for its own "baseline"
+    label). One source of truth so a trade's entry-time variant identity
+    (engine.py, recorded per-row for later training) and the proposal
+    system's "what's the current baseline" (logic_proposals.py) can never
+    drift out of sync with each other."""
+    override = load_active_override()
+    if override:
+        return {
+            "variant_label": override.get("variant_label", ""),
+            "stop_pct": override.get("stop_pct"),
+            "target_pct": override.get("target_pct"),
+            "floor_pct": override.get("floor_pct"),
+            "floor_trigger_pct": override.get("floor_trigger_pct"),
+        }
+    return {
+        "variant_label": f"stop_{int(round(s.SPY_0DTE_STOP_PCT * 100))}_target_{int(round(s.SPY_0DTE_TARGET_PCT * 100))}",
+        "stop_pct": s.SPY_0DTE_STOP_PCT,
+        "target_pct": s.SPY_0DTE_TARGET_PCT,
+        "floor_pct": None,
+        "floor_trigger_pct": None,
+    }
+
+
 def current_stop_pct() -> float:
     """The stop_pct current_exit_signal is actually evaluating against
     right now, as a positive fraction (0.50 == a 50% stop) - exposed

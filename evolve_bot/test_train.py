@@ -7,6 +7,7 @@ from unittest import mock
 
 import backtest
 import features
+import tradelog
 import train
 
 
@@ -102,9 +103,87 @@ def test_evaluate_handles_an_empty_test_set():
 
 def test_load_training_rows_returns_empty_list_when_the_file_does_not_exist():
     with tempfile.TemporaryDirectory() as temp:
-        missing_path = Path(temp) / "nope.csv"
-        with mock.patch.object(backtest, "BACKTEST_TRADES_PATH", missing_path):
+        missing_backtest_path = Path(temp) / "nope.csv"
+        missing_live_path = Path(temp) / "also_nope.csv"
+        with (
+            mock.patch.object(backtest, "BACKTEST_TRADES_PATH", missing_backtest_path),
+            mock.patch.object(train, "LIVE_TRADES_PATH", missing_live_path),
+        ):
             assert train.load_training_rows() == []
+
+
+def _live_row(trade_id: str, day: str, outcome: str, *, variant_label: str = "stop_50_target_50") -> dict[str, str]:
+    row = tradelog.blank_row()
+    row.update({
+        "trade_id": trade_id,
+        "timestamp": f"{day}T09:30:00-05:00",
+        "option_symbol": f"SPY{day.replace('-', '')}C00600000",
+        "call_or_put": "call",
+        "strike": "600",
+        "entry_price": "0.5",
+        "spot_price_at_entry": "600.0",
+        "delta_at_entry": "0.5",
+        "iv_at_entry": "0.2",
+        "market_regime": "BULLISH / CONTROLLED",
+        "market_condition_at_entry": "CHOPPY / LOW VOL",
+        "vix_at_entry": "15.0",
+        "sentiment_at_entry": "0.1",
+        "put_call_ratio_at_entry": "0.9",
+        "variant_label": variant_label,
+        "stop_pct": "0.5",
+        "target_pct": "0.5",
+        "floor_pct": "",
+        "floor_trigger_pct": "",
+        "price_source_at_entry": "real",
+        "outcome": outcome,
+        "exit_price": "0.6" if outcome == "WIN" else "0.3",
+        "last_signal": "TAKE PROFIT" if outcome == "WIN" else "STOP OUT",
+        "pl_pct": "20" if outcome == "WIN" else "-40",
+        "max_favorable_pct": "20",
+        "max_adverse_pct": "-5",
+    })
+    return row
+
+
+def test_map_live_row_to_training_row_reshapes_to_the_backtest_schema():
+    live_row = _live_row("EVOLVE-20260812-001", "2026-08-12", "WIN")
+    mapped = train._map_live_row_to_training_row(live_row)
+    assert mapped["trading_day"] == "2026-08-12"
+    assert mapped["regime"] == "BULLISH / CONTROLLED"
+    assert mapped["market_condition"] == "CHOPPY / LOW VOL"
+    assert mapped["spot_at_entry"] == "600.0"
+    assert mapped["outcome"] == "WIN"
+    assert mapped["variant_label"] == "stop_50_target_50"
+
+
+def test_load_live_training_rows_excludes_still_open_positions():
+    with tempfile.TemporaryDirectory() as temp:
+        live_path = Path(temp) / "trades.csv"
+        rows = [
+            _live_row("EVOLVE-20260812-001", "2026-08-12", "WIN"),
+            _live_row("EVOLVE-20260812-002", "2026-08-12", "OPEN"),
+        ]
+        tradelog.write_log(live_path, rows)
+        with mock.patch.object(train, "LIVE_TRADES_PATH", live_path):
+            mapped = train.load_live_training_rows()
+    assert len(mapped) == 1
+    assert mapped[0]["trade_id"] == "EVOLVE-20260812-001"
+
+
+def test_load_training_rows_merges_backtest_and_live_sources():
+    with tempfile.TemporaryDirectory() as temp:
+        temp_path = Path(temp)
+        backtest_path = temp_path / "backtest_trades.csv"
+        live_path = temp_path / "trades.csv"
+        _write_csv(backtest_path, _synthetic_rows(n_days=2, rows_per_day=3))
+        tradelog.write_log(live_path, [_live_row("EVOLVE-20260812-001", "2026-08-12", "WIN")])
+        with (
+            mock.patch.object(backtest, "BACKTEST_TRADES_PATH", backtest_path),
+            mock.patch.object(train, "LIVE_TRADES_PATH", live_path),
+        ):
+            rows = train.load_training_rows()
+    assert len(rows) == 7
+    assert any(r["trade_id"] == "EVOLVE-20260812-001" for r in rows)
 
 
 def test_run_training_end_to_end_saves_a_model_and_metadata():
@@ -116,6 +195,7 @@ def test_run_training_end_to_end_saves_a_model_and_metadata():
         models_dir = temp_path / "models"
         with (
             mock.patch.object(backtest, "BACKTEST_TRADES_PATH", csv_path),
+            mock.patch.object(train, "LIVE_TRADES_PATH", temp_path / "no_live_trades.csv"),
             mock.patch.object(train, "MODELS_DIR", models_dir),
             mock.patch.object(train, "MODEL_PATH", models_dir / "latest_model.txt"),
             mock.patch.object(train, "METADATA_PATH", models_dir / "latest_metadata.json"),
@@ -135,6 +215,9 @@ def test_run_training_reports_not_enough_rows_on_a_tiny_dataset():
         temp_path = Path(temp)
         csv_path = temp_path / "backtest_trades.csv"
         _write_csv(csv_path, _synthetic_rows(n_days=1, rows_per_day=3))
-        with mock.patch.object(backtest, "BACKTEST_TRADES_PATH", csv_path):
+        with (
+            mock.patch.object(backtest, "BACKTEST_TRADES_PATH", csv_path),
+            mock.patch.object(train, "LIVE_TRADES_PATH", temp_path / "no_live_trades.csv"),
+        ):
             result = train.run_training()
     assert result["status"] == "not enough rows to train"

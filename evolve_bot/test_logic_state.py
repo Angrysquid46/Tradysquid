@@ -44,6 +44,38 @@ def test_current_stop_pct_uses_the_applied_override_when_one_exists():
             assert logic_state.current_stop_pct() == 0.20
 
 
+def test_active_variant_params_matches_the_live_default_with_no_override():
+    with tempfile.TemporaryDirectory() as temp:
+        with mock.patch.object(logic_state, "ACTIVE_OVERRIDE_PATH", Path(temp) / "nope.json"):
+            params = logic_state.active_variant_params()
+    assert params["stop_pct"] == logic_state.s.SPY_0DTE_STOP_PCT
+    assert params["target_pct"] == logic_state.s.SPY_0DTE_TARGET_PCT
+    assert params["floor_pct"] is None
+    assert params["floor_trigger_pct"] is None
+    assert params["variant_label"] == (
+        f"stop_{int(round(logic_state.s.SPY_0DTE_STOP_PCT * 100))}"
+        f"_target_{int(round(logic_state.s.SPY_0DTE_TARGET_PCT * 100))}"
+    )
+
+
+def test_active_variant_params_uses_the_applied_override_when_one_exists():
+    with tempfile.TemporaryDirectory() as temp:
+        override_path = Path(temp) / "active_exit_override.json"
+        with mock.patch.object(logic_state, "ACTIVE_OVERRIDE_PATH", override_path):
+            logic_state.save_active_override({
+                "stop_pct": 0.20, "target_pct": 0.50, "floor_pct": -10.0,
+                "floor_trigger_pct": 30.0, "variant_label": "stop_20_target_50",
+            })
+            params = logic_state.active_variant_params()
+    assert params == {
+        "variant_label": "stop_20_target_50",
+        "stop_pct": 0.20,
+        "target_pct": 0.50,
+        "floor_pct": -10.0,
+        "floor_trigger_pct": 30.0,
+    }
+
+
 def test_save_load_clear_round_trip():
     with tempfile.TemporaryDirectory() as temp:
         override_path = Path(temp) / "active_exit_override.json"

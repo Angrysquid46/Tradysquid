@@ -119,10 +119,7 @@ def live_baseline_variant_label() -> str:
     claimed "live default" of stop_50_target_50, two days after
     stop_20_target_50 had already been reviewed, approved, and applied
     (LOGIC-20260812-223833)."""
-    override = logic_state.load_active_override()
-    if override and override.get("variant_label"):
-        return override["variant_label"]
-    return f"stop_{int(round(s.SPY_0DTE_STOP_PCT * 100))}_target_{int(round(s.SPY_0DTE_TARGET_PCT * 100))}"
+    return logic_state.active_variant_params()["variant_label"]
 
 
 def evaluate_exit_parameter_proposal(rows: list[dict[str, str]]) -> dict[str, Any]:

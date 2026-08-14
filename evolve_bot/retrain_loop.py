@@ -35,18 +35,31 @@ RETRAIN_HISTORY_PATH = MODELS_DIR / "retrain_history.jsonl"
 
 
 def _training_file_hash() -> str | None:
-    """Hash of the raw training CSV's bytes - catches ANY row-level
-    change, not just a row-count or day-set change. Found necessary from
-    real behavior, not by inspection: a real-price backfill (Robinhood
-    data replacing a synthetic-priced row for a day/candidate that was
-    already in the file) changes existing rows' pl_pct/outcome without
-    changing the row count or the set of trading days, so the row-count/
-    day-set check alone silently missed it - should_retrain returned
-    False even though the training data had genuinely changed."""
-    try:
-        return hashlib.sha256(backtest.BACKTEST_TRADES_PATH.read_bytes()).hexdigest()
-    except OSError:
-        return None
+    """Hash of BOTH raw training sources' bytes (backtest_trades.csv, then
+    evolve_bot's own live trades.csv) - catches ANY row-level change in
+    either file, not just a row-count or day-set change. Found necessary
+    from real behavior, not by inspection: a real-price backfill
+    (Robinhood data replacing a synthetic-priced row for a day/candidate
+    that was already in the file) changes existing rows' pl_pct/outcome
+    without changing the row count or the set of trading days, so the
+    row-count/day-set check alone silently missed it - should_retrain
+    returned False even though the training data had genuinely changed.
+    Hashing only backtest_trades.csv (the original version of this
+    function) had the same blind spot for a newly CLOSED live trade -
+    train.load_training_rows() would pick it up, but should_retrain would
+    never notice unless the backtest file also happened to change on the
+    same cycle. None only if BOTH sources are unreadable/missing - either
+    one alone (a fresh checkout with no live trades yet, say) still
+    produces a real hash from whichever file exists."""
+    combined = hashlib.sha256()
+    found_any = False
+    for path in (backtest.BACKTEST_TRADES_PATH, train.LIVE_TRADES_PATH):
+        try:
+            combined.update(path.read_bytes())
+            found_any = True
+        except OSError:
+            continue
+    return combined.hexdigest() if found_any else None
 
 
 def _current_data_signature() -> dict[str, Any]:

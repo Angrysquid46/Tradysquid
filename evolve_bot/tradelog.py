@@ -44,6 +44,17 @@ HEADER = [
     "model_score_at_entry",
     "model_narrative_at_entry",
     "thesis",
+    # Which exit variant this specific trade opened under - captured at
+    # entry (not re-derived at close time) so a later override change can
+    # never retroactively misattribute an already-open trade's variant.
+    # Matches backtest_trades.csv's own column names so a closed live row
+    # and a backtest row can train the model side by side (see train.py).
+    "variant_label",
+    "stop_pct",
+    "target_pct",
+    "floor_pct",
+    "floor_trigger_pct",
+    "price_source_at_entry",
     # Outcome
     "outcome",
     "exit_price",

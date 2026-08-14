@@ -52,18 +52,44 @@ def test_current_data_signature_includes_a_real_file_hash():
     with tempfile.TemporaryDirectory() as temp:
         csv_path = Path(temp) / "backtest_trades.csv"
         csv_path.write_text("trade_id,trading_day\nBT1,2026-07-06\n", encoding="utf-8")
-        with mock.patch.object(retrain_loop.backtest, "BACKTEST_TRADES_PATH", csv_path):
+        with (
+            mock.patch.object(retrain_loop.backtest, "BACKTEST_TRADES_PATH", csv_path),
+            mock.patch.object(retrain_loop.train, "LIVE_TRADES_PATH", Path(temp) / "nope_live.csv"),
+        ):
             signature = retrain_loop._current_data_signature()
     assert signature["file_hash"] is not None
     assert isinstance(signature["file_hash"], str)
 
 
-def test_current_data_signature_file_hash_is_none_when_file_is_missing():
+def test_current_data_signature_file_hash_is_none_when_both_files_are_missing():
     with tempfile.TemporaryDirectory() as temp:
-        missing_path = Path(temp) / "nope.csv"
-        with mock.patch.object(retrain_loop.backtest, "BACKTEST_TRADES_PATH", missing_path):
+        with (
+            mock.patch.object(retrain_loop.backtest, "BACKTEST_TRADES_PATH", Path(temp) / "nope.csv"),
+            mock.patch.object(retrain_loop.train, "LIVE_TRADES_PATH", Path(temp) / "nope_live.csv"),
+        ):
             signature = retrain_loop._current_data_signature()
     assert signature["file_hash"] is None
+
+
+def test_training_file_hash_changes_when_only_the_live_trades_file_changes():
+    """The real gap this guards: a newly CLOSED live trade doesn't touch
+    backtest_trades.csv at all, so hashing only that file (the original
+    version of _training_file_hash) would never notice new live outcomes
+    had arrived - should_retrain would stay False forever no matter how
+    much real trading history accumulated."""
+    with tempfile.TemporaryDirectory() as temp:
+        backtest_path = Path(temp) / "backtest_trades.csv"
+        live_path = Path(temp) / "trades.csv"
+        backtest_path.write_text("trade_id,trading_day\nBT1,2026-07-06\n", encoding="utf-8")
+        live_path.write_text("trade_id\nEVOLVE-1\n", encoding="utf-8")
+        with (
+            mock.patch.object(retrain_loop.backtest, "BACKTEST_TRADES_PATH", backtest_path),
+            mock.patch.object(retrain_loop.train, "LIVE_TRADES_PATH", live_path),
+        ):
+            before = retrain_loop._training_file_hash()
+            live_path.write_text("trade_id\nEVOLVE-1\nEVOLVE-2\n", encoding="utf-8")
+            after = retrain_loop._training_file_hash()
+    assert before != after
 
 
 def test_run_retrain_cycle_skips_when_data_is_unchanged():

@@ -28,11 +28,13 @@ import numpy as np
 import backtest
 import features
 import metrics
+import tradelog
 
 ROOT = Path(__file__).resolve().parent
 MODELS_DIR = ROOT / "models"
 MODEL_PATH = MODELS_DIR / "latest_model.txt"
 METADATA_PATH = MODELS_DIR / "latest_metadata.json"
+LIVE_TRADES_PATH = ROOT / "state" / "trades.csv"
 
 # Deliberately conservative for a small dataset (515 rows across 27
 # trading days as of 2026-08-12, and the 27 days are the real unit of
@@ -54,15 +56,78 @@ LGBM_PARAMS: dict[str, Any] = {
 NUM_BOOST_ROUND = 50
 
 
+def _map_live_row_to_training_row(row: dict[str, str]) -> dict[str, str]:
+    """Reshapes one of tradelog.py's own closed-trade rows into
+    backtest_trades.csv's column names, so a real live outcome and a
+    backtest-replayed outcome can sit in the same training set and get
+    treated identically by features.build_dataset. Only the columns
+    features.py actually reads plus walk_forward_split's trading_day are
+    translated - tradelog.py's richer entry-context columns (thesis,
+    model_score_at_entry, etc.) aren't part of the trained feature set
+    today, so they're left out here rather than invented a mapping for.
+
+    variant_label/stop_pct/target_pct/floor_pct/floor_trigger_pct/
+    price_source_at_entry are read straight through - they exist on every
+    live row opened after this mapping was introduced (captured at entry
+    via logic_state.active_variant_params(), see engine.py), and are
+    simply blank (-> NaN / "unknown" category, both handled natively by
+    features.py) on older rows that predate it. No backfill attempted for
+    those older rows - the model already treats missing as informative
+    ("unknown"), which is more honest than guessing a variant after the
+    fact."""
+    return {
+        "trade_id": row.get("trade_id", ""),
+        "trading_day": (row.get("timestamp") or "")[:10],
+        "variant_label": row.get("variant_label", ""),
+        "call_or_put": row.get("call_or_put", ""),
+        "strike": row.get("strike", ""),
+        "option_symbol": row.get("option_symbol", ""),
+        "entry_price": row.get("entry_price", ""),
+        "price_source_at_entry": row.get("price_source_at_entry", ""),
+        "delta_at_entry": row.get("delta_at_entry", ""),
+        "iv_at_entry": row.get("iv_at_entry", ""),
+        "spot_at_entry": row.get("spot_price_at_entry", ""),
+        "market_condition": row.get("market_condition_at_entry", ""),
+        "regime": row.get("market_regime", ""),
+        "vix_at_entry": row.get("vix_at_entry", ""),
+        "sentiment_at_entry": row.get("sentiment_at_entry", ""),
+        "put_call_ratio_at_entry": row.get("put_call_ratio_at_entry", ""),
+        "thesis": row.get("thesis", ""),
+        "stop_pct": row.get("stop_pct", ""),
+        "target_pct": row.get("target_pct", ""),
+        "floor_pct": row.get("floor_pct", ""),
+        "floor_trigger_pct": row.get("floor_trigger_pct", ""),
+        "outcome": row.get("outcome", ""),
+        "exit_price": row.get("exit_price", ""),
+        "last_signal": row.get("last_signal", ""),
+        "pl_pct": row.get("pl_pct", ""),
+        "max_favorable_pct": row.get("max_favorable_pct", ""),
+        "max_adverse_pct": row.get("max_adverse_pct", ""),
+    }
+
+
+def load_live_training_rows() -> list[dict[str, str]]:
+    """Every real closed evolve_bot trade (WIN/LOSS/SCRATCH - never an
+    OPEN position, which has no outcome to train on yet), mapped to the
+    same shape as a backtest row. This is the "learn from everything we
+    collect live" half of the training set - see load_training_rows."""
+    rows = tradelog.read_log(LIVE_TRADES_PATH)
+    return [_map_live_row_to_training_row(r) for r in tradelog.closed_rows(rows)]
+
+
 def load_training_rows() -> list[dict[str, str]]:
-    """Backtest rows only for now - tradelog.py's closed live rows will
-    fold into this once the bot has real closed trades (zero as of
-    2026-08-12, not wired to Discord yet). No premature merging logic for
-    a data source that doesn't have any rows yet."""
-    if not backtest.BACKTEST_TRADES_PATH.exists():
-        return []
-    with backtest.BACKTEST_TRADES_PATH.open("r", newline="", encoding="utf-8") as f:
-        return list(csv.DictReader(f))
+    """The full training corpus: every backtest-replayed row PLUS every
+    real closed live trade, merged into one set. Backtest history supplies
+    volume and variant-comparison breadth (many historical days, many
+    stop/target combos); live rows supply ground truth from real fills
+    against real bid/ask, which the backtest's theta-approximated premium
+    can only ever approximate. Neither source alone is "everything the
+    bot should know" - together they are."""
+    backtest_rows: list[dict[str, str]] = []
+    if backtest.BACKTEST_TRADES_PATH.exists():
+        with backtest.BACKTEST_TRADES_PATH.open("r", newline="", encoding="utf-8") as f:
+            backtest_rows = list(csv.DictReader(f))
+    return backtest_rows + load_live_training_rows()
 
 
 def walk_forward_split(
