@@ -74,6 +74,70 @@ def test_trade_card_text_open_shows_only_essentials_no_thesis():
     assert "This exact sentence must not appear on the compact card." not in content
 
 
+def test_format_expiration_converts_iso_to_mm_dd_yy():
+    """Owner: "expiration in 00/00/00 format.\""""
+    assert engine._format_expiration("2026-08-14") == "08/14/26"
+
+
+def test_format_expiration_falls_back_to_the_raw_string_when_unparseable():
+    assert engine._format_expiration("") == ""
+    assert engine._format_expiration("not-a-date") == "not-a-date"
+
+
+def test_trade_card_text_shows_expiration_in_mm_dd_yy():
+    row = tradelog.blank_row()
+    row.update({"trade_id": "EVOLVE-20260814-001", "call_or_put": "call", "strike": "778", "expiration": "2026-08-14", "entry_price": "0.76"})
+    content = engine._trade_card_text(row, "OPEN")
+    assert "08/14/26" in content
+    assert "2026-08-14" not in content
+
+
+def test_trade_card_text_open_shows_a_real_stop_loss_price():
+    """Owner example: "BUY 1 SPY 778 CALL EXP. 08/14/26 / ENTRY / MARK /
+    STOPLOSS / OPEN PL." Stop-loss has to be the real dollar level the
+    live exit rule is actually evaluating against (see
+    logic_state.current_stop_pct), not a hardcoded guess."""
+    row = tradelog.blank_row()
+    row.update({"trade_id": "EVOLVE-20260814-001", "call_or_put": "call", "strike": "778", "expiration": "2026-08-14", "entry_price": "1.00", "contracts": "1"})
+    with mock.patch.object(engine.logic_state, "current_stop_pct", return_value=0.5):
+        content = engine._trade_card_text(row, "OPEN")
+    assert "**Stop-loss:** $0.50" in content
+
+
+def test_trade_card_text_held_shows_entry_mark_stop_loss_and_open_pl():
+    row = tradelog.blank_row()
+    row.update({"trade_id": "EVOLVE-20260814-001", "call_or_put": "call", "strike": "778", "expiration": "2026-08-14", "entry_price": "1.00", "contracts": "1"})
+    with mock.patch.object(engine.logic_state, "current_stop_pct", return_value=0.5):
+        content = engine._trade_card_text(row, "HELD", mark=1.10, pl_pct=10.0)
+    assert "**Entry:** $1.00" in content
+    assert "**Mark:** $1.10" in content
+    assert "**Stop-loss:** $0.50" in content
+    assert "**Open P/L:** +10%" in content
+
+
+def test_trade_card_text_uses_the_active_override_stop_pct_once_applied():
+    """A Phase 12 override changes what the live exit rule actually
+    evaluates against - the displayed stop-loss must track it, not stay
+    pinned to the original live default once an override is active."""
+    row = tradelog.blank_row()
+    row.update({"trade_id": "EVOLVE-20260814-001", "call_or_put": "call", "strike": "778", "expiration": "2026-08-14", "entry_price": "1.00"})
+    with mock.patch.object(engine.logic_state, "load_active_override", return_value={"stop_pct": 0.20, "target_pct": 0.5, "floor_pct": -10, "floor_trigger_pct": 20}):
+        content = engine._trade_card_text(row, "OPEN")
+    assert "**Stop-loss:** $0.80" in content
+
+
+def test_trade_card_text_closed_shows_signal_and_balance_as_labeled_lines():
+    """Owner: "the manual closed positions can we edit it to also be
+    easy to read... everything should have a card and be clean." """
+    row = tradelog.blank_row()
+    row.update({"trade_id": "EVOLVE-20260814-001", "call_or_put": "call", "strike": "778", "expiration": "2026-08-14", "entry_price": "1.00"})
+    content = engine._trade_card_text(
+        row, "WIN", mark=1.25, pl_pct=25.0, pl_dollars=25.0, signal="TAKE PROFIT", balance=633.0,
+    )
+    assert "**Signal:** TAKE PROFIT" in content
+    assert "**Balance:** $633.00" in content
+
+
 def test_trade_card_text_includes_journal_link_when_a_thread_exists():
     row = tradelog.blank_row()
     row.update({"trade_id": "EVOLVE-20260812-001", "call_or_put": "call", "strike": "600", "entry_price": "0.50"})
