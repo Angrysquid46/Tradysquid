@@ -14,7 +14,20 @@ import spy_scanner
 import performance_reconciliation as base
 
 
-REPORT_VERSION = "performance-scorecards-v5"
+# Bumped to v6 for the ratchet-channel consolidation (10 categories -> 1):
+# state_keys/hashes are unchanged per variant (by design, so each variant
+# stays independently tracked), but upsert_channel_message's hash-cache
+# short-circuit trusts a cached content_hash without checking the tracked
+# message still lives in the CURRENT channel_id - real bug found live
+# right after the consolidation: every ratchet variant's cached hash
+# still matched (nothing about the DATA changed), so it kept returning
+# the OLD message_id from the now-deleted per-variant channel without
+# ever posting into the new shared channel, and without raising anything
+# either. Bumping REPORT_VERSION forces sync_reports's own version_changed
+# rebuild path (_purge_old_report_cards + _clear_report_state), which
+# wipes the stale state and reposts everything fresh - the same
+# self-healing path this mechanism already exists for.
+REPORT_VERSION = "performance-scorecards-v6"
 _INSTALLED = False
 
 # SPY 0DTE is the only strategy family this system trades, split into two
@@ -347,6 +360,20 @@ def sync_reports(
             discord, state, rows, timestamp.date(),
             play_type=play_type, logical_name=performance_logical, label=label,
         )
+
+    # A derived summary card ranking all 10 ratchet variants against each
+    # other, not a per-variant scorecard - lives in this file (not just
+    # base.sync_reports, which this function fully replaces once
+    # installed) so it actually runs. Owner: "a dashboard so we can see
+    # top performers."
+    _require_upsert(
+        discord,
+        base.RATCHET_LEADERBOARD_LOGICAL,
+        state,
+        "report-v5:ratchet_leaderboard:index",
+        base.format_ratchet_leaderboard(rows),
+        "Ratchet Strategy Leaderboard",
+    )
 
     monday = base.week_start(timestamp.date())
     friday = monday + timedelta(days=4)
