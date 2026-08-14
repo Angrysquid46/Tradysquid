@@ -551,6 +551,30 @@ def _try_open_new_position(
     return row, bank
 
 
+def _run_shadow_cycle() -> None:
+    """Runs Phase 6's shadow-mode validation every real trading cycle -
+    scores whatever real candidate the real signal finds against the
+    real trained model, logged to its own file, never touches bankroll
+    or a real trade. This was built in Phase 6 but never actually wired
+    in here - shadow mode had logged exactly ONE prediction total as of
+    2026-08-14 despite days of live running, meaning there was no way
+    to ever accumulate enough real validation data to responsibly turn
+    on MODEL_FILTER_ENABLED. Owner: "we have the learning shit so use
+    it max effectivenvess." Imported locally, not at module scope -
+    shadow.py imports this module (to reuse find_candidate/
+    evaluate_exit_for_row), so a top-level import here would be
+    circular. Deliberately fails soft against ANY exception, not just
+    a specific one - shadow mode calls several real external functions
+    (quotes, VIX, sentiment) and none of their failure modes may ever
+    interrupt the real trading cycle that already completed above."""
+    import shadow
+
+    try:
+        shadow.run_shadow_cycle()
+    except Exception as exc:
+        print(f"shadow cycle failed (real trading unaffected): {exc}", file=sys.stderr)
+
+
 def run_cycle() -> dict[str, Any]:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     bank = bankroll.load_state(BANKROLL_PATH)
@@ -578,6 +602,7 @@ def run_cycle() -> dict[str, Any]:
 
     tradelog.write_log(TRADELOG_PATH, rows)
     bankroll.save_state(BANKROLL_PATH, bank)
+    _run_shadow_cycle()
     if closed_count or opened_row:
         _refresh_dashboard()
     return {

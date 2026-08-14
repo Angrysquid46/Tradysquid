@@ -43,6 +43,7 @@ from typing import Any
 
 import backtest
 import discord_post
+import logic_state
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import spy_scanner as s  # noqa: E402 - path must be set up first
@@ -107,10 +108,20 @@ def aggregate_variant_performance(rows: list[dict[str, str]]) -> dict[str, dict[
 
 
 def live_baseline_variant_label() -> str:
-    """The live default exit rule's own label, read directly from
-    spy_scanner's real constants rather than hardcoded - this stays
-    correct automatically if the live default ever changes, instead of
-    silently comparing against a stale baseline."""
+    """The variant label representing whatever is ACTUALLY the live exit
+    rule right now: a previously-applied Phase 12 override if one is
+    active (logic_state.load_active_override), or spy_scanner's own live
+    default otherwise. Reading only the spy_scanner default (the
+    original version of this function) meant an already-applied proposal
+    kept getting "re-proposed" against a stale baseline forever, since
+    the comparison never noticed an override was already live - found
+    from LOGIC-20260813-161926 recommending stop_20_target_50 against a
+    claimed "live default" of stop_50_target_50, two days after
+    stop_20_target_50 had already been reviewed, approved, and applied
+    (LOGIC-20260812-223833)."""
+    override = logic_state.load_active_override()
+    if override and override.get("variant_label"):
+        return override["variant_label"]
     return f"stop_{int(round(s.SPY_0DTE_STOP_PCT * 100))}_target_{int(round(s.SPY_0DTE_TARGET_PCT * 100))}"
 
 

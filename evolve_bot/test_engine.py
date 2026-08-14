@@ -57,6 +57,31 @@ def test_refresh_dashboard_never_raises_when_discord_posting_fails():
         engine._refresh_dashboard()  # must not raise
 
 
+def test_run_shadow_cycle_calls_the_real_shadow_module():
+    """Regression guard for a real gap: shadow.run_shadow_cycle() was
+    built in Phase 6 but never actually called from anywhere - shadow
+    mode had logged exactly ONE prediction total despite days of live
+    running, meaning there was no way to ever accumulate enough real
+    validation data to responsibly turn on MODEL_FILTER_ENABLED. Owner:
+    "we have the learning shit so use it max effectivnvess.\""""
+    import shadow
+
+    with mock.patch.object(shadow, "run_shadow_cycle") as fake_shadow_cycle:
+        engine._run_shadow_cycle()
+
+    fake_shadow_cycle.assert_called_once()
+
+
+def test_run_shadow_cycle_never_raises_and_never_touches_real_trading():
+    """Shadow mode calls several real external functions (quotes, VIX,
+    sentiment) on top of the real signal read - none of their failure
+    modes may ever interrupt the real trading cycle."""
+    import shadow
+
+    with mock.patch.object(shadow, "run_shadow_cycle", side_effect=RuntimeError("boom")):
+        engine._run_shadow_cycle()  # must not raise
+
+
 def test_trade_card_text_open_shows_only_essentials_no_thesis():
     """Owner: "only show the important stuff anything else can be in
     journal" - the compact card must never include the thesis/model
