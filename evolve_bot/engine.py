@@ -248,7 +248,9 @@ def _trade_journal_text(row: dict[str, str]) -> str:
     sequence = trade_id.split("-")[-1] if trade_id else "?"
     kind = (row.get("call_or_put") or "").upper()
     lines = [
-        f"**SPY_EVOLVE #{sequence} · {kind} {row.get('strike', '')} · {_format_expiration(row.get('expiration', ''))}**",
+        # "## " so spy_scanner.discord_card extracts this as the embed
+        # title instead of folding it into the description.
+        f"## SPY_EVOLVE #{sequence} · {kind} {row.get('strike', '')} · {_format_expiration(row.get('expiration', ''))}",
         f"**Thesis:** {row.get('thesis') or 'n/a'}",
         f"**Model:** {row.get('model_narrative_at_entry') or 'not scored'}",
         f"**Regime:** {row.get('market_regime') or 'n/a'} · **Condition:** {row.get('market_condition_at_entry') or 'n/a'}",
@@ -282,7 +284,10 @@ def _post_new_trade_card_and_journal(row: dict[str, str]) -> None:
         return
     _post_trade_card(trade_id, _trade_card_text(row, "OPEN"))
     try:
-        link = discord_post.post_journal_entry(trade_id, _trade_journal_text(row), event="open")
+        journal_text = _trade_journal_text(row)
+        link = discord_post.post_journal_entry(
+            trade_id, journal_text, event="open", embed=s.discord_card(journal_text, footer_suffix=trade_id)
+        )
         if link:
             _post_trade_card(trade_id, _trade_card_text(row, "OPEN"))
     except discord_post.DiscordPostError:
@@ -300,11 +305,17 @@ def _post_trade_card(trade_id: str, content: str) -> None:
     the final message simply stays put as that trade's permanent record
     - satisfies "still be able to track history" without a second card.
     Same fail-soft contract as before: a Discord problem here must never
-    affect the real position tracking that already happened above."""
+    affect the real position tracking that already happened above.
+    Rendered as a real Discord embed (spy_scanner.discord_card, parsing
+    this same "## title / ### section" markdown into title/fields/color)
+    so it actually gets the colored-border card look every other
+    strategy's cards already have - owner: "they dont have the
+    background around each message?\""""
     if not trade_id:
         return
     try:
-        discord_post.upsert_message("trades", f"trade:{trade_id}", content)
+        embed = s.discord_card(content, footer_suffix=trade_id)
+        discord_post.upsert_message("trades", f"trade:{trade_id}", content, embed=embed)
     except discord_post.DiscordPostError:
         pass
 

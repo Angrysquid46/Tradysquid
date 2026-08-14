@@ -198,14 +198,24 @@ def ensure_channels() -> dict[str, str]:
     return channels
 
 
-def post_message(channel_key: str, content: str) -> dict[str, Any] | None:
+def post_message(channel_key: str, content: str, *, embed: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """embed, when given, is sent instead of plain content - a real
+    Discord embed renders with a colored left border and its own
+    background, matching the main system's cards (see
+    spy_scanner.discord_card, which the caller uses to build it from the
+    same markdown content). Plain content alone has none of that -
+    owner: "they dont have the background around each message?\""""
     if not enabled():
         return None
     channel_id = ensure_channels()[channel_key]
+    if embed:
+        payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
+    else:
+        payload = {"content": content[:2000], "allowed_mentions": {"parse": []}}
     return _request(
         "POST",
         f"/channels/{channel_id}/messages",
-        {"content": content[:2000], "allowed_mentions": {"parse": []}},
+        payload,
     )
 
 
@@ -276,11 +286,17 @@ def _delete_tracked_message(channel_key: str, card_key: str, state: dict[str, st
             raise
 
 
-def _patch_message(channel_id: str, message_id: str, content: str) -> dict[str, Any] | None:
+def _patch_message(
+    channel_id: str, message_id: str, content: str, *, embed: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    if embed:
+        payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
+    else:
+        payload = {"content": content[:2000], "allowed_mentions": {"parse": []}}
     return _request(
         "PATCH",
         f"/channels/{channel_id}/messages/{message_id}",
-        {"content": content[:2000], "allowed_mentions": {"parse": []}},
+        payload,
     )
 
 
@@ -316,21 +332,26 @@ def _patch_message_with_file(
     raise DiscordPostError("Discord file edit retries exhausted")
 
 
-def post_journal_entry(trade_id: str, content: str, *, event: str = "open") -> str:
+def post_journal_entry(
+    trade_id: str, content: str, *, event: str = "open", embed: dict[str, Any] | None = None
+) -> str:
     """Posts a permanent entry into #evolve-journal - a genuinely
     separate channel from #evolve-trades, not a thread hanging off a
     trade card (an earlier design used threads; owner: "i said to have
     its own journal not more spam on the trade wall"). Never edited or
-    deleted - the journal is the running record, one box per entry.
-    Remembers the message id under a stable key so a trade card
-    rendered in a LATER, separate process (each scheduled cycle is a
-    fresh invocation) can still link straight back to it. Returns the
-    jump link, or "" if Discord isn't configured or the post failed -
-    fails soft, same contract as everything else here."""
+    deleted - the journal is the running record, one real embed box per
+    entry (see post_message's embed docstring) so multiple entries in
+    the same channel stay visually separated - owner: "using as many
+    boxes as you need to sperate messages in the same log." Remembers
+    the message id under a stable key so a trade card rendered in a
+    LATER, separate process (each scheduled cycle is a fresh
+    invocation) can still link straight back to it. Returns the jump
+    link, or "" if Discord isn't configured or the post failed - fails
+    soft, same contract as everything else here."""
     if not enabled():
         return ""
     try:
-        result = post_message("journal", content)
+        result = post_message("journal", content, embed=embed)
     except DiscordPostError:
         return ""
     if not result or not result.get("id"):
@@ -370,7 +391,9 @@ def delete_card(channel_key: str, card_key: str) -> None:
     _save_message_state(state)
 
 
-def upsert_message(channel_key: str, card_key: str, content: str) -> dict[str, Any] | None:
+def upsert_message(
+    channel_key: str, card_key: str, content: str, *, embed: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     """Like post_message, but keeps exactly one message per card_key in
     the channel - edits the existing tracked message in place (a true
     PATCH) when one already exists, rather than deleting and posting a
@@ -380,7 +403,9 @@ def upsert_message(channel_key: str, card_key: str, content: str) -> dict[str, A
     whether anything real changed. Owner: "it's spamming the fuck out of
     me even without trades." Falls back to creating a fresh message only
     the first time, or if the tracked message was deleted out from under
-    this process (a real 404, not the expected path)."""
+    this process (a real 404, not the expected path). embed is passed
+    straight through to post_message/_patch_message (see post_message's
+    own docstring for why a real embed matters, not just content)."""
     if not enabled():
         return None
     state = _load_message_state()
@@ -389,12 +414,12 @@ def upsert_message(channel_key: str, card_key: str, content: str) -> dict[str, A
     if tracked_id:
         channel_id = ensure_channels()[channel_key]
         try:
-            return _patch_message(channel_id, tracked_id, content)
+            return _patch_message(channel_id, tracked_id, content, embed=embed)
         except DiscordPostError as exc:
             if "HTTP 404" not in str(exc):
                 raise
             del state[key]
-    result = post_message(channel_key, content)
+    result = post_message(channel_key, content, embed=embed)
     if result and result.get("id"):
         state[key] = result["id"]
         _save_message_state(state)

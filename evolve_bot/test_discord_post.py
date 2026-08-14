@@ -223,6 +223,38 @@ def test_upsert_message_posts_fresh_with_no_prior_tracked_message():
         assert saved_state["trades:held-position"] == "msg-1"
 
 
+def test_upsert_message_sends_a_real_embed_instead_of_plain_content_when_given_one():
+    """Owner: "they dont have the background around each message?" -
+    plain content never renders with Discord's colored-border card look;
+    only a real embeds payload does."""
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
+        payloads = []
+
+        def fake_request(method, url, headers=None, json=None, timeout=None):
+            if method == "GET":
+                return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
+                                             {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
+            payloads.append(json)
+            return _fake_response(200, {"id": "msg-1"})
+
+        embed = {"title": "SPY_EVOLVE #1", "color": 0x2ECC71, "fields": [{"name": "Position", "value": "BUY 1 SPY 778 CALL", "inline": False}]}
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+            mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+        ):
+            discord_post.upsert_message("trades", "held-position", "plain fallback text", embed=embed)
+
+        assert payloads[0]["embeds"] == [embed]
+        assert payloads[0].get("content", "") == ""  # embed replaces plain content, doesn't sit alongside it
+
+
 def test_upsert_message_patches_the_existing_card_in_place():
     """The whole point: Discord push-notifies on a new message but not
     on an edit, so a repeat upsert must PATCH the existing tracked
@@ -258,6 +290,36 @@ def test_upsert_message_patches_the_existing_card_in_place():
         assert ("PATCH", f"{discord_post.API_BASE}/channels/chan-t/messages/old-msg-1") in calls
         saved_state = json.loads(state_path.read_text(encoding="utf-8"))
         assert saved_state["trades:held-position"] == "old-msg-1"  # same id, never churned
+
+
+def test_upsert_message_patches_with_an_embed_when_one_already_exists():
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
+        state_path.write_text(json.dumps({"trades:held-position": "old-msg-1"}), encoding="utf-8")
+        payloads = []
+
+        def fake_request(method, url, headers=None, json=None, timeout=None):
+            if method == "GET":
+                return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
+                                             {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
+            payloads.append((method, json))
+            return _fake_response(200, {"id": "old-msg-1"})
+
+        embed = {"title": "SPY_EVOLVE #1", "color": 0xF1C40F}
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+            mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+        ):
+            discord_post.upsert_message("trades", "held-position", "plain fallback", embed=embed)
+
+        patch_payloads = [j for m, j in payloads if m == "PATCH"]
+        assert patch_payloads == [{"embeds": [embed], "allowed_mentions": {"parse": []}}]
 
 
 def test_upsert_message_falls_back_to_a_fresh_post_when_the_tracked_message_is_gone():
