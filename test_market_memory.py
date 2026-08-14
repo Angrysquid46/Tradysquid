@@ -391,3 +391,142 @@ def test_pattern_stats_recent_vs_all_time_separates_old_from_new_occurrences():
 
     assert comparison["all_time"]["total_occurrences"] == 2
     assert comparison["recent"]["total_occurrences"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Historical intraday backfill
+# ---------------------------------------------------------------------------
+
+def _fake_series_response(bar_times: list[str]) -> dict:
+    data = [{"time": t, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 1000.0} for t in bar_times]
+    return {"series": {"data": data if len(data) != 1 else data[0]}}
+
+
+def test_fetch_intraday_for_day_parses_a_real_series_response():
+    with mock.patch.object(spy_scanner, "tradier_get", return_value=_fake_series_response(["2026-08-10T09:30:00", "2026-08-10T09:35:00"])) as tradier_get:
+        bars = mm._fetch_intraday_for_day("SPY", real_datetime(2026, 8, 10).date())
+    assert len(bars) == 2
+    assert bars[0]["time"] == "2026-08-10T09:30:00"
+    # Confirms this actually asks for the requested PAST day, not "today".
+    params = tradier_get.call_args[0][1]
+    assert "2026-08-10" in params["start"]
+
+
+def test_fetch_intraday_for_day_returns_empty_list_when_no_data():
+    with mock.patch.object(spy_scanner, "tradier_get", return_value={"series": {}}):
+        bars = mm._fetch_intraday_for_day("SPY", real_datetime(2026, 7, 4).date())  # a holiday
+    assert bars == []
+
+
+def test_intraday_history_start_boundary_parses_the_real_error_message():
+    """Regression guard for the real bug this whole feature corrects:
+    the module used to assume intraday history could only ever cover
+    "today" - confirmed false live (Tradier's real error message states
+    an actual retention boundary, ~2 months back, not zero)."""
+    error = spy_scanner.TradierError(
+        "Tradier HTTP 400 for /markets/timesales: Invalid parameter, "
+        "start: must be on or after 2026-06-18 00:00:00."
+    )
+    with mock.patch.object(mm, "_fetch_intraday_for_day", side_effect=error):
+        boundary = mm._intraday_history_start_boundary("SPY", today=real_datetime(2026, 8, 14).date())
+    assert boundary == real_datetime(2026, 6, 18).date()
+
+
+def test_intraday_history_start_boundary_returns_none_on_an_unrelated_error():
+    error = spy_scanner.TradierError("Tradier HTTP 500 for /markets/timesales: internal error")
+    with mock.patch.object(mm, "_fetch_intraday_for_day", side_effect=error):
+        boundary = mm._intraday_history_start_boundary("SPY", today=real_datetime(2026, 8, 14).date())
+    assert boundary is None
+
+
+def test_backfill_historical_intraday_skips_dates_already_covered():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        # A Monday already fully stored.
+        mm.store_bars(conn, "SPY", "5min", [_bar("2026-08-10T09:30:00", 100, 101, 99, 100)])
+        with (
+            mock.patch.object(mm, "_intraday_history_start_boundary", return_value=real_datetime(2026, 8, 10).date()),
+            mock.patch.object(mm, "_fetch_intraday_for_day") as fetch,
+        ):
+            mm.backfill_historical_intraday(conn, "SPY", today=real_datetime(2026, 8, 11).date())
+        fetch.assert_not_called()  # only missing day in range is 8/10, which is already covered
+        conn.close()
+
+
+def test_backfill_historical_intraday_fetches_a_genuinely_missing_trading_day():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        with (
+            mock.patch.object(mm, "_intraday_history_start_boundary", return_value=real_datetime(2026, 8, 10).date()),
+            mock.patch.object(mm, "_fetch_intraday_for_day", return_value=[
+                {"time": "2026-08-10T09:30:00", "open": 100, "high": 101, "low": 99, "close": 100.5, "volume": 1000},
+            ]) as fetch,
+        ):
+            result = mm.backfill_historical_intraday(conn, "SPY", today=real_datetime(2026, 8, 11).date())
+        fetch.assert_called_once()
+        assert fetch.call_args[0][1] == real_datetime(2026, 8, 10).date()
+        assert result["new_bars"] == 1
+        assert result["trading_days_with_data"] == 1
+        conn.close()
+
+
+def test_backfill_historical_intraday_skips_weekends():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        # 8/8/2026 and 8/9/2026 are a Saturday/Sunday.
+        with (
+            mock.patch.object(mm, "_intraday_history_start_boundary", return_value=real_datetime(2026, 8, 7).date()),
+            mock.patch.object(mm, "_fetch_intraday_for_day", return_value=[]) as fetch,
+        ):
+            mm.backfill_historical_intraday(conn, "SPY", today=real_datetime(2026, 8, 10).date())
+        fetched_days = {call.args[1] for call in fetch.call_args_list}
+        assert real_datetime(2026, 8, 8).date() not in fetched_days
+        assert real_datetime(2026, 8, 9).date() not in fetched_days
+        assert real_datetime(2026, 8, 7).date() in fetched_days
+        conn.close()
+
+
+def test_backfill_historical_intraday_never_fetches_today():
+    """Today is handled by run_collection_cycle's own regular intraday
+    fetch - the historical backfill only ever covers yesterday and
+    earlier, or it would duplicate that work."""
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        with (
+            mock.patch.object(mm, "_intraday_history_start_boundary", return_value=real_datetime(2026, 8, 13).date()),
+            mock.patch.object(mm, "_fetch_intraday_for_day", return_value=[]) as fetch,
+        ):
+            mm.backfill_historical_intraday(conn, "SPY", today=real_datetime(2026, 8, 14).date())
+        fetched_days = {call.args[1] for call in fetch.call_args_list}
+        assert real_datetime(2026, 8, 14).date() not in fetched_days
+        conn.close()
+
+
+def test_backfill_historical_intraday_reports_when_boundary_cannot_be_determined():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        with mock.patch.object(mm, "_intraday_history_start_boundary", return_value=None):
+            result = mm.backfill_historical_intraday(conn, "SPY", today=real_datetime(2026, 8, 14).date())
+        assert result["status"] != "ok"
+        conn.close()
+
+
+def test_run_collection_cycle_includes_the_historical_backfill_and_survives_its_failure():
+    temp_dir, patcher = _isolated_db()
+    with (
+        temp_dir, patcher,
+        mock.patch.object(spy_scanner, "get_daily_history", return_value=_fake_daily_history(5)),
+        mock.patch.object(spy_scanner, "get_intraday_history", return_value=[]),
+        mock.patch.object(mm, "backfill_historical_intraday", side_effect=RuntimeError("provider hiccup")),
+    ):
+        result = mm.run_collection_cycle("SPY")
+
+    # A backfill failure must never take down the whole cycle - the
+    # daily layer (already proven reliable) still has to succeed.
+    assert result["daily"]["new_bars"] == 5
+    assert "failed" in result["intraday_historical_backfill"]["status"]
