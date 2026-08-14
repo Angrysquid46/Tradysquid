@@ -51,10 +51,21 @@ class ChannelSpec:
     channel_type: int = 0
 
 
-# One category per ratchet-floor variant, name derived from
-# spy_scanner.SPY_RATCHET_VARIANTS' own label (single source of truth for
-# the 10 (step, stop) pairs - see spy_scanner.py for how they were picked).
-RATCHET_CATEGORY_NAMES = [
+# Originally one category per ratchet-floor variant (10 categories, 20
+# channels) - owner: "i want all the ratchet stratagies in a single
+# catagory instead of 11 different channels ... pl wins and loses for
+# everything in here on 1 tab but have each thing tracked seperately and
+# a dashboard so we can see top performers." Collapsed to one shared
+# category/pair of channels; each variant still gets its own tracked card
+# within them (see spy_scanner.CHANNEL_NAMES and
+# performance_reconciliation.REPORT_ROUTES - only the REAL channel name
+# per variant's logical key changed, the 10 distinct logical keys and
+# their own state/coverage tracking did not).
+RATCHET_CATEGORY_NAME = "RATCHET STRATEGIES"
+
+# Old per-variant category names, kept only so the sync can find and
+# delete them (see DELETE_CATEGORIES/DELETE_CHANNELS below).
+_OLD_RATCHET_CATEGORY_NAMES = [
     f"{variant['label'].upper()} STRATEGY" for variant in spy_scanner.SPY_RATCHET_VARIANTS
 ]
 
@@ -68,7 +79,7 @@ CATEGORY_ORDER = [
     "5-MINUTE STRATEGY",
     "KEY-LEVELS STRATEGY",
     "EXPANSION-LEVEL STRATEGY",
-    *RATCHET_CATEGORY_NAMES,
+    RATCHET_CATEGORY_NAME,
     "PERFORMANCE",
     "SYSTEM",
     "STRATEGY CONTROL",
@@ -145,21 +156,29 @@ def _ratchet_slug(play_type: str) -> str:
     return play_type.removeprefix("SPY_RATCHET_").lower().replace("_", "-")
 
 
-# Two channels per ratchet variant (performance + results), mirroring the
-# existing 1m/5m/key-levels/expansion pattern above - generated from
-# spy_scanner.SPY_RATCHET_VARIANTS instead of hand-duplicated 10 times.
+# One shared pair of channels for all 10 ratchet variants: a leaderboard
+# dashboard ranking them against each other, and a combined results feed
+# where each variant still posts (and updates) its own distinct card - see
+# performance_reconciliation.py's REPORT_ROUTES/REPORT_MARKERS, which keep
+# each variant's state and search-marker text unique even though they now
+# share a real channel.
+CHANNELS.append(ChannelSpec(
+    RATCHET_CATEGORY_NAME, "ratchet-dashboard",
+    "Leaderboard comparing all 10 ratchet-floor variants, plus each variant's own monthly "
+    "performance index - see #ratchet-results for individual trade history.",
+))
+CHANNELS.append(ChannelSpec(
+    RATCHET_CATEGORY_NAME, "ratchet-results",
+    "Every ratchet-floor variant's results, each tracked and tagged separately in one feed.",
+))
+
+# Old per-variant channels (10 categories x 2 channels), retired in favor
+# of the shared pair above.
+_OLD_RATCHET_CHANNEL_NAMES = set()
 for _variant in spy_scanner.SPY_RATCHET_VARIANTS:
-    _category = f"{_variant['label'].upper()} STRATEGY"
     _slug = _ratchet_slug(_variant["play_type"])
-    CHANNELS.append(ChannelSpec(
-        _category, f"ratchet-{_slug}-performance",
-        f"Lifecycle totals and recorded paper performance for the {_variant['label']} "
-        "ratchet-floor strategy only - fully independent of every other live SPY strategy.",
-    ))
-    CHANNELS.append(ChannelSpec(
-        _category, f"ratchet-{_slug}-results",
-        f"{_variant['label']} strategy results by direction and entry regime.",
-    ))
+    _OLD_RATCHET_CHANNEL_NAMES.add(f"ratchet-{_slug}-performance")
+    _OLD_RATCHET_CHANNEL_NAMES.add(f"ratchet-{_slug}-results")
 
 DELETE_CHANNELS = {
     "qualified-trades", "scratches", "expired", "exit-alerts",
@@ -172,9 +191,16 @@ DELETE_CHANNELS = {
     # 5m-performance/5m-results, now that SPY 0DTE is split into two
     # independently-tracked live strategies instead of one combined read.
     "performance-dashboard", "strategy-results", "strategy-breakdown",
+    # Retired in favor of the single shared ratchet-dashboard/ratchet-results
+    # pair above - owner: "all the ratchet stratagies in a single catagory
+    # instead of 11 different channels."
+    *_OLD_RATCHET_CHANNEL_NAMES,
 }
 
-DELETE_CATEGORIES = {"ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE"}
+DELETE_CATEGORIES = {
+    "ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE",
+    *_OLD_RATCHET_CATEGORY_NAMES,
+}
 
 CHANNEL_STARTERS = {
     "scanner-feed": "Runs every 15 minutes during regular market hours.",
@@ -214,15 +240,9 @@ CHANNEL_STARTERS = {
     "workflow-log": "Used for releases, deployments, and rollback reports.",
     "upgrade-review": "Manual owner review only.",
     "security-log": "Receives rejected requests and configuration warnings.",
+    "ratchet-dashboard": "Updated as each ratchet-floor variant's paper trades open and close, plus a leaderboard ranking all 10.",
+    "ratchet-results": "Updated from every ratchet-floor variant's recorded paper-trade outcomes, each tagged with its own variant.",
 }
-for _variant in spy_scanner.SPY_RATCHET_VARIANTS:
-    _slug = _ratchet_slug(_variant["play_type"])
-    CHANNEL_STARTERS[f"ratchet-{_slug}-performance"] = (
-        f"Updated as the {_variant['label']} strategy's paper trades open and close."
-    )
-    CHANNEL_STARTERS[f"ratchet-{_slug}-results"] = (
-        f"Updated from the {_variant['label']} strategy's recorded paper-trade outcomes."
-    )
 
 GUIDES = {
     "welcome": """# Tradysquids
