@@ -1927,6 +1927,17 @@ def _tradingview_event_already_consumed(play_type: str, event_id: int) -> bool:
     return int((stored.get(play_type) or {}).get("event_id", -1)) == event_id
 
 
+def _mark_tradingview_event_if_opened(candidate: dict[str, Any]) -> None:
+    """Called from main()'s open loop for every candidate that just
+    became a real row - the only correct moment to burn a TradingView
+    alert for that play_type, so a candidate that scanned OK but got
+    filtered out later (exposure cap, entry window, dedup) leaves the
+    alert available for a later, still-fresh scan cycle to retry."""
+    event_id = candidate.get("tradingview_event_id")
+    if event_id is not None:
+        _tradingview_event_mark_consumed(candidate["play_type"], int(event_id))
+
+
 def _tradingview_event_mark_consumed(play_type: str, event_id: int) -> None:
     try:
         stored = json.loads(SPY_TRADINGVIEW_CONSUMED_EVENT_PATH.read_text(encoding="utf-8"))
@@ -1990,7 +2001,17 @@ def spy_0dte_tradingview_signal(
             "reason": f"TradingView alert received but direction was not recognized: {event.get('event_type')!r}",
             "failures": ["TradingView alert direction unrecognized"],
         }
-    _tradingview_event_mark_consumed(play_type, int(event["id"]))
+    # Consumption is marked only once a candidate built from this alert
+    # actually becomes a real open row (_mark_tradingview_event_if_opened,
+    # called from main()'s open loop), NOT here. Marking it here - on a
+    # mere successful parse - meant a fresh, correctly-parsed alert got
+    # permanently burned the first time ANY scan cycle glanced at it,
+    # even if scan_spy_0dte_candidates then found no real contract or a
+    # later filter (exposure cap, entry window) rejected it - with no
+    # way for a later, still-fresh scan cycle to ever retry it. Real
+    # incident: 2026-08-13 09:01:59 alert was marked consumed by all 11
+    # TradingView-gated strategies at 09:03:16, yet zero of them opened
+    # a real trade that day.
     regime = "BULLISH / CONTROLLED" if direction == "BULLISH" else "BEARISH / CONTROLLED"
     return {
         "qualified": True,
@@ -2152,6 +2173,11 @@ def scan_spy_0dte_candidates(
                     "reason", "Opening-range breakout confirmed"
                 ),
                 "market_regime": (market_context or {}).get("regime", "CONTROLLED"),
+                # Carried through so a TradingView alert only gets marked
+                # consumed once a candidate built from it actually becomes
+                # a real open row (see _mark_tradingview_event_if_opened) -
+                # not merely because it qualified and was scanned.
+                "tradingview_event_id": (market_context or {}).get("tradingview_event_id"),
             }
         )
     # Nearest-to-breakeven (lowest ask) first - the cheapest real contract
@@ -7449,6 +7475,7 @@ def main(*, publish_shared: bool = True, position_lock: Any = None) -> int:
             row = candidate_to_row(candidate, rows, timestamp, market_condition=market_condition)
             rows.append(row)
             new_rows.append(row)
+            _mark_tradingview_event_if_opened(candidate)
             save_chain_snapshot(row, candidates, timestamp)
             safe_discord_call("new trade post", lambda r=row: post_new_trade(r, discord, report_state))
 

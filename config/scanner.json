@@ -79,6 +79,7 @@
   "spy_expansion_floor_trigger_pct": 30.0,
   "spy_expansion_floor_pct": -15.0,
   "spy_expansion_history_days": 50,
+  "spy_0dte_1m_tradingview_max_age_seconds": 1200,
   "providers": {
     "tradier": {
       "enabled": true,
