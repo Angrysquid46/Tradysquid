@@ -465,6 +465,19 @@ def close_profitable_reply(interaction: dict[str, Any]) -> str:
             lambda r=row, e=evaluation: spy_scanner.post_close(r, e, tracker, report_state),
         )
         lines.append(f"- {row.get('play_type')} {row.get('option_symbol')}: {outcome} ${pl_dollars:,.0f}")
+    # post_close only posts the close alert into the trade's own journal
+    # thread - it never moves the trade to its wins/losses/scratches/
+    # expired channel or deletes the now-stale entry/held-positions
+    # cards. The automated scan cycle does that separately
+    # (sync_closed_result_channels, called from main()), but that could
+    # be up to ~15-20 minutes away. Without this, a manually-closed
+    # position kept showing a stale "HOLD" card with its pre-close P&L
+    # in #held-positions - found from a real screenshot: a WIN closed at
+    # 09:05:20 still showed as an open +4% HOLD card a minute later.
+    spy_scanner.safe_discord_call(
+        "manual close result routing",
+        lambda: spy_scanner.sync_closed_result_channels(rows, tracker, report_state),
+    )
     spy_scanner.write_report_state(report_state)
     lines.append(f"**Total realized: ${total:,.0f}** across {len(closed)} position(s).")
     return "\n".join(lines)
