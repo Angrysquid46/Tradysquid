@@ -6787,17 +6787,20 @@ def _run_spy_0dte_variant(
     other's. They trade fully independently: both can be open at once,
     each under its own $500/trade risk cap, by owner decision.
 
-    SPY_0DTE_1M's entry signal is the live TradingView alert (see
-    spy_0dte_tradingview_signal) - the strategy this system's TradingView
-    webhook was actually built for. SPY_0DTE_5M keeps the Python
-    opening-range breakout below; the two variants are not required to
-    use the same signal source, only the same contract selection, risk
-    cap, and exit rules."""
+    Both variants use the same self-contained Python opening-range
+    breakout signal, differing only in bar interval - SPY_0DTE_1M
+    previously read the live TradingView webhook alert instead
+    (spy_0dte_tradingview_signal), but that path proved to be this
+    system's single most bug-prone dependency (secret mismatches,
+    malformed Pine alert payloads, an alert-freshness window shorter
+    than the scan cadence, and alerts marked "consumed" on parse rather
+    than on actually opening a trade - four separate real incidents).
+    Owner, after all of it: "make them fire off something else because
+    I'm sick of seeing them all dead." spy_0dte_tradingview_signal and
+    the /tradingview webhook still exist and still work, just unused by
+    the live entry path now."""
     try:
-        if play_type == "SPY_0DTE_1M":
-            context = spy_0dte_tradingview_signal(TICKER, play_type=play_type)
-        else:
-            context = spy_0dte_opening_range_signal(intraday_history, bar_minutes=bar_minutes)
+        context = spy_0dte_opening_range_signal(intraday_history, bar_minutes=bar_minutes)
     except Exception as exc:
         context = _unavailable_context(f"spy 0dte ({play_type}) signal errored: {exc}")
     if not context.get("qualified"):
@@ -6831,26 +6834,34 @@ def _run_spy_ratchet_variants(
     *,
     today_str: str,
     spot_price: float,
+    intraday_1m: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
     quote_map: dict[str, dict[str, Any]],
     add_candidates,
     enabled: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Run all 10 ratchet-floor variants off the same live TradingView
-    alert SPY_0DTE_1M uses (spy_0dte_tradingview_signal) - per owner
-    direction, they're the same entry as 1M, only their exit
-    (spy_ratchet_exit_signal's floor/stop) differs, so there's no reason
-    to keep running a separate, less accurate Python approximation of the
-    same entry once the real signal is wired up and working. Consumption
-    is tracked per play_type, so the one alert can independently open 1M
-    and every enabled ratchet variant without any of them starving the
-    others. Each variant still gets its own chain fetch, its own
-    play_type-tagged candidates, and its own independent
-    trade_types_enabled gate - fully independent trades sharing one entry
-    source. Uses scan_spy_0dte_candidates as-is (already generic over
-    play_type, same delta band/risk cap as SPY_0DTE - only the exit shape
-    is new for these variants)."""
+    """Run all 10 ratchet-floor variants off ONE shared read of the same
+    self-contained Python opening-range breakout signal SPY_0DTE_1M uses
+    (spy_0dte_opening_range_signal on 1-minute bars) - computed once here,
+    not once per variant, since it's identical for all 10. They previously
+    shared SPY_0DTE_1M's live TradingView alert instead
+    (spy_0dte_tradingview_signal), but that path proved to be this
+    system's single most bug-prone dependency across four separate real
+    incidents (secret mismatches, malformed Pine payloads, a freshness
+    window shorter than the scan cadence, alerts marked consumed on parse
+    rather than on actually opening a trade). Owner: "make them fire off
+    something else because I'm sick of seeing them all dead." Each
+    variant still gets its own chain fetch, its own play_type-tagged
+    candidates, and its own independent trade_types_enabled gate - fully
+    independent trades sharing one entry source. Uses
+    scan_spy_0dte_candidates as-is (already generic over play_type, same
+    delta band/risk cap as SPY_0DTE - only the exit shape is new for
+    these variants)."""
     spot_price = _refresh_spot_price(spot_price)
+    try:
+        shared_context = spy_0dte_opening_range_signal(intraday_1m, bar_minutes=1)
+    except Exception as exc:
+        shared_context = _unavailable_context(f"spy ratchet signal errored: {exc}")
     results: dict[str, dict[str, Any]] = {}
     for variant in SPY_RATCHET_VARIANTS:
         play_type = variant["play_type"]
@@ -6858,10 +6869,7 @@ def _run_spy_ratchet_variants(
         if not enabled.get(config_key):
             results[play_type] = _unavailable_context(f"{play_type} disabled in trade_types_enabled")
             continue
-        try:
-            context = spy_0dte_tradingview_signal(TICKER, play_type=play_type)
-        except Exception as exc:
-            context = _unavailable_context(f"spy ratchet ({play_type}) signal errored: {exc}")
+        context = dict(shared_context)
         results[play_type] = context
         if not context.get("qualified"):
             continue
@@ -7144,15 +7152,16 @@ def scan_candidates(
             stats["spy_0dte_market_context"] = {"SPY_0DTE_5M": unavailable, "SPY_0DTE_1M": unavailable}
 
         # SPY Ratchet-floor variants: 10 more independently-tracked
-        # strategies, sharing the SAME live TradingView alert SPY_0DTE_1M
-        # uses (spy_0dte_tradingview_signal) - per owner direction, they're
-        # the same entry as 1M, only their exit shape
-        # (spy_ratchet_exit_signal) differs. See
+        # strategies, sharing the SAME self-contained Python opening-range
+        # breakout signal SPY_0DTE_1M uses (spy_0dte_opening_range_signal
+        # on 1-minute bars) - they're the same entry as 1M, only their
+        # exit shape (spy_ratchet_exit_signal) differs. See
         # SPY_RATCHET_VARIANTS/_run_spy_ratchet_variants.
         if today_str in expirations:
             stats["spy_ratchet_market_context"] = _run_spy_ratchet_variants(
                 today_str=today_str,
                 spot_price=spot_price,
+                intraday_1m=intraday_1m,
                 candidates=candidates,
                 quote_map=quote_map,
                 add_candidates=add_candidates,
