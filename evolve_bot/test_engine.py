@@ -5,11 +5,28 @@ from pathlib import Path
 from unittest import mock
 from zoneinfo import ZoneInfo
 
+import pytest
+
 import bankroll
 import engine
 import tradelog
 
 CT = ZoneInfo("America/Chicago")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_active_override():
+    """Isolates every test in this file from the real, live
+    active_exit_override.json - a new trade's row now records
+    variant_label/stop_pct/etc. via logic_state.active_variant_params()
+    (see _try_open_new_position), which reads load_active_override()
+    under the hood. Without this, these tests would silently pick up
+    whatever override is ACTUALLY active in production right now, the
+    same gap already fixed once in test_logic_proposals.py. Tests that
+    specifically exercise override-detection patch load_active_override
+    again locally, which takes precedence."""
+    with mock.patch.object(engine.logic_state, "load_active_override", return_value=None):
+        yield
 
 
 def _isolated_paths(temp_dir):
@@ -553,6 +570,13 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
     assert row["sentiment_at_entry"] == "0.12"
     assert row["put_call_ratio_at_entry"] == "0.85"
     assert row["model_score_at_entry"] == "0.71"
+    assert row["price_source_at_entry"] == "real"
+    assert row["variant_label"] == (
+        f"stop_{int(round(engine.s.SPY_0DTE_STOP_PCT * 100))}"
+        f"_target_{int(round(engine.s.SPY_0DTE_TARGET_PCT * 100))}"
+    )
+    assert row["stop_pct"] == str(engine.s.SPY_0DTE_STOP_PCT)
+    assert row["floor_pct"] == ""
     # Derived from the real bankroll.POSITION_SIZE_PCT constant rather than
     # a hardcoded percentage, so this test doesn't silently drift out of
     # sync (and start asserting the WRONG number instead of failing) if
@@ -562,6 +586,50 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
     expected_cost = 0.50 * 100 * expected_contracts
     assert row["contracts"] == str(expected_contracts)
     assert updated_bank["balance"] == bankroll.STARTING_BALANCE - expected_cost
+
+
+def test_try_open_new_position_records_the_active_override_as_the_trades_variant():
+    """A trade opened while a Phase 12 override is active must record THAT
+    override's own params, not the live spy_scanner default - otherwise a
+    later retrain would mislabel which exit rule this specific trade
+    actually ran under."""
+    candidate = {
+        "call_or_put": "put", "strike": "600", "expiration": "2026-08-12",
+        "entry_price": 0.50, "delta": -0.42, "theta": -0.05, "iv": 0.35,
+        "open_interest": 500, "option_volume": 200, "option_symbol": "SPY260812P00600000",
+        "score": 42,
+    }
+    with (
+        mock.patch.object(engine.s, "entry_window_blocked", return_value=""),
+        mock.patch.object(engine.s, "get_expirations", return_value=["2026-08-12"]),
+        mock.patch.object(engine.s, "get_daily_history", return_value=[]),
+        mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "CHOPPY / NORMAL VOL"}),
+        mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
+        mock.patch.object(
+            engine.s, "spy_0dte_opening_range_signal",
+            return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "broke below the range", "range_high": 601.0, "range_low": 599.0},
+        ),
+        mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
+        mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
+        mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
+        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=0.85),
+        mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
+        mock.patch.object(engine.market_features, "vix_on_or_before", return_value=15.5),
+        mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=0.12),
+        mock.patch.object(engine.model_scoring, "explain_score", return_value={"score": 0.71, "contributions": []}),
+        mock.patch.object(engine.self_tuning, "current_position_size_pct", return_value=bankroll.POSITION_SIZE_PCT),
+        mock.patch.object(
+            engine.logic_state, "load_active_override",
+            return_value={"stop_pct": 0.20, "target_pct": 0.50, "floor_pct": -10.0, "floor_trigger_pct": 30.0, "variant_label": "stop_20_target_50"},
+        ),
+    ):
+        row, _ = engine._try_open_new_position([], bankroll.default_state(), datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
+
+    assert row is not None
+    assert row["variant_label"] == "stop_20_target_50"
+    assert row["stop_pct"] == "0.2"
+    assert row["floor_pct"] == "-10.0"
 
 
 def test_try_open_new_position_posts_a_real_discord_alert_on_entry():

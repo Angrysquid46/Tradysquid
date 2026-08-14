@@ -509,6 +509,8 @@ def _try_open_new_position(
         return None, bank
     cost = round(best["entry_price"] * 100 * contracts, 2)
 
+    variant = logic_state.active_variant_params()
+
     row = tradelog.blank_row()
     row.update(
         {
@@ -539,6 +541,12 @@ def _try_open_new_position(
             "model_score_at_entry": "" if model_score is None else str(model_score),
             "model_narrative_at_entry": model_narrative,
             "thesis": build_thesis(best, context, market_condition),
+            "variant_label": variant["variant_label"],
+            "stop_pct": "" if variant["stop_pct"] is None else str(variant["stop_pct"]),
+            "target_pct": "" if variant["target_pct"] is None else str(variant["target_pct"]),
+            "floor_pct": "" if variant["floor_pct"] is None else str(variant["floor_pct"]),
+            "floor_trigger_pct": "" if variant["floor_trigger_pct"] is None else str(variant["floor_trigger_pct"]),
+            "price_source_at_entry": "real",
             "outcome": "OPEN",
             "max_favorable_pct": "0",
             "max_adverse_pct": "0",
