@@ -35,6 +35,7 @@ OWNER_ONLY_COMMANDS = {
     "scan-now",
     "close-profitable",
     "force-trade",
+    "force-sell",
 }
 TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
 
@@ -475,6 +476,74 @@ def close_profitable_reply(interaction: dict[str, Any]) -> str:
     # position kept showing a stale "HOLD" card with its pre-close P&L
     # in #held-positions - found from a real screenshot: a WIN closed at
     # 09:05:20 still showed as an open +4% HOLD card a minute later.
+    spy_scanner.safe_discord_call(
+        "manual close result routing",
+        lambda: spy_scanner.sync_closed_result_channels(rows, tracker, report_state),
+    )
+    spy_scanner.write_report_state(report_state)
+    lines.append(f"**Total realized: ${total:,.0f}** across {len(closed)} position(s).")
+    return "\n".join(lines)
+
+
+def force_sell_reply(interaction: dict[str, Any]) -> str:
+    """Owner-forced manual exit - closes every currently open call or put
+    position (owner picks which side) RIGHT NOW regardless of its live
+    P&L, using the exact same evaluate_open_row/close_row/post_close
+    functions the automated scan cycle and /close-profitable both use.
+    Owner: "if i see it taking stupid trades i can force close call or
+    puts seperately." Unlike /close-profitable (which only ever locks in
+    real gains and leaves a losing position open), this is an explicit
+    override that can realize a loss on purpose - the whole point is
+    cutting a trade the owner has judged as bad before it gets worse,
+    not waiting for the rule-based exit to agree."""
+    require_ticker_admin(interaction)
+    call_or_put = str(option_value(interaction, "direction", "")).strip().lower()
+    if call_or_put not in ("call", "put"):
+        raise ValueError("direction must be 'call' or 'put'.")
+
+    timestamp = spy_scanner.now_ct()
+    rows = spy_scanner.read_log()
+    open_positions = [
+        row for row in spy_scanner.open_rows(rows)
+        if str(row.get("call_or_put", "")).strip().lower() == call_or_put
+    ]
+    if not open_positions:
+        return f"No open {call_or_put} positions right now - nothing to close."
+
+    quotes = spy_scanner.get_quotes(spy_scanner.symbols_for_rows(open_positions), include_greeks=True)
+    spot = spy_scanner.get_quote(spy_scanner.TICKER)
+    spot_price = spy_scanner.as_float(spot.get("last")) if spot else None
+
+    closed: list[tuple[dict[str, str], dict[str, Any], str, float]] = []
+    for row in open_positions:
+        evaluation = spy_scanner.evaluate_open_row(row, quotes, timestamp, underlying_spot_price=spot_price)
+        pl_dollars = spy_scanner.as_float(evaluation.get("pl_dollars"), 0.0) or 0.0
+        manual_evaluation = {
+            **evaluation,
+            "signal": "MANUAL CLOSE",
+            "note": f"Manually force-closed via /force-sell ({call_or_put}, owner override).",
+        }
+        outcome = spy_scanner.close_row(row, manual_evaluation, timestamp)
+        # See close_profitable_reply's identical comment - close_row does
+        # NOT write last_signal itself.
+        row["last_signal"] = "MANUAL CLOSE"
+        closed.append((row, manual_evaluation, outcome, pl_dollars))
+
+    spy_scanner.write_log(rows)
+
+    tracker = spy_scanner.initialize_discord()
+    report_state = spy_scanner.read_report_state()
+    lines = [f"✅ **Force-closed {len(closed)} open {call_or_put} position(s)**"]
+    total = 0.0
+    for row, evaluation, outcome, pl_dollars in closed:
+        total += pl_dollars
+        spy_scanner.safe_discord_call(
+            "manual close routing",
+            lambda r=row, e=evaluation: spy_scanner.post_close(r, e, tracker, report_state),
+        )
+        lines.append(f"- {row.get('play_type')} {row.get('option_symbol')}: {outcome} ${pl_dollars:,.0f}")
+    # See close_profitable_reply's identical comment - post_close alone
+    # leaves a stale HOLD card sitting in #held-positions.
     spy_scanner.safe_discord_call(
         "manual close result routing",
         lambda: spy_scanner.sync_closed_result_channels(rows, tracker, report_state),
@@ -960,6 +1029,10 @@ def process_command(interaction: dict[str, Any]) -> None:
         elif name == "force-trade":
             patch_original(
                 application_id, token, content=force_trade_reply(interaction)
+            )
+        elif name == "force-sell":
+            patch_original(
+                application_id, token, content=force_sell_reply(interaction)
             )
         elif name == "chart":
             days = int(option_value(interaction, "days", 90))
