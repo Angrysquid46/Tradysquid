@@ -34,6 +34,7 @@ OWNER_ONLY_COMMANDS = {
     "clear-chat-history",
     "scan-now",
     "close-profitable",
+    "force-trade",
 }
 TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
 
@@ -483,6 +484,94 @@ def close_profitable_reply(interaction: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def force_trade_reply(interaction: dict[str, Any]) -> str:
+    """Owner-forced manual entry - finds the best real SPY 0DTE contract
+    matching the requested direction using the exact same contract-
+    selection standards SPY_0DTE already uses (delta band, liquidity,
+    price cap - scan_spy_0dte_candidates, unchanged), tagged with its
+    own play_type (SPY_MANUAL) so it's tracked independently from the
+    two automated strategies. Opened through the exact same real
+    functions a scan-driven entry uses (candidate_to_row/post_new_trade/
+    sync_open_trade_cards), then managed by the exact same live exit
+    rule every SPY_0DTE trade uses (spy_0dte_exit_signal, via
+    evaluate_open_row - SPY_MANUAL is in SPY_0DTE_PLAY_TYPES) - owner:
+    "the traders open the best position they can find and then proceeds
+    to go based off the traders rules." evolve_bot is untouched - owner:
+    "exclude ai bot because its a controlled test."
+
+    Deliberately skips entry_window_blocked/earnings-blackout - those
+    are timing/quality preferences a scan applies to itself, and "force"
+    means doing it right now regardless. Still respects the real
+    ticker-wide exposure cap and the same-contract cooldown
+    (apply_ticker_exposure_cap/recently_tracked) - those are hard risk-
+    capacity/dedup limits, not timing preferences, and a manual command
+    has no more business blowing through them than a scan does."""
+    require_ticker_admin(interaction)
+    call_or_put = str(option_value(interaction, "direction", "")).strip().lower()
+    if call_or_put not in ("call", "put"):
+        raise ValueError("direction must be 'call' or 'put'.")
+
+    timestamp = spy_scanner.now_ct()
+    rows = spy_scanner.read_log()
+    spot = spy_scanner.get_quote(spy_scanner.TICKER)
+    spot_price = spy_scanner.as_float(spot.get("last")) if spot else None
+    if spot_price is None:
+        return "Could not get a current SPY quote - nothing forced."
+
+    today_str = timestamp.date().isoformat()
+    if today_str not in spy_scanner.get_expirations(spy_scanner.TICKER):
+        return "No same-day SPY expiration listed today - nothing to force."
+
+    allowed_strikes = set(
+        spy_scanner.filter_strikes(spy_scanner.get_strikes(spy_scanner.TICKER, today_str), spot_price)
+    )
+    raw_chain = spy_scanner.get_chain(spy_scanner.TICKER, today_str)
+    pool = [
+        option for option in raw_chain
+        if option.get("option_type") == call_or_put and float(option.get("strike", -1)) in allowed_strikes
+    ]
+    fake_context = {
+        "regime": "BULLISH / CONTROLLED" if call_or_put == "call" else "BEARISH / CONTROLLED",
+        "reason": "Manually forced via /force-trade.",
+    }
+    candidates = spy_scanner.scan_spy_0dte_candidates(
+        pool, call_or_put, today_str, spot_price, fake_context, play_type=spy_scanner.SPY_MANUAL_PLAY_TYPE
+    )
+    if not candidates:
+        return f"No real {call_or_put} contract cleared the delta/liquidity/price filters right now - nothing forced."
+
+    candidates.sort(key=lambda c: c.get("score", 0), reverse=True)
+    eligible = [c for c in candidates if not spy_scanner.recently_tracked(rows, c, timestamp)]
+    selected = spy_scanner.apply_ticker_exposure_cap(eligible, rows, spy_scanner.TICKER)
+    if not selected:
+        return "Ticker exposure cap is already full, or every real candidate is on cooldown - nothing forced."
+
+    best = selected[0]
+    row = spy_scanner.candidate_to_row(best, rows, timestamp, market_condition="MANUAL FORCE")
+    rows.append(row)
+    spy_scanner.write_log(rows)
+
+    tracker = spy_scanner.initialize_discord()
+    report_state = spy_scanner.read_report_state()
+    spy_scanner.safe_discord_call(
+        "forced trade post", lambda: spy_scanner.post_new_trade(row, tracker, report_state)
+    )
+    quotes = spy_scanner.get_quotes([row["option_symbol"]], include_greeks=True)
+    evaluation = spy_scanner.evaluate_open_row(row, quotes, timestamp, underlying_spot_price=spot_price)
+    spy_scanner.safe_discord_call(
+        "forced trade board sync",
+        lambda: spy_scanner.sync_open_trade_cards(row, tracker, report_state, evaluation),
+    )
+    spy_scanner.write_report_state(report_state)
+
+    return (
+        f"✅ **Forced {call_or_put.upper()} entry: {row['trade_id']}**\n"
+        f"SPY {row['strike']} {call_or_put.upper()} @ ${row['entry_price']} "
+        f"(delta {row['delta_at_entry']}, risk ${row['max_risk']}) - now managed under standard SPY_0DTE "
+        f"exit rules (stop {spy_scanner.SPY_0DTE_STOP_PCT * 100:.0f}% / target {spy_scanner.SPY_0DTE_TARGET_PCT * 100:.0f}%)."
+    )
+
+
 def clear_chat_history_reply(interaction: dict[str, Any]) -> str:
     require_ticker_admin(interaction)
     confirm = str(option_value(interaction, "confirm", "")).strip()
@@ -867,6 +956,10 @@ def process_command(interaction: dict[str, Any]) -> None:
         elif name == "close-profitable":
             patch_original(
                 application_id, token, content=close_profitable_reply(interaction)
+            )
+        elif name == "force-trade":
+            patch_original(
+                application_id, token, content=force_trade_reply(interaction)
             )
         elif name == "chart":
             days = int(option_value(interaction, "days", 90))

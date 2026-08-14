@@ -138,15 +138,17 @@ MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.25"))
 # band, own stop/target, own signal - nothing here is read by any other
 # play type, and nothing above is read by this one.
 SPY_0DTE_TICKER = "SPY"
-SPY_0DTE_PLAY_TYPES = ("SPY_0DTE_1M", "SPY_0DTE_5M")
+SPY_MANUAL_PLAY_TYPE = "SPY_MANUAL"
+SPY_0DTE_PLAY_TYPES = ("SPY_0DTE_1M", "SPY_0DTE_5M", SPY_MANUAL_PLAY_TYPE)
 
 
 def is_spy_0dte_play_type(play_type: str | None) -> bool:
     """True for either independently-tracked SPY 0DTE variant (1-minute or
-    5-minute opening-range bar interval) - they share every exit rule, risk
-    cap, and delta band, differing only in entry-signal bar interval, so
-    every place that branches on "is this a SPY 0DTE trade" should treat
-    both the same way rather than re-listing both strings each time."""
+    5-minute opening-range bar interval) or a manually-forced entry
+    (SPY_MANUAL - see /force-trade) - all three share every exit rule, risk
+    cap, and delta band, so every place that branches on "is this a SPY
+    0DTE trade" should treat them the same way rather than re-listing each
+    string each time."""
     return play_type in SPY_0DTE_PLAY_TYPES
 
 
@@ -4244,12 +4246,14 @@ def evaluate_open_row(
     if is_spy_ratchet_play_type(play_type):
         return evaluate_open_spy_ratchet_row(row, quotes, timestamp)
 
-    if play_type not in ("SPY_0DTE_1M", "SPY_0DTE_5M"):
+    if not is_spy_0dte_play_type(play_type):
         # Every play type this system opens is one of the two independently
-        # tracked SPY 0DTE strategies (or SPY Key-Levels / SPY Expansion-
-        # Level, handled above) - anything else (including the bare
-        # "SPY_0DTE" from before the 1m/5m split) is a historical row from a
-        # retired strategy and has nothing live to evaluate against.
+        # tracked SPY 0DTE strategies, a manually-forced entry (SPY_MANUAL -
+        # see /force-trade, which shares this exact exit rule "based off the
+        # trader's rules" per owner direction), or SPY Key-Levels / SPY
+        # Expansion-Level (handled above) - anything else (including the
+        # bare "SPY_0DTE" from before the 1m/5m split) is a historical row
+        # from a retired strategy and has nothing live to evaluate against.
         return {
             "signal": "HOLD",
             "note": f"Unrecognized or retired play_type {play_type!r}; nothing to evaluate.",
