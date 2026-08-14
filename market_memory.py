@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS features (
     macd_line REAL, macd_signal REAL, macd_histogram REAL, macd_color TEXT,
     rsi_14 REAL,
     atr_14 REAL, atr_percentile REAL,
+    adx_14 REAL, plus_di_14 REAL, minus_di_14 REAL, trend_strength TEXT, trend_direction_di TEXT,
     bb_upper REAL, bb_mid REAL, bb_lower REAL, bb_width_pct REAL,
     relative_volume REAL,
     higher_high INTEGER, higher_low INTEGER, lower_high INTEGER, lower_low INTEGER,
@@ -435,6 +436,64 @@ def _true_range_series(highs: list[float], lows: list[float], closes: list[float
     ]
 
 
+def _adx_series(
+    highs: list[float], lows: list[float], closes: list[float], period: int = 14
+) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    """Wilder's ADX/+DI/-DI - the industry-standard trend-STRENGTH
+    measure, genuinely different from trend_label (which only reads
+    DIRECTION off moving-average order, never how strongly or weakly a
+    trend is actually pressing). +DI/-DI say which direction has
+    control; ADX (built from how much they diverge, smoothed) says how
+    strong that control is, independent of direction - a market can be
+    strongly trending down just as easily as strongly trending up.
+    Conventional reading: ADX < 20 no real trend (choppy/ranging), 20-25
+    an emerging trend, 25-50 a real trend, 50+ a strong-to-extreme trend.
+    Smoothed the same way this module's own ATR already is (a plain
+    rolling average of the underlying series, not true Wilder
+    exponential smoothing) for one consistent convention across every
+    indicator here, not a second, different smoothing rule. Aligned to
+    the SAME index space as every other series in this cache - index i
+    is None until enough history exists, real from there on, causal
+    (never looks ahead)."""
+    n = len(closes)
+    plus_dm = [0.0] * n
+    minus_dm = [0.0] * n
+    for i in range(1, n):
+        up_move = highs[i] - highs[i - 1]
+        down_move = lows[i - 1] - lows[i]
+        plus_dm[i] = up_move if (up_move > down_move and up_move > 0) else 0.0
+        minus_dm[i] = down_move if (down_move > up_move and down_move > 0) else 0.0
+
+    true_ranges = [0.0] + _true_range_series(highs, lows, closes)  # re-aligned to bars' own indices
+    smoothed_tr = _simple_moving_average_series(true_ranges, period)
+    smoothed_plus_dm = _simple_moving_average_series(plus_dm, period)
+    smoothed_minus_dm = _simple_moving_average_series(minus_dm, period)
+
+    plus_di: list[float | None] = [None] * n
+    minus_di: list[float | None] = [None] * n
+    dx: list[float | None] = [None] * n
+    for i in range(n):
+        tr, pdm, mdm = smoothed_tr[i], smoothed_plus_dm[i], smoothed_minus_dm[i]
+        if tr is None or pdm is None or mdm is None or tr == 0:
+            continue
+        plus_di[i] = 100 * pdm / tr
+        minus_di[i] = 100 * mdm / tr
+        di_sum = plus_di[i] + minus_di[i]
+        dx[i] = (100 * abs(plus_di[i] - minus_di[i]) / di_sum) if di_sum > 0 else 0.0
+
+    adx = _simple_moving_average_series([value if value is not None else 0.0 for value in dx], period)
+    # A DX value only exists once period bars of history exist for it,
+    # so the FIRST `period` entries of `dx` are placeholder zeros, not
+    # real - the ADX smoothing window must never straddle that boundary,
+    # or the earliest real ADX readings would be silently diluted toward
+    # zero by fake leading zeros.
+    first_real_dx = next((i for i, v in enumerate(dx) if v is not None), n)
+    for i in range(min(first_real_dx + period, n)):
+        adx[i] = None
+
+    return adx, plus_di, minus_di
+
+
 def _build_series_cache(bars: list[sqlite3.Row]) -> dict[str, Any]:
     """Precomputes every moving-average-family series ONCE for the whole
     bars list, instead of compute_features_for_window's original
@@ -508,6 +567,8 @@ def _build_series_cache(bars: list[sqlite3.Row]) -> dict[str, Any]:
     true_ranges = _true_range_series(highs, lows, closes)  # true_ranges[i] is the true range ending at bars[i+1]
     atr_14 = [None] + _simple_moving_average_series(true_ranges, 14)  # re-align to bars' own indices
 
+    adx_14, plus_di_14, minus_di_14 = _adx_series(highs, lows, closes, 14)
+
     return {
         "closes": closes, "highs": highs, "lows": lows, "volumes": volumes,
         "sma_20": sma_20, "sma_50": sma_50, "sma_200": sma_200,
@@ -515,6 +576,7 @@ def _build_series_cache(bars: list[sqlite3.Row]) -> dict[str, Any]:
         "macd_line": macd_line, "macd_signal": macd_signal, "macd_histogram": macd_histogram,
         "macd_histogram_previous": macd_histogram_previous,
         "atr_14": atr_14,
+        "adx_14": adx_14, "plus_di_14": plus_di_14, "minus_di_14": minus_di_14,
     }
 
 
@@ -547,6 +609,9 @@ def compute_features_for_window(
         bb_window = closes_full[max(0, index - 19):index + 1]
         bb_upper, bb_mid, bb_lower = s.bollinger_bands(bb_window, 20, 2.0)
         atr_percentile = _atr_percentile_from_series(cache["atr_14"], index, atr_14)
+        adx_14 = cache["adx_14"][index]
+        plus_di_14 = cache["plus_di_14"][index]
+        minus_di_14 = cache["minus_di_14"][index]
         prior_sma_50 = cache["sma_50"][index - 1] if index >= 1 else None
         prior_sma_200 = cache["sma_200"][index - 1] if index >= 1 else None
         volume_window = volumes_full[max(0, index - 20):index]
@@ -581,6 +646,8 @@ def compute_features_for_window(
         atr_14 = s.average_true_range(highs, lows, closes, 14)
         atr_percentile = _atr_percentile(bars, index, atr_14)
         bb_upper, bb_mid, bb_lower = s.bollinger_bands(closes, 20, 2.0)
+        adx_series, plus_di_series, minus_di_series = _adx_series(highs, lows, closes, 14)
+        adx_14, plus_di_14, minus_di_14 = adx_series[-1], plus_di_series[-1], minus_di_series[-1]
 
         prior_sma_50 = prior_sma_200 = None
         if index >= 1:
@@ -617,6 +684,33 @@ def compute_features_for_window(
     long_term_trend = _trend_direction(sma_50, sma_200)
     trend_label = f"SHORT:{short_term_trend} MEDIUM:{medium_term_trend} LONG:{long_term_trend}"
 
+    # ADX/+DI/-DI - a genuinely SEPARATE read from trend_label above:
+    # trend_label says which way moving averages are stacked, ADX says
+    # how hard the market is actually pressing in that direction right
+    # now, independent of direction itself. +DI/-DI (which side has
+    # control) is where "direction" comes from here, not trend_label's
+    # MA-order read - they're two different definitions of "direction"
+    # and can legitimately disagree (e.g. MAs still stacked bullish from
+    # an old move while +DI/-DI already show sellers back in control).
+    trend_direction_di = "UNKNOWN"
+    if plus_di_14 is not None and minus_di_14 is not None:
+        if plus_di_14 > minus_di_14:
+            trend_direction_di = "BULLISH"
+        elif minus_di_14 > plus_di_14:
+            trend_direction_di = "BEARISH"
+        else:
+            trend_direction_di = "NEUTRAL"
+    if adx_14 is None:
+        trend_strength = "UNKNOWN"
+    elif adx_14 < 20:
+        trend_strength = "NONE"
+    elif adx_14 < 25:
+        trend_strength = "EMERGING"
+    elif adx_14 < 50:
+        trend_strength = "STRONG"
+    else:
+        trend_strength = "VERY_STRONG"
+
     higher_high = higher_low = lower_high = lower_low = None
     if index >= 1:
         prior = bars[index - 1]
@@ -651,6 +745,8 @@ def compute_features_for_window(
         "macd_line": macd_line, "macd_signal": macd_signal,
         "macd_histogram": macd_current, "macd_color": macd_color,
         "rsi_14": rsi_14, "atr_14": atr_14, "atr_percentile": atr_percentile,
+        "adx_14": adx_14, "plus_di_14": plus_di_14, "minus_di_14": minus_di_14,
+        "trend_strength": trend_strength, "trend_direction_di": trend_direction_di,
         "bb_upper": bb_upper, "bb_mid": bb_mid, "bb_lower": bb_lower, "bb_width_pct": bb_width_pct,
         "relative_volume": relative_volume,
         "higher_high": higher_high, "higher_low": higher_low,
@@ -752,13 +848,14 @@ def store_features(conn: sqlite3.Connection, ticker: str, timeframe: str, bar_ti
         INSERT OR REPLACE INTO features (
             ticker, timeframe, bar_time, sma_20, sma_50, sma_200, ema_9, ema_20, ema_50, ema_200,
             macd_line, macd_signal, macd_histogram, macd_color, rsi_14, atr_14, atr_percentile,
+            adx_14, plus_di_14, minus_di_14, trend_strength, trend_direction_di,
             bb_upper, bb_mid, bb_lower, bb_width_pct, relative_volume,
             higher_high, higher_low, lower_high, lower_low, trend_run_length,
             inside_bar, outside_bar, nr7, gap_pct,
             golden_cross, death_cross, price_above_sma_200, price_above_ema_200,
             short_term_trend, medium_term_trend, long_term_trend, trend_label,
             market_condition, computed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             ticker, timeframe, bar_time,
@@ -766,6 +863,8 @@ def store_features(conn: sqlite3.Connection, ticker: str, timeframe: str, bar_ti
             features["ema_9"], features["ema_20"], features["ema_50"], features["ema_200"],
             features["macd_line"], features["macd_signal"], features["macd_histogram"], features["macd_color"],
             features["rsi_14"], features["atr_14"], features["atr_percentile"],
+            features["adx_14"], features["plus_di_14"], features["minus_di_14"],
+            features["trend_strength"], features["trend_direction_di"],
             features["bb_upper"], features["bb_mid"], features["bb_lower"], features["bb_width_pct"],
             features["relative_volume"],
             features["higher_high"], features["higher_low"], features["lower_high"], features["lower_low"],
@@ -994,6 +1093,7 @@ FEATURE_COLUMNS = (
     "sma_20", "sma_50", "sma_200", "ema_9", "ema_20", "ema_50", "ema_200",
     "macd_line", "macd_signal", "macd_histogram", "macd_color",
     "rsi_14", "atr_14", "atr_percentile",
+    "adx_14", "plus_di_14", "minus_di_14", "trend_strength", "trend_direction_di",
     "bb_upper", "bb_mid", "bb_lower", "bb_width_pct", "relative_volume",
     "higher_high", "higher_low", "lower_high", "lower_low", "trend_run_length",
     "inside_bar", "outside_bar", "nr7", "gap_pct",
