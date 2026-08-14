@@ -230,6 +230,24 @@ def test_close_open_positions_posts_a_real_discord_alert_on_close():
     assert "STOP OUT" in content
 
 
+def test_post_trade_card_sends_a_real_embed_not_just_plain_content():
+    """Owner: "they dont have the background around each message?" -
+    plain markdown content alone never renders with Discord's colored-
+    border card look; a real embeds payload does. spy_scanner.discord_card
+    parses this same "## title / ### section" markdown the card already
+    uses, so no format change was needed - just actually sending the
+    parsed result as an embed."""
+    with mock.patch.object(engine.discord_post, "upsert_message") as fake_upsert:
+        engine._post_trade_card("EVOLVE-20260814-001", "## \U0001F7E6 SPY_EVOLVE #1 · OPEN · CALL\n### Position\nBUY 1 SPY 778 CALL")
+
+    fake_upsert.assert_called_once()
+    _, kwargs = fake_upsert.call_args
+    embed = kwargs["embed"]
+    assert embed["title"] == "\U0001F7E6 SPY_EVOLVE #1 · OPEN · CALL"
+    assert embed["fields"][0]["name"] == "Position"
+    assert embed["fields"][0]["value"] == "BUY 1 SPY 778 CALL"
+
+
 def test_close_open_positions_upserts_a_live_held_position_card_when_not_closing():
     """Owner: "why can I track its live pl like all the other stuff?" -
     a position that's evaluated but doesn't close yet should get its
@@ -542,6 +560,11 @@ def test_try_open_new_position_posts_a_real_discord_alert_on_entry():
     journal_call_args = fake_post_journal.call_args[0]
     assert journal_call_args[0] == row["trade_id"]
     assert "Thesis" in journal_call_args[1]
+    # Journal entries are real embeds too, not plain text - owner:
+    # "using as many boxes as you need to sperate messages in the same log."
+    journal_embed = fake_post_journal.call_args[1]["embed"]
+    assert journal_embed["title"].startswith("SPY_EVOLVE #")
+    assert "Thesis" in journal_embed["description"]
 
 
 def test_try_open_new_position_leaves_market_features_blank_when_unavailable():
