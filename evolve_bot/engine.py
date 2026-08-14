@@ -147,10 +147,7 @@ _STATUS_EMOJI = {
 
 
 def _journal_link(trade_id: str) -> str:
-    thread_id = discord_post.get_thread("trades", trade_id)
-    if not thread_id or not discord_post.GUILD_ID:
-        return ""
-    return f"https://discord.com/channels/{discord_post.GUILD_ID}/{thread_id}"
+    return discord_post.get_journal_link(trade_id, event="open")
 
 
 def _format_expiration(expiration_iso: str) -> str:
@@ -187,8 +184,9 @@ def _trade_card_text(
     anything else can be in journal," then later: "only need signal,
     amounts, expiration in 00/00/00 format... ENTRY / MARK / STOPLOSS /
     OPEN PL." The full thesis/model-narrative/market-context detail
-    lives in the trade's own thread instead (see _trade_journal_text +
-    discord_post.create_thread)."""
+    lives in #evolve-journal instead - a genuinely separate channel,
+    not a thread hanging off this card (see _trade_journal_text +
+    discord_post.post_journal_entry)."""
     trade_id = row.get("trade_id", "")
     sequence = trade_id.split("-")[-1] if trade_id else "?"
     kind = (row.get("call_or_put") or "").upper()
@@ -240,10 +238,17 @@ def _trade_card_text(
 
 
 def _trade_journal_text(row: dict[str, str]) -> str:
-    """Everything that used to be crammed into the trade card, moved
-    into the trade's own thread instead - the reasoning behind the
-    entry, not just its current numbers."""
+    """Everything that used to be crammed into the trade card, posted
+    into #evolve-journal instead - the reasoning behind the entry, not
+    just its current numbers. Leads with a header identifying which
+    trade this box belongs to, since the journal is one shared,
+    continuous log ("using as many boxes as you need to separate
+    messages in the same log") rather than one thread per trade."""
+    trade_id = row.get("trade_id", "")
+    sequence = trade_id.split("-")[-1] if trade_id else "?"
+    kind = (row.get("call_or_put") or "").upper()
     lines = [
+        f"**SPY_EVOLVE #{sequence} · {kind} {row.get('strike', '')} · {_format_expiration(row.get('expiration', ''))}**",
         f"**Thesis:** {row.get('thesis') or 'n/a'}",
         f"**Model:** {row.get('model_narrative_at_entry') or 'not scored'}",
         f"**Regime:** {row.get('market_regime') or 'n/a'} · **Condition:** {row.get('market_condition_at_entry') or 'n/a'}",
@@ -264,9 +269,11 @@ def _trade_journal_text(row: dict[str, str]) -> str:
 
 
 def _post_new_trade_card_and_journal(row: dict[str, str]) -> None:
-    """Posts the compact OPEN card, then creates that trade's own thread
-    (holding the detail the card no longer shows - see
-    _trade_journal_text) and re-posts the card once more so it can
+    """Posts the compact OPEN card, then posts the full reasoning as its
+    own permanent entry in #evolve-journal - a genuinely separate
+    channel, not a thread hanging off this card (an earlier design used
+    threads; owner: "i said to have its own journal not more spam on
+    the trade wall") - and re-posts the card once more so it can
     include the journal link. Two upserts on open only, not per cycle -
     upsert_message PATCHes in place, so this costs one extra edit, not
     an extra visible message."""
@@ -275,13 +282,9 @@ def _post_new_trade_card_and_journal(row: dict[str, str]) -> None:
         return
     _post_trade_card(trade_id, _trade_card_text(row, "OPEN"))
     try:
-        message_id = discord_post.get_message_id("trades", f"trade:{trade_id}")
-        if message_id:
-            thread_name = f"SPY_EVOLVE #{trade_id.split('-')[-1]} {row.get('call_or_put','').upper()} {row.get('strike','')}"
-            thread_id = discord_post.create_thread("trades", trade_id, message_id, thread_name)
-            if thread_id:
-                discord_post.send_thread_message(thread_id, _trade_journal_text(row))
-                _post_trade_card(trade_id, _trade_card_text(row, "OPEN"))
+        link = discord_post.post_journal_entry(trade_id, _trade_journal_text(row), event="open")
+        if link:
+            _post_trade_card(trade_id, _trade_card_text(row, "OPEN"))
     except discord_post.DiscordPostError:
         pass
 

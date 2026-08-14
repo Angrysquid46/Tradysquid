@@ -61,9 +61,9 @@ def test_ensure_channels_creates_category_and_channels_when_none_exist():
     ):
         channels = discord_post.ensure_channels()
 
-    assert set(channels.keys()) == {"dashboard", "trades", "reviews"}
-    # category created once, then 3 channels - 4 POST calls total
-    assert len(created) == 4
+    assert set(channels.keys()) == {"dashboard", "trades", "journal", "reviews"}
+    # category created once, then 4 channels - 5 POST calls total
+    assert len(created) == 5
     assert created[0]["name"] == discord_post.CATEGORY_NAME
 
 
@@ -73,6 +73,7 @@ def test_ensure_channels_reuses_existing_category_and_channels_without_duplicati
         {"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
         {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
         {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+        {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
         {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"},
     ]
     post_calls = []
@@ -90,7 +91,7 @@ def test_ensure_channels_reuses_existing_category_and_channels_without_duplicati
     ):
         channels = discord_post.ensure_channels()
 
-    assert channels == {"dashboard": "chan-d", "trades": "chan-t", "reviews": "chan-r"}
+    assert channels == {"dashboard": "chan-d", "trades": "chan-t", "journal": "chan-j", "reviews": "chan-r"}
     assert post_calls == []  # nothing created - everything already existed
 
 
@@ -106,6 +107,7 @@ def test_ensure_channels_result_is_cached_across_calls():
                 {"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
                 {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                 {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
                 {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"},
             ],
         )
@@ -133,6 +135,7 @@ def test_post_message_sends_real_content_to_the_right_channel():
                     {"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
                     {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                    {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"},
                 ],
             )
@@ -165,6 +168,7 @@ def test_post_file_uploads_a_real_png_with_multipart():
                     {"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
                     {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                    {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"},
                 ],
             )
@@ -200,6 +204,7 @@ def test_upsert_message_posts_fresh_with_no_prior_tracked_message():
                 return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             posted.append((method, url))
             return _fake_response(200, {"id": "msg-1"})
@@ -235,6 +240,7 @@ def test_upsert_message_patches_the_existing_card_in_place():
                 return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             calls.append((method, url))
             return _fake_response(200, {"id": "old-msg-1"})
@@ -265,6 +271,7 @@ def test_upsert_message_falls_back_to_a_fresh_post_when_the_tracked_message_is_g
                 return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             if method == "PATCH":
                 raise discord_post.DiscordPostError("Discord HTTP 404 for /channels/chan-t/messages/already-gone: not found")
@@ -294,6 +301,7 @@ def test_upsert_file_keeps_one_card_per_card_key():
             return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
                                          {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                          {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
                                          {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
 
         def fake_post(url, headers=None, data=None, files=None, timeout=None):
@@ -330,6 +338,7 @@ def test_upsert_file_patches_the_existing_card_in_place():
                 return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             calls.append((method, url, data))
             return _fake_response(200, {"id": "old-file-msg"})
@@ -356,7 +365,10 @@ def test_upsert_file_patches_the_existing_card_in_place():
         assert saved_state["dashboard:stats_card"] == "old-file-msg"  # same id, never churned
 
 
-def test_create_thread_posts_and_remembers_the_thread_id():
+def test_post_journal_entry_posts_to_the_journal_channel_and_remembers_the_id():
+    """Owner: "i said to have its own journal not more spam on the
+    trade wall" - the journal is a real, separate channel (#evolve-
+    journal), not a thread hanging off a trade card."""
     _reset_cache()
     with tempfile.TemporaryDirectory() as temp:
         state_path = Path(temp) / "discord_message_state.json"
@@ -367,9 +379,10 @@ def test_create_thread_posts_and_remembers_the_thread_id():
                 return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             calls.append((method, url, json))
-            return _fake_response(200, {"id": "thread-1"})
+            return _fake_response(200, {"id": "journal-msg-1"})
 
         with (
             mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
@@ -377,62 +390,62 @@ def test_create_thread_posts_and_remembers_the_thread_id():
             mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
             mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
         ):
-            thread_id = discord_post.create_thread("trades", "EVOLVE-1", "msg-1", "SPY_EVOLVE #1 CALL 600")
+            link = discord_post.post_journal_entry("EVOLVE-1", "**Thesis:** bullish breakout")
 
-        assert thread_id == "thread-1"
         assert any(
-            method == "POST" and url == f"{discord_post.API_BASE}/channels/chan-t/messages/msg-1/threads"
+            method == "POST" and url == f"{discord_post.API_BASE}/channels/chan-j/messages"
             for method, url, _ in calls
         )
+        assert link == "https://discord.com/channels/123/chan-j/journal-msg-1"
         saved_state = json.loads(state_path.read_text(encoding="utf-8"))
-        assert saved_state["trades:thread:EVOLVE-1"] == "thread-1"
+        assert saved_state["journal:open:EVOLVE-1"] == "journal-msg-1"
 
 
-def test_create_thread_returns_empty_string_when_disabled():
+def test_post_journal_entry_returns_empty_string_when_disabled():
     with mock.patch.object(discord_post, "BOT_TOKEN", ""), mock.patch.object(discord_post, "GUILD_ID", ""):
-        assert discord_post.create_thread("trades", "EVOLVE-1", "msg-1", "name") == ""
+        assert discord_post.post_journal_entry("EVOLVE-1", "text") == ""
 
 
-def test_get_thread_reads_back_what_create_thread_stored():
+def test_get_journal_link_reads_back_what_post_journal_entry_stored():
     _reset_cache()
     with tempfile.TemporaryDirectory() as temp:
         state_path = Path(temp) / "discord_message_state.json"
-        state_path.write_text(json.dumps({"trades:thread:EVOLVE-1": "thread-9"}), encoding="utf-8")
+        state_path.write_text(json.dumps({"journal:open:EVOLVE-1": "journal-msg-9"}), encoding="utf-8")
+
+        def fake_request(method, url, headers=None, json=None, timeout=None):
+            return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
+                                         {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
+
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+            mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+        ):
+            assert discord_post.get_journal_link("EVOLVE-1") == "https://discord.com/channels/123/chan-j/journal-msg-9"
+
+
+def test_get_journal_link_returns_empty_string_with_no_entry_yet():
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
         with (
             mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
             mock.patch.object(discord_post, "GUILD_ID", "123"),
             mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
         ):
-            assert discord_post.get_thread("trades", "EVOLVE-1") == "thread-9"
+            assert discord_post.get_journal_link("EVOLVE-1") == ""
 
 
-def test_get_thread_and_get_message_id_never_touch_disk_when_disabled():
+def test_get_journal_link_never_touches_disk_when_disabled():
     """A test (or any caller) without real credentials must never read
-    real production state off disk just by asking for a thread/message
-    id - matches the same enabled()-gates-everything contract every
-    other function in this module already follows."""
+    real production state off disk just by asking for a journal link -
+    matches the same enabled()-gates-everything contract every other
+    function in this module already follows."""
     with mock.patch.object(discord_post, "BOT_TOKEN", ""), mock.patch.object(discord_post, "GUILD_ID", ""):
         with mock.patch.object(discord_post, "_load_message_state") as fake_load:
-            assert discord_post.get_thread("trades", "EVOLVE-1") == ""
-            assert discord_post.get_message_id("trades", "trade:EVOLVE-1") == ""
+            assert discord_post.get_journal_link("EVOLVE-1") == ""
         fake_load.assert_not_called()
-
-
-def test_send_thread_message_posts_into_the_thread():
-    _reset_cache()
-    calls = []
-
-    def fake_request(method, url, headers=None, json=None, timeout=None):
-        calls.append((method, url, json))
-        return _fake_response(200, {"id": "journal-msg-1"})
-
-    with (
-        mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
-        mock.patch.object(discord_post, "GUILD_ID", "123"),
-        mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
-    ):
-        result = discord_post.send_thread_message("thread-1", "**Thesis:** bullish breakout")
-
-    assert result == {"id": "journal-msg-1"}
-    assert calls == [("POST", f"{discord_post.API_BASE}/channels/thread-1/messages",
-                       {"content": "**Thesis:** bullish breakout", "allowed_mentions": {"parse": []}})]

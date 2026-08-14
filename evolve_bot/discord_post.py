@@ -88,11 +88,14 @@ CATEGORY_NAME = "SPY_EVOLVE"
 GUILD_CATEGORY_CHANNEL_TYPE = 4
 GUILD_TEXT_CHANNEL_TYPE = 0
 
-# key -> (channel name, topic). Three channels, not the older strategies'
-# two ("<slug>-performance"/"<slug>-results") - the evolve bot has two
+# key -> (channel name, topic). Four channels - the evolve bot has two
 # extra real content types (weekly reviews, Phase 12 logic proposals)
-# that don't fit that naming, so a third channel is clearer than
-# stretching "results" to cover all of it.
+# that don't fit the older strategies' "<slug>-performance"/"<slug>-
+# results" naming, so a third channel is clearer than stretching
+# "results" to cover all of it; journal is a fourth, genuinely separate
+# from trades - owner: "i said to have its own journal not more spam on
+# the trade wall" (an earlier design used a Discord thread hanging off
+# each trade card instead of a real separate channel).
 CHANNEL_SPECS: dict[str, tuple[str, str]] = {
     "dashboard": (
         "evolve-dashboard",
@@ -100,7 +103,11 @@ CHANNEL_SPECS: dict[str, tuple[str, str]] = {
     ),
     "trades": (
         "evolve-trades",
-        "Real entry/exit alerts for the evolve bot's own live paper trades.",
+        "Compact entry/held/exit cards for the evolve bot's own live paper trades - see #evolve-journal for the reasoning behind each one.",
+    ),
+    "journal": (
+        "evolve-journal",
+        "Full trade reasoning - thesis, model score, Greeks, market context - kept separate from the compact trade cards.",
     ),
     "reviews": (
         "evolve-reviews",
@@ -309,60 +316,41 @@ def _patch_message_with_file(
     raise DiscordPostError("Discord file edit retries exhausted")
 
 
-def create_thread(channel_key: str, card_key: str, message_id: str, name: str) -> str:
-    """Creates a Discord thread off an already-posted message and
-    remembers its id in the same local state file used for message
-    tracking, keyed separately (thread: prefix) - evolve_bot's
-    scheduled cycles are each a fresh process invocation, so nothing
-    survives in memory between them; this is how a later cycle finds
-    the same thread again to link back to it or post more detail into
-    it. Owner: "only show the important stuff anything else can be in
-    journal." Fails soft: returns "" if Discord isn't configured or the
-    request fails, same contract as everything else here."""
+def post_journal_entry(trade_id: str, content: str, *, event: str = "open") -> str:
+    """Posts a permanent entry into #evolve-journal - a genuinely
+    separate channel from #evolve-trades, not a thread hanging off a
+    trade card (an earlier design used threads; owner: "i said to have
+    its own journal not more spam on the trade wall"). Never edited or
+    deleted - the journal is the running record, one box per entry.
+    Remembers the message id under a stable key so a trade card
+    rendered in a LATER, separate process (each scheduled cycle is a
+    fresh invocation) can still link straight back to it. Returns the
+    jump link, or "" if Discord isn't configured or the post failed -
+    fails soft, same contract as everything else here."""
     if not enabled():
         return ""
-    channel_id = ensure_channels()[channel_key]
     try:
-        created = _request(
-            "POST",
-            f"/channels/{channel_id}/messages/{message_id}/threads",
-            {"name": name[:100], "auto_archive_duration": 1440},
-        )
+        result = post_message("journal", content)
     except DiscordPostError:
         return ""
-    thread_id = (created or {}).get("id", "")
-    if thread_id:
-        state = _load_message_state()
-        state[f"{channel_key}:thread:{card_key}"] = thread_id
-        _save_message_state(state)
-    return thread_id
-
-
-def get_thread(channel_key: str, card_key: str) -> str:
-    if not enabled():
+    if not result or not result.get("id"):
         return ""
     state = _load_message_state()
-    return state.get(f"{channel_key}:thread:{card_key}", "")
+    state[f"journal:{event}:{trade_id}"] = result["id"]
+    _save_message_state(state)
+    channel_id = ensure_channels()["journal"]
+    return f"https://discord.com/channels/{GUILD_ID}/{channel_id}/{result['id']}"
 
 
-def get_message_id(channel_key: str, card_key: str) -> str:
-    if not enabled():
+def get_journal_link(trade_id: str, *, event: str = "open") -> str:
+    if not enabled() or not GUILD_ID:
         return ""
     state = _load_message_state()
-    return state.get(f"{channel_key}:{card_key}", "")
-
-
-def send_thread_message(thread_id: str, content: str) -> dict[str, Any] | None:
-    if not enabled() or not thread_id:
-        return None
-    try:
-        return _request(
-            "POST",
-            f"/channels/{thread_id}/messages",
-            {"content": content[:2000], "allowed_mentions": {"parse": []}},
-        )
-    except DiscordPostError:
-        return None
+    message_id = state.get(f"journal:{event}:{trade_id}")
+    if not message_id:
+        return ""
+    channel_id = ensure_channels()["journal"]
+    return f"https://discord.com/channels/{GUILD_ID}/{channel_id}/{message_id}"
 
 
 def delete_card(channel_key: str, card_key: str) -> None:
