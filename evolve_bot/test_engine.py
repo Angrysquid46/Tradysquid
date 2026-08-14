@@ -138,22 +138,22 @@ def test_trade_card_text_closed_shows_signal_and_balance_as_labeled_lines():
     assert "**Balance:** $633.00" in content
 
 
-def test_trade_card_text_includes_journal_link_when_a_thread_exists():
+def test_trade_card_text_includes_journal_link_when_an_entry_exists():
     row = tradelog.blank_row()
     row.update({"trade_id": "EVOLVE-20260812-001", "call_or_put": "call", "strike": "600", "entry_price": "0.50"})
-    with (
-        mock.patch.object(engine.discord_post, "get_thread", return_value="thread-123"),
-        mock.patch.object(engine.discord_post, "GUILD_ID", "guild-1"),
+    with mock.patch.object(
+        engine.discord_post, "get_journal_link",
+        return_value="https://discord.com/channels/guild-1/chan-j/journal-msg-1",
     ):
         content = engine._trade_card_text(row, "OPEN")
     assert "### Journal" in content
-    assert "https://discord.com/channels/guild-1/thread-123" in content
+    assert "https://discord.com/channels/guild-1/chan-j/journal-msg-1" in content
 
 
-def test_trade_card_text_omits_journal_section_with_no_thread_yet():
+def test_trade_card_text_omits_journal_section_with_no_entry_yet():
     row = tradelog.blank_row()
     row.update({"trade_id": "EVOLVE-20260812-001", "call_or_put": "call", "strike": "600", "entry_price": "0.50"})
-    with mock.patch.object(engine.discord_post, "get_thread", return_value=""):
+    with mock.patch.object(engine.discord_post, "get_journal_link", return_value=""):
         content = engine._trade_card_text(row, "OPEN")
     assert "### Journal" not in content
 
@@ -520,19 +520,17 @@ def test_try_open_new_position_posts_a_real_discord_alert_on_entry():
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=0.12),
         mock.patch.object(engine.model_scoring, "explain_score", return_value={"score": 0.71, "contributions": []}),
         mock.patch.object(engine.discord_post, "upsert_message") as fake_upsert,
-        mock.patch.object(engine.discord_post, "get_message_id", return_value="msg-1"),
-        mock.patch.object(engine.discord_post, "create_thread", return_value="thread-1") as fake_create_thread,
-        mock.patch.object(engine.discord_post, "send_thread_message") as fake_send_thread,
-        mock.patch.object(engine.discord_post, "get_thread", return_value="thread-1"),
+        mock.patch.object(engine.discord_post, "post_journal_entry", return_value="https://discord.com/channels/guild-1/chan-j/journal-msg-1") as fake_post_journal,
+        mock.patch.object(engine.discord_post, "get_journal_link", return_value="https://discord.com/channels/guild-1/chan-j/journal-msg-1"),
         mock.patch.object(engine.discord_post, "GUILD_ID", "guild-1"),
     ):
         row, _ = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
     assert row is not None
-    # Posted twice: the compact card, then again once the thread exists
-    # so the card can link to it - not a per-cycle repeat, just the
-    # one-time open sequence (upsert_message PATCHes in place, so this
-    # never creates two visible messages).
+    # Posted twice: the compact card, then again once the journal entry
+    # exists so the card can link to it - not a per-cycle repeat, just
+    # the one-time open sequence (upsert_message PATCHes in place, so
+    # this never creates two visible messages).
     assert fake_upsert.call_count == 2
     channel_key, card_key, content = fake_upsert.call_args_list[-1][0]
     assert channel_key == "trades"
@@ -540,10 +538,10 @@ def test_try_open_new_position_posts_a_real_discord_alert_on_entry():
     assert "PUT" in content
     assert "OPEN" in content
     assert "Open trade journal" in content
-    fake_create_thread.assert_called_once()
-    fake_send_thread.assert_called_once()
-    journal_content = fake_send_thread.call_args[0][1]
-    assert "Thesis" in journal_content
+    fake_post_journal.assert_called_once()
+    journal_call_args = fake_post_journal.call_args[0]
+    assert journal_call_args[0] == row["trade_id"]
+    assert "Thesis" in journal_call_args[1]
 
 
 def test_try_open_new_position_leaves_market_features_blank_when_unavailable():
