@@ -6,7 +6,23 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 import logic_proposals
+
+
+@pytest.fixture(autouse=True)
+def _no_real_active_override():
+    """Isolates every test in this file from the real, live
+    active_exit_override.json - most of these tests exercise
+    aggregation/proposal logic generally and just need a stable,
+    predictable baseline label to build fixture rows around, not
+    whatever override happens to be active in production right now.
+    Tests that specifically exercise override-detection (see
+    test_live_baseline_variant_label_uses_the_active_override_when_one_exists)
+    patch load_active_override again locally, which takes precedence."""
+    with mock.patch.object(logic_proposals.logic_state, "load_active_override", return_value=None):
+        yield
 
 
 def _row(variant_label: str, trading_day: str, outcome: str, pl_pct: float) -> dict[str, str]:
@@ -36,9 +52,25 @@ def _mixed_rows(label: str, days: list[str], win_pct: float, loss_pct: float, n_
     return rows
 
 
-def test_live_baseline_variant_label_matches_real_live_constants():
-    label = logic_proposals.live_baseline_variant_label()
-    assert label == "stop_50_target_50"
+def test_live_baseline_variant_label_matches_real_live_constants_with_no_override():
+    # The autouse fixture above already isolates from any real override.
+    assert logic_proposals.live_baseline_variant_label() == "stop_50_target_50"
+
+
+def test_live_baseline_variant_label_uses_the_active_override_when_one_exists():
+    """Regression guard for a real bug: an already-applied Phase 12
+    override kept getting "re-proposed" forever because this always
+    compared against the untouched spy_scanner default, never checking
+    whether evolve_bot had already applied something. Found from
+    LOGIC-20260813-161926 recommending stop_20_target_50 against a
+    claimed "live default" of stop_50_target_50, two days after
+    stop_20_target_50 had already been approved and applied."""
+    with mock.patch.object(
+        logic_proposals.logic_state, "load_active_override",
+        return_value={"variant_label": "stop_20_target_50", "stop_pct": 0.2, "target_pct": 0.5},
+    ):
+        label = logic_proposals.live_baseline_variant_label()
+    assert label == "stop_20_target_50"
 
 
 def test_aggregate_variant_performance_computes_real_stats_per_variant():
