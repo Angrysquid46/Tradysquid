@@ -12,9 +12,15 @@ Three real layers, all pure math on OHLCV bars (no chart images, no
 
 1. Bars - daily history goes back SPY_DAILY_HISTORY_DAYS (~2 years) in
    one backfill, refreshed incrementally after that. Intraday (5-minute)
-   history only covers TODAY per Tradier's timesales endpoint, so it
-   accumulates one real trading day at a time, every day this runs -
-   there is no way to backfill years of 5-minute bars in one shot, and
+   history is backfilled as far back as Tradier's own timesales
+   retention actually allows (confirmed live: ~2 months, not just
+   "today" - that was this module's own earlier, overly conservative
+   assumption, corrected once actually tested against the real API -
+   see backfill_historical_intraday, which detects the real boundary by
+   reading it out of Tradier's own rejection error rather than guessing
+   or hardcoding a date that would go stale). Anything older than that
+   boundary genuinely isn't retrievable at 5-minute resolution from this
+   provider - not a design choice, a real data-availability limit, and
    pretending otherwise would be dishonest about what's actually here.
 
 2. Features - SMA(20/50/200) + EMA(9/20/50/200)/MACD/RSI/ATR(+percentile
@@ -55,7 +61,7 @@ from __future__ import annotations
 import csv
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import date, datetime, time as dt_time, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -183,6 +189,117 @@ def _intraday_bar_rows(bars: list[dict[str, Any]]) -> list[tuple[str, float, flo
             s.as_float(bar.get("volume"), 0.0) or 0.0,
         ))
     return rows
+
+
+def _fetch_intraday_for_day(ticker: str, day, interval: str = "5min") -> list[dict[str, Any]]:
+    """Like spy_scanner.get_intraday_history, but for an arbitrary PAST
+    day, not hardcoded to today - that function's own "today" assumption
+    is a limitation of that specific wrapper, not of Tradier's timesales
+    endpoint itself, which does support real historical intraday data
+    (confirmed live: 2026-08-10's real 5-minute bars came back with
+    session-accurate OHLCV, not empty/synthetic). Reimplemented here
+    rather than adding a day parameter to the live wrapper spy_scanner.py
+    strategies already depend on, to keep that function's real behavior
+    completely unchanged."""
+    def et_window_str(target_day, hour, minute):
+        ct_dt = datetime.combine(target_day, dt_time(hour, minute), tzinfo=s.MARKET_TZ)
+        et_dt = ct_dt.astimezone(s.TRADIER_TIMESALES_TZ)
+        return et_dt.strftime("%Y-%m-%d %H:%M")
+
+    data = s.tradier_get(
+        "/markets/timesales",
+        {
+            "symbol": ticker,
+            "interval": interval,
+            "start": et_window_str(day, 8, 30),
+            "end": et_window_str(day, 15, 0),
+            "session_filter": "open",
+        },
+    )
+    series = data.get("series") or {}
+    values = series.get("data") if isinstance(series, dict) else None
+    if not values:
+        return []
+    return [values] if isinstance(values, dict) else list(values)
+
+
+def _intraday_history_start_boundary(ticker: str, *, today: date | None = None) -> date | None:
+    """Tradier's timesales endpoint rejects a start date before its own
+    real retention window with an explicit "must be on or after
+    YYYY-MM-DD" error - probing with a deliberately too-early date and
+    reading the real boundary out of that error is the only way to know
+    it (there's no separate endpoint that just states it), and it's
+    cheap (one request) and self-updating if Tradier's own retention
+    window ever changes, rather than a hardcoded date that would quietly
+    go stale. today is an injectable override for tests - date.today()
+    itself can't be monkeypatched (datetime.date is a C type)."""
+    import re
+
+    probe_day = (today or date.today()) - timedelta(days=3 * 365)
+    try:
+        _fetch_intraday_for_day(ticker, probe_day)
+    except s.TradierError as exc:
+        match = re.search(r"must be on or after (\d{4}-\d{2}-\d{2})", str(exc))
+        if match:
+            return date.fromisoformat(match.group(1))
+    return None
+
+
+def backfill_historical_intraday(
+    conn: sqlite3.Connection, ticker: str = "SPY", interval: str = "5min", *, today: date | None = None
+) -> dict[str, Any]:
+    """One real historical backfill pass for 5-minute bars, as far back
+    as Tradier's own timesales retention allows (confirmed live: about
+    2 months, not just "today"). Skips any date already stored before
+    ever calling the API for it, so calling this repeatedly (every
+    collection cycle, including from run_collection_cycle) is always
+    cheap once the real backfill window has been captured once - it only
+    ever does real API work for a genuinely missing trading day (a gap
+    from a missed scheduled run, for instance), never re-fetches what's
+    already there. today is an injectable override for tests."""
+    today = today or date.today()
+    timeframe = interval
+    boundary = _intraday_history_start_boundary(ticker, today=today)
+    if boundary is None:
+        return {"status": "could not determine historical boundary", "days_fetched": 0}
+
+    covered_dates = {
+        str(row["bar_time"])[:10]
+        for row in conn.execute(
+            "SELECT DISTINCT bar_time FROM bars WHERE ticker = ? AND timeframe = ?", (ticker, timeframe)
+        ).fetchall()
+    }
+
+    days_fetched = 0
+    days_with_data = 0
+    total_bars = 0
+    total_features = 0
+    total_patterns = 0
+    cursor_day = today - timedelta(days=1)  # yesterday - today is handled by the regular per-cycle fetch
+    while cursor_day >= boundary:
+        if cursor_day.weekday() < 5 and cursor_day.isoformat() not in covered_dates:
+            days_fetched += 1
+            try:
+                bars = _fetch_intraday_for_day(ticker, cursor_day, interval)
+            except s.TradierError:
+                bars = []
+            if bars:
+                days_with_data += 1
+                result = _ingest_and_process(conn, ticker, timeframe, _intraday_bar_rows(bars))
+                total_bars += result["new_bars"]
+                total_features += result["features_computed"]
+                total_patterns += result["patterns_detected"]
+        cursor_day -= timedelta(days=1)
+
+    return {
+        "status": "ok",
+        "boundary": boundary.isoformat(),
+        "trading_days_checked": days_fetched,
+        "trading_days_with_data": days_with_data,
+        "new_bars": total_bars,
+        "features_computed": total_features,
+        "patterns_detected": total_patterns,
+    }
 
 
 def store_bars(conn: sqlite3.Connection, ticker: str, timeframe: str, rows: list[tuple]) -> int:
@@ -765,8 +882,6 @@ def pattern_stats_recent_vs_all_time(
     diverged, the pattern's edge (if any) has likely shifted with the
     market's own character, and the all-time figure alone would have
     been misleading."""
-    from datetime import timedelta
-
     cutoff = (datetime.now() - timedelta(days=recent_days)).date().isoformat()
     return {
         "pattern_name": pattern_name,
@@ -811,11 +926,14 @@ def _ingest_and_process(conn: sqlite3.Connection, ticker: str, timeframe: str, r
 def run_collection_cycle(ticker: str = "SPY") -> dict[str, Any]:
     """One full incremental update: backfill/extend daily history,
     collect today's intraday bars if the market has traded today,
-    compute features + detect patterns for anything new, then backfill
-    any pattern outcomes that have now had enough time to play out.
-    Every step is INSERT OR IGNORE / only-fills-gaps, so running this
-    repeatedly (multiple times a day, or after a gap of days) is always
-    safe and never duplicates or recomputes existing data."""
+    catch up any missing historical intraday trading days still within
+    Tradier's real retention window (cheap once already caught up - see
+    backfill_historical_intraday), compute features + detect patterns
+    for anything new, then backfill any pattern outcomes that have now
+    had enough time to play out. Every step is INSERT OR IGNORE / only-
+    fills-gaps, so running this repeatedly (multiple times a day, or
+    after a gap of days) is always safe and never duplicates or
+    recomputes existing data."""
     conn = connect()
     try:
         daily_history = s.get_daily_history(ticker, days=SPY_DAILY_HISTORY_DAYS)
@@ -829,6 +947,11 @@ def run_collection_cycle(ticker: str = "SPY") -> dict[str, Any]:
         if intraday_bars:
             intraday_result = _ingest_and_process(conn, ticker, "5min", _intraday_bar_rows(intraday_bars))
 
+        try:
+            intraday_backfill_result = backfill_historical_intraday(conn, ticker, "5min")
+        except Exception as exc:
+            intraday_backfill_result = {"status": f"backfill failed: {exc}", "days_fetched": 0}
+
         daily_outcomes = backfill_pattern_outcomes(conn, ticker, "daily")
         intraday_outcomes = backfill_pattern_outcomes(conn, ticker, "5min")
 
@@ -839,6 +962,7 @@ def run_collection_cycle(ticker: str = "SPY") -> dict[str, Any]:
             "ticker": ticker,
             "daily": daily_result,
             "intraday_5min": intraday_result,
+            "intraday_historical_backfill": intraday_backfill_result,
             "outcomes_recorded": daily_outcomes + intraday_outcomes,
             "csv_exported": {"daily_rows": daily_csv_rows, "intraday_rows": intraday_csv_rows},
         }
