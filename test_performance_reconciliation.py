@@ -30,6 +30,7 @@ class FakeDiscord:
             suffix = variant["play_type"].removeprefix("SPY_RATCHET_").lower()
             self.channels[f"performance_ratchet_{suffix}"] = f"monthly-ratchet-{suffix.replace('_', '-')}"
             self.channels[f"results_ratchet_{suffix}"] = f"strategy-ratchet-{suffix.replace('_', '-')}"
+        self.channels["ratchet_leaderboard"] = "ratchet-dashboard"
         self.cards: dict[str, str] = {}
         self.channel_cards: dict[str, list[str]] = {
             channel_id: [] for channel_id in self.channels.values()
