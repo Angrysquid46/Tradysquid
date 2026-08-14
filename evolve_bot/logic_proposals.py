@@ -284,19 +284,35 @@ def _post_new_proposal_to_discord(proposal: dict[str, Any]) -> None:
     precondition for it - a Discord outage must never prevent a real,
     evidence-backed proposal from landing in the review queue file,
     which is the actual source of truth (weekly_review.py reads it
-    directly regardless of whether this post succeeds)."""
+    directly regardless of whether this post succeeds).
+
+    Upserted under one stable key, not posted fresh - only one proposal
+    can ever be pending at a time (see run_proposal_cycle's already_pending
+    check), so a "new" proposal object appearing again after a retrain
+    (which happens often now that daily data pulls are automated - see
+    #194) is usually the SAME recommendation re-surfacing with a fresh
+    hash, not new information. Owner: "it keeps spamming the same thing
+    over and over, we just need 1." Rendered as a real embed
+    (spy_scanner.discord_card) so it matches every other card's look -
+    owner: "i want them to have card formats to so they are easier for
+    me to read.\""""
     lines = [
-        f"**New Phase 12 proposal: {proposal['proposal_id']}**",
-        f"`{proposal['current']['variant']}` → `{proposal['proposed']['variant']}`",
+        f"## New Phase 12 Proposal · {proposal['proposal_id']}",
+        "### Change",
+        f"`{proposal['current']['variant']}` -> `{proposal['proposed']['variant']}`",
+        "### Reasoning",
         proposal["reasoning"],
-        "",
-        "Caveats:",
-        *[f"- {caveat}" for caveat in proposal["caveats"]],
-        "",
+        "### Caveats",
+        "\n".join(f"- {caveat}" for caveat in proposal["caveats"]),
+        "### Status",
         "Pending owner review - not applied.",
     ]
+    content = "\n".join(lines)
     try:
-        discord_post.post_message("reviews", "\n".join(lines))
+        discord_post.upsert_message(
+            "reviews", "pending-proposal", content,
+            embed=s.discord_card(content, footer_suffix=proposal["proposal_id"]),
+        )
     except discord_post.DiscordPostError:
         pass
 
