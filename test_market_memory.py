@@ -222,6 +222,100 @@ def test_atr_percentile_ranks_a_volatility_spike_near_the_top():
 
 
 # ---------------------------------------------------------------------------
+# ADX / +DI / -DI - trend STRENGTH, a genuinely different read from
+# trend_label's direction-only comparison
+# ---------------------------------------------------------------------------
+
+def _trending_series(n: int, direction: int = 1, step: float = 2.0) -> tuple[list[float], list[float], list[float]]:
+    """A clean, steadily-trending highs/lows/closes series - real
+    uptrends/downtrends have persistent directional movement, which is
+    exactly what ADX is supposed to detect as "strong."."""
+    highs, lows, closes = [], [], []
+    price = 400.0
+    for i in range(n):
+        price += direction * step
+        highs.append(price + 1.0)
+        lows.append(price - 1.0)
+        closes.append(price)
+    return highs, lows, closes
+
+
+def _choppy_series(n: int) -> tuple[list[float], list[float], list[float]]:
+    """A sideways, back-and-forth series - real chop has no persistent
+    directional movement, which is exactly what ADX is supposed to
+    detect as "weak/no trend," regardless of how volatile the bars
+    themselves look."""
+    highs, lows, closes = [], [], []
+    price = 400.0
+    for i in range(n):
+        price += 3.0 if i % 2 == 0 else -3.0
+        highs.append(price + 1.0)
+        lows.append(price - 1.0)
+        closes.append(price)
+    return highs, lows, closes
+
+
+def test_adx_is_high_during_a_real_persistent_uptrend():
+    highs, lows, closes = _trending_series(60, direction=1)
+    adx, plus_di, minus_di = mm._adx_series(highs, lows, closes, 14)
+    assert adx[-1] is not None and adx[-1] > 40
+    assert plus_di[-1] > minus_di[-1]
+
+
+def test_adx_is_high_during_a_real_persistent_downtrend_too():
+    """ADX measures strength, not bullishness - a strong downtrend must
+    read just as "strong" as a strong uptrend, not weaker."""
+    highs, lows, closes = _trending_series(60, direction=-1)
+    adx, plus_di, minus_di = mm._adx_series(highs, lows, closes, 14)
+    assert adx[-1] is not None and adx[-1] > 40
+    assert minus_di[-1] > plus_di[-1]
+
+
+def test_adx_is_low_during_real_chop_even_with_real_price_movement():
+    """The real point of ADX vs. just looking at price movement: a
+    choppy back-and-forth series has plenty of raw movement but no
+    PERSISTENT direction, so it must read as a weak/no trend."""
+    highs, lows, closes = _choppy_series(60)
+    adx, plus_di, minus_di = mm._adx_series(highs, lows, closes, 14)
+    assert adx[-1] is not None
+    assert adx[-1] < 20
+
+
+def test_adx_series_never_looks_ahead():
+    highs, lows, closes = _trending_series(60, direction=1)
+    full_adx, _, _ = mm._adx_series(highs, lows, closes, 14)
+    truncated_adx, _, _ = mm._adx_series(highs[:30], lows[:30], closes[:30], 14)
+    assert full_adx[29] == truncated_adx[29]
+
+
+def test_trend_strength_label_thresholds():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        highs, lows, closes = _trending_series(60, direction=1)
+        rows = [_bar(f"d{i:03d}", c - 0.5, h, l, c) for i, (h, l, c) in enumerate(zip(highs, lows, closes))]
+        mm.store_bars(conn, "SPY", "daily", rows)
+        bars = mm.load_bars(conn, "SPY", "daily")
+        features = mm.compute_features_for_window(bars, len(bars) - 1)
+        assert features["trend_strength"] in ("STRONG", "VERY_STRONG")
+        assert features["trend_direction_di"] == "BULLISH"
+        conn.close()
+
+
+def test_trend_strength_is_unknown_before_enough_history_exists():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = [_bar(f"d{i:02d}", 100, 101, 99, 100) for i in range(5)]
+        mm.store_bars(conn, "SPY", "daily", rows)
+        bars = mm.load_bars(conn, "SPY", "daily")
+        features = mm.compute_features_for_window(bars, len(bars) - 1)
+        assert features["trend_strength"] == "UNKNOWN"
+        assert features["trend_direction_di"] == "UNKNOWN"
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Structural pattern detectors
 # ---------------------------------------------------------------------------
 
