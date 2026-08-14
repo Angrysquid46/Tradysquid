@@ -1819,17 +1819,33 @@ def spy_0dte_opening_range_signal(
     documented day-trading pattern (opening-range breakout), not a
     variant of regular/swing's momentum models. Waits for the first
     SPY_0DTE_OPENING_RANGE_MINUTES of the session to establish a high/low,
-    then fires once price genuinely trades outside that range - not on
-    every subsequent bar past it, so a signal fires at most once per
-    session.
+    then reads where price is trading RIGHT NOW relative to that range -
+    the most recent bar, not the first bar that ever crossed it.
+
+    That distinction is the fix for a real, severe bug: this used to
+    scan forward from the opening range and lock onto the FIRST bar that
+    broke out, then report that same direction for the rest of the
+    session no matter what price did afterward. Confirmed live
+    2026-08-14: SPY poked briefly above its opening range just after
+    9:30am, then reversed into a real bearish trend, falling well below
+    even the opening range LOW by 11am - yet the signal kept reporting
+    "BULLISH... broke above... at $778.73" all morning, because that
+    early, long-since-reversed poke was still the first bar found. Five
+    straight CALL entries opened into that stale bullish read and
+    stopped out. Reading the latest bar instead means a real reversal
+    back through the range (or through the opposite side) is reflected
+    immediately, the next time this gets called - which is every scan
+    cycle, so there is no cost to re-checking instead of caching a
+    stale first-breakout direction.
 
     bar_minutes is the interval of the intraday bars passed in (default 5,
     matching the original single-strategy behavior). This function is now
-    shared by two independently-tracked live strategies - SPY_0DTE_5M calls
-    it with 5-minute bars, SPY_0DTE_1M with 1-minute bars - so the number of
-    bars needed to cover the same opening-range window has to scale with
-    whatever interval the caller actually fetched, not stay hardcoded to
-    5-minute math for both."""
+    shared by every SPY_0DTE-family live strategy - SPY_0DTE_5M with
+    5-minute bars, SPY_0DTE_1M and all 10 SPY_RATCHET_* variants with
+    1-minute bars - so the number of bars needed to cover the same
+    opening-range window has to scale with whatever interval the caller
+    actually fetched, not stay hardcoded to 5-minute math for all of
+    them."""
     intraday = intraday or []
     bars_needed = max(SPY_0DTE_OPENING_RANGE_MINUTES // bar_minutes, 1)
     if len(intraday) <= bars_needed:
@@ -1852,16 +1868,16 @@ def spy_0dte_opening_range_signal(
         }
     range_high, range_low = max(highs), min(lows)
 
-    breakout_bar = None
-    for bar in intraday[bars_needed:]:
-        price = as_float(bar.get("close") or bar.get("price"))
-        if price is None:
-            continue
-        if price > range_high or price < range_low:
-            breakout_bar = (bar, price)
-            break
-
-    if breakout_bar is None:
+    latest_bar = intraday[-1]
+    price = as_float(latest_bar.get("close") or latest_bar.get("price"))
+    if price is None:
+        return {
+            "qualified": False,
+            "regime": "NO TRADE",
+            "reason": "latest bar missing a usable price",
+            "failures": ["latest bar missing a usable price"],
+        }
+    if range_low <= price <= range_high:
         return {
             "qualified": False,
             "regime": "NO TRADE",
@@ -1869,7 +1885,6 @@ def spy_0dte_opening_range_signal(
             "failures": ["no breakout of the opening range yet"],
         }
 
-    bar, price = breakout_bar
     regime = "BULLISH / CONTROLLED" if price > range_high else "BEARISH / CONTROLLED"
     direction = "above" if price > range_high else "below"
     return {
@@ -1879,7 +1894,7 @@ def spy_0dte_opening_range_signal(
         "range_high": range_high,
         "range_low": range_low,
         "reason": (
-            f"broke {direction} the opening range (${range_low:.2f}-${range_high:.2f}) at ${price:.2f}"
+            f"trading {direction} the opening range (${range_low:.2f}-${range_high:.2f}), now ${price:.2f}"
         ),
         "failures": [],
     }
