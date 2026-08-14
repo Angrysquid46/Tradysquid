@@ -8,6 +8,7 @@ never the real state/market_memory.db."""
 from __future__ import annotations
 
 import tempfile
+from datetime import datetime as real_datetime
 from pathlib import Path
 from unittest import mock
 
@@ -97,6 +98,76 @@ def test_compute_features_never_looks_ahead():
         features_truncated = mm.compute_features_for_window(truncated_bars, 9)
         assert features_full["ema_9"] == features_truncated["ema_9"]
         assert features_full["rsi_14"] == features_truncated["rsi_14"]
+        conn.close()
+
+
+def test_short_medium_long_term_trend_label_reflects_a_real_uptrend():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        # A clean, steady uptrend - every moving average should agree.
+        rows = [_bar(f"2026-{(i // 28) + 1:02d}-{(i % 28) + 1:02d}", 100 + i * 0.5, 101 + i * 0.5, 99 + i * 0.5, 100 + i * 0.5)
+                for i in range(220)]
+        mm.store_bars(conn, "SPY", "daily", rows)
+        bars = mm.load_bars(conn, "SPY", "daily")
+        features = mm.compute_features_for_window(bars, len(bars) - 1)
+        assert features["short_term_trend"] == "UP"
+        assert features["medium_term_trend"] == "UP"
+        assert features["long_term_trend"] == "UP"
+        assert features["trend_label"] == "SHORT:UP MEDIUM:UP LONG:UP"
+        conn.close()
+
+
+def test_price_above_moving_average_flags():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = [_bar(f"d{i:04d}", 100, 101, 99, 100) for i in range(210)]
+        # Final bar closes well above the flat history.
+        rows.append(_bar(f"d{210:04d}", 100, 130, 99, 125))
+        mm.store_bars(conn, "SPY", "daily", rows)
+        bars = mm.load_bars(conn, "SPY", "daily")
+        features = mm.compute_features_for_window(bars, len(bars) - 1)
+        assert features["price_above_sma_200"] == 1
+        assert features["price_above_ema_200"] == 1
+        conn.close()
+
+
+def test_golden_cross_fires_only_on_the_bar_the_crossover_happens():
+    """A synthetic series engineered so SMA50 crosses above SMA200
+    exactly once - golden_cross must be True only on that specific bar,
+    not on every subsequent bar where sma_50 > sma_200 stays true."""
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        # 200 flat bars at 100 (both SMAs settle near 100), then a sharp
+        # ramp so SMA50 pulls above SMA200 partway through.
+        rows = [_bar(f"d{i:04d}", 100, 100, 100, 100) for i in range(200)]
+        rows += [_bar(f"d{200+i:04d}", 100 + i * 2, 100 + i * 2, 100 + i * 2, 100 + i * 2) for i in range(60)]
+        mm.store_bars(conn, "SPY", "daily", rows)
+        bars = mm.load_bars(conn, "SPY", "daily")
+
+        golden_cross_bars = []
+        for i in range(len(bars)):
+            features = mm.compute_features_for_window(bars, i)
+            if features.get("golden_cross"):
+                golden_cross_bars.append(i)
+        assert len(golden_cross_bars) == 1
+        conn.close()
+
+
+def test_atr_percentile_ranks_a_volatility_spike_near_the_top():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        # 50 calm bars (range of 1), then one wide bar (range of 20).
+        rows = [_bar(f"d{i:03d}", 100, 100.5, 99.5, 100) for i in range(50)]
+        rows.append(_bar("d050", 100, 110, 90, 100))
+        mm.store_bars(conn, "SPY", "daily", rows)
+        bars = mm.load_bars(conn, "SPY", "daily")
+        features = mm.compute_features_for_window(bars, len(bars) - 1)
+        assert features["atr_percentile"] is not None
+        assert features["atr_percentile"] > 90
         conn.close()
 
 
@@ -273,3 +344,50 @@ def test_run_collection_cycle_survives_intraday_fetch_failure():
 
     assert result["daily"]["new_bars"] == 5
     assert result["intraday_5min"]["new_bars"] == 0
+
+
+def test_run_collection_cycle_exports_a_real_csv():
+    temp_dir, patcher = _isolated_db()
+    csv_dir = tempfile.TemporaryDirectory()
+    csv_path = Path(csv_dir.name) / "daily.csv"
+    with (
+        temp_dir, patcher, csv_dir,
+        mock.patch.object(mm, "DAILY_CSV_PATH", csv_path),
+        mock.patch.object(mm, "INTRADAY_CSV_PATH", Path(csv_dir.name) / "intraday.csv"),
+        mock.patch.object(spy_scanner, "get_daily_history", return_value=_fake_daily_history(10)),
+        mock.patch.object(spy_scanner, "get_intraday_history", return_value=[]),
+    ):
+        result = mm.run_collection_cycle("SPY")
+        assert result["csv_exported"]["daily_rows"] == 10
+        assert csv_path.exists()
+        content = csv_path.read_text(encoding="utf-8")
+
+    assert "sma_20" in content  # header includes the new feature columns
+    assert "trend_label" in content
+    assert content.count("\n") == 11  # header + 10 data rows (+ trailing newline)
+
+
+# ---------------------------------------------------------------------------
+# Recent-vs-all-time comparison
+# ---------------------------------------------------------------------------
+
+def test_pattern_stats_recent_vs_all_time_separates_old_from_new_occurrences():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        # 40 bars: an "old" pattern occurrence near the start, a "recent"
+        # one near the end, both with enough forward bars to resolve.
+        rows = [_bar(f"2020-01-{i+1:02d}" if i < 15 else f"2026-08-{i-14:02d}", 100 + i, 101 + i, 99 + i, 100 + i)
+                for i in range(40)]
+        mm.store_bars(conn, "SPY", "daily", rows)
+        mm.store_patterns(conn, "SPY", "daily", "2020-01-01", ["inside_bar"])  # old
+        mm.store_patterns(conn, "SPY", "daily", "2026-08-05", ["inside_bar"])  # recent
+        mm.backfill_pattern_outcomes(conn, "SPY", "daily")
+        conn.close()
+
+        with mock.patch.object(mm, "datetime") as fake_datetime:
+            fake_datetime.now.return_value = real_datetime(2026, 8, 20)
+            comparison = mm.pattern_stats_recent_vs_all_time("SPY", "daily", "inside_bar", recent_days=180)
+
+    assert comparison["all_time"]["total_occurrences"] == 2
+    assert comparison["recent"]["total_occurrences"] == 1

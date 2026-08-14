@@ -17,27 +17,42 @@ Three real layers, all pure math on OHLCV bars (no chart images, no
    there is no way to backfill years of 5-minute bars in one shot, and
    pretending otherwise would be dishonest about what's actually here.
 
-2. Features - EMA/MACD/RSI/ATR/Bollinger (reusing spy_scanner.py's own
-   shared math, not reimplemented here), relative volume, and real
-   structural flags (higher-high/higher-low, inside/outside bar, NR7,
-   gap size) computed once per bar and cached.
+2. Features - SMA(20/50/200) + EMA(9/20/50/200)/MACD/RSI/ATR(+percentile
+   rank)/Bollinger (reusing spy_scanner.py's own shared math, not
+   reimplemented here), relative volume, structural flags (higher-high/
+   higher-low, inside/outside bar, NR7, gap size, trend-structure run
+   length), golden/death cross, and a combined short/medium/long-term
+   trend_label (e.g. "SHORT:UP MEDIUM:UP LONG:DOWN", each leg just a
+   directional comparison between two moving averages of different
+   speeds) - computed once per bar and cached. Every column exports to a
+   plain CSV (market_memory_daily.csv / market_memory_intraday_5min.csv,
+   refreshed every cycle) so this is directly inspectable without SQL,
+   same as every other log in this project.
 
 3. Patterns + outcomes - a registry of named pattern detectors, split
    into "structural" (inside bar, NR7, gap, trend-structure runs,
-   volatility contraction, volume climax - real, quantifiable, testable
-   tendencies) and "candlestick" (doji, hammer, engulfing - the classic
-   textbook shapes, included because the owner asked for "all of them",
-   but every candlestick-category pattern carries an explicit
-   evidence_note flagging its predictive value as weak/folklore, not a
-   real edge - matches this project's own Learning Center content on
-   the same point). Every detected pattern's actual forward return (5/10/
-   20 bars later) gets recorded once enough time has passed, so a future
-   strategy can query "when this exact pattern fired historically, what
-   really happened next" instead of trusting the pattern's name alone.
+   volatility contraction, volume climax, golden/death cross - real,
+   quantifiable, testable tendencies) and "candlestick" (doji, hammer,
+   engulfing - the classic textbook shapes, included because the owner
+   asked for "all of them", but every candlestick-category pattern
+   carries an explicit evidence_note flagging its predictive value as
+   weak/folklore, not a real edge - matches this project's own Learning
+   Center content on the same point). Every detected pattern's actual
+   forward return (5/10/20 bars later) gets recorded once enough time
+   has passed, so a future strategy can query "when this exact pattern
+   fired historically, what really happened next" instead of trusting
+   the pattern's name alone - and pattern_stats_recent_vs_all_time can
+   compare a recent window against the full history for the same
+   pattern, which is the real answer to "does more history make the
+   read better, or is old data stale": if the two windows roughly agree,
+   the extra history is real statistical power; if they've diverged, the
+   market's own character has likely shifted and the all-time number
+   alone would be misleading.
 """
 
 from __future__ import annotations
 
+import csv
 import sqlite3
 import sys
 from datetime import datetime
@@ -48,6 +63,8 @@ import spy_scanner as s
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "state" / "market_memory.db"
+DAILY_CSV_PATH = ROOT / "state" / "market_memory_daily.csv"
+INTRADAY_CSV_PATH = ROOT / "state" / "market_memory_intraday_5min.csv"
 
 SPY_DAILY_HISTORY_DAYS = 730
 FORWARD_RETURN_HORIZONS = (5, 10, 20)
@@ -69,16 +86,20 @@ CREATE TABLE IF NOT EXISTS features (
     ticker TEXT NOT NULL,
     timeframe TEXT NOT NULL,
     bar_time TEXT NOT NULL,
+    sma_20 REAL, sma_50 REAL, sma_200 REAL,
     ema_9 REAL, ema_20 REAL, ema_50 REAL, ema_200 REAL,
     macd_line REAL, macd_signal REAL, macd_histogram REAL, macd_color TEXT,
     rsi_14 REAL,
-    atr_14 REAL,
+    atr_14 REAL, atr_percentile REAL,
     bb_upper REAL, bb_mid REAL, bb_lower REAL, bb_width_pct REAL,
     relative_volume REAL,
     higher_high INTEGER, higher_low INTEGER, lower_high INTEGER, lower_low INTEGER,
     trend_run_length INTEGER,
     inside_bar INTEGER, outside_bar INTEGER, nr7 INTEGER,
     gap_pct REAL,
+    golden_cross INTEGER, death_cross INTEGER,
+    price_above_sma_200 INTEGER, price_above_ema_200 INTEGER,
+    short_term_trend TEXT, medium_term_trend TEXT, long_term_trend TEXT, trend_label TEXT,
     market_condition TEXT,
     computed_at TEXT NOT NULL,
     PRIMARY KEY (ticker, timeframe, bar_time)
@@ -200,6 +221,10 @@ def compute_features_for_window(bars: list[sqlite3.Row], index: int) -> dict[str
     volumes = [row["volume"] for row in window]
     current = window[-1]
 
+    sma_20 = s.simple_moving_average(closes, 20)
+    sma_50 = s.simple_moving_average(closes, 50)
+    sma_200 = s.simple_moving_average(closes, 200)
+
     ema_9 = s.exponential_moving_average(closes, 9)
     ema_20 = s.exponential_moving_average(closes, 20)
     ema_50 = s.exponential_moving_average(closes, 50)
@@ -214,8 +239,34 @@ def compute_features_for_window(bars: list[sqlite3.Row], index: int) -> dict[str
 
     rsi_14 = s.relative_strength_index(closes, 14)
     atr_14 = s.average_true_range(highs, lows, closes, 14)
+    atr_percentile = _atr_percentile(bars, index, atr_14)
     bb_upper, bb_mid, bb_lower = s.bollinger_bands(closes, 20, 2.0)
     bb_width_pct = ((bb_upper - bb_lower) / bb_mid * 100) if bb_upper is not None and bb_mid else None
+
+    # Golden/death cross - the classic long-term trend-shift marker (SMA50
+    # crossing SMA200), only meaningful the FIRST bar it happens, so this
+    # also needs the prior bar's SMAs, not just the current ones.
+    golden_cross = death_cross = None
+    if index >= 1:
+        prior_window = bars[:index]
+        prior_closes = [row["close"] for row in prior_window]
+        prior_sma_50 = s.simple_moving_average(prior_closes, 50)
+        prior_sma_200 = s.simple_moving_average(prior_closes, 200)
+        if None not in (sma_50, sma_200, prior_sma_50, prior_sma_200):
+            golden_cross = int(prior_sma_50 <= prior_sma_200 and sma_50 > sma_200)
+            death_cross = int(prior_sma_50 >= prior_sma_200 and sma_50 < sma_200)
+
+    price_above_sma_200 = int(current["close"] > sma_200) if sma_200 is not None else None
+    price_above_ema_200 = int(current["close"] > ema_200) if ema_200 is not None else None
+
+    # Short/medium/long-term trend read, each just a directional
+    # comparison between two moving averages of different speeds - not a
+    # shape judgment, three independent numeric facts combined into one
+    # readable label (e.g. "SHORT:UP MEDIUM:UP LONG:DOWN").
+    short_term_trend = _trend_direction(ema_9, ema_20)
+    medium_term_trend = _trend_direction(ema_20, sma_50)
+    long_term_trend = _trend_direction(sma_50, sma_200)
+    trend_label = f"SHORT:{short_term_trend} MEDIUM:{medium_term_trend} LONG:{long_term_trend}"
 
     relative_volume = None
     if len(volumes) > 20:
@@ -252,10 +303,11 @@ def compute_features_for_window(bars: list[sqlite3.Row], index: int) -> dict[str
             gap_pct = (current["open"] - prior_close) / prior_close * 100
 
     return {
+        "sma_20": sma_20, "sma_50": sma_50, "sma_200": sma_200,
         "ema_9": ema_9, "ema_20": ema_20, "ema_50": ema_50, "ema_200": ema_200,
         "macd_line": macd_line, "macd_signal": macd_signal,
         "macd_histogram": macd_current, "macd_color": macd_color,
-        "rsi_14": rsi_14, "atr_14": atr_14,
+        "rsi_14": rsi_14, "atr_14": atr_14, "atr_percentile": atr_percentile,
         "bb_upper": bb_upper, "bb_mid": bb_mid, "bb_lower": bb_lower, "bb_width_pct": bb_width_pct,
         "relative_volume": relative_volume,
         "higher_high": higher_high, "higher_low": higher_low,
@@ -263,7 +315,46 @@ def compute_features_for_window(bars: list[sqlite3.Row], index: int) -> dict[str
         "trend_run_length": trend_run_length,
         "inside_bar": inside_bar, "outside_bar": outside_bar, "nr7": nr7,
         "gap_pct": gap_pct,
+        "golden_cross": golden_cross, "death_cross": death_cross,
+        "price_above_sma_200": price_above_sma_200, "price_above_ema_200": price_above_ema_200,
+        "short_term_trend": short_term_trend, "medium_term_trend": medium_term_trend,
+        "long_term_trend": long_term_trend, "trend_label": trend_label,
     }
+
+
+def _trend_direction(fast: float | None, slow: float | None) -> str:
+    if fast is None or slow is None:
+        return "UNKNOWN"
+    if fast > slow:
+        return "UP"
+    if fast < slow:
+        return "DOWN"
+    return "FLAT"
+
+
+def _atr_percentile(bars: list[sqlite3.Row], index: int, current_atr: float | None, lookback: int = 100) -> float | None:
+    """Where the current ATR ranks (0-100) against its own trailing
+    history - answers "is volatility high or low RIGHT NOW relative to
+    itself" in a way a raw ATR dollar figure doesn't, since SPY's normal
+    ATR level has drifted a lot over the years (regime dependence -
+    comparing today's ATR directly to 2023's ATR isn't apples to apples,
+    ranking against a rolling window is)."""
+    if current_atr is None or index < 14:
+        return None
+    history: list[float] = []
+    start = max(14, index - lookback + 1)
+    for i in range(start, index + 1):
+        window = bars[: i + 1]
+        atr = s.average_true_range(
+            [row["high"] for row in window], [row["low"] for row in window],
+            [row["close"] for row in window], 14,
+        )
+        if atr is not None:
+            history.append(atr)
+    if len(history) < 2:
+        return None
+    rank = sum(1 for value in history if value <= current_atr)
+    return rank / len(history) * 100
 
 
 def _trend_run_length(bars: list[sqlite3.Row], index: int) -> int | None:
@@ -296,23 +387,31 @@ def store_features(conn: sqlite3.Connection, ticker: str, timeframe: str, bar_ti
     conn.execute(
         """
         INSERT OR REPLACE INTO features (
-            ticker, timeframe, bar_time, ema_9, ema_20, ema_50, ema_200,
-            macd_line, macd_signal, macd_histogram, macd_color, rsi_14, atr_14,
+            ticker, timeframe, bar_time, sma_20, sma_50, sma_200, ema_9, ema_20, ema_50, ema_200,
+            macd_line, macd_signal, macd_histogram, macd_color, rsi_14, atr_14, atr_percentile,
             bb_upper, bb_mid, bb_lower, bb_width_pct, relative_volume,
             higher_high, higher_low, lower_high, lower_low, trend_run_length,
-            inside_bar, outside_bar, nr7, gap_pct, market_condition, computed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            inside_bar, outside_bar, nr7, gap_pct,
+            golden_cross, death_cross, price_above_sma_200, price_above_ema_200,
+            short_term_trend, medium_term_trend, long_term_trend, trend_label,
+            market_condition, computed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             ticker, timeframe, bar_time,
+            features["sma_20"], features["sma_50"], features["sma_200"],
             features["ema_9"], features["ema_20"], features["ema_50"], features["ema_200"],
             features["macd_line"], features["macd_signal"], features["macd_histogram"], features["macd_color"],
-            features["rsi_14"], features["atr_14"],
+            features["rsi_14"], features["atr_14"], features["atr_percentile"],
             features["bb_upper"], features["bb_mid"], features["bb_lower"], features["bb_width_pct"],
             features["relative_volume"],
             features["higher_high"], features["higher_low"], features["lower_high"], features["lower_low"],
             features["trend_run_length"],
             features["inside_bar"], features["outside_bar"], features["nr7"], features["gap_pct"],
+            features["golden_cross"], features["death_cross"],
+            features["price_above_sma_200"], features["price_above_ema_200"],
+            features["short_term_trend"], features["medium_term_trend"],
+            features["long_term_trend"], features["trend_label"],
             market_condition, datetime.now().isoformat(),
         ),
     )
@@ -429,6 +528,14 @@ def _detect_bearish_engulfing(bars, features, index) -> bool:
     )
 
 
+def _detect_golden_cross(bars, features, index) -> bool:
+    return bool(features.get("golden_cross"))
+
+
+def _detect_death_cross(bars, features, index) -> bool:
+    return bool(features.get("death_cross"))
+
+
 PATTERN_REGISTRY: dict[str, tuple[str, str, PatternDetector]] = {
     "inside_bar": ("structural", STRUCTURAL_EVIDENCE_NOTE, _detect_inside_bar),
     "outside_bar": ("structural", STRUCTURAL_EVIDENCE_NOTE, _detect_outside_bar),
@@ -439,6 +546,8 @@ PATTERN_REGISTRY: dict[str, tuple[str, str, PatternDetector]] = {
     "downtrend_structure": ("structural", STRUCTURAL_EVIDENCE_NOTE, _detect_downtrend_structure),
     "volatility_contraction": ("volatility", STRUCTURAL_EVIDENCE_NOTE, _detect_volatility_contraction),
     "volume_climax": ("volume", STRUCTURAL_EVIDENCE_NOTE, _detect_volume_climax),
+    "golden_cross": ("structural", STRUCTURAL_EVIDENCE_NOTE, _detect_golden_cross),
+    "death_cross": ("structural", STRUCTURAL_EVIDENCE_NOTE, _detect_death_cross),
     "doji": ("candlestick", CANDLESTICK_EVIDENCE_NOTE, _detect_doji),
     "hammer": ("candlestick", CANDLESTICK_EVIDENCE_NOTE, _detect_hammer),
     "bullish_engulfing": ("candlestick", CANDLESTICK_EVIDENCE_NOTE, _detect_bullish_engulfing),
@@ -512,6 +621,57 @@ def backfill_pattern_outcomes(conn: sqlite3.Connection, ticker: str, timeframe: 
 
 
 # ---------------------------------------------------------------------------
+# CSV export - a directly-inspectable view of everything collected, no
+# SQL required. Matches how every other log in this project already
+# works. Rewritten in full each cycle (cheap at this data volume, and
+# safer than trying to append-patch a CSV in place).
+# ---------------------------------------------------------------------------
+
+FEATURE_COLUMNS = (
+    "sma_20", "sma_50", "sma_200", "ema_9", "ema_20", "ema_50", "ema_200",
+    "macd_line", "macd_signal", "macd_histogram", "macd_color",
+    "rsi_14", "atr_14", "atr_percentile",
+    "bb_upper", "bb_mid", "bb_lower", "bb_width_pct", "relative_volume",
+    "higher_high", "higher_low", "lower_high", "lower_low", "trend_run_length",
+    "inside_bar", "outside_bar", "nr7", "gap_pct",
+    "golden_cross", "death_cross", "price_above_sma_200", "price_above_ema_200",
+    "short_term_trend", "medium_term_trend", "long_term_trend", "trend_label",
+    "market_condition",
+)
+
+
+def export_features_csv(conn: sqlite3.Connection, ticker: str, timeframe: str, path: Path) -> int:
+    feature_select = ", ".join(f"f.{column}" for column in FEATURE_COLUMNS)
+    rows = conn.execute(
+        f"""
+        SELECT b.bar_time AS bar_time, b.open, b.high, b.low, b.close, b.volume, {feature_select}
+        FROM bars b
+        LEFT JOIN features f ON f.ticker = b.ticker AND f.timeframe = b.timeframe AND f.bar_time = b.bar_time
+        WHERE b.ticker = ? AND b.timeframe = ?
+        ORDER BY b.bar_time
+        """,
+        (ticker, timeframe),
+    ).fetchall()
+    pattern_rows = conn.execute(
+        "SELECT bar_time, GROUP_CONCAT(pattern_name, '|') AS names "
+        "FROM patterns WHERE ticker = ? AND timeframe = ? GROUP BY bar_time",
+        (ticker, timeframe),
+    ).fetchall()
+    patterns_by_bar = {row["bar_time"]: row["names"] for row in pattern_rows}
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["bar_time", "open", "high", "low", "close", "volume", *FEATURE_COLUMNS, "patterns_detected"]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            record = {key: row[key] for key in fieldnames if key != "patterns_detected"}
+            record["patterns_detected"] = patterns_by_bar.get(row["bar_time"], "")
+            writer.writerow(record)
+    return len(rows)
+
+
+# ---------------------------------------------------------------------------
 # Query API - what a future strategy actually calls
 # ---------------------------------------------------------------------------
 
@@ -540,27 +700,45 @@ def get_recent_patterns(ticker: str, timeframe: str, lookback_bars: int = 20) ->
         conn.close()
 
 
-def pattern_stats(ticker: str, timeframe: str, pattern_name: str) -> dict[str, Any]:
+def pattern_stats(
+    ticker: str, timeframe: str, pattern_name: str, *, since_bar_time: str | None = None
+) -> dict[str, Any]:
     """The real point of tracking outcomes: for a given pattern, how many
-    times has it fired historically, and what actually happened 5/10/20
-    bars later - average return and win rate (positive forward return),
-    per horizon. Empty/None values mean not enough history yet, not
-    zero."""
+    times has it fired, and what actually happened 5/10/20 bars later -
+    average return and win rate (positive forward return), per horizon.
+    Empty/None values mean not enough history yet, not zero.
+
+    since_bar_time optionally restricts this to occurrences on or after
+    that date - see pattern_stats_recent_vs_all_time, which is what
+    actually answers "is old data here skewing the picture:" more
+    history means a bigger, statistically stronger sample, but SPY's own
+    character (volatility regime, rate environment) isn't constant over
+    2+ years, so a pattern's ALL-TIME average can look solid while its
+    RECENT behavior has quietly drifted - comparing both is how you'd
+    actually notice that, not by assuming either number alone is
+    trustworthy."""
     conn = connect()
     try:
+        filter_clause = ""
+        params: list[Any] = [ticker, timeframe, pattern_name]
+        if since_bar_time:
+            filter_clause = " AND bar_time >= ?"
+            params.append(since_bar_time)
         total = conn.execute(
-            "SELECT COUNT(*) AS n FROM patterns WHERE ticker = ? AND timeframe = ? AND pattern_name = ?",
-            (ticker, timeframe, pattern_name),
+            f"SELECT COUNT(*) AS n FROM patterns WHERE ticker = ? AND timeframe = ? AND pattern_name = ?{filter_clause}",
+            params,
         ).fetchone()["n"]
         by_horizon = {}
         for horizon in FORWARD_RETURN_HORIZONS:
+            horizon_filter = "" if not since_bar_time else " AND p.bar_time >= ?"
+            horizon_params = [ticker, timeframe, pattern_name, horizon] + ([since_bar_time] if since_bar_time else [])
             rows = conn.execute(
-                """
+                f"""
                 SELECT po.forward_return_pct FROM pattern_outcomes po
                 JOIN patterns p ON p.id = po.pattern_id
-                WHERE p.ticker = ? AND p.timeframe = ? AND p.pattern_name = ? AND po.bars_forward = ?
+                WHERE p.ticker = ? AND p.timeframe = ? AND p.pattern_name = ? AND po.bars_forward = ?{horizon_filter}
                 """,
-                (ticker, timeframe, pattern_name, horizon),
+                horizon_params,
             ).fetchall()
             returns = [row["forward_return_pct"] for row in rows]
             if returns:
@@ -574,6 +752,28 @@ def pattern_stats(ticker: str, timeframe: str, pattern_name: str) -> dict[str, A
         return {"pattern_name": pattern_name, "total_occurrences": total, "by_horizon": by_horizon}
     finally:
         conn.close()
+
+
+def pattern_stats_recent_vs_all_time(
+    ticker: str, timeframe: str, pattern_name: str, recent_days: int = 180
+) -> dict[str, Any]:
+    """Side-by-side all-time vs. recent-window stats for the same
+    pattern - the direct tool for "shouldn't 2+ years give a better idea
+    of trend, or is that old data stale": if the recent numbers roughly
+    agree with all-time, the tendency has held up across regimes and the
+    extra history is real statistical power, not noise. If they've
+    diverged, the pattern's edge (if any) has likely shifted with the
+    market's own character, and the all-time figure alone would have
+    been misleading."""
+    from datetime import timedelta
+
+    cutoff = (datetime.now() - timedelta(days=recent_days)).date().isoformat()
+    return {
+        "pattern_name": pattern_name,
+        "recent_window_days": recent_days,
+        "all_time": pattern_stats(ticker, timeframe, pattern_name),
+        "recent": pattern_stats(ticker, timeframe, pattern_name, since_bar_time=cutoff),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -632,11 +832,15 @@ def run_collection_cycle(ticker: str = "SPY") -> dict[str, Any]:
         daily_outcomes = backfill_pattern_outcomes(conn, ticker, "daily")
         intraday_outcomes = backfill_pattern_outcomes(conn, ticker, "5min")
 
+        daily_csv_rows = export_features_csv(conn, ticker, "daily", DAILY_CSV_PATH)
+        intraday_csv_rows = export_features_csv(conn, ticker, "5min", INTRADAY_CSV_PATH)
+
         return {
             "ticker": ticker,
             "daily": daily_result,
             "intraday_5min": intraday_result,
             "outcomes_recorded": daily_outcomes + intraday_outcomes,
+            "csv_exported": {"daily_rows": daily_csv_rows, "intraday_rows": intraday_csv_rows},
         }
     finally:
         conn.close()
