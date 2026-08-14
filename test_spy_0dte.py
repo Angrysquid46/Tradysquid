@@ -74,7 +74,7 @@ def test_opening_range_signal_fires_bullish_on_a_real_breakout_above():
     context = spy_scanner.spy_0dte_opening_range_signal(bars)
     assert context["qualified"] is True
     assert context["regime"] == "BULLISH / CONTROLLED"
-    assert "broke above" in context["reason"]
+    assert "above" in context["reason"]
 
 
 def test_opening_range_signal_fires_bearish_on_a_real_breakdown_below():
@@ -82,15 +82,34 @@ def test_opening_range_signal_fires_bearish_on_a_real_breakdown_below():
     context = spy_scanner.spy_0dte_opening_range_signal(bars)
     assert context["qualified"] is True
     assert context["regime"] == "BEARISH / CONTROLLED"
-    assert "broke below" in context["reason"]
+    assert "below" in context["reason"]
 
 
-def test_opening_range_signal_only_fires_on_the_first_bar_that_breaks_out():
-    # A second, further breakout bar must not change which bar the
-    # signal reports - it fires once per session, at the first breach.
+def test_opening_range_signal_reflects_the_latest_bar_not_a_stale_first_breakout():
+    """Regression guard for a real, severe bug: this used to lock onto
+    the FIRST bar that ever broke the opening range and report that
+    direction for the rest of the session regardless of what price did
+    afterward. Confirmed live 2026-08-14: SPY poked briefly above its
+    opening range, then reversed into a real bearish trend well below
+    even the range low - the signal kept saying BULLISH all morning off
+    that stale early poke, and 5 straight CALL entries opened into it
+    and stopped out. A later bar must be able to override an earlier
+    one, including flipping the regime entirely on a real reversal."""
     bars = _opening_range_bars() + [_bar(602.5), _bar(603.5)]
     context = spy_scanner.spy_0dte_opening_range_signal(bars)
-    assert context["breakout_price"] == 602.5
+    assert context["breakout_price"] == 603.5  # the latest bar, not the first breakout
+
+    reversal_bars = _opening_range_bars() + [_bar(602.5), _bar(598.0)]
+    reversed_context = spy_scanner.spy_0dte_opening_range_signal(reversal_bars)
+    assert reversed_context["regime"] == "BEARISH / CONTROLLED"
+    assert reversed_context["breakout_price"] == 598.0
+
+
+def test_opening_range_signal_returns_to_no_trade_once_price_re_enters_the_range():
+    bars = _opening_range_bars() + [_bar(602.5), _bar(601.0)]
+    context = spy_scanner.spy_0dte_opening_range_signal(bars)
+    assert context["qualified"] is False
+    assert "inside the opening range" in context["reason"]
 
 
 def test_opening_range_signal_scales_bars_needed_to_a_1_minute_interval():
