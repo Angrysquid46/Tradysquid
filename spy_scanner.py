@@ -523,16 +523,27 @@ AUTOMATED_CHANNEL_KEYS = [
     "errors",
     "workflow_log",
 ]
-# Two logical channels per ratchet variant (performance + results), same
-# pattern as the 1m/5m pair above - generated from SPY_RATCHET_VARIANTS
-# instead of hand-duplicated 10 times. Real channel names match
-# sync_discord_structure.py's ratchet-<slug>-performance/-results.
+# Two logical channels per ratchet variant (performance + results) - each
+# variant still gets its own logical key, own state tracking, and own
+# search-marker text (see performance_reconciliation.py), so its numbers
+# can never bleed into another variant's. Owner: "i want all the ratchet
+# stratagies in a single catagory instead of 11 different channels ...
+# have each thing tracked seperately." Only the REAL channel every
+# variant's logical key resolves to changed - all 10 now share one
+# dashboard channel and one results channel instead of 10 category/channel
+# pairs (see sync_discord_structure.py's RATCHET_CATEGORY_NAME).
 for _ratchet_variant in SPY_RATCHET_VARIANTS:
     _ratchet_suffix = _ratchet_variant["play_type"].removeprefix("SPY_RATCHET_").lower()
-    CHANNEL_NAMES[f"performance_ratchet_{_ratchet_suffix}"] = f"ratchet-{_ratchet_suffix.replace('_', '-')}-performance"
-    CHANNEL_NAMES[f"results_ratchet_{_ratchet_suffix}"] = f"ratchet-{_ratchet_suffix.replace('_', '-')}-results"
+    CHANNEL_NAMES[f"performance_ratchet_{_ratchet_suffix}"] = "ratchet-dashboard"
+    CHANNEL_NAMES[f"results_ratchet_{_ratchet_suffix}"] = "ratchet-results"
     AUTOMATED_CHANNEL_KEYS.append(f"performance_ratchet_{_ratchet_suffix}")
     AUTOMATED_CHANNEL_KEYS.append(f"results_ratchet_{_ratchet_suffix}")
+# One more card in the shared dashboard channel: a leaderboard ranking all
+# 10 variants against each other by real P&L - owner: "a dashboard so we
+# can see top performers." See performance_reconciliation.py's
+# format_ratchet_leaderboard.
+CHANNEL_NAMES["ratchet_leaderboard"] = "ratchet-dashboard"
+AUTOMATED_CHANNEL_KEYS.append("ratchet_leaderboard")
 
 SYSTEM_CHANNEL_KEYS = {
     "status",
@@ -3796,6 +3807,42 @@ def recently_tracked(rows: list[dict[str, str]], candidate: dict[str, Any], now:
         if event_time and now - event_time < cooldown:
             return True
     return False
+
+
+def has_open_position(rows: list[dict[str, str]], play_type: str) -> bool:
+    """True if play_type already has ANY open position, regardless of
+    strike/expiration/side - recently_tracked only blocks re-entering the
+    EXACT same contract, so without this a strategy could stack multiple
+    concurrent positions if the underlying moved enough to qualify a
+    different strike (confirmed live: SPY_KEY_LEVELS had stacked up to 6
+    at once, SPY_0DTE_5M up to 4). Owner: "as long as we do 1 trade at a
+    time we have a 500 limit... yes it's per trader not all together, 13
+    traders a max of 13 and so on." Each of the 13 live strategies is
+    capped at one open trade at a time, independent of every other
+    strategy."""
+    return any(
+        row.get("outcome") == "OPEN" and row.get("play_type") == play_type
+        for row in rows
+    )
+
+
+def dedupe_by_play_type(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keeps only the single best-scored candidate per play_type, so a
+    scan that finds multiple qualifying strikes for the same strategy in
+    one cycle still opens at most one new position for it - has_open_
+    position alone only stops a SECOND cycle from stacking on an already-
+    open trade, not two candidates from the same strategy both opening in
+    the SAME cycle. candidates must already be sorted by score,
+    descending."""
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for candidate in candidates:
+        play_type = candidate.get("play_type", "")
+        if play_type in seen:
+            continue
+        seen.add(play_type)
+        result.append(candidate)
+    return result
 
 # ---------------------------------------------------------------------------
 # Candidate scan
@@ -7528,7 +7575,11 @@ def main(*, publish_shared: bool = True, position_lock: Any = None) -> int:
         )
         if position_lock is not None:
             rows = read_log()
-        eligible = [candidate for candidate in candidates if not recently_tracked(rows, candidate, timestamp)]
+        eligible = [
+            candidate for candidate in candidates
+            if not recently_tracked(rows, candidate, timestamp)
+            and not has_open_position(rows, candidate.get("play_type", ""))
+        ]
         # Time-of-day exclusion: the opening minutes and the midday lull
         # both distort entries for reasons that have nothing to do with
         # the actual thesis - this only blocks new entries, never touches
@@ -7546,6 +7597,7 @@ def main(*, publish_shared: bool = True, position_lock: Any = None) -> int:
             if earnings_gap is not None and earnings_gap <= EARNINGS_BLACKOUT_DAYS:
                 eligible = []
         eligible.sort(key=lambda candidate: candidate.get("score", 0), reverse=True)
+        eligible = dedupe_by_play_type(eligible)
         selected = apply_ticker_exposure_cap(eligible, rows, TICKER)
 
         new_rows: list[dict[str, str]] = []

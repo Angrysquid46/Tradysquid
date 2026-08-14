@@ -63,10 +63,17 @@ REPORT_ROUTES = {
     "performance_expansion": "expansion-performance",
     "results_expansion": "expansion-results",
 }
+# All 10 ratchet variants now share one dashboard channel and one results
+# channel (owner: "all the ratchet stratagies in a single catagory instead
+# of 11 different channels") - each variant keeps its own logical key, own
+# state_key, and own REPORT_MARKERS text below, so it still gets its own
+# distinct, independently-tracked card within the shared channel; only the
+# REAL channel name changed here.
 for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
-    _suffix = _play_type.removeprefix("SPY_RATCHET_").lower()
-    REPORT_ROUTES[_perf_logical] = f"ratchet-{_suffix.replace('_', '-')}-performance"
-    REPORT_ROUTES[_results_logical] = f"ratchet-{_suffix.replace('_', '-')}-results"
+    REPORT_ROUTES[_perf_logical] = "ratchet-dashboard"
+    REPORT_ROUTES[_results_logical] = "ratchet-results"
+RATCHET_LEADERBOARD_LOGICAL = "ratchet_leaderboard"
+REPORT_ROUTES[RATCHET_LEADERBOARD_LOGICAL] = "ratchet-dashboard"
 
 REPORT_MARKERS = {
     "daily_recap": (
@@ -132,6 +139,7 @@ for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
         f"{_label} Results",
         f"{_label} Trade History ·",
     )
+REPORT_MARKERS[RATCHET_LEADERBOARD_LOGICAL] = ("Ratchet Strategy Leaderboard",)
 
 STATE_PREFIXES = (
     "report-v3:",
@@ -389,6 +397,41 @@ def format_monthly_report(rows: list[dict[str, str]], month: date) -> str:
         completed,
         f"{month.strftime('%B %d, %Y')} through {end.strftime('%B %d, %Y')}",
     )
+
+
+def format_ratchet_leaderboard(rows: list[dict[str, str]]) -> str:
+    """Ranks all 10 ratchet-floor variants against each other by real net
+    P&L, so the shared ratchet-dashboard channel answers "which one is
+    actually winning" at a glance. Each variant still gets its own full
+    monthly performance index and results feed elsewhere in that same
+    channel (see _sync_monthly_performance_variant/
+    _sync_strategy_results_variant) - this is the summary view on top of
+    that detail, not a replacement for it. Owner: "a dashboard so we can
+    see top performers.\""""
+    ranked = []
+    for play_type, _perf_logical, _results_logical, label in RATCHET_VARIANTS:
+        completed = canonical_closed_rows([row for row in rows if row.get("play_type") == play_type])
+        ranked.append((label, spy_scanner.result_metrics(completed)))
+    ranked.sort(key=lambda item: item[1]["total_pnl"], reverse=True)
+
+    medals = ["🥇", "🥈", "🥉"]
+    lines = ["## 🏁 Ratchet Strategy Leaderboard", "### Ranked by net P&L"]
+    for index, (label, metrics) in enumerate(ranked):
+        badge = medals[index] if index < len(medals) else f"{index + 1}."
+        closed = int(metrics["wins"] + metrics["losses"] + metrics["scratches"])
+        if closed == 0:
+            lines.append(f"{badge} **{label}** — no closed trades yet")
+            continue
+        profit_factor = metrics["profit_factor"]
+        pf_text = "∞" if profit_factor == math.inf else f"{profit_factor:.2f}"
+        lines.append(
+            f"{badge} **{label}** — {int(metrics['wins'])}W/{int(metrics['losses'])}L/{int(metrics['scratches'])}S "
+            f"· Win rate **{metrics['win_rate']:.0f}%** · "
+            f"Net **{spy_scanner.fmt_metric_money(metrics, 'total_pnl')}** · PF **{pf_text}**"
+        )
+    lines.append("### Updated")
+    lines.append(spy_scanner.portable_strftime(spy_scanner.now_ct(), "%m/%d/%y %-I:%M %p CT"))
+    return "\n".join(lines)
 
 
 def strategy_groups(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
@@ -818,6 +861,18 @@ def sync_reports(
         strategy_groups_total += results["periods"]
         monthly_reports_total += monthly["periods"]
         history_pages_total += results["history_pages"] + monthly["history_pages"]
+
+    # A derived summary card, not a paginated per-variant report - no
+    # coverage count to reconcile against, unlike every entry in the loop
+    # above.
+    _require_upsert(
+        discord,
+        RATCHET_LEADERBOARD_LOGICAL,
+        state,
+        "report-v3:ratchet_leaderboard:index",
+        format_ratchet_leaderboard(rows),
+        "Ratchet Strategy Leaderboard",
+    )
 
     state.update(
         {
