@@ -50,6 +50,18 @@ def clear_active_override() -> None:
         ACTIVE_OVERRIDE_PATH.unlink()
 
 
+def current_stop_pct() -> float:
+    """The stop_pct current_exit_signal is actually evaluating against
+    right now, as a positive fraction (0.50 == a 50% stop) - exposed
+    separately so a caller that only needs to DISPLAY the stop level
+    (a trade card's "Stop-loss" line, not an exit decision) doesn't have
+    to duplicate the override-vs-default branching logic above."""
+    override = load_active_override()
+    if override is None:
+        return s.SPY_0DTE_STOP_PCT
+    return override["stop_pct"]
+
+
 def current_exit_signal(
     entry_price: float, mark: float, minutes_remaining: float, peak_pct: float
 ) -> tuple[str, str]:

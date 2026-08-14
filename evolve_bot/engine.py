@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -153,9 +153,30 @@ def _journal_link(trade_id: str) -> str:
     return f"https://discord.com/channels/{discord_post.GUILD_ID}/{thread_id}"
 
 
+def _format_expiration(expiration_iso: str) -> str:
+    """ISO ("2026-08-14") -> MM/DD/YY ("08/14/26") - owner: "expiration
+    in 00/00/00 format." Falls back to the raw string for anything that
+    doesn't parse as a real date rather than raising, since a malformed
+    or blank expiration must never break the whole card."""
+    try:
+        return datetime.strptime(expiration_iso, "%Y-%m-%d").strftime("%m/%d/%y")
+    except (ValueError, TypeError):
+        return expiration_iso
+
+
+def _stop_loss_price(entry: float) -> float:
+    """Dollar stop-loss level implied by the stop_pct current_exit_signal
+    is actually evaluating this position against right now (the live
+    default, or an approved Phase 12 override - see
+    logic_state.current_stop_pct), so the card's Stop-loss line always
+    matches the real exit rule instead of a hardcoded assumption that
+    could silently drift from it."""
+    return entry * (1 - logic_state.current_stop_pct())
+
+
 def _trade_card_text(
     row: dict[str, str], status: str, *, mark: float | None = None, pl_pct: float | None = None,
-    pl_dollars: float | None = None, note: str = "",
+    pl_dollars: float | None = None, signal: str = "", balance: float | None = None,
     peak_pct: float | None = None, trough_pct: float | None = None,
 ) -> str:
     """The compact card shown in #evolve-trades - formatted like every
@@ -163,16 +184,19 @@ def _trade_card_text(
     what's needed to read the trade's current state at a glance. Owner:
     "id also like to have ai trader's trade tab cards formatted with
     the cards like everything else... only show the important stuff
-    anything else can be in journal." The full thesis/model-narrative/
-    market-context detail lives in the trade's own thread instead (see
-    _trade_journal_text + discord_post.create_thread)."""
+    anything else can be in journal," then later: "only need signal,
+    amounts, expiration in 00/00/00 format... ENTRY / MARK / STOPLOSS /
+    OPEN PL." The full thesis/model-narrative/market-context detail
+    lives in the trade's own thread instead (see _trade_journal_text +
+    discord_post.create_thread)."""
     trade_id = row.get("trade_id", "")
     sequence = trade_id.split("-")[-1] if trade_id else "?"
     kind = (row.get("call_or_put") or "").upper()
     strike = row.get("strike", "")
-    expiration = row.get("expiration", "")
+    expiration = _format_expiration(row.get("expiration", ""))
     contracts = row.get("contracts", "")
     entry = s.as_float(row.get("entry_price"), 0.0) or 0.0
+    stop_price = _stop_loss_price(entry)
     emoji = _STATUS_EMOJI.get(status, "\U0001F7E6")
 
     lines = [
@@ -182,23 +206,33 @@ def _trade_card_text(
     ]
     if status == "OPEN":
         risked = entry * 100 * (int(contracts) if str(contracts).isdigit() else 0)
-        lines += ["### Entry", f"**Entry:** ${entry:.2f}\n**Risked:** ${risked:,.2f}"]
+        lines += [
+            "### Entry",
+            (
+                f"**Entry:** ${entry:.2f}\n**Stop-loss:** ${stop_price:.2f}\n"
+                f"**Risked:** ${risked:,.2f}"
+            ),
+        ]
     elif status == "HELD":
         lines += [
             "### Value",
-            f"**Entry:** ${entry:.2f}\n**Mark:** ${(mark or entry):.2f}\n**Open P/L:** {(pl_pct or 0):+.0f}%",
+            (
+                f"**Entry:** ${entry:.2f}\n**Mark:** ${(mark or entry):.2f}\n"
+                f"**Stop-loss:** ${stop_price:.2f}\n**Open P/L:** {(pl_pct or 0):+.0f}%"
+            ),
             "### Excursion",
             f"**Peak:** {(peak_pct or 0):+.0f}%\n**Trough:** {(trough_pct or 0):+.0f}%",
         ]
     else:
-        lines += [
-            "### Result",
-            (
-                f"**Entry:** ${entry:.2f} → **Exit:** ${(mark if mark is not None else entry):.2f}\n"
-                f"**P/L:** {(pl_pct or 0):+.0f}% (${(pl_dollars or 0):,.2f})"
-                + (f"\n{note}" if note else "")
-            ),
+        result_lines = [
+            f"**Entry:** ${entry:.2f} → **Exit:** ${(mark if mark is not None else entry):.2f}",
+            f"**P/L:** {(pl_pct or 0):+.0f}% (${(pl_dollars or 0):,.2f})",
         ]
+        if signal:
+            result_lines.append(f"**Signal:** {signal}")
+        if balance is not None:
+            result_lines.append(f"**Balance:** ${balance:,.2f}")
+        lines += ["### Result", "\n".join(result_lines)]
     link = _journal_link(trade_id)
     if link:
         lines += ["### Journal", f"[Open trade journal]({link})"]
@@ -342,7 +376,7 @@ def _close_open_positions(
         closed_count += 1
         content = _trade_card_text(
             row, row["outcome"], mark=result["mark"], pl_pct=result.get("pnl_pct") or 0.0,
-            pl_dollars=pl_dollars, note=f"{result['signal']} · Balance: ${bank['balance']:,.2f}",
+            pl_dollars=pl_dollars, signal=result["signal"], balance=bank["balance"],
         )
         _post_trade_card(row.get("trade_id", ""), content)
     return bank, closed_count
