@@ -137,6 +137,121 @@ def evaluate_exit_for_row(row: dict[str, str], quote: dict[str, Any] | None, tim
     }
 
 
+_STATUS_EMOJI = {
+    "OPEN": "\U0001F7E6",
+    "HELD": "\U0001F7E8",
+    "WIN": "\U0001F7E2",
+    "LOSS": "\U0001F534",
+    "SCRATCH": "⚪",
+}
+
+
+def _journal_link(trade_id: str) -> str:
+    thread_id = discord_post.get_thread("trades", trade_id)
+    if not thread_id or not discord_post.GUILD_ID:
+        return ""
+    return f"https://discord.com/channels/{discord_post.GUILD_ID}/{thread_id}"
+
+
+def _trade_card_text(
+    row: dict[str, str], status: str, *, mark: float | None = None, pl_pct: float | None = None,
+    pl_dollars: float | None = None, note: str = "",
+    peak_pct: float | None = None, trough_pct: float | None = None,
+) -> str:
+    """The compact card shown in #evolve-trades - formatted like every
+    other strategy's cards (## title, ### sections), trimmed to just
+    what's needed to read the trade's current state at a glance. Owner:
+    "id also like to have ai trader's trade tab cards formatted with
+    the cards like everything else... only show the important stuff
+    anything else can be in journal." The full thesis/model-narrative/
+    market-context detail lives in the trade's own thread instead (see
+    _trade_journal_text + discord_post.create_thread)."""
+    trade_id = row.get("trade_id", "")
+    sequence = trade_id.split("-")[-1] if trade_id else "?"
+    kind = (row.get("call_or_put") or "").upper()
+    strike = row.get("strike", "")
+    expiration = row.get("expiration", "")
+    contracts = row.get("contracts", "")
+    entry = s.as_float(row.get("entry_price"), 0.0) or 0.0
+    emoji = _STATUS_EMOJI.get(status, "\U0001F7E6")
+
+    lines = [
+        f"## {emoji} SPY_EVOLVE #{sequence} · {status} · {kind}",
+        "### Position",
+        f"\U0001F7E2 BUY {contracts} SPY {strike} {kind}\n**Expiration:** {expiration}",
+    ]
+    if status == "OPEN":
+        risked = entry * 100 * (int(contracts) if str(contracts).isdigit() else 0)
+        lines += ["### Entry", f"**Entry:** ${entry:.2f}\n**Risked:** ${risked:,.2f}"]
+    elif status == "HELD":
+        lines += [
+            "### Value",
+            f"**Entry:** ${entry:.2f}\n**Mark:** ${(mark or entry):.2f}\n**Open P/L:** {(pl_pct or 0):+.0f}%",
+            "### Excursion",
+            f"**Peak:** {(peak_pct or 0):+.0f}%\n**Trough:** {(trough_pct or 0):+.0f}%",
+        ]
+    else:
+        lines += [
+            "### Result",
+            (
+                f"**Entry:** ${entry:.2f} → **Exit:** ${(mark if mark is not None else entry):.2f}\n"
+                f"**P/L:** {(pl_pct or 0):+.0f}% (${(pl_dollars or 0):,.2f})"
+                + (f"\n{note}" if note else "")
+            ),
+        ]
+    link = _journal_link(trade_id)
+    if link:
+        lines += ["### Journal", f"[Open trade journal]({link})"]
+    return "\n".join(lines)
+
+
+def _trade_journal_text(row: dict[str, str]) -> str:
+    """Everything that used to be crammed into the trade card, moved
+    into the trade's own thread instead - the reasoning behind the
+    entry, not just its current numbers."""
+    lines = [
+        f"**Thesis:** {row.get('thesis') or 'n/a'}",
+        f"**Model:** {row.get('model_narrative_at_entry') or 'not scored'}",
+        f"**Regime:** {row.get('market_regime') or 'n/a'} · **Condition:** {row.get('market_condition_at_entry') or 'n/a'}",
+        (
+            f"**Delta:** {row.get('delta_at_entry') or 'n/a'} · "
+            f"**Theta:** {row.get('theta_at_entry') or 'n/a'} · "
+            f"**IV:** {row.get('iv_at_entry') or 'n/a'}"
+        ),
+        f"**Open interest:** {row.get('open_interest_at_entry') or 'n/a'} · **Volume:** {row.get('volume_at_entry') or 'n/a'}",
+        (
+            f"**VIX:** {row.get('vix_at_entry') or 'n/a'} · "
+            f"**Sentiment:** {row.get('sentiment_at_entry') or 'n/a'} · "
+            f"**Put/call ratio:** {row.get('put_call_ratio_at_entry') or 'n/a'}"
+        ),
+        f"**Model score:** {row.get('model_score_at_entry') or 'n/a'}",
+    ]
+    return "\n".join(lines)
+
+
+def _post_new_trade_card_and_journal(row: dict[str, str]) -> None:
+    """Posts the compact OPEN card, then creates that trade's own thread
+    (holding the detail the card no longer shows - see
+    _trade_journal_text) and re-posts the card once more so it can
+    include the journal link. Two upserts on open only, not per cycle -
+    upsert_message PATCHes in place, so this costs one extra edit, not
+    an extra visible message."""
+    trade_id = row.get("trade_id", "")
+    if not trade_id:
+        return
+    _post_trade_card(trade_id, _trade_card_text(row, "OPEN"))
+    try:
+        message_id = discord_post.get_message_id("trades", f"trade:{trade_id}")
+        if message_id:
+            thread_name = f"SPY_EVOLVE #{trade_id.split('-')[-1]} {row.get('call_or_put','').upper()} {row.get('strike','')}"
+            thread_id = discord_post.create_thread("trades", trade_id, message_id, thread_name)
+            if thread_id:
+                discord_post.send_thread_message(thread_id, _trade_journal_text(row))
+                _post_trade_card(trade_id, _trade_card_text(row, "OPEN"))
+    except discord_post.DiscordPostError:
+        pass
+
+
 def _post_trade_card(trade_id: str, content: str) -> None:
     """One upserted card per trade_id, edited in place across its whole
     lifecycle (open -> live-held updates -> final close), instead of a
@@ -187,12 +302,9 @@ def _post_held_position_update(row: dict[str, str], result: dict[str, Any]) -> N
     trade_id = row.get("trade_id", "")
     if not trade_id:
         return
-    pnl_pct = result.get("pnl_pct") or 0.0
-    emoji = "\U0001F7E2" if pnl_pct >= 0 else "\U0001F534"
-    content = (
-        f"{emoji} SPY_EVOLVE HELD · {row.get('option_symbol')}\n"
-        f"Entry ${result['entry']:.2f} → Mark ${result['mark']:.2f} ({pnl_pct:+.0f}%)\n"
-        f"Peak {result['peak_pct']:+.0f}% · Trough {result['trough_pct']:+.0f}% · {result.get('note', '')}"
+    content = _trade_card_text(
+        row, "HELD", mark=result["mark"], pl_pct=result.get("pnl_pct") or 0.0,
+        peak_pct=result.get("peak_pct") or 0.0, trough_pct=result.get("trough_pct") or 0.0,
     )
     _post_trade_card(trade_id, content)
 
@@ -228,13 +340,11 @@ def _close_open_positions(
         bank = bankroll.credit_exit(bank, proceeds)
         row["balance_after"] = str(bank["balance"])
         closed_count += 1
-        emoji = "\U0001F7E2" if row["outcome"] == "WIN" else ("\U0001F534" if row["outcome"] == "LOSS" else "⚪")
-        _post_trade_card(
-            row.get("trade_id", ""),
-            f"{emoji} SPY_EVOLVE closed {row['option_symbol']}: {row['outcome']} "
-            f"{row['pl_pct']}% (${pl_dollars:,.2f}) — {result['signal']}\n"
-            f"Balance: ${bank['balance']:,.2f}",
+        content = _trade_card_text(
+            row, row["outcome"], mark=result["mark"], pl_pct=result.get("pnl_pct") or 0.0,
+            pl_dollars=pl_dollars, note=f"{result['signal']} · Balance: ${bank['balance']:,.2f}",
         )
+        _post_trade_card(row.get("trade_id", ""), content)
     return bank, closed_count
 
 
@@ -368,11 +478,7 @@ def _try_open_new_position(
     )
     bank = bankroll.debit_entry(bank, cost)
     rows.append(row)
-    _post_trade_card(
-        row["trade_id"],
-        f"\U0001F7E2 SPY_EVOLVE opened {row['call_or_put'].upper()} {row['strike']} exp {row['expiration']} "
-        f"@ ${row['entry_price']} x{contracts} (${cost:,.2f} risked)\n{row['thesis']}",
-    )
+    _post_new_trade_card_and_journal(row)
     return row, bank
 
 

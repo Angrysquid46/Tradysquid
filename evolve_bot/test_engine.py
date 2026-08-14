@@ -57,6 +57,58 @@ def test_refresh_dashboard_never_raises_when_discord_posting_fails():
         engine._refresh_dashboard()  # must not raise
 
 
+def test_trade_card_text_open_shows_only_essentials_no_thesis():
+    """Owner: "only show the important stuff anything else can be in
+    journal" - the compact card must never include the thesis/model
+    narrative/regime detail that used to be crammed into it."""
+    row = tradelog.blank_row()
+    row.update({
+        "trade_id": "EVOLVE-20260812-001", "call_or_put": "call", "strike": "600",
+        "expiration": "2026-08-12", "entry_price": "0.50", "contracts": "3",
+        "thesis": "This exact sentence must not appear on the compact card.",
+    })
+    content = engine._trade_card_text(row, "OPEN")
+    assert "## " in content and "### Position" in content  # sectioned like every other strategy's cards
+    assert "OPEN" in content
+    assert "600" in content
+    assert "This exact sentence must not appear on the compact card." not in content
+
+
+def test_trade_card_text_includes_journal_link_when_a_thread_exists():
+    row = tradelog.blank_row()
+    row.update({"trade_id": "EVOLVE-20260812-001", "call_or_put": "call", "strike": "600", "entry_price": "0.50"})
+    with (
+        mock.patch.object(engine.discord_post, "get_thread", return_value="thread-123"),
+        mock.patch.object(engine.discord_post, "GUILD_ID", "guild-1"),
+    ):
+        content = engine._trade_card_text(row, "OPEN")
+    assert "### Journal" in content
+    assert "https://discord.com/channels/guild-1/thread-123" in content
+
+
+def test_trade_card_text_omits_journal_section_with_no_thread_yet():
+    row = tradelog.blank_row()
+    row.update({"trade_id": "EVOLVE-20260812-001", "call_or_put": "call", "strike": "600", "entry_price": "0.50"})
+    with mock.patch.object(engine.discord_post, "get_thread", return_value=""):
+        content = engine._trade_card_text(row, "OPEN")
+    assert "### Journal" not in content
+
+
+def test_trade_journal_text_carries_the_detail_the_card_no_longer_shows():
+    row = tradelog.blank_row()
+    row.update({
+        "thesis": "Bullish breakout above the opening range.",
+        "model_narrative_at_entry": "Model favors this setup.",
+        "market_regime": "BULLISH / CONTROLLED",
+        "vix_at_entry": "14.2",
+    })
+    journal = engine._trade_journal_text(row)
+    assert "Bullish breakout above the opening range." in journal
+    assert "Model favors this setup." in journal
+    assert "BULLISH / CONTROLLED" in journal
+    assert "14.2" in journal
+
+
 def test_close_open_positions_credits_bankroll_and_marks_loss_on_a_stop_out():
     row = tradelog.blank_row()
     row.update({
@@ -89,7 +141,8 @@ def test_close_open_positions_posts_a_real_discord_alert_on_close():
     row = tradelog.blank_row()
     row.update({
         "trade_id": "EVOLVE-20260812-001", "outcome": "OPEN",
-        "option_symbol": "SPY260812P00770000", "entry_price": "0.50", "contracts": "2",
+        "option_symbol": "SPY260812P00770000", "call_or_put": "put", "strike": "770",
+        "expiration": "2026-08-12", "entry_price": "0.50", "contracts": "2",
     })
     rows = [row]
     bank = bankroll.default_state()
@@ -109,7 +162,7 @@ def test_close_open_positions_posts_a_real_discord_alert_on_close():
     assert channel_key == "trades"
     assert card_key == "trade:EVOLVE-20260812-001"
     assert "LOSS" in content
-    assert "SPY260812P00770000" in content
+    assert "770" in content  # the strike, shown on the compact card now instead of the OCC symbol
     assert "STOP OUT" in content
 
 
@@ -123,7 +176,8 @@ def test_close_open_positions_upserts_a_live_held_position_card_when_not_closing
     row = tradelog.blank_row()
     row.update({
         "trade_id": "EVOLVE-20260813-001", "outcome": "OPEN",
-        "option_symbol": "SPY260813C00777000", "entry_price": "0.76", "contracts": "2",
+        "option_symbol": "SPY260813C00777000", "call_or_put": "call", "strike": "777",
+        "expiration": "2026-08-13", "entry_price": "0.76", "contracts": "2",
     })
     rows = [row]
     bank = bankroll.default_state()
@@ -146,7 +200,7 @@ def test_close_open_positions_upserts_a_live_held_position_card_when_not_closing
     channel_key, card_key, content = fake_upsert.call_args[0]
     assert channel_key == "trades"
     assert card_key == "trade:EVOLVE-20260813-001"
-    assert "SPY260813C00777000" in content
+    assert "HELD" in content
     assert "0.81" in content or "+7%" in content  # real live mark/P&L, not a placeholder
 
 
@@ -402,16 +456,30 @@ def test_try_open_new_position_posts_a_real_discord_alert_on_entry():
         mock.patch.object(engine.market_features, "market_sentiment_for_date", return_value=0.12),
         mock.patch.object(engine.model_scoring, "explain_score", return_value={"score": 0.71, "contributions": []}),
         mock.patch.object(engine.discord_post, "upsert_message") as fake_upsert,
+        mock.patch.object(engine.discord_post, "get_message_id", return_value="msg-1"),
+        mock.patch.object(engine.discord_post, "create_thread", return_value="thread-1") as fake_create_thread,
+        mock.patch.object(engine.discord_post, "send_thread_message") as fake_send_thread,
+        mock.patch.object(engine.discord_post, "get_thread", return_value="thread-1"),
+        mock.patch.object(engine.discord_post, "GUILD_ID", "guild-1"),
     ):
         row, _ = engine._try_open_new_position([], bank, datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
 
     assert row is not None
-    fake_upsert.assert_called_once()
-    channel_key, card_key, content = fake_upsert.call_args[0]
+    # Posted twice: the compact card, then again once the thread exists
+    # so the card can link to it - not a per-cycle repeat, just the
+    # one-time open sequence (upsert_message PATCHes in place, so this
+    # never creates two visible messages).
+    assert fake_upsert.call_count == 2
+    channel_key, card_key, content = fake_upsert.call_args_list[-1][0]
     assert channel_key == "trades"
     assert card_key == f"trade:{row['trade_id']}"
     assert "PUT" in content
-    assert "SPY_EVOLVE opened" in content
+    assert "OPEN" in content
+    assert "Open trade journal" in content
+    fake_create_thread.assert_called_once()
+    fake_send_thread.assert_called_once()
+    journal_content = fake_send_thread.call_args[0][1]
+    assert "Thesis" in journal_content
 
 
 def test_try_open_new_position_leaves_market_features_blank_when_unavailable():

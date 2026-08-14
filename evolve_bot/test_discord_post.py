@@ -354,3 +354,85 @@ def test_upsert_file_patches_the_existing_card_in_place():
         assert payload["attachments"] == []  # clears the old image so it's replaced, not duplicated
         saved_state = json.loads(state_path.read_text(encoding="utf-8"))
         assert saved_state["dashboard:stats_card"] == "old-file-msg"  # same id, never churned
+
+
+def test_create_thread_posts_and_remembers_the_thread_id():
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
+        calls = []
+
+        def fake_request(method, url, headers=None, json=None, timeout=None):
+            if method == "GET":
+                return _fake_response(200, [{"id": "cat-1", "name": discord_post.CATEGORY_NAME, "type": 4},
+                                             {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
+            calls.append((method, url, json))
+            return _fake_response(200, {"id": "thread-1"})
+
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+            mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+        ):
+            thread_id = discord_post.create_thread("trades", "EVOLVE-1", "msg-1", "SPY_EVOLVE #1 CALL 600")
+
+        assert thread_id == "thread-1"
+        assert any(
+            method == "POST" and url == f"{discord_post.API_BASE}/channels/chan-t/messages/msg-1/threads"
+            for method, url, _ in calls
+        )
+        saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert saved_state["trades:thread:EVOLVE-1"] == "thread-1"
+
+
+def test_create_thread_returns_empty_string_when_disabled():
+    with mock.patch.object(discord_post, "BOT_TOKEN", ""), mock.patch.object(discord_post, "GUILD_ID", ""):
+        assert discord_post.create_thread("trades", "EVOLVE-1", "msg-1", "name") == ""
+
+
+def test_get_thread_reads_back_what_create_thread_stored():
+    _reset_cache()
+    with tempfile.TemporaryDirectory() as temp:
+        state_path = Path(temp) / "discord_message_state.json"
+        state_path.write_text(json.dumps({"trades:thread:EVOLVE-1": "thread-9"}), encoding="utf-8")
+        with (
+            mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+            mock.patch.object(discord_post, "GUILD_ID", "123"),
+            mock.patch.object(discord_post, "MESSAGE_STATE_PATH", state_path),
+        ):
+            assert discord_post.get_thread("trades", "EVOLVE-1") == "thread-9"
+
+
+def test_get_thread_and_get_message_id_never_touch_disk_when_disabled():
+    """A test (or any caller) without real credentials must never read
+    real production state off disk just by asking for a thread/message
+    id - matches the same enabled()-gates-everything contract every
+    other function in this module already follows."""
+    with mock.patch.object(discord_post, "BOT_TOKEN", ""), mock.patch.object(discord_post, "GUILD_ID", ""):
+        with mock.patch.object(discord_post, "_load_message_state") as fake_load:
+            assert discord_post.get_thread("trades", "EVOLVE-1") == ""
+            assert discord_post.get_message_id("trades", "trade:EVOLVE-1") == ""
+        fake_load.assert_not_called()
+
+
+def test_send_thread_message_posts_into_the_thread():
+    _reset_cache()
+    calls = []
+
+    def fake_request(method, url, headers=None, json=None, timeout=None):
+        calls.append((method, url, json))
+        return _fake_response(200, {"id": "journal-msg-1"})
+
+    with (
+        mock.patch.object(discord_post, "BOT_TOKEN", "tok"),
+        mock.patch.object(discord_post, "GUILD_ID", "123"),
+        mock.patch.object(discord_post.requests, "request", side_effect=fake_request),
+    ):
+        result = discord_post.send_thread_message("thread-1", "**Thesis:** bullish breakout")
+
+    assert result == {"id": "journal-msg-1"}
+    assert calls == [("POST", f"{discord_post.API_BASE}/channels/thread-1/messages",
+                       {"content": "**Thesis:** bullish breakout", "allowed_mentions": {"parse": []}})]
