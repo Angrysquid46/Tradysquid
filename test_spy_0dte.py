@@ -590,7 +590,15 @@ def test_mark_tradingview_event_if_opened_does_nothing_for_a_non_tradingview_can
     fake_mark.assert_not_called()
 
 
-def test_run_spy_0dte_variant_1m_uses_the_tradingview_signal_not_the_breakout():
+def test_run_spy_0dte_variant_1m_uses_the_opening_range_breakout_not_tradingview():
+    """SPY_0DTE_1M previously read the live TradingView webhook alert
+    instead - that proved to be this system's single most bug-prone
+    dependency (secret mismatches, malformed Pine payloads, a freshness
+    window shorter than the scan cadence, alerts marked consumed on
+    parse rather than on actually opening a trade). Owner: "make them
+    fire off something else because I'm sick of seeing them all dead."
+    Now both 0DTE variants use the same self-contained Python signal,
+    differing only in bar interval."""
     calls = []
     with (
         mock.patch.object(spy_scanner, "spy_0dte_tradingview_signal", side_effect=lambda *a, **k: calls.append("tradingview") or {"qualified": False, "regime": "NO TRADE", "reason": "x", "failures": []}),
@@ -601,7 +609,7 @@ def test_run_spy_0dte_variant_1m_uses_the_tradingview_signal_not_the_breakout():
             today_str="2026-08-10", spot_price=600.0, candidates=[],
             quote_map={}, add_candidates=lambda *a: None,
         )
-    assert calls == ["tradingview"]
+    assert calls == ["breakout"]
 
 
 def test_run_spy_0dte_variant_5m_still_uses_the_opening_range_breakout():

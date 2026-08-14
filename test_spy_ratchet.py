@@ -262,9 +262,6 @@ def test_trade_types_enabled_actually_reads_the_config_flag_per_variant():
 
 
 def test_run_spy_ratchet_variants_gates_each_variant_independently():
-    # Ratchet variants now share SPY_0DTE_1M's live TradingView alert
-    # instead of computing their own Python opening-range signal, per
-    # owner direction - so this stubs spy_0dte_tradingview_signal directly.
     added_labels = []
 
     def add_candidates(label, found):
@@ -276,7 +273,7 @@ def test_run_spy_ratchet_variants_gates_each_variant_independently():
     original_get_strikes = spy_scanner.get_strikes
     original_filter_strikes = spy_scanner.filter_strikes
     original_get_chain = spy_scanner.get_chain
-    original_tradingview_signal = spy_scanner.spy_0dte_tradingview_signal
+    original_opening_range_signal = spy_scanner.spy_0dte_opening_range_signal
     spy_scanner.get_strikes = lambda ticker, exp: [600.0]
     spy_scanner.filter_strikes = lambda strikes, spot: strikes
     spy_scanner.get_chain = lambda ticker, exp: [
@@ -284,19 +281,53 @@ def test_run_spy_ratchet_variants_gates_each_variant_independently():
          "bid": 1.95, "ask": 2.00, "open_interest": 500, "volume": 200,
          "greeks": {"delta": 0.50, "theta": -0.3}}
     ]
-    spy_scanner.spy_0dte_tradingview_signal = lambda symbol, *, play_type: {
+    spy_scanner.spy_0dte_opening_range_signal = lambda intraday_history, *, bar_minutes: {
         "qualified": True, "regime": "BULLISH / CONTROLLED", "reason": "test",
     }
     try:
         spy_scanner._run_spy_ratchet_variants(
-            today_str="2026-08-10", spot_price=600.0,
+            today_str="2026-08-10", spot_price=600.0, intraday_1m=[],
             candidates=[], quote_map={}, add_candidates=add_candidates, enabled=enabled,
         )
     finally:
         spy_scanner.get_strikes = original_get_strikes
         spy_scanner.filter_strikes = original_filter_strikes
         spy_scanner.get_chain = original_get_chain
-        spy_scanner.spy_0dte_tradingview_signal = original_tradingview_signal
+        spy_scanner.spy_0dte_opening_range_signal = original_opening_range_signal
 
     assert len(added_labels) == 1
     assert spy_scanner.SPY_RATCHET_VARIANTS[0]["play_type"] in added_labels[0]
+
+
+def test_run_spy_ratchet_variants_computes_the_shared_signal_only_once():
+    """The signal is identical for all 10 variants - computing it once
+    and reusing it, rather than once per variant, is the whole point of
+    the shared-entry design (see the module docstring)."""
+    calls = []
+    enabled = {variant["play_type"].lower(): True for variant in spy_scanner.SPY_RATCHET_VARIANTS}
+
+    original_get_strikes = spy_scanner.get_strikes
+    original_filter_strikes = spy_scanner.filter_strikes
+    original_get_chain = spy_scanner.get_chain
+    original_opening_range_signal = spy_scanner.spy_0dte_opening_range_signal
+    spy_scanner.get_strikes = lambda ticker, exp: [600.0]
+    spy_scanner.filter_strikes = lambda strikes, spot: strikes
+    spy_scanner.get_chain = lambda ticker, exp: []
+
+    def fake_signal(intraday_history, *, bar_minutes):
+        calls.append(bar_minutes)
+        return {"qualified": False, "regime": "NO TRADE", "reason": "test"}
+
+    spy_scanner.spy_0dte_opening_range_signal = fake_signal
+    try:
+        spy_scanner._run_spy_ratchet_variants(
+            today_str="2026-08-10", spot_price=600.0, intraday_1m=[],
+            candidates=[], quote_map={}, add_candidates=lambda *a: None, enabled=enabled,
+        )
+    finally:
+        spy_scanner.get_strikes = original_get_strikes
+        spy_scanner.filter_strikes = original_filter_strikes
+        spy_scanner.get_chain = original_get_chain
+        spy_scanner.spy_0dte_opening_range_signal = original_opening_range_signal
+
+    assert calls == [1]  # one call, 1-minute bars - not one per variant
