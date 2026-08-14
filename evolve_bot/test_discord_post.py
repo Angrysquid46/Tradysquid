@@ -61,9 +61,9 @@ def test_ensure_channels_creates_category_and_channels_when_none_exist():
     ):
         channels = discord_post.ensure_channels()
 
-    assert set(channels.keys()) == {"dashboard", "trades", "journal", "reviews"}
-    # category created once, then 4 channels - 5 POST calls total
-    assert len(created) == 5
+    assert set(channels.keys()) == {"dashboard", "trades", "journal", "wins", "losses", "reviews"}
+    # category created once, then 6 channels - 7 POST calls total
+    assert len(created) == 7
     assert created[0]["name"] == discord_post.CATEGORY_NAME
 
 
@@ -74,6 +74,8 @@ def test_ensure_channels_reuses_existing_category_and_channels_without_duplicati
         {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
         {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
         {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+        {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+        {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
         {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"},
     ]
     post_calls = []
@@ -91,7 +93,7 @@ def test_ensure_channels_reuses_existing_category_and_channels_without_duplicati
     ):
         channels = discord_post.ensure_channels()
 
-    assert channels == {"dashboard": "chan-d", "trades": "chan-t", "journal": "chan-j", "reviews": "chan-r"}
+    assert channels == {"dashboard": "chan-d", "trades": "chan-t", "journal": "chan-j", "wins": "chan-w", "losses": "chan-l", "reviews": "chan-r"}
     assert post_calls == []  # nothing created - everything already existed
 
 
@@ -108,6 +110,8 @@ def test_ensure_channels_result_is_cached_across_calls():
                 {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                 {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                 {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                 {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"},
             ],
         )
@@ -136,6 +140,8 @@ def test_post_message_sends_real_content_to_the_right_channel():
                     {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                    {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                    {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"},
                 ],
             )
@@ -169,6 +175,8 @@ def test_post_file_uploads_a_real_png_with_multipart():
                     {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                    {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                    {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                     {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"},
                 ],
             )
@@ -205,6 +213,8 @@ def test_upsert_message_posts_fresh_with_no_prior_tracked_message():
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             posted.append((method, url))
             return _fake_response(200, {"id": "msg-1"})
@@ -238,6 +248,8 @@ def test_upsert_message_sends_a_real_embed_instead_of_plain_content_when_given_o
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             payloads.append(json)
             return _fake_response(200, {"id": "msg-1"})
@@ -273,6 +285,8 @@ def test_upsert_message_patches_the_existing_card_in_place():
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             calls.append((method, url))
             return _fake_response(200, {"id": "old-msg-1"})
@@ -305,6 +319,8 @@ def test_upsert_message_patches_with_an_embed_when_one_already_exists():
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             payloads.append((method, json))
             return _fake_response(200, {"id": "old-msg-1"})
@@ -334,6 +350,8 @@ def test_upsert_message_falls_back_to_a_fresh_post_when_the_tracked_message_is_g
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             if method == "PATCH":
                 raise discord_post.DiscordPostError("Discord HTTP 404 for /channels/chan-t/messages/already-gone: not found")
@@ -364,6 +382,8 @@ def test_upsert_file_keeps_one_card_per_card_key():
                                          {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                          {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                          {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                                          {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
 
         def fake_post(url, headers=None, data=None, files=None, timeout=None):
@@ -401,6 +421,8 @@ def test_upsert_file_patches_the_existing_card_in_place():
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             calls.append((method, url, data))
             return _fake_response(200, {"id": "old-file-msg"})
@@ -442,6 +464,8 @@ def test_post_journal_entry_posts_to_the_journal_channel_and_remembers_the_id():
                                              {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                                             {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                                              {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
             calls.append((method, url, json))
             return _fake_response(200, {"id": "journal-msg-1"})
@@ -479,6 +503,8 @@ def test_get_journal_link_reads_back_what_post_journal_entry_stored():
                                          {"id": "chan-t", "name": "evolve-trades", "type": 0, "parent_id": "cat-1"},
                                          {"id": "chan-d", "name": "evolve-dashboard", "type": 0, "parent_id": "cat-1"},
                                          {"id": "chan-j", "name": "evolve-journal", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-w", "name": "evolve-wins", "type": 0, "parent_id": "cat-1"},
+                                         {"id": "chan-l", "name": "evolve-losses", "type": 0, "parent_id": "cat-1"},
                                          {"id": "chan-r", "name": "evolve-reviews", "type": 0, "parent_id": "cat-1"}])
 
         with (

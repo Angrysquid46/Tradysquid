@@ -103,7 +103,15 @@ CHANNEL_SPECS: dict[str, tuple[str, str]] = {
     ),
     "trades": (
         "evolve-trades",
-        "Compact entry/held/exit cards for the evolve bot's own live paper trades - see #evolve-journal for the reasoning behind each one.",
+        "Currently open/held positions only - see #evolve-wins/#evolve-losses once a trade closes, #evolve-journal for the reasoning behind each one.",
+    ),
+    "wins": (
+        "evolve-wins",
+        "Permanent record of every closed winning trade - routed here off #evolve-trades once closed.",
+    ),
+    "losses": (
+        "evolve-losses",
+        "Permanent record of every closed losing/scratch trade - routed here off #evolve-trades once closed.",
     ),
     "journal": (
         "evolve-journal",
