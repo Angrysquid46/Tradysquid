@@ -295,22 +295,20 @@ def _post_new_trade_card_and_journal(row: dict[str, str]) -> None:
 
 
 def _post_trade_card(trade_id: str, content: str) -> None:
-    """One upserted card per trade_id, edited in place across its whole
-    lifecycle (open -> live-held updates -> final close), instead of a
-    separate permanent 'opened' message plus a separate 'held' card -
-    owner: "why's it showing 2 cards for every trade?" (both landed in
-    the single #evolve-trades channel, since this bot - unlike the main
-    system's separate entry/updates/exit channels - only has one trades
-    channel). Once a trade closes this key is never upserted again, so
-    the final message simply stays put as that trade's permanent record
-    - satisfies "still be able to track history" without a second card.
-    Same fail-soft contract as before: a Discord problem here must never
-    affect the real position tracking that already happened above.
-    Rendered as a real Discord embed (spy_scanner.discord_card, parsing
-    this same "## title / ### section" markdown into title/fields/color)
-    so it actually gets the colored-border card look every other
-    strategy's cards already have - owner: "they dont have the
-    background around each message?\""""
+    """One upserted card per trade_id in #evolve-trades, edited in place
+    while OPEN and HELD - owner: "why's it showing 2 cards for every
+    trade?" (open + held used to be separate messages). Once a trade
+    closes, _post_closed_trade_result routes its final card to
+    #evolve-wins/#evolve-losses (a real permanent message there) and
+    deletes this one - #evolve-trades only ever shows currently open/
+    held positions now, owner: "keep trade section clear of all the
+    spam." Same fail-soft contract as before: a Discord problem here
+    must never affect the real position tracking that already happened
+    above. Rendered as a real Discord embed (spy_scanner.discord_card,
+    parsing this same "## title / ### section" markdown into
+    title/fields/color) so it actually gets the colored-border card
+    look every other strategy's cards already have - owner: "they dont
+    have the background around each message?\""""
     if not trade_id:
         return
     try:
@@ -392,8 +390,31 @@ def _close_open_positions(
             row, row["outcome"], mark=result["mark"], pl_pct=result.get("pnl_pct") or 0.0,
             pl_dollars=pl_dollars, signal=result["signal"], balance=bank["balance"],
         )
-        _post_trade_card(row.get("trade_id", ""), content)
+        _post_closed_trade_result(row, content)
     return bank, closed_count
+
+
+def _post_closed_trade_result(row: dict[str, str], content: str) -> None:
+    """Routes a closed trade's final card to its own permanent
+    wins/losses channel (a real new message, never touched again - it's
+    history, not a live status card) and removes the now-stale card
+    from #evolve-trades, which is meant to show only currently open/
+    held positions. Owner: "we can also make a evolve wins and losses
+    tabs so we can keep trade section clear of all the spam." Same
+    fail-soft contract as every other Discord call here."""
+    trade_id = row.get("trade_id", "")
+    if not trade_id:
+        return
+    channel_key = "wins" if row.get("outcome") == "WIN" else "losses"
+    try:
+        embed = s.discord_card(content, footer_suffix=trade_id)
+        discord_post.post_message(channel_key, content, embed=embed)
+    except discord_post.DiscordPostError:
+        pass
+    try:
+        discord_post.delete_card("trades", f"trade:{trade_id}")
+    except discord_post.DiscordPostError:
+        pass
 
 
 def find_candidate(timestamp, spot_price: float, play_type: str = PLAY_TYPE) -> dict[str, Any]:
