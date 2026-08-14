@@ -17,14 +17,15 @@ class FakeDiscord:
             "daily_recap": "daily",
             "weekly_report": "weekly",
             "monthly_recap": "monthly-dashboard",
-            "performance_1m": "monthly-1m",
-            "results_1m": "strategy-1m",
-            "performance_5m": "monthly-5m",
-            "results_5m": "strategy-5m",
-            "performance_key_levels": "monthly-key-levels",
-            "results_key_levels": "strategy-key-levels",
-            "performance_expansion": "monthly-expansion",
-            "results_expansion": "strategy-expansion",
+            "performance_1m": "strategies-dashboard",
+            "results_1m": "strategies-results",
+            "performance_5m": "strategies-dashboard",
+            "results_5m": "strategies-results",
+            "performance_key_levels": "strategies-dashboard",
+            "results_key_levels": "strategies-results",
+            "performance_expansion": "strategies-dashboard",
+            "results_expansion": "strategies-results",
+            "strategy_leaderboard": "strategies-dashboard",
         }
         for variant in spy_scanner.SPY_RATCHET_VARIANTS:
             suffix = variant["play_type"].removeprefix("SPY_RATCHET_").lower()
@@ -43,10 +44,8 @@ class FakeDiscord:
             self.old_pages = {
                 "daily": [self.old_message("old-daily", "Daily Trade History · 07/29/26")],
                 "weekly": [self.old_message("old-weekly", "Weekly Trade History · 07/27/26")],
-                "monthly-1m": [self.old_message("old-monthly-1m", "1-Minute Strategy Monthly Trade History · July 2026")],
-                "strategy-1m": [self.old_message("old-strategy-1m", "1-Minute Strategy Trade History · SPY_0DTE_1M CALL")],
-                "monthly-5m": [],
-                "strategy-5m": [],
+                "strategies-dashboard": [self.old_message("old-monthly-1m", "1-Minute Strategy Monthly Trade History · July 2026")],
+                "strategies-results": [self.old_message("old-strategy-1m", "1-Minute Strategy Trade History · SPY_0DTE_1M CALL")],
             }
 
     @staticmethod
@@ -128,10 +127,10 @@ class PerformanceScorecardTests(unittest.TestCase):
         self.assertEqual(spy_scanner.CHANNEL_NAMES["daily_recap"], "daily-recap")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["weekly_report"], "weekly-report")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["monthly_recap"], "monthly-dashboard")
-        self.assertEqual(spy_scanner.CHANNEL_NAMES["performance_1m"], "1m-performance")
-        self.assertEqual(spy_scanner.CHANNEL_NAMES["results_1m"], "1m-results")
-        self.assertEqual(spy_scanner.CHANNEL_NAMES["performance_5m"], "5m-performance")
-        self.assertEqual(spy_scanner.CHANNEL_NAMES["results_5m"], "5m-results")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["performance_1m"], "strategies-dashboard")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["results_1m"], "strategies-results")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["performance_5m"], "strategies-dashboard")
+        self.assertEqual(spy_scanner.CHANNEL_NAMES["results_5m"], "strategies-results")
 
     def test_structure_contains_each_scorecard_channel_once(self) -> None:
         original = list(structure.CHANNELS)
@@ -191,23 +190,28 @@ class PerformanceScorecardTests(unittest.TestCase):
         self.assertEqual(len(discord.channel_cards["daily"]), 5)
         self.assertEqual(len(discord.channel_cards["weekly"]), 1)
         self.assertEqual(len(discord.channel_cards["monthly-dashboard"]), 2)
-        self.assertEqual(len(discord.channel_cards["monthly-1m"]), 2)
-        self.assertEqual(len(discord.channel_cards["monthly-5m"]), 2)
-        # One combined card per strategy now, not one per call/put side -
-        # owner ask: the split-by-side cards read as duplicates sitting in
-        # the same channel even though they were technically different
-        # groups.
-        self.assertEqual(len(discord.channel_cards["strategy-1m"]), 1)
-        self.assertEqual(len(discord.channel_cards["strategy-5m"]), 1)
+        # 1-Minute/5-Minute/Key-Levels/Expansion-Level now share one
+        # dashboard channel: 1m(2 months) + 5m(2 months) + key-levels(1
+        # empty "current month" placeholder) + expansion(1 empty
+        # placeholder) + 1 leaderboard card = 7.
+        self.assertEqual(len(discord.channel_cards["strategies-dashboard"]), 7)
+        # And one shared results channel: one combined card per strategy
+        # (even a trade-less one still posts an empty scorecard) - owner
+        # ask: the split-by-side cards read as duplicates sitting in the
+        # same channel even though they were technically different groups.
+        self.assertEqual(len(discord.channel_cards["strategies-results"]), 4)
 
         rendered = "\n".join(discord.cards.values())
         self.assertNotIn("Trade History", rendered)
         self.assertNotIn("Performance Index", rendered)
         self.assertNotIn("Page 1/", rendered)
 
-        # The two variants must never bleed into each other's results channel.
-        strategy_1m_text = "\n".join(discord.channel_cards["strategy-1m"])
-        strategy_5m_text = "\n".join(discord.channel_cards["strategy-5m"])
+        # The two variants must never bleed into each other's results card,
+        # even though they now share a channel - checked by state_key
+        # (each variant's own tracked card), not by channel, since the
+        # channel itself no longer distinguishes them.
+        strategy_1m_text = discord.cards["report-v5:results:results_1m:combined"]
+        strategy_5m_text = discord.cards["report-v5:results:results_5m:combined"]
         self.assertIn("Strategy Scorecard · 1-Minute Strategy", strategy_1m_text)
         # Combined across both call and put trades for this variant (25 of
         # each in the synthetic ledger).

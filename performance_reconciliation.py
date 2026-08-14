@@ -41,34 +41,42 @@ RATCHET_VARIANTS = tuple(
     for variant in spy_scanner.SPY_RATCHET_VARIANTS
 )
 
+# The 4 non-ratchet live strategies - genuinely different strategies, not
+# variants of one idea, but sharing one dashboard/results channel pair now
+# too (owner: "do the ratchet thing but instead all the other trades
+# tradebot makes ... tabs can stay meaningful and not scattered
+# craziness"). Named separately from RATCHET_VARIANTS since the two groups
+# get their own independent leaderboard and their own shared channel pair.
+OTHER_STRATEGY_VARIANTS = SPY_0DTE_VARIANTS + (
+    (spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels", "results_key_levels", "Key-Levels Strategy"),
+    (spy_scanner.SPY_EXPANSION_PLAY_TYPE, "performance_expansion", "results_expansion", "Expansion-Level Strategy"),
+)
+
 # Every independently-tracked live strategy that gets its own paginated
 # performance/results ledger - the two SPY_0DTE variants, SPY Key-Levels/
 # ORB/VWAP, SPY Expansion-Level, and the 10 ratchet-floor variants, none of
 # which read each other's rows.
-STRATEGY_VARIANTS = SPY_0DTE_VARIANTS + (
-    (spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels", "results_key_levels", "Key-Levels Strategy"),
-    (spy_scanner.SPY_EXPANSION_PLAY_TYPE, "performance_expansion", "results_expansion", "Expansion-Level Strategy"),
-) + RATCHET_VARIANTS
+STRATEGY_VARIANTS = OTHER_STRATEGY_VARIANTS + RATCHET_VARIANTS
 
 REPORT_ROUTES = {
     "daily_recap": "daily-recap",
     "weekly_report": "weekly-report",
     "monthly_recap": "monthly-dashboard",
-    "performance_1m": "1m-performance",
-    "results_1m": "1m-results",
-    "performance_5m": "5m-performance",
-    "results_5m": "5m-results",
-    "performance_key_levels": "key-levels-performance",
-    "results_key_levels": "key-levels-results",
-    "performance_expansion": "expansion-performance",
-    "results_expansion": "expansion-results",
 }
+# All 4 non-ratchet strategies now share one dashboard channel and one
+# results channel - each keeps its own logical key, own state_key, and own
+# REPORT_MARKERS text below, so it still gets its own distinct,
+# independently-tracked card within the shared channel; only the REAL
+# channel name changed here.
+for _play_type, _perf_logical, _results_logical, _label in OTHER_STRATEGY_VARIANTS:
+    REPORT_ROUTES[_perf_logical] = "strategies-dashboard"
+    REPORT_ROUTES[_results_logical] = "strategies-results"
+STRATEGY_LEADERBOARD_LOGICAL = "strategy_leaderboard"
+REPORT_ROUTES[STRATEGY_LEADERBOARD_LOGICAL] = "strategies-dashboard"
 # All 10 ratchet variants now share one dashboard channel and one results
 # channel (owner: "all the ratchet stratagies in a single catagory instead
-# of 11 different channels") - each variant keeps its own logical key, own
-# state_key, and own REPORT_MARKERS text below, so it still gets its own
-# distinct, independently-tracked card within the shared channel; only the
-# REAL channel name changed here.
+# of 11 different channels") - same pattern as above, its own separate
+# shared pair.
 for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
     REPORT_ROUTES[_perf_logical] = "ratchet-dashboard"
     REPORT_ROUTES[_results_logical] = "ratchet-results"
@@ -140,6 +148,7 @@ for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
         f"{_label} Trade History ·",
     )
 REPORT_MARKERS[RATCHET_LEADERBOARD_LOGICAL] = ("Ratchet Strategy Leaderboard",)
+REPORT_MARKERS[STRATEGY_LEADERBOARD_LOGICAL] = ("Strategy Leaderboard",)
 
 STATE_PREFIXES = (
     "report-v3:",
@@ -399,23 +408,27 @@ def format_monthly_report(rows: list[dict[str, str]], month: date) -> str:
     )
 
 
-def format_ratchet_leaderboard(rows: list[dict[str, str]]) -> str:
-    """Ranks all 10 ratchet-floor variants against each other by real net
-    P&L, so the shared ratchet-dashboard channel answers "which one is
-    actually winning" at a glance. Each variant still gets its own full
-    monthly performance index and results feed elsewhere in that same
-    channel (see _sync_monthly_performance_variant/
-    _sync_strategy_results_variant) - this is the summary view on top of
-    that detail, not a replacement for it. Owner: "a dashboard so we can
-    see top performers.\""""
+def format_variant_leaderboard(
+    variants: tuple[tuple[str, str, str, str], ...], rows: list[dict[str, str]], title: str
+) -> str:
+    """Ranks a group of strategy variants against each other by real net
+    P&L, so their shared dashboard channel answers "which one is actually
+    winning" at a glance. Each variant still gets its own full monthly
+    performance index and results feed elsewhere in that same channel
+    (see _sync_monthly_performance_variant/_sync_strategy_results_variant)
+    - this is the summary view on top of that detail, not a replacement
+    for it. Shared by format_ratchet_leaderboard (the 10 ratchet-floor
+    variants) and format_strategy_leaderboard (the 4 other live
+    strategies) - same ranking logic, different variant group and title.
+    Owner: "a dashboard so we can see top performers.\""""
     ranked = []
-    for play_type, _perf_logical, _results_logical, label in RATCHET_VARIANTS:
+    for play_type, _perf_logical, _results_logical, label in variants:
         completed = canonical_closed_rows([row for row in rows if row.get("play_type") == play_type])
         ranked.append((label, spy_scanner.result_metrics(completed)))
     ranked.sort(key=lambda item: item[1]["total_pnl"], reverse=True)
 
     medals = ["🥇", "🥈", "🥉"]
-    lines = ["## 🏁 Ratchet Strategy Leaderboard", "### Ranked by net P&L"]
+    lines = [f"## 🏁 {title}", "### Ranked by net P&L"]
     for index, (label, metrics) in enumerate(ranked):
         badge = medals[index] if index < len(medals) else f"{index + 1}."
         closed = int(metrics["wins"] + metrics["losses"] + metrics["scratches"])
@@ -432,6 +445,14 @@ def format_ratchet_leaderboard(rows: list[dict[str, str]]) -> str:
     lines.append("### Updated")
     lines.append(spy_scanner.portable_strftime(spy_scanner.now_ct(), "%m/%d/%y %-I:%M %p CT"))
     return "\n".join(lines)
+
+
+def format_ratchet_leaderboard(rows: list[dict[str, str]]) -> str:
+    return format_variant_leaderboard(RATCHET_VARIANTS, rows, "Ratchet Strategy Leaderboard")
+
+
+def format_strategy_leaderboard(rows: list[dict[str, str]]) -> str:
+    return format_variant_leaderboard(OTHER_STRATEGY_VARIANTS, rows, "Strategy Leaderboard")
 
 
 def strategy_groups(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
@@ -872,6 +893,14 @@ def sync_reports(
         "report-v3:ratchet_leaderboard:index",
         format_ratchet_leaderboard(rows),
         "Ratchet Strategy Leaderboard",
+    )
+    _require_upsert(
+        discord,
+        STRATEGY_LEADERBOARD_LOGICAL,
+        state,
+        "report-v3:strategy_leaderboard:index",
+        format_strategy_leaderboard(rows),
+        "Strategy Leaderboard",
     )
 
     state.update(
