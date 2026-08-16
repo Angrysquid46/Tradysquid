@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import sqlite3
 import sys
 from datetime import date, datetime, time as dt_time, timedelta
@@ -116,6 +117,7 @@ CREATE TABLE IF NOT EXISTS features (
     rsi_14 REAL,
     atr_14 REAL, atr_percentile REAL,
     adx_14 REAL, plus_di_14 REAL, minus_di_14 REAL, trend_strength TEXT, trend_direction_di TEXT,
+    vwap REAL,
     bb_upper REAL, bb_mid REAL, bb_lower REAL, bb_width_pct REAL,
     relative_volume REAL,
     higher_high INTEGER, higher_low INTEGER, lower_high INTEGER, lower_low INTEGER,
@@ -162,6 +164,49 @@ STRUCTURAL_EVIDENCE_NOTE = (
 )
 
 
+def _declared_feature_columns() -> list[tuple[str, str]]:
+    """The (name, type) pairs SCHEMA declares for the features table,
+    parsed out of SCHEMA itself so there is exactly one source of truth -
+    a new column added to SCHEMA is automatically known to the migration
+    below without a second list to keep in sync."""
+    match = re.search(
+        r"CREATE TABLE IF NOT EXISTS features \((.*?)\n\);", SCHEMA, re.S
+    )
+    if not match:
+        return []
+    columns: list[tuple[str, str]] = []
+    for raw in match.group(1).split(","):
+        parts = raw.strip().split()
+        if len(parts) >= 2 and parts[0].upper() not in ("PRIMARY", "FOREIGN", "UNIQUE"):
+            columns.append((parts[0], parts[1]))
+    return columns
+
+
+def _migrate_feature_columns(conn: sqlite3.Connection) -> list[str]:
+    """Adds any SCHEMA-declared features column the live table is missing.
+
+    Necessary because SCHEMA uses CREATE TABLE IF NOT EXISTS, which is a
+    complete no-op against a table that already exists - so adding a new
+    tracked feature (vwap was the first real case) would leave every
+    existing database one column short and make store_features raise
+    'table features has no column named ...' on the very next collection
+    run, silently breaking the daily scheduled task rather than failing
+    loudly at deploy time. Driven off PRAGMA table_info vs. the declared
+    list so this self-heals for every future column too, not just vwap.
+    Idempotent: returns [] once the table already matches."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(features)").fetchall()}
+    if not existing:
+        return []  # brand-new database - SCHEMA just created it correctly
+    added: list[str] = []
+    for name, column_type in _declared_feature_columns():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE features ADD COLUMN {name} {column_type}")
+            added.append(name)
+    if added:
+        conn.commit()
+    return added
+
+
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=10)
@@ -169,6 +214,7 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=10000")
     conn.executescript(SCHEMA)
+    _migrate_feature_columns(conn)
     return conn
 
 
@@ -494,6 +540,60 @@ def _adx_series(
     return adx, plus_di, minus_di
 
 
+def _is_intraday_bar_time(bar_time: str) -> bool:
+    """True only for a real intraday timestamp (e.g. '2026-03-02T14:30:00Z'),
+    False for a daily bar's plain 'YYYY-MM-DD'. Checked structurally (ISO
+    date prefix AND something after it) rather than by passing the
+    timeframe down, so _build_series_cache's existing single-argument
+    signature - which tests already call directly - stays unchanged."""
+    return len(bar_time) > 10 and bar_time[4:5] == "-"
+
+
+def _session_vwap_series(bars: list[sqlite3.Row]) -> list[float | None]:
+    """Session-anchored VWAP, one value per bar, reset at each new
+    calendar day - the running volume-weighted average price so far in
+    THAT session, which is what a trader means by "VWAP" intraday.
+
+    Uses the same typical-price (H+L+C)/3 convention as the canonical
+    spy_scanner.spy_key_levels_vwap, but computed cumulatively per bar
+    rather than as one figure for a whole bar list, because a chart needs
+    the running line, not a single number. Deliberately a separate
+    implementation from either of spy_scanner's two VWAPs (the
+    Key-Levels one and directional_market_context's close-only proxy) -
+    standing owner direction is that those stay independent, and
+    market_memory is standalone by design.
+
+    Causal: the value at index i depends only on bars[:i+1], so it is
+    identical whether computed over the full series or a series
+    truncated at i (see the no-lookahead test). None on daily bars -
+    session VWAP is meaningless when one bar IS the session - and None
+    until a session has accumulated real volume."""
+    result: list[float | None] = [None] * len(bars)
+    current_session: str | None = None
+    cumulative_pv = 0.0
+    cumulative_volume = 0.0
+    for i, row in enumerate(bars):
+        bar_time = str(row["bar_time"])
+        if not _is_intraday_bar_time(bar_time):
+            continue
+        session = bar_time[:10]
+        if session != current_session:
+            current_session = session
+            cumulative_pv = 0.0
+            cumulative_volume = 0.0
+        high, low, close = row["high"], row["low"], row["close"]
+        volume = row["volume"]
+        if high is None or low is None or close is None or not volume or volume <= 0:
+            # A zero/missing-volume bar contributes nothing, but the
+            # session's running VWAP so far is still the correct answer.
+            result[i] = (cumulative_pv / cumulative_volume) if cumulative_volume > 0 else None
+            continue
+        cumulative_pv += ((high + low + close) / 3) * volume
+        cumulative_volume += volume
+        result[i] = cumulative_pv / cumulative_volume if cumulative_volume > 0 else None
+    return result
+
+
 def _build_series_cache(bars: list[sqlite3.Row]) -> dict[str, Any]:
     """Precomputes every moving-average-family series ONCE for the whole
     bars list, instead of compute_features_for_window's original
@@ -568,6 +668,7 @@ def _build_series_cache(bars: list[sqlite3.Row]) -> dict[str, Any]:
     atr_14 = [None] + _simple_moving_average_series(true_ranges, 14)  # re-align to bars' own indices
 
     adx_14, plus_di_14, minus_di_14 = _adx_series(highs, lows, closes, 14)
+    vwap = _session_vwap_series(bars)
 
     return {
         "closes": closes, "highs": highs, "lows": lows, "volumes": volumes,
@@ -577,6 +678,7 @@ def _build_series_cache(bars: list[sqlite3.Row]) -> dict[str, Any]:
         "macd_histogram_previous": macd_histogram_previous,
         "atr_14": atr_14,
         "adx_14": adx_14, "plus_di_14": plus_di_14, "minus_di_14": minus_di_14,
+        "vwap": vwap,
     }
 
 
@@ -612,6 +714,7 @@ def compute_features_for_window(
         adx_14 = cache["adx_14"][index]
         plus_di_14 = cache["plus_di_14"][index]
         minus_di_14 = cache["minus_di_14"][index]
+        vwap = cache["vwap"][index]
         prior_sma_50 = cache["sma_50"][index - 1] if index >= 1 else None
         prior_sma_200 = cache["sma_200"][index - 1] if index >= 1 else None
         volume_window = volumes_full[max(0, index - 20):index]
@@ -648,6 +751,9 @@ def compute_features_for_window(
         bb_upper, bb_mid, bb_lower = s.bollinger_bands(closes, 20, 2.0)
         adx_series, plus_di_series, minus_di_series = _adx_series(highs, lows, closes, 14)
         adx_14, plus_di_14, minus_di_14 = adx_series[-1], plus_di_series[-1], minus_di_series[-1]
+        # Causal by construction, so the last value of the truncated
+        # window equals the cached full-series value at this index.
+        vwap = _session_vwap_series(window)[-1]
 
         prior_sma_50 = prior_sma_200 = None
         if index >= 1:
@@ -747,6 +853,7 @@ def compute_features_for_window(
         "rsi_14": rsi_14, "atr_14": atr_14, "atr_percentile": atr_percentile,
         "adx_14": adx_14, "plus_di_14": plus_di_14, "minus_di_14": minus_di_14,
         "trend_strength": trend_strength, "trend_direction_di": trend_direction_di,
+        "vwap": vwap,
         "bb_upper": bb_upper, "bb_mid": bb_mid, "bb_lower": bb_lower, "bb_width_pct": bb_width_pct,
         "relative_volume": relative_volume,
         "higher_high": higher_high, "higher_low": higher_low,
@@ -848,14 +955,14 @@ def store_features(conn: sqlite3.Connection, ticker: str, timeframe: str, bar_ti
         INSERT OR REPLACE INTO features (
             ticker, timeframe, bar_time, sma_20, sma_50, sma_200, ema_9, ema_20, ema_50, ema_200,
             macd_line, macd_signal, macd_histogram, macd_color, rsi_14, atr_14, atr_percentile,
-            adx_14, plus_di_14, minus_di_14, trend_strength, trend_direction_di,
+            adx_14, plus_di_14, minus_di_14, trend_strength, trend_direction_di, vwap,
             bb_upper, bb_mid, bb_lower, bb_width_pct, relative_volume,
             higher_high, higher_low, lower_high, lower_low, trend_run_length,
             inside_bar, outside_bar, nr7, gap_pct,
             golden_cross, death_cross, price_above_sma_200, price_above_ema_200,
             short_term_trend, medium_term_trend, long_term_trend, trend_label,
             market_condition, computed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             ticker, timeframe, bar_time,
@@ -864,7 +971,7 @@ def store_features(conn: sqlite3.Connection, ticker: str, timeframe: str, bar_ti
             features["macd_line"], features["macd_signal"], features["macd_histogram"], features["macd_color"],
             features["rsi_14"], features["atr_14"], features["atr_percentile"],
             features["adx_14"], features["plus_di_14"], features["minus_di_14"],
-            features["trend_strength"], features["trend_direction_di"],
+            features["trend_strength"], features["trend_direction_di"], features["vwap"],
             features["bb_upper"], features["bb_mid"], features["bb_lower"], features["bb_width_pct"],
             features["relative_volume"],
             features["higher_high"], features["higher_low"], features["lower_high"], features["lower_low"],
@@ -1094,6 +1201,7 @@ FEATURE_COLUMNS = (
     "macd_line", "macd_signal", "macd_histogram", "macd_color",
     "rsi_14", "atr_14", "atr_percentile",
     "adx_14", "plus_di_14", "minus_di_14", "trend_strength", "trend_direction_di",
+    "vwap",
     "bb_upper", "bb_mid", "bb_lower", "bb_width_pct", "relative_volume",
     "higher_high", "higher_low", "lower_high", "lower_low", "trend_run_length",
     "inside_bar", "outside_bar", "nr7", "gap_pct",
@@ -1215,6 +1323,80 @@ def pattern_stats(
         return {"pattern_name": pattern_name, "total_occurrences": total, "by_horizon": by_horizon}
     finally:
         conn.close()
+
+
+def base_rate_stats(ticker: str, timeframe: str) -> dict[int, dict[str, Any] | None]:
+    """The UNCONDITIONAL forward return over the same horizons
+    pattern_stats reports - i.e. what simply holding the underlying did,
+    measured from every bar, with no pattern involved at all.
+
+    This exists because a bare pattern win rate is close to meaningless
+    and can be actively misleading. Real example from this very dataset:
+    gap_up shows a 65.3% 20-day win rate, which sounds like an edge until
+    you notice SPY rose over 64.5% of ALL 20-day windows across the same
+    8,000 bars - so gap_up is doing essentially nothing, and gap_down
+    (62.6%) and nr7 (63.9%) are actually BELOW the base rate. Any caller
+    surfacing pattern statistics to a human should express them as edge
+    against this, never as a raw percentage."""
+    conn = connect()
+    try:
+        closes = [
+            row["close"]
+            for row in conn.execute(
+                "SELECT close FROM bars WHERE ticker = ? AND timeframe = ? ORDER BY bar_time",
+                (ticker, timeframe),
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+    result: dict[int, dict[str, Any] | None] = {}
+    for horizon in FORWARD_RETURN_HORIZONS:
+        returns = [
+            (closes[i + horizon] - closes[i]) / closes[i] * 100
+            for i in range(len(closes) - horizon)
+            if closes[i]
+        ]
+        if not returns:
+            result[horizon] = None
+            continue
+        result[horizon] = {
+            "n": len(returns),
+            "avg_return_pct": sum(returns) / len(returns),
+            "win_rate_pct": sum(1 for value in returns if value > 0) / len(returns) * 100,
+        }
+    return result
+
+
+def pattern_edge_vs_base_rate(ticker: str, timeframe: str, pattern_name: str) -> dict[str, Any]:
+    """pattern_stats expressed as EDGE against base_rate_stats - the only
+    form of these numbers that should ever be shown to a human. Positive
+    edge means the pattern genuinely beat simply being in the market over
+    that horizon; near-zero or negative means it did not, however good
+    its raw win rate looks."""
+    stats = pattern_stats(ticker, timeframe, pattern_name)
+    base = base_rate_stats(ticker, timeframe)
+    horizons: dict[int, dict[str, Any] | None] = {}
+    for horizon in FORWARD_RETURN_HORIZONS:
+        pattern_horizon = stats["by_horizon"].get(horizon)
+        base_horizon = base.get(horizon)
+        if not pattern_horizon or not base_horizon:
+            horizons[horizon] = None
+            continue
+        horizons[horizon] = {
+            "n": pattern_horizon["n"],
+            "pattern_avg_return_pct": pattern_horizon["avg_return_pct"],
+            "pattern_win_rate_pct": pattern_horizon["win_rate_pct"],
+            "base_avg_return_pct": base_horizon["avg_return_pct"],
+            "base_win_rate_pct": base_horizon["win_rate_pct"],
+            "edge_avg_return_pct": pattern_horizon["avg_return_pct"] - base_horizon["avg_return_pct"],
+            "edge_win_rate_pp": pattern_horizon["win_rate_pct"] - base_horizon["win_rate_pct"],
+        }
+    return {
+        "pattern_name": pattern_name,
+        "total_occurrences": stats["total_occurrences"],
+        "by_horizon": horizons,
+    }
 
 
 def pattern_stats_recent_vs_all_time(
