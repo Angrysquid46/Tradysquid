@@ -224,6 +224,16 @@ INFRA_SPECS = (
         ("applied-upgrades",),
         group="Reliability and deployment upgrades",
     ),
+    UpgradeSpec(
+        "spy-technicals-visibility",
+        "SPY technicals visibility",
+        "Publishes the standalone market-memory store as charts across intraday, short, medium and long "
+        "horizons, plus one summary card that reports each tracked pattern as edge over the base rate "
+        "rather than a raw win rate. Read-only; no strategy consumes it.",
+        "spy-technicals-charts → upgrade_batch_44.spy_technicals_job",
+        ("spy-technicals",),
+        group="Reliability and deployment upgrades",
+    ),
 )
 
 ALL_SPECS = (*BATCH_SPECS, *INFRA_SPECS)

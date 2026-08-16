@@ -388,6 +388,11 @@ CHANNEL_NAMES = {
     "intelligence": "market-regime",
     "market_pulse": "market-regime",
     "technicals": "charts-and-levels",
+    # The market-memory research store's own visualization channel. A
+    # separate key from "technicals" on purpose - that one is still
+    # routed to #charts-and-levels by local_information_engine and its
+    # cards are cleaned up there by intraday_chart_job.
+    "spy_technicals": "spy-technicals",
     "options_chain": "scanner-feed",
     "risk_desk": "scanner-controls",
     "news_events": "news-and-events",
@@ -510,6 +515,7 @@ AUTOMATED_CHANNEL_KEYS = [
     "daily_recap",
     "weekly_report",
     "monthly_recap",
+    "spy_technicals",
     "performance_1m",
     "results_1m",
     "performance_5m",
