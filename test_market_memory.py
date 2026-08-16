@@ -8,6 +8,8 @@ never the real state/market_memory.db."""
 from __future__ import annotations
 
 import json
+import re
+import sqlite3
 import tempfile
 from datetime import datetime as real_datetime
 from pathlib import Path
@@ -762,3 +764,267 @@ def test_ingest_robinhood_equity_dump_is_idempotent_on_rerun():
 
     assert first["new_bars"] == 1
     assert second["new_bars"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Session-anchored VWAP
+# ---------------------------------------------------------------------------
+
+def _intraday_bar(day: str, minute_index: int, price: float, volume: float = 1000.0) -> tuple:
+    """A 5-minute bar on `day` whose typical price (H+L+C)/3 is exactly
+    `price`, so expected VWAP is hand-computable."""
+    hour, minute = divmod(minute_index * 5, 60)
+    stamp = f"{day}T{14 + hour:02d}:{minute:02d}:00Z"
+    return _bar(stamp, price, price + 1.0, price - 1.0, price, volume)
+
+
+def test_vwap_is_volume_weighted_typical_price_within_a_session():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        # Two bars, same session: typical prices 100 and 200, volumes 1000
+        # and 3000 -> VWAP = (100*1000 + 200*3000) / 4000 = 175.
+        rows = [
+            _intraday_bar("2026-03-02", 0, 100.0, 1000.0),
+            _intraday_bar("2026-03-02", 1, 200.0, 3000.0),
+        ]
+        mm.store_bars(conn, "SPY", "5min", rows)
+        bars = mm.load_bars(conn, "SPY", "5min")
+        series = mm._session_vwap_series(bars)
+        conn.close()
+
+    assert series[0] == 100.0
+    assert series[1] == 175.0
+
+
+def test_vwap_resets_at_each_new_session_and_never_bleeds_across_days():
+    """The whole point of "session-anchored": yesterday's volume must not
+    weight today's VWAP. A cumulative-across-everything VWAP would carry
+    day one forward and be wrong from the first bar of day two."""
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = [
+            _intraday_bar("2026-03-02", 0, 100.0, 5000.0),
+            _intraday_bar("2026-03-02", 1, 100.0, 5000.0),
+            _intraday_bar("2026-03-03", 0, 500.0, 1000.0),
+        ]
+        mm.store_bars(conn, "SPY", "5min", rows)
+        bars = mm.load_bars(conn, "SPY", "5min")
+        series = mm._session_vwap_series(bars)
+        conn.close()
+
+    assert series[1] == 100.0
+    # First bar of the new session: VWAP is that bar alone, not dragged
+    # toward 100 by the previous day's 10,000 shares.
+    assert series[2] == 500.0
+
+
+def test_vwap_never_looks_ahead():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = [_intraday_bar("2026-03-02", i, 100.0 + i, 1000.0 + i * 10) for i in range(20)]
+        mm.store_bars(conn, "SPY", "5min", rows)
+        bars = mm.load_bars(conn, "SPY", "5min")
+        full = mm._session_vwap_series(bars)
+        truncated = mm._session_vwap_series(bars[:8])
+        conn.close()
+
+    assert full[7] == truncated[7]
+
+
+def test_vwap_is_null_on_daily_bars():
+    """Session VWAP is meaningless when one bar IS the whole session."""
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = [_bar(f"2026-03-{i + 1:02d}", 100, 101, 99, 100) for i in range(10)]
+        mm.store_bars(conn, "SPY", "daily", rows)
+        bars = mm.load_bars(conn, "SPY", "daily")
+        features = mm.compute_features_for_window(bars, len(bars) - 1)
+        conn.close()
+
+    assert features["vwap"] is None
+
+
+def test_vwap_ignores_zero_volume_bars_but_keeps_the_running_session_value():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = [
+            _intraday_bar("2026-03-02", 0, 100.0, 1000.0),
+            _intraday_bar("2026-03-02", 1, 900.0, 0.0),  # no real trades
+        ]
+        mm.store_bars(conn, "SPY", "5min", rows)
+        bars = mm.load_bars(conn, "SPY", "5min")
+        series = mm._session_vwap_series(bars)
+        conn.close()
+
+    # The zero-volume bar contributes nothing, so VWAP stays at 100 - it
+    # must NOT be dragged toward 900 by a bar nobody traded.
+    assert series[1] == 100.0
+
+
+def test_cached_and_uncached_vwap_agree_on_real_intraday_timestamps():
+    """The existing whole-dict parity test uses synthetic daily-style bar
+    times, where vwap is None on both paths and therefore passes
+    trivially. This exercises the same parity on REAL intraday
+    timestamps, where the cached path reads a prebuilt series and the
+    uncached path recomputes over a truncated window."""
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = []
+        for day_index, day in enumerate(("2026-03-02", "2026-03-03", "2026-03-04")):
+            for i in range(30):
+                rows.append(_intraday_bar(day, i, 100.0 + day_index * 10 + i * 0.5, 1000.0 + i * 25))
+        mm.store_bars(conn, "SPY", "5min", rows)
+        bars = mm.load_bars(conn, "SPY", "5min")
+        cache = mm._build_series_cache(bars)
+
+        mismatches = []
+        for index in range(len(bars)):
+            cached = mm.compute_features_for_window(bars, index, cache=cache)["vwap"]
+            uncached = mm.compute_features_for_window(bars, index)["vwap"]
+            if cached != uncached:
+                mismatches.append((index, cached, uncached))
+        # Confirm the test is actually exercising real values, not all None.
+        populated = sum(
+            1 for i in range(len(bars))
+            if mm.compute_features_for_window(bars, i, cache=cache)["vwap"] is not None
+        )
+        conn.close()
+
+    assert mismatches == []
+    assert populated == len(rows)
+
+
+def test_vwap_round_trips_through_the_features_table():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = [_intraday_bar("2026-03-02", i, 100.0 + i, 1000.0) for i in range(5)]
+        result = mm._ingest_and_process(conn, "SPY", "5min", rows)
+        stored = conn.execute(
+            "SELECT bar_time, vwap FROM features WHERE ticker='SPY' AND timeframe='5min' ORDER BY bar_time"
+        ).fetchall()
+        conn.close()
+
+    assert result["features_computed"] == 5
+    assert all(row["vwap"] is not None for row in stored)
+    assert stored[0]["vwap"] == 100.0
+
+
+# ---------------------------------------------------------------------------
+# Base rate / pattern edge - guards against reporting misleading raw win rates
+# ---------------------------------------------------------------------------
+
+def test_base_rate_stats_matches_a_hand_computed_unconditional_return():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        # Closes 100, 101, ..., 129 - every 5-bar forward return is
+        # positive, so the unconditional win rate must be exactly 100%.
+        rows = [_bar(f"d{i:03d}", 100 + i, 101 + i, 99 + i, 100 + i) for i in range(30)]
+        mm.store_bars(conn, "SPY", "daily", rows)
+        conn.close()
+        base = mm.base_rate_stats("SPY", "daily")
+
+    assert base[5]["n"] == 25
+    assert base[5]["win_rate_pct"] == 100.0
+    # First window: 100 -> 105 = +5%.
+    assert round(base[5]["avg_return_pct"], 4) > 0
+
+
+def test_pattern_edge_is_the_pattern_minus_the_base_rate():
+    """Regression guard for the real reporting bug this exists to
+    prevent: gap_up's 65.3% raw 20-day win rate reads like an edge, but
+    SPY's unconditional 20-day win rate is 64.5% - so the honest number
+    is +0.8pp, not 65%."""
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = [_bar(f"d{i:03d}", 100 + i, 101 + i, 99 + i, 100 + i) for i in range(40)]
+        mm.store_bars(conn, "SPY", "daily", rows)
+        mm.store_patterns(conn, "SPY", "daily", "d000", ["inside_bar"])
+        mm.backfill_pattern_outcomes(conn, "SPY", "daily")
+        conn.close()
+
+        edge = mm.pattern_edge_vs_base_rate("SPY", "daily", "inside_bar")
+        stats = mm.pattern_stats("SPY", "daily", "inside_bar")
+        base = mm.base_rate_stats("SPY", "daily")
+
+    horizon = edge["by_horizon"][5]
+    assert horizon["edge_avg_return_pct"] == (
+        stats["by_horizon"][5]["avg_return_pct"] - base[5]["avg_return_pct"]
+    )
+    assert horizon["edge_win_rate_pp"] == (
+        stats["by_horizon"][5]["win_rate_pct"] - base[5]["win_rate_pct"]
+    )
+
+
+def test_connect_migrates_an_existing_features_table_in_place():
+    """SCHEMA uses CREATE TABLE IF NOT EXISTS, which is a complete no-op
+    against a table that already exists. Without a real migration,
+    adding a tracked feature leaves every existing install one column
+    short and store_features raises 'table features has no column named
+    ...' on the next scheduled collection run - breaking the daily task
+    silently rather than failing at deploy time."""
+    old_schema = mm.SCHEMA.replace("    vwap REAL,\n", "")
+    assert "vwap" not in old_schema, "fixture must actually predate the vwap column"
+
+    with tempfile.TemporaryDirectory() as temp:
+        db_path = Path(temp) / "legacy.db"
+        raw = sqlite3.connect(db_path)
+        raw.executescript(old_schema)
+        raw.commit()
+        before = {row[1] for row in raw.execute("PRAGMA table_info(features)")}
+        raw.close()
+
+        with mock.patch.object(mm, "DB_PATH", db_path):
+            conn = mm.connect()
+            after = {row["name"] for row in conn.execute("PRAGMA table_info(features)")}
+            # A second call must be a clean no-op, not a duplicate ALTER.
+            second_pass = mm._migrate_feature_columns(conn)
+            conn.close()
+
+    assert "vwap" not in before
+    assert "vwap" in after
+    assert second_pass == []
+
+
+def test_store_features_and_feature_columns_stay_in_sync_with_the_schema():
+    """Adding a feature column touches five places (SCHEMA, the series
+    cache, both compute branches, store_features, FEATURE_COLUMNS). This
+    fails immediately if a future column lands in only some of them,
+    instead of surfacing as a runtime OperationalError during a live
+    collection run."""
+    declared = {name for name, _ in mm._declared_feature_columns()}
+    identity = {"ticker", "timeframe", "bar_time", "computed_at"}
+
+    # Every FEATURE_COLUMNS entry must really exist in the schema.
+    assert set(mm.FEATURE_COLUMNS) <= declared
+    # And every non-identity schema column must be exported.
+    assert declared - identity == set(mm.FEATURE_COLUMNS)
+
+    source = Path("market_memory.py").read_text(encoding="utf-8")
+    insert = re.search(
+        r"INSERT OR REPLACE INTO features \((.*?)\) VALUES \((.*?)\)", source, re.S
+    )
+    insert_columns = [c.strip() for c in insert.group(1).replace("\n", " ").split(",") if c.strip()]
+    assert len(insert_columns) == insert.group(2).count("?")
+    assert set(insert_columns) == declared
+
+
+def test_pattern_edge_reports_none_for_a_horizon_without_data():
+    temp_dir, patcher = _isolated_db()
+    with temp_dir, patcher:
+        conn = mm.connect()
+        rows = [_bar(f"d{i:03d}", 100, 101, 99, 100) for i in range(3)]
+        mm.store_bars(conn, "SPY", "daily", rows)
+        mm.store_patterns(conn, "SPY", "daily", "d000", ["inside_bar"])
+        conn.close()
+        edge = mm.pattern_edge_vs_base_rate("SPY", "daily", "inside_bar")
+
+    assert edge["by_horizon"][20] is None
