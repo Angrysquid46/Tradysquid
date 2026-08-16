@@ -14,6 +14,7 @@ import json
 import math
 import os
 import re
+import sqlite3
 import time
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -765,17 +766,30 @@ def _render_intraday_chart(symbol: str, bars: list[dict[str, Any]], output: Path
     }
 
 
-def _replace_chart_message(connection: Any, symbol: str, path: Path, caption: str) -> bool:
+def _replace_chart_message(
+    connection: Any,
+    symbol: str,
+    path: Path,
+    caption: str,
+    *,
+    channel: str = "charts",
+    state_key: str = "upgrade44:chart-messages",
+) -> bool:
+    """Post a chart image and delete the one it supersedes. Discord
+    cannot edit an attachment in place, so an "updating chart" is really
+    post-new-then-delete-old. channel/state_key are defaulted so the
+    original #charts-and-levels call sites are unchanged, and the
+    market-memory boards can reuse the exact same tested path."""
     tracker = _tracker()
     if not tracker:
         return False
-    state = _state_json(connection, "upgrade44:chart-messages")
+    state = _state_json(connection, state_key)
     old_id = str(state.get(symbol) or "")
-    response = tracker.send_channel_file("charts", path, content=caption[:1900])
+    response = tracker.send_channel_file(channel, path, content=caption[:1900])
     new_id = str((response or {}).get("id") or "")
     if not new_id:
         return False
-    channel_id = str(tracker.channels.get("charts") or "")
+    channel_id = str(tracker.channels.get(channel) or "")
     if old_id and old_id != new_id and channel_id:
         try:
             tracker._request("DELETE", f"/channels/{channel_id}/messages/{old_id}")
@@ -783,8 +797,74 @@ def _replace_chart_message(connection: Any, symbol: str, path: Path, caption: st
             if "HTTP 404" not in str(exc):
                 raise
     state[symbol] = new_id
-    _set_state_json(connection, "upgrade44:chart-messages", state)
+    _set_state_json(connection, state_key, state)
     return True
+
+
+SPY_TECHNICALS_STATE_KEY = "upgrade44:spy-technicals"
+
+
+def spy_technicals_job(connection: Any) -> str:
+    """Publishes the market-memory research store as charts plus one
+    summary card in #spy-technicals.
+
+    Cadence note, because it is not obvious: the store is refreshed by a
+    separate once-daily scheduled task at 3:35pm CT (after the close),
+    so the underlying data changes at most once per trading day. This
+    job therefore runs on a short interval only so it notices that
+    refresh promptly and so the engine's own overdue-job health check
+    keeps a tight window - but it fingerprints the data first and
+    returns without touching Discord when nothing has changed. Real
+    work happens roughly once a day; the other ticks cost one cheap
+    query.
+
+    Reads through market_memory_charts, which opens the database
+    read-only and never imports market_memory, so the research store's
+    isolation from live trading is preserved."""
+    import market_memory_charts as charts
+
+    try:
+        conn = charts.open_readonly()
+    except sqlite3.OperationalError as exc:
+        # A missing or locked research database must never mark the live
+        # engine unhealthy - it has nothing to do with trading.
+        return f"market memory database unavailable: {exc}"
+
+    try:
+        fingerprint = charts.data_fingerprint(conn)
+        state = _state_json(connection, SPY_TECHNICALS_STATE_KEY)
+        if state.get("fingerprint") == fingerprint:
+            return f"unchanged since {state.get('rendered_at', 'last run')}; no repost"
+
+        summary = charts.summarize(conn)
+        _require_dashboard(
+            connection, "spy_technicals", "spy-technicals", charts.technicals_card_text(summary)
+        )
+        boards = charts.render_all(conn)
+    finally:
+        conn.close()
+
+    posted = 0
+    for key, path, caption in boards:
+        if _replace_chart_message(
+            connection, key, path, caption,
+            channel="spy_technicals", state_key=f"{SPY_TECHNICALS_STATE_KEY}:messages",
+        ):
+            posted += 1
+    if posted != len(boards):
+        raise RuntimeError(f"Discord acknowledged only {posted}/{len(boards)} technical charts")
+
+    # Recorded only after every upload succeeded, so a partial failure
+    # retries on the next tick instead of being marked done.
+    _set_state_json(
+        connection,
+        SPY_TECHNICALS_STATE_KEY,
+        {"fingerprint": fingerprint, "rendered_at": _iso(), "boards": posted},
+    )
+    _engine().store_observation(
+        connection, "spy-technicals-charts", {"boards": posted, "fingerprint": fingerprint}
+    )
+    return f"{posted} technical chart(s) and 1 summary card refreshed"
 
 
 def _cleanup_chart_messages(connection: Any, active: set[str]) -> int:
@@ -1263,6 +1343,19 @@ def install_engine() -> None:
             "upgrade-request-migration",
             timedelta(minutes=10),
             upgrade_request_migration_job,
+            background=True,
+            retry_interval=timedelta(minutes=5),
+        ),
+        # Short interval so a once-daily data refresh is picked up
+        # promptly and the overdue-job health window stays tight; the
+        # job's own fingerprint guard means it only does real work when
+        # the store actually changed. Deliberately NOT provider_heavy -
+        # it makes zero provider calls and must not contend for the
+        # provider lock with the live scanner.
+        _ENGINE.Job(
+            "spy-technicals-charts",
+            timedelta(minutes=20),
+            spy_technicals_job,
             background=True,
             retry_interval=timedelta(minutes=5),
         ),

@@ -30,6 +30,7 @@ state/supervisor-startup.log
 docs/trade-snapshots/
 docs/tickers/
 docs/chain-snapshots/
+docs/market-memory/
 .venv-tradysquid/
 .venv-evolve/
 evolve_bot/state/
