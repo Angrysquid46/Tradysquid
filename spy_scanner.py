@@ -8066,6 +8066,37 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
+ENTRY_SCAN_STATE_PATH = STATE_DIR / "entry-scan-state.json"
+
+
+def read_entry_scan_state() -> dict[str, Any]:
+    """Which signal bar each strategy last acted on.
+
+    Needed because the scan now looks back a few bars instead of only the
+    newest one. Without it: a signal fires at 10:07, the scan opens at
+    10:08, the trade stops out at 10:09, and the 10:10 scan sees that same
+    10:07 signal still inside its lookback and re-enters a setup it has
+    already traded.
+    """
+    if not ENTRY_SCAN_STATE_PATH.exists():
+        return {"last_signal_bar": {}}
+    try:
+        loaded = json.loads(ENTRY_SCAN_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {"last_signal_bar": {}}
+    if not isinstance(loaded, dict) or not isinstance(
+        loaded.get("last_signal_bar"), dict
+    ):
+        return {"last_signal_bar": {}}
+    return loaded
+
+
+def write_entry_scan_state(state: dict[str, Any]) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    ENTRY_SCAN_STATE_PATH.write_text(
+        json.dumps(state, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
 def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
     """Entry-only scan for the promoted strategies, safe to run frequently.
 
@@ -8116,13 +8147,20 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
     if not feature_rows:
         return {"scanned": len(active), "opened": 0, "reason": "no intraday bars yet"}
 
-    fired = {
-        signal["play_type"]: signal
-        for signal in lns.signals_on_latest_bar(feature_rows, enabled)
-        if signal["play_type"] in active
-    }
+    scan_state = read_entry_scan_state()
+    last_bar = scan_state.setdefault("last_signal_bar", {})
+    fired = {}
+    for signal in lns.recent_signals(feature_rows, enabled):
+        play_type = signal["play_type"]
+        if play_type not in active:
+            continue
+        # Already traded this exact signal bar - see read_entry_scan_state.
+        if last_bar.get(play_type) == signal["bar_time"]:
+            continue
+        fired[play_type] = signal
     if not fired:
-        return {"scanned": len(active), "opened": 0, "reason": "no setup on the latest bar"}
+        return {"scanned": len(active), "opened": 0,
+                "reason": "no fresh setup in the lookback window"}
 
     today_str = now_ct().date().isoformat()
     expirations = get_expirations(TICKER) or []
@@ -8157,6 +8195,8 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
                                    market_condition=signal.get("regime") or "LIVE SIGNAL")
             rows.append(row)
             write_log(rows)
+            last_bar[play_type] = signal["bar_time"]
+            write_entry_scan_state(scan_state)
         safe_discord_call(
             f"{play_type} entry post",
             lambda r=row: post_new_trade(r, tracker, report_state),

@@ -227,6 +227,92 @@ def live_feature_rows(
 # Signals
 # ---------------------------------------------------------------------------
 
+# How stale a signal may be and still be worth acting on, in bars.
+#
+# Measured, not assumed - 400 sessions, 9,325 trades, shifting the fill
+# 1/2/3/5 bars later. Pooled, a late fill is worth the same as a prompt one
+# (+0.0000 to +0.0011 ATR, noise), so discarding a signal because it is one
+# bar old was throwing away trades for nothing. Two strategies do decay
+# fast enough to matter and get a tighter bound:
+#
+#   SPY_FIRST_PULLBACK    +0.0603 prompt, +0.0637 at 1 bar, +0.0172 at 2
+#   SPY_OPENING_GAP_FADE  +0.0259 prompt, +0.0207 at 1 bar, +0.0035 at 2,
+#                         -0.0123 at 3
+#
+# Everything else is flat or slightly better when delayed, so 2 bars is the
+# default and the two above are held to 1.
+DEFAULT_MAX_SIGNAL_AGE_BARS = 2
+MAX_SIGNAL_AGE_BARS = {
+    "SPY_FIRST_PULLBACK": 1,
+    "SPY_OPENING_GAP_FADE": 1,
+}
+
+
+def max_signal_age(play_type: str) -> int:
+    return MAX_SIGNAL_AGE_BARS.get(play_type, DEFAULT_MAX_SIGNAL_AGE_BARS)
+
+
+def recent_signals(
+    rows: Sequence[dict[str, Any]], enabled: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Every strategy signal still fresh enough to act on.
+
+    signals_on_latest_bar looks only at the final row, which is correct
+    when you are guaranteed to look on every single bar and never miss
+    one. Live, that guarantee does not hold: the scheduler drifts, a bar
+    is published late, a cycle runs long. Measured over 250 sessions, a
+    15-minute scan saw 7.6% of signals and a 2-minute scan 50.6% - the
+    rest fired on bars nothing ever looked at.
+
+    So this looks back over the last few bars instead of only the newest,
+    which makes capture independent of when the scan happens to run. The
+    per-strategy age bound in MAX_SIGNAL_AGE_BARS keeps that from
+    reintroducing the stale-signal bug: a setup is acted on only while it
+    is still worth the same as a prompt fill.
+
+    At most one signal per strategy - the freshest - so a strategy that
+    fired on three consecutive bars still takes one trade.
+    """
+    if not rows:
+        return []
+    last_index = len(rows) - 1
+    freshest: dict[str, dict[str, Any]] = {}
+
+    for spec in NEW_STRATEGY_SPECS:
+        play_type = spec["play_type"]
+        if enabled is not None and not enabled.get(config_flag(play_type)):
+            continue
+        limit = max_signal_age(play_type)
+        try:
+            hits = spec["signal"](rows)
+        except Exception:
+            # A single strategy's signal must never take down the scan.
+            continue
+        for index, direction in hits:
+            age = last_index - index
+            if age < 0 or age > limit:
+                continue
+            existing = freshest.get(play_type)
+            if existing is not None and existing["age_bars"] <= age:
+                continue
+            freshest[play_type] = {
+                "play_type": play_type,
+                "label": spec["label"],
+                "rank": spec["rank"],
+                "side": "call" if direction == "LONG" else "put",
+                "direction": direction,
+                "bar_time": rows[index]["bar_time"],
+                "spot_at_signal": rows[index]["close"],
+                "regime": rows[index].get("regime"),
+                "age_bars": age,
+                "reason": (
+                    f"{spec['label']} fired on {rows[index]['bar_time'][11:16]}"
+                    + (f" ({age} bar{'s' if age > 1 else ''} ago)" if age else "")
+                ),
+            }
+    return sorted(freshest.values(), key=lambda s: (s["age_bars"], s["rank"]))
+
+
 def signals_on_latest_bar(
     rows: Sequence[dict[str, Any]], enabled: dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
