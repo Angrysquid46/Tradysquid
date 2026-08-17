@@ -213,7 +213,7 @@ def test_a_real_signal_opens_exactly_one_position_and_posts_it(monkeypatch, tmp_
     monkeypatch.setattr(spy_scanner, "write_log", lambda r: written.append(list(r)))
     monkeypatch.setattr(spy_scanner, "get_quote",
                         lambda *a, **k: (lock.note_io(), {"last": spot})[1])
-    monkeypatch.setattr(spy_scanner, "get_intraday_history", lambda *a, **k: [{}])
+    monkeypatch.setattr(spy_scanner, "todays_intraday_bars", lambda *a, **k: [{}])
     monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [{}])
     monkeypatch.setattr(lns, "live_feature_rows", lambda *a, **k: rows)
     monkeypatch.setattr(spy_scanner, "get_expirations", lambda *a, **k: [expiration])
@@ -316,7 +316,7 @@ def test_the_same_signal_bar_is_never_traded_twice(monkeypatch, tmp_state):
     monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
     monkeypatch.setattr(spy_scanner, "write_log", lambda r: written.append(list(r)))
     monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": spot})
-    monkeypatch.setattr(spy_scanner, "get_intraday_history", lambda *a, **k: [{}])
+    monkeypatch.setattr(spy_scanner, "todays_intraday_bars", lambda *a, **k: [{}])
     monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [{}])
     monkeypatch.setattr(lns, "live_feature_rows", lambda *a, **k: rows)
     monkeypatch.setattr(spy_scanner, "get_expirations", lambda *a, **k: [expiration])
@@ -430,7 +430,7 @@ def test_key_levels_is_scanned_even_when_no_other_strategy_fires(monkeypatch,
                         lambda: {"spy_key_levels": True})
     monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
     monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": 770.0})
-    monkeypatch.setattr(spy_scanner, "get_intraday_history", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "todays_intraday_bars", lambda *a, **k: [])
     monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [])
     monkeypatch.setattr(lns, "live_feature_rows", lambda *a, **k: [])
     monkeypatch.setattr(spy_scanner, "initialize_discord", lambda *a, **k: object())
@@ -473,7 +473,7 @@ def test_key_levels_fetch_happens_outside_the_position_lock(monkeypatch, tmp_sta
                         lambda: {"spy_key_levels": True})
     monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
     monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": 770.0})
-    monkeypatch.setattr(spy_scanner, "get_intraday_history", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "todays_intraday_bars", lambda *a, **k: [])
     monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [])
     monkeypatch.setattr(lns, "live_feature_rows", lambda *a, **k: [])
     monkeypatch.setattr(spy_scanner, "initialize_discord", lambda *a, **k: object())
@@ -496,7 +496,7 @@ def test_a_failing_key_levels_scan_does_not_break_the_other_strategies(
                         lambda: {"spy_key_levels": True})
     monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
     monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": 770.0})
-    monkeypatch.setattr(spy_scanner, "get_intraday_history", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "todays_intraday_bars", lambda *a, **k: [])
     monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [])
     monkeypatch.setattr(lns, "live_feature_rows", lambda *a, **k: [])
     monkeypatch.setattr(spy_scanner, "initialize_discord", lambda *a, **k: object())
@@ -537,28 +537,107 @@ def test_the_baseline_degrades_to_empty_rather_than_raising(monkeypatch):
         lns._RVOL_BASELINE_CACHE.clear()
 
 
-def test_an_empty_intraday_response_is_retried(monkeypatch, tmp_state):
-    """Tradier returns an empty series for a valid window often enough to
-    matter - 2 of 3 consecutive calls, then a full session. Treating the
-    first empty read as 'no bars yet' silently skips the whole cycle."""
-    calls = {"n": 0}
+def test_an_empty_intraday_response_falls_back_to_the_range_endpoint():
+    """Measured back to back on the same session: the single-day call
+    returned 0 bars on 3 of 3 attempts while the multi-day range call
+    returned the full 390-bar session on 2 of 3. One request shape fails
+    where another succeeds, so an empty result is not believed until both
+    have been tried - an empty read is indistinguishable downstream from
+    "the market has not opened yet"."""
+    import spy_scanner as sc
 
-    def _flaky(*a, **k):
-        calls["n"] += 1
-        return [] if calls["n"] < 3 else [{"time": "2026-08-17T09:30:00"}]
+    calls = {"single": 0, "multi": 0}
 
-    monkeypatch.setattr(spy_scanner, "trade_types_enabled",
-                        lambda: {lns.config_flag(p): True
-                                 for p in lns.NEW_STRATEGY_PLAY_TYPES})
-    monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
-    monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": 770.0})
-    monkeypatch.setattr(spy_scanner, "get_intraday_history", _flaky)
-    monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [])
-    monkeypatch.setattr(lns, "live_feature_rows", lambda bars, d: list(bars))
-    monkeypatch.setattr(lns, "recent_signals", lambda *a, **k: [])
-    monkeypatch.setattr(spy_scanner, "initialize_discord", lambda *a, **k: object())
-    monkeypatch.setattr(spy_scanner, "read_report_state", lambda: {})
-    monkeypatch.setattr(spy_scanner, "write_report_state", lambda st: None)
+    def _single(*a, **k):
+        calls["single"] += 1
+        return []
 
-    spy_scanner.scan_new_strategy_entries()
-    assert calls["n"] == 3, "an empty intraday response was not retried"
+    def _multi(*a, **k):
+        calls["multi"] += 1
+        return [{"time": sc.now_ct().date().isoformat() + "T09:30:00"},
+                {"time": "1999-01-01T09:30:00"}]
+
+    import unittest.mock as mock
+    with mock.patch.object(sc, "get_intraday_history", _single),          mock.patch.object(sc, "get_recent_intraday_history", _multi):
+        bars = sc.todays_intraday_bars()
+    assert calls["single"] >= 1 and calls["multi"] >= 1
+    assert len(bars) == 1, "bars from other sessions leaked in"
+
+
+def test_bars_from_other_days_are_filtered_out():
+    """The range endpoint returns two days; only today may be used, or the
+    feature build would treat yesterday's bars as this session."""
+    import spy_scanner as sc
+    import unittest.mock as mock
+
+    today = sc.now_ct().date().isoformat()
+    with mock.patch.object(sc, "get_intraday_history", lambda *a, **k: []),          mock.patch.object(sc, "get_recent_intraday_history", lambda *a, **k: [
+             {"time": "2026-01-02T09:30:00"}, {"time": f"{today}T09:30:00"}]):
+        bars = sc.todays_intraday_bars()
+    assert [b["time"] for b in bars] == [f"{today}T09:30:00"]
+
+
+def test_relative_volume_is_populated_on_live_feature_rows():
+    """SPY_ORB_IMMEDIATE filters on `(relative_volume or 0) >= 1.0`. The
+    live feature build only sees today's bars, so without a baseline from
+    the research store relative_volume is None on every live bar, collapses
+    to 0, and that strategy can NEVER fire live regardless of the market -
+    while backtesting at 0.45 signals/session."""
+    baseline = lns.rvol_baseline_from_store()
+    assert baseline, "no volume baseline available from the research store"
+    assert len(baseline) > 100, "baseline covers too few minutes of a session"
+    assert all(v > 0 for v in baseline.values())
+
+
+def test_the_baseline_degrades_to_empty_rather_than_raising(monkeypatch):
+    """A missing or locked research store must not take the live scan down -
+    it should fall back to exactly the previous behaviour."""
+    def _boom():
+        raise RuntimeError("store unavailable")
+
+    monkeypatch.setattr(lns.sif, "connect", _boom)
+    lns._RVOL_BASELINE_CACHE.clear()
+    try:
+        assert lns.rvol_baseline_from_store() == {}
+    finally:
+        lns._RVOL_BASELINE_CACHE.clear()
+
+
+def test_an_empty_intraday_response_falls_back_to_the_range_endpoint():
+    """Measured back to back on the same session: the single-day call
+    returned 0 bars on 3 of 3 attempts while the multi-day range call
+    returned the full 390-bar session on 2 of 3. One request shape fails
+    where another succeeds, so an empty result is not believed until both
+    have been tried - an empty read is indistinguishable downstream from
+    "the market has not opened yet"."""
+    import spy_scanner as sc
+
+    calls = {"single": 0, "multi": 0}
+
+    def _single(*a, **k):
+        calls["single"] += 1
+        return []
+
+    def _multi(*a, **k):
+        calls["multi"] += 1
+        return [{"time": sc.now_ct().date().isoformat() + "T09:30:00"},
+                {"time": "1999-01-01T09:30:00"}]
+
+    import unittest.mock as mock
+    with mock.patch.object(sc, "get_intraday_history", _single),          mock.patch.object(sc, "get_recent_intraday_history", _multi):
+        bars = sc.todays_intraday_bars()
+    assert calls["single"] >= 1 and calls["multi"] >= 1
+    assert len(bars) == 1, "bars from other sessions leaked in"
+
+
+def test_bars_from_other_days_are_filtered_out():
+    """The range endpoint returns two days; only today may be used, or the
+    feature build would treat yesterday's bars as this session."""
+    import spy_scanner as sc
+    import unittest.mock as mock
+
+    today = sc.now_ct().date().isoformat()
+    with mock.patch.object(sc, "get_intraday_history", lambda *a, **k: []),          mock.patch.object(sc, "get_recent_intraday_history", lambda *a, **k: [
+             {"time": "2026-01-02T09:30:00"}, {"time": f"{today}T09:30:00"}]):
+        bars = sc.todays_intraday_bars()
+    assert [b["time"] for b in bars] == [f"{today}T09:30:00"]

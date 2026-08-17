@@ -8106,6 +8106,34 @@ def write_entry_scan_state(state: dict[str, Any]) -> None:
         json.dumps(state, indent=2, sort_keys=True), encoding="utf-8"
     )
 
+def todays_intraday_bars(attempts: int = 3) -> list[dict[str, Any]]:
+    """Today's 1-minute bars, from whichever endpoint actually answers.
+
+    Tradier's timesales returns an empty series for a perfectly valid
+    window often enough to break a 1-minute scan. Measured back to back on
+    the same session: the single-day call (session_filter=open, today's
+    window) returned 0 bars on 3 of 3 attempts while the multi-day range
+    call returned the full 390-bar session on 2 of 3 - so this is not a
+    dead API, it is one request shape failing where another succeeds.
+
+    An empty read is indistinguishable from "the market has not opened
+    yet" downstream: zero feature rows, no signals, cycle silently does
+    nothing. So both shapes are tried before an empty result is believed.
+    """
+    today = now_ct().date().isoformat()
+    for _attempt in range(attempts):
+        bars = get_intraday_history(TICKER, interval="1min") or []
+        if bars:
+            return bars
+        recent = get_recent_intraday_history(TICKER, "1min", 2) or []
+        bars = [b for b in recent
+                if str(b.get("time") or b.get("timestamp") or "").startswith(today)]
+        if bars:
+            return bars
+    return []
+
+
+
 def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
     """Entry-only scan for the promoted strategies, safe to run frequently.
 
@@ -8157,11 +8185,7 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
     # a row, then a full 390-bar session on the next. An empty read here
     # means zero feature rows, which means the cycle silently scans nothing,
     # so it is retried rather than treated as "no bars yet".
-    intraday: list[dict[str, Any]] = []
-    for _attempt in range(3):
-        intraday = get_intraday_history(TICKER, interval="1min") or []
-        if intraday:
-            break
+    intraday = todays_intraday_bars()
     daily = get_daily_history(TICKER)
     feature_rows = lns.live_feature_rows(intraday, daily or [])
     if not feature_rows:
