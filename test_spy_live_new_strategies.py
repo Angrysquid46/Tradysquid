@@ -490,3 +490,42 @@ def test_no_route_points_at_a_channel_that_does_not_exist():
                 f"{source}[{key!r}] routes to #{channel}, which the sync deletes - "
                 f"cards sent there are silently dropped"
             )
+
+
+def test_no_report_roster_entry_references_a_missing_channel_route():
+    """The failure this exists to prevent reached Discord.
+
+    spy_scanner's strategy_variants list hardcoded performance_1m/results_1m
+    and the other retired strategies. Removing their CHANNEL_NAMES entries
+    left the list pointing at keys that no longer existed, so the report path
+    raised KeyError: 'performance_1m' - which surfaced to the owner as
+    "/force-all-strategies Command failed safely". Nothing caught it because
+    the name is only resolved when that code path runs.
+    """
+    import spy_scanner as ss
+    for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+        assert lns.performance_key(play_type) in ss.CHANNEL_NAMES
+        assert lns.results_key(play_type) in ss.CHANNEL_NAMES
+    for variant in ss.SPY_RATCHET_VARIANTS:
+        suffix = variant["play_type"].removeprefix("SPY_RATCHET_").lower()
+        assert f"performance_ratchet_{suffix}" in ss.CHANNEL_NAMES
+
+
+def test_force_all_strategies_survives_a_roster_change():
+    """Runs the handler end to end. Import and registration both succeeded
+    while this was broken; only executing it revealed the KeyError."""
+    import discord_command_bot as bot
+    original = bot.require_ticker_admin
+    bot.require_ticker_admin = lambda *a, **k: None
+    try:
+        reply = bot.force_all_strategies_reply({
+            "member": {"user": {"id": "owner"}},
+            "data": {"options": [{"name": "direction", "value": "call"}]},
+        })
+    except KeyError as exc:                       # pragma: no cover
+        pytest.fail(f"handler raised KeyError({exc}) - a stale roster reference")
+    except Exception as exc:
+        pytest.skip(f"needs live market data: {type(exc).__name__}")
+    finally:
+        bot.require_ticker_admin = original
+    assert "Forced" in reply

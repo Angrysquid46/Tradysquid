@@ -6736,11 +6736,18 @@ def update_performance_pages(
 ) -> None:
     if not discord.ready:
         return
+    # Built from the LIVE roster, not hardcoded.
+    #
+    # This list previously named performance_1m/results_1m/performance_5m/
+    # results_5m/performance_expansion outright. Retiring those strategies
+    # removed their CHANNEL_NAMES entries, so this raised
+    # KeyError: 'performance_1m' - which surfaced as "/force-all-strategies
+    # Command failed safely" in Discord. A hardcoded roster in a file whose
+    # roster changes is a standing trap; deriving it means retiring a
+    # strategy cannot leave a dangling reference behind.
     strategy_variants = [
-        ("SPY_0DTE_1M", "performance_1m", "results_1m", "1-Minute Strategy"),
-        ("SPY_0DTE_5M", "performance_5m", "results_5m", "5-Minute Strategy"),
-        (SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels", "results_key_levels", "Key-Levels Strategy"),
-        (SPY_EXPANSION_PLAY_TYPE, "performance_expansion", "results_expansion", "Expansion-Level Strategy"),
+        (SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels",
+         "results_key_levels", "Key-Levels Strategy"),
     ]
     for variant in SPY_RATCHET_VARIANTS:
         suffix = variant["play_type"].removeprefix("SPY_RATCHET_").lower()
@@ -6750,6 +6757,25 @@ def update_performance_pages(
             f"results_ratchet_{suffix}",
             f"{variant['label']} Strategy",
         ))
+    try:
+        import spy_live_new_strategies as _live_roster
+        for _spec in _live_roster.NEW_STRATEGY_SPECS:
+            strategy_variants.append((
+                _spec["play_type"],
+                _live_roster.performance_key(_spec["play_type"]),
+                _live_roster.results_key(_spec["play_type"]),
+                _spec["label"],
+            ))
+    except Exception as _exc:   # pragma: no cover - import guard only
+        print(f"new-strategy report roster unavailable: {_exc}", file=sys.stderr)
+
+    # Belt and braces: never attempt a logical name with no route. A card
+    # sent nowhere is silently lost, and a missing key here previously took
+    # down the whole command.
+    strategy_variants = [
+        entry for entry in strategy_variants
+        if entry[1] in CHANNEL_NAMES and entry[2] in CHANNEL_NAMES
+    ]
     for play_type, logical_stats, logical_results, label in strategy_variants:
         discord.upsert_channel_message(
             logical_stats,
