@@ -34,18 +34,33 @@ JSON_PATH = Path("state/backtest_results.json")
 ERA_LABELS = [name for name, _, _ in bt.ERAS]
 
 
-def all_variants(*, extended: bool = True) -> dict[str, dict[str, Any]]:
-    """Phase 3's tranche plus Phase 4's, in one registry."""
+_LIVE_CACHE: dict[int, dict[str, dict[str, Any]]] = {}
+
+
+def all_variants(*, extended: bool = True, conn=None) -> dict[str, dict[str, Any]]:
+    """Every strategy under measurement: the new research tranches plus
+    the strategies actually running on Discord right now.
+
+    `conn` is needed only for the live adapters, which require
+    cross-session context (a 200-day SMA, and enough history to build a
+    200-period EMA on 60-minute bars). Cached per connection so the
+    expansion precompute happens once per run, not once per pass."""
     variants = strat.build_variants()
     if extended:
         import spy_backtest_strategies_extended as ext
         variants.update(ext.build_extended_variants())
+    if conn is not None:
+        key = id(conn)
+        if key not in _LIVE_CACHE:
+            import spy_backtest_live_strategies as live
+            _LIVE_CACHE[key] = live.build_live_variants(conn)
+        variants.update(_LIVE_CACHE[key])
     return variants
 
 
 def run_sweep(conn, *, limit: int | None = None, progress_every: int = 250,
               extended: bool = True) -> dict[str, Any]:
-    variants = all_variants(extended=extended)
+    variants = all_variants(extended=extended, conn=conn)
     policies = strat.build_exit_policies()
 
     pnl: dict[tuple[str, str, str], list[float]] = defaultdict(list)
@@ -114,7 +129,7 @@ def matched_control(conn, best: dict[str, Any], keys: list[str], *,
     that variant's exits, so the only remaining difference is the entry
     rule. It is the test that separates a real signal from inherited
     drift, and it is worth running for anything that looks significant."""
-    variants = all_variants(extended=extended)
+    variants = all_variants(extended=extended, conn=conn)
     policies = {p.label(): p for p in strat.build_exit_policies()}
     control_fn = strat.random_baseline(2)
 
@@ -159,7 +174,7 @@ def matched_control(conn, best: dict[str, Any], keys: list[str], *,
 def run_detail(conn, best: dict[str, Any], *, limit: int | None = None,
                extended: bool = True) -> dict[str, Any]:
     """Second pass: full trades for the winning policy of each variant."""
-    variants = all_variants(extended=extended)
+    variants = all_variants(extended=extended, conn=conn)
     policies = {p.label(): p for p in strat.build_exit_policies()}
     wanted: dict[tuple[str, str], Any] = {}
     for key, info in best.items():
@@ -232,6 +247,92 @@ def _control_section(control: dict[str, Any], n_tests: int) -> list[str]:
         f"corrected one. The matched control above and per-era consistency are "
         f"independent of that correction, which is why they carry more weight here "
         f"than the t-statistic alone.\n"
+    )
+    return lines
+
+
+def _rank_score(key: str, info: dict[str, Any], detail: dict[str, Any]) -> tuple:
+    """Ranking key for the shortlist.
+
+    Expectancy alone is a bad sort: it puts a 40-trade fluke above a
+    2,000-trade result. So rank on evidence first - how many eras it
+    held up in, then whether it is statistically distinguishable from
+    zero - and only then on size of edge."""
+    eras = detail.get(key, {}).get("by_era", {})
+    scored = [s for s in eras.values() if s.get("trades")]
+    positive_eras = sum(1 for s in scored if s["expectancy_atr"] > 0)
+    return (
+        positive_eras,
+        1 if info.get("significant_95") else 0,
+        info.get("expectancy_atr", 0.0),
+    )
+
+
+def _top_ranking_section(result: dict[str, Any], detail: dict[str, Any],
+                         control: dict[str, Any], *, limit: int = 15) -> list[str]:
+    """The shortlist: live Discord strategies and new ideas, ranked together."""
+    import spy_backtest_live_strategies as live
+
+    candidates = [k for k in result["best"] if not k.startswith("BASELINE")]
+    ranked = sorted(candidates, key=lambda k: _rank_score(k, result["best"][k], detail), reverse=True)
+
+    lines = [f"\n## Shortlist: top {limit} of everything measured\n"]
+    lines.append(
+        "Live Discord strategies and new research ideas ranked **together**, on the "
+        "same data, the same exit-policy search and the same rules. Sorted by "
+        "evidence rather than by headline number: eras survived first, then "
+        "statistical significance, then size of edge — because expectancy alone "
+        "puts a 40-trade fluke above a 2,000-trade result.\n"
+    )
+    lines.append("| # | Strategy | Variant | Live? | Trades | Win% | Expectancy (ATR) | t | Eras + | vs matched control |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
+    for position, key in enumerate(ranked[:limit], start=1):
+        info = result["best"][key]
+        family, variant = key.split(" | ", 1)
+        eras = detail.get(key, {}).get("by_era", {})
+        scored = [s for s in eras.values() if s.get("trades")]
+        positive = sum(1 for s in scored if s["expectancy_atr"] > 0)
+        against = control.get(key, {})
+        delta = f"{against['difference_atr']:+.4f}" if against else "—"
+        lines.append(
+            f"| {position} | {family} | {variant} | "
+            f"{'**yes**' if family.startswith('LIVE') else 'no'} | {info['trades']:,} | "
+            f"{info['win_rate']:.1f}% | {info['expectancy_atr']:+.4f} | "
+            f"{info.get('t_stat', 0):+.2f} | {positive}/{len(scored)} | {delta} |"
+        )
+
+    live_in_top = [k for k in ranked[:limit] if k.startswith("LIVE")]
+    lines.append(
+        f"\n**{len(live_in_top)} of the {limit} are strategies already running on "
+        f"Discord.**\n"
+    )
+
+    lines.append("\n### What this can and cannot decide yet\n")
+    lines.append(
+        "Every live strategy's *entry* is measured here faithfully — these adapters "
+        "call the deployed functions in `spy_scanner` directly rather than "
+        "reimplementing them, so the backtest cannot drift from what is running.\n"
+    )
+    lines.append(f"\n{live.EXIT_SHAPES_NEED_OPTION_MODEL}\n")
+    lines.append(
+        f"\nThe adapters do impose an entry window (minutes 5-360) that the live "
+        f"scanners do not have, inherited from the research strategies so the "
+        f"comparison is like-for-like. {live.ENTRY_WINDOW_SENSITIVITY}\n"
+    )
+    lines.append("\n**The live library is smaller than it looks:**\n")
+    lines.append("| Entry signal | Live strategies sharing it |")
+    lines.append("|---|---|")
+    for group, members in live.SHARED_ENTRY_GROUPS.items():
+        shown = ", ".join(f"`{m}`" for m in members[:3])
+        if len(members) > 3:
+            shown += f", … (+{len(members) - 3} more)"
+        lines.append(f"| {group} | **{len(members)}** — {shown} |")
+    lines.append(
+        "\nSo 14 Discord strategies are really **4 entry signals**. The 10 ratchet "
+        "variants are one entry with ten exit shapes, which is exactly the kind of "
+        "duplication a channel-per-strategy layout multiplies into noise. Phase 7 "
+        "should group by entry signal, and Phase 5 decides which exit shape on top "
+        "of each is worth keeping.\n"
     )
     return lines
 
@@ -403,6 +504,8 @@ def write_report(result: dict[str, Any], detail: dict[str, Any],
             "settled here, and the 2021-2026 gap in the intraday data means it cannot "
             "be settled at all until that gap is filled.\n"
         )
+
+    lines.extend(_top_ranking_section(result, detail, control or {}, limit=15))
 
     n_tests = len([c for c in result["combos"] if c.get("trades", 0) >= 30])
     lines.extend(_control_section(control or {}, n_tests))
