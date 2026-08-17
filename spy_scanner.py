@@ -230,18 +230,28 @@ SPY_0DTE_FLOOR_PCT = float(os.environ.get(
 # (step, stop) pairs, all net positive (PF 1.33-1.62 on that sample). One
 # shared exit function (spy_ratchet_exit_signal) serves all 10, each fed
 # its own numbers from this table - see SPY_RATCHET_VARIANT_BY_PLAY_TYPE.
-SPY_RATCHET_VARIANTS: tuple[dict[str, Any], ...] = (
-    {"play_type": "SPY_RATCHET_26_16", "label": "Ratchet 26/16", "step_pct": 26.0, "stop_pct": -16.0},
-    {"play_type": "SPY_RATCHET_30_16", "label": "Ratchet 30/16", "step_pct": 30.0, "stop_pct": -16.0},
-    {"play_type": "SPY_RATCHET_25_16", "label": "Ratchet 25/16", "step_pct": 25.0, "stop_pct": -16.0},
-    {"play_type": "SPY_RATCHET_26_17", "label": "Ratchet 26/17", "step_pct": 26.0, "stop_pct": -17.0},
-    {"play_type": "SPY_RATCHET_29_16", "label": "Ratchet 29/16", "step_pct": 29.0, "stop_pct": -16.0},
-    {"play_type": "SPY_RATCHET_30_17", "label": "Ratchet 30/17", "step_pct": 30.0, "stop_pct": -17.0},
-    {"play_type": "SPY_RATCHET_24_16", "label": "Ratchet 24/16", "step_pct": 24.0, "stop_pct": -16.0},
-    {"play_type": "SPY_RATCHET_25_17", "label": "Ratchet 25/17", "step_pct": 25.0, "stop_pct": -17.0},
-    {"play_type": "SPY_RATCHET_26_18", "label": "Ratchet 26/18", "step_pct": 26.0, "stop_pct": -18.0},
-    {"play_type": "SPY_RATCHET_26_36", "label": "Ratchet 26/36", "step_pct": 26.0, "stop_pct": -36.0},
-)
+# RETIRED 2026-08-17. All 10 ratchet-floor variants are gone, on
+# measurement rather than preference:
+#
+# - the ORB entry all ten shared measured +0.0004 ATR/trade (t=+0.39) over
+#   3,347 sessions of real 1-minute data - indistinguishable from random
+#   entries on the same bars
+# - once the exit shapes were separable, which required the Phase 5 option
+#   model since step_pct/stop_pct are defined in option-premium percent,
+#   every ratchet placed BELOW the SPY_0DTE shape already deployed: best
+#   ratchet -$275k against SPY_0DTE's -$156k, worst -$417k. Their tight
+#   -16% to -18% base stops dropped win rates to 28-30% versus 42.9%.
+#
+# Emptied rather than deleted line by line: every derived structure -
+# SPY_RATCHET_PLAY_TYPES, SPY_RATCHET_VARIANT_BY_PLAY_TYPE, the
+# CHANNEL_NAMES entries, performance_reconciliation's REPORT_ROUTES - is
+# generated from this tuple, so they all empty together and no ratchet
+# channel gets recreated. spy_ratchet_exit_signal and its tests stay
+# intact and passing, so restoring a variant is a one-line change if the
+# owner ever wants one back.
+#
+# See docs/BACKTEST_RESULTS.md and docs/OPTION_RESULTS.md.
+SPY_RATCHET_VARIANTS: tuple[dict[str, Any], ...] = ()
 SPY_RATCHET_PLAY_TYPES = tuple(variant["play_type"] for variant in SPY_RATCHET_VARIANTS)
 SPY_RATCHET_VARIANT_BY_PLAY_TYPE = {variant["play_type"]: variant for variant in SPY_RATCHET_VARIANTS}
 

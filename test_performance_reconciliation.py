@@ -173,9 +173,10 @@ class PerformanceScorecardTests(unittest.TestCase):
         # month as a placeholder even with no trades, so each trade-less
         # variant still contributes exactly one empty "current month"
         # scorecard: 2 + 2 + 1 + 1 = 6, plus 1 each for the 10 trade-less
-        # ratchet-floor variants (same "current month" placeholder rule) =
-        # 6 + 10 = 16.
-        self.assertEqual(state["performance_reconciliation_monthly_reports"], 16)
+        # ratchet-floor variants used to add 1 each here, but all 10 were
+        # retired 2026-08-17 (see spy_scanner.SPY_RATCHET_VARIANTS), so the
+        # count is back to the four non-ratchet strategies: 2 + 2 + 1 + 1 = 6.
+        self.assertEqual(state["performance_reconciliation_monthly_reports"], 6)
         # One combined results card per variant that actually has trades
         # (1m, 5m) - SPY_KEY_LEVELS/SPY_EXPANSION_LEVEL/ratchets have none
         # in this synthetic ledger, contributing 0 each.
