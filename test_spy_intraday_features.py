@@ -313,6 +313,22 @@ def test_connect_adds_columns_missing_from_an_existing_table():
             conn.close()
 
 
+def test_schema_parser_ignores_sql_comments_and_rejects_odd_identifiers():
+    """A `-- comment` line inside the table body was being parsed as a
+    column, producing `ALTER TABLE ... ADD COLUMN --` and failing with a
+    bare "incomplete input". Comments are valid SQL and the schema uses
+    them, so the parser has to cope."""
+    declared = dict(sif._declared_columns())
+    assert "--" not in declared
+    assert not any(name.startswith("-") for name in declared)
+    for name, column_type in declared.items():
+        assert name.replace("_", "").isalnum(), f"{name!r} is not a plain identifier"
+        assert column_type.upper() in {"REAL", "INTEGER", "TEXT", "BLOB", "NUMERIC"}
+    # The commented Tier-2 block must still have been picked up.
+    assert declared.get("adx_14") == "REAL"
+    assert declared.get("structure") == "TEXT"
+
+
 def test_every_declared_column_is_actually_populated_by_the_engine():
     """Guards the gap that left `close` declared but never written: a
     column in FEATURE_COLUMNS that the compute step never produces would
