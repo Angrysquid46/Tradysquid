@@ -8134,13 +8134,15 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
     lock = position_lock or nullcontext()
     enabled = trade_types_enabled()
     active = [p for p in lns.NEW_STRATEGY_PLAY_TYPES if enabled.get(lns.config_flag(p))]
-    if not active:
+    key_levels_enabled = bool(enabled.get("spy_key_levels"))
+    if not active and not key_levels_enabled:
         return {"scanned": 0, "opened": 0, "skipped": 0, "reason": "none enabled"}
 
     with lock:
         rows = read_log()
     active = [p for p in active if not has_open_position(rows, p)]
-    if not active:
+    key_levels_held = has_open_position(rows, SPY_KEY_LEVELS_PLAY_TYPE)
+    if not active and (key_levels_held or not key_levels_enabled):
         return {"scanned": 0, "opened": 0, "holding": True,
                 "reason": "every enabled strategy is already holding"}
 
@@ -8154,7 +8156,7 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
     daily = get_daily_history(TICKER)
     feature_rows = lns.live_feature_rows(intraday or [], daily or [])
     if not feature_rows:
-        return {"scanned": len(active), "opened": 0, "reason": "no intraday bars yet"}
+        feature_rows = []
 
     scan_state = read_entry_scan_state()
     last_bar = scan_state.setdefault("last_signal_bar", {})
@@ -8167,25 +8169,27 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
         if last_bar.get(play_type) == signal["bar_time"]:
             continue
         fired[play_type] = signal
-    if not fired:
-        return {"scanned": len(active), "opened": 0,
-                "reason": "no fresh setup in the lookback window"}
-
     today_str = now_ct().date().isoformat()
-    expirations = get_expirations(TICKER) or []
-    expiration = today_str if today_str in expirations else (
-        expirations[0] if expirations else None)
-    if expiration is None:
-        return {"scanned": len(active), "opened": 0, "reason": "no expirations listed"}
-
-    allowed = set(filter_strikes(get_strikes(TICKER, expiration), spot_price))
-    chain = [o for o in get_chain(TICKER, expiration)
-             if float(o.get("strike", -1)) in allowed]
-
     opened: list[str] = []
     tracker = initialize_discord()
     report_state = read_report_state()
     timestamp = now_ct()
+
+    # No early return here even when nothing fired: SPY_KEY_LEVELS is
+    # evaluated further down and must still get its pass. Returning at this
+    # point is what left it on the 15-minute cadence.
+    chain: list[dict[str, Any]] = []
+    expiration: str | None = None
+    if fired:
+        expirations = get_expirations(TICKER) or []
+        expiration = today_str if today_str in expirations else (
+            expirations[0] if expirations else None)
+        if expiration is None:
+            fired = {}
+        else:
+            allowed = set(filter_strikes(get_strikes(TICKER, expiration), spot_price))
+            chain = [o for o in get_chain(TICKER, expiration)
+                     if float(o.get("strike", -1)) in allowed]
 
     for play_type, signal in fired.items():
         candidates = lns.scan_new_strategy_candidates(
@@ -8212,7 +8216,53 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
         )
         opened.append(play_type)
 
+    # SPY_KEY_LEVELS is the 14th strategy and does not share the signal
+    # plumbing above - its entry is a live price-vs-level read rather than a
+    # bar event, so it lives in _run_spy_key_levels_variant with its own
+    # fetch. It was therefore still only scanned by the 15-minute full scan
+    # while the other 13 moved to 1 minute. Same two rules apply: skipped
+    # entirely while it holds a position, and the lock is taken only to
+    # append, never across its fetch.
+    if key_levels_enabled and not key_levels_held:
+        collected: list[dict[str, Any]] = []
+
+        def _collect(_label: str, found: list[dict[str, Any]]) -> None:
+            collected.extend(found or [])
+
+        try:
+            _run_spy_key_levels_variant(
+                spot_price=spot_price, today_str=today_str,
+                candidates=[], quote_map={}, add_candidates=_collect,
+            )
+        except Exception as exc:
+            print(f"key-levels fast scan failed: {exc}", file=sys.stderr)
+            collected = []
+
+        if collected:
+            with lock:
+                rows = read_log()
+                if not has_open_position(rows, SPY_KEY_LEVELS_PLAY_TYPE):
+                    eligible = [c for c in collected
+                                if not recently_tracked(rows, c, timestamp)]
+                    selected = apply_ticker_exposure_cap(eligible, rows, TICKER)
+                    if selected:
+                        row = candidate_to_row(selected[0], rows, timestamp,
+                                               market_condition="LIVE SIGNAL")
+                        rows.append(row)
+                        write_log(rows)
+                        opened.append(SPY_KEY_LEVELS_PLAY_TYPE)
+                    else:
+                        row = None
+                else:
+                    row = None
+            if row is not None:
+                safe_discord_call(
+                    "SPY_KEY_LEVELS entry post",
+                    lambda r=row: post_new_trade(r, tracker, report_state),
+                )
+
     if opened:
         write_report_state(report_state)
-    return {"scanned": len(active), "opened": len(opened), "play_types": opened}
+    return {"scanned": len(active) + (1 if key_levels_enabled else 0),
+            "opened": len(opened), "play_types": opened}
 

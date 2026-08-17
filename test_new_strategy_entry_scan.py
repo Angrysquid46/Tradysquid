@@ -409,3 +409,103 @@ def test_the_full_scan_will_not_retrade_a_bar_the_fast_scan_took(monkeypatch):
         bad.write_text("{not json", encoding="utf-8")
         monkeypatch.setattr(spy_scanner, "ENTRY_SCAN_STATE_PATH", bad)
         assert spy_scanner.read_entry_scan_state() == {"last_signal_bar": {}}
+
+
+# ---------------------------------------------------------------------------
+# SPY_KEY_LEVELS - the 14th strategy
+# ---------------------------------------------------------------------------
+
+def test_key_levels_is_scanned_even_when_no_other_strategy_fires(monkeypatch,
+                                                                 tmp_state):
+    """The reason it was stuck on the 15-minute cadence.
+
+    Its entry is a live price-vs-level read, not a bar event, so it sits
+    outside the shared signal plumbing. The scan used to return early the
+    moment none of the other 13 had a fresh setup - which is most cycles -
+    and key-levels never got its pass.
+    """
+    called: list[str] = []
+
+    monkeypatch.setattr(spy_scanner, "trade_types_enabled",
+                        lambda: {"spy_key_levels": True})
+    monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
+    monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": 770.0})
+    monkeypatch.setattr(spy_scanner, "get_intraday_history", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [])
+    monkeypatch.setattr(lns, "live_feature_rows", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "initialize_discord", lambda *a, **k: object())
+    monkeypatch.setattr(spy_scanner, "read_report_state", lambda: {})
+    monkeypatch.setattr(spy_scanner, "write_report_state", lambda st: None)
+
+    def _variant(**kwargs):
+        called.append("ran")
+        return {"qualified": False}
+
+    monkeypatch.setattr(spy_scanner, "_run_spy_key_levels_variant", _variant)
+
+    spy_scanner.scan_new_strategy_entries()
+    assert called == ["ran"], "key-levels never got its pass"
+
+
+def test_key_levels_is_skipped_while_it_holds_a_position(monkeypatch, tmp_state):
+    called: list[str] = []
+    rows = [{"play_type": spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE,
+             "outcome": "OPEN", "ticker": "SPY"}]
+
+    monkeypatch.setattr(spy_scanner, "trade_types_enabled",
+                        lambda: {"spy_key_levels": True})
+    monkeypatch.setattr(spy_scanner, "read_log", lambda: rows)
+    monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": 770.0})
+    monkeypatch.setattr(spy_scanner, "_run_spy_key_levels_variant",
+                        lambda **k: called.append("ran"))
+
+    result = spy_scanner.scan_new_strategy_entries()
+    assert called == [], "scanned key-levels while it was holding a position"
+    assert result["opened"] == 0
+
+
+def test_key_levels_fetch_happens_outside_the_position_lock(monkeypatch, tmp_state):
+    """It does its own multi-endpoint fetch (premarket, daily, 1m, 5m). Held
+    behind POSITION_FILE_LOCK at a 1-minute cadence that would stall exits."""
+    lock = _TrackingLock()
+
+    monkeypatch.setattr(spy_scanner, "trade_types_enabled",
+                        lambda: {"spy_key_levels": True})
+    monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
+    monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": 770.0})
+    monkeypatch.setattr(spy_scanner, "get_intraday_history", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [])
+    monkeypatch.setattr(lns, "live_feature_rows", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "initialize_discord", lambda *a, **k: object())
+    monkeypatch.setattr(spy_scanner, "read_report_state", lambda: {})
+    monkeypatch.setattr(spy_scanner, "write_report_state", lambda st: None)
+
+    def _variant(**kwargs):
+        lock.note_io()
+        return {"qualified": False}
+
+    monkeypatch.setattr(spy_scanner, "_run_spy_key_levels_variant", _variant)
+
+    spy_scanner.scan_new_strategy_entries(position_lock=lock)
+    assert "network-io-while-held" not in lock.events
+
+
+def test_a_failing_key_levels_scan_does_not_break_the_other_strategies(
+        monkeypatch, tmp_state):
+    monkeypatch.setattr(spy_scanner, "trade_types_enabled",
+                        lambda: {"spy_key_levels": True})
+    monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
+    monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": 770.0})
+    monkeypatch.setattr(spy_scanner, "get_intraday_history", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [])
+    monkeypatch.setattr(lns, "live_feature_rows", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "initialize_discord", lambda *a, **k: object())
+    monkeypatch.setattr(spy_scanner, "read_report_state", lambda: {})
+    monkeypatch.setattr(spy_scanner, "write_report_state", lambda st: None)
+
+    def _boom(**kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(spy_scanner, "_run_spy_key_levels_variant", _boom)
+    result = spy_scanner.scan_new_strategy_entries()
+    assert result["opened"] == 0
