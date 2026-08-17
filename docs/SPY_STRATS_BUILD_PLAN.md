@@ -262,7 +262,63 @@ Phase 5 confirms the edges survive theta.**
   duplicate-signal detection, drift detection.
 - **Exit criteria:** calibrated probabilities; predicted ≈ observed on held-out data.
 
-### ⬜ Phase 7 — Discord restructure
+### ⬜ Phase 7 — Discord restructure — **SCOPE SET 2026-08-17**
+
+**Owner decision:** the live strategy set becomes **the top 15 from the shortlist**
+(see [`BACKTEST_RESULTS.md`](BACKTEST_RESULTS.md)) **plus `evolve_bot`** (the AI
+trader, which stays a separate controlled experiment). **Everything else is
+removed** — all 14 current play types, unless they appear in the 15.
+
+Of the current live set, only **`SPY_KEY_LEVELS`** survives (shortlist #11).
+Retired: `SPY_0DTE_1M`, `SPY_0DTE_5M`, `SPY_EXPANSION_LEVEL`, and all 10
+`SPY_RATCHET_*` variants — 13 play types, all running on entry signals that
+measured at ≈0.
+
+**The 15 to implement**, each with its own signal, its own explicit rules, and
+its own channel so there is no ambiguity about what fired:
+
+| # | Strategy | Rule source |
+|---|---|---|
+| 1 | Gap continuation ≥0.5% | `spy_backtest_strategies_extended.gap_continuation(0.5)` |
+| 2 | Failed breakout (prev-day) | `failed_breakout_reversal("prev_day")` |
+| 3 | Gap continuation ≥0.25% | `gap_continuation(0.25)` |
+| 4 | Liquidity sweep ≤10 bars | `liquidity_sweep(10)` |
+| 5 | Liquidity sweep ≤5 bars | `liquidity_sweep(5)` |
+| 6 | Momentum continuation (ADX 25, unaligned) | `momentum_continuation(25.0, require_alignment=False)` |
+| 7 | Time-of-day MIDDAY | `time_of_day_momentum("MIDDAY")` |
+| 8 | Confluence 4+ levels | `multi_level_confluence(4)` |
+| 9 | Time-of-day FINAL_30 | `time_of_day_momentum("FINAL_30")` |
+| 10 | MTF breakout 4/4 agree | `multi_timeframe_breakout(4)` |
+| 11 | **SPY_KEY_LEVELS (existing, keep)** | `spy_scanner.scan_spy_key_levels_candidates` |
+| 12 | Momentum exhaustion 1.0 ATR | `momentum_exhaustion(1.0)` |
+| 13 | Gap continuation ≥1.0% | `gap_continuation(1.0)` |
+| 14 | First pullback 0.5 ATR | `first_pullback_after_drive(0.5)` |
+| 15 | Opening gap fade (playbook 1) | `playbook_opening_gap_fade()` |
+
+Plus **`evolve_bot`**, unchanged and still isolated.
+
+> ⚠️ **Risk stated once, for the record.** These 15 are ranked on **underlying**
+> edge only. No option model has run yet. Every one of them exits at the session
+> close 89-97% of the time — the worst holding pattern for a 0DTE option, since
+> theta is largest exactly then — and profit factors are 1.05-1.30 *before* any
+> commission or slippage. It is entirely possible several of these are not
+> profitable once expressed as 0DTE calls and puts. **Phase 5 is what settles
+> that**, and the owner has chosen to build the Discord structure first and
+> resume Phase 5 after. Ranks 12 and 15 additionally rest on only 34 and 46
+> trades and should be treated as unproven regardless.
+
+Implementation notes for whoever picks this up:
+- 13 play types get removed from `spy_scanner.py` (`SPY_RATCHET_VARIANTS`,
+  `SPY_0DTE_PLAY_TYPES`, `SPY_EXPANSION_PLAY_TYPE`) plus their Discord
+  categories/channels, `config/scanner.json` flags, and dashboards.
+- Removal is not done until the live Discord surface, diagnostics DB and
+  generated dashboards are verified — not just code and tests.
+- The 14 new entries need live scanner implementations; the backtest modules
+  are research code and are **not** wired to trading.
+- One channel per strategy, one updating P/L card each, dashboard ranks
+  performers, `strategy-results` retired.
+
+### ⬜ Phase 7 — original scope notes
 - Consolidate strategies under one group; per-strategy channel with an updating
   P/L card; dashboard ranks best performers; retire strategy-results.
 - One channel per strategy (owner decision), not per trade.
