@@ -509,3 +509,56 @@ def test_a_failing_key_levels_scan_does_not_break_the_other_strategies(
     monkeypatch.setattr(spy_scanner, "_run_spy_key_levels_variant", _boom)
     result = spy_scanner.scan_new_strategy_entries()
     assert result["opened"] == 0
+
+
+def test_relative_volume_is_populated_on_live_feature_rows():
+    """SPY_ORB_IMMEDIATE filters on `(relative_volume or 0) >= 1.0`. The
+    live feature build only sees today's bars, so without a baseline from
+    the research store relative_volume is None on every live bar, collapses
+    to 0, and that strategy can NEVER fire live regardless of the market -
+    while backtesting at 0.45 signals/session."""
+    baseline = lns.rvol_baseline_from_store()
+    assert baseline, "no volume baseline available from the research store"
+    assert len(baseline) > 100, "baseline covers too few minutes of a session"
+    assert all(v > 0 for v in baseline.values())
+
+
+def test_the_baseline_degrades_to_empty_rather_than_raising(monkeypatch):
+    """A missing or locked research store must not take the live scan down -
+    it should fall back to exactly the previous behaviour."""
+    def _boom():
+        raise RuntimeError("store unavailable")
+
+    monkeypatch.setattr(lns.sif, "connect", _boom)
+    lns._RVOL_BASELINE_CACHE.clear()
+    try:
+        assert lns.rvol_baseline_from_store() == {}
+    finally:
+        lns._RVOL_BASELINE_CACHE.clear()
+
+
+def test_an_empty_intraday_response_is_retried(monkeypatch, tmp_state):
+    """Tradier returns an empty series for a valid window often enough to
+    matter - 2 of 3 consecutive calls, then a full session. Treating the
+    first empty read as 'no bars yet' silently skips the whole cycle."""
+    calls = {"n": 0}
+
+    def _flaky(*a, **k):
+        calls["n"] += 1
+        return [] if calls["n"] < 3 else [{"time": "2026-08-17T09:30:00"}]
+
+    monkeypatch.setattr(spy_scanner, "trade_types_enabled",
+                        lambda: {lns.config_flag(p): True
+                                 for p in lns.NEW_STRATEGY_PLAY_TYPES})
+    monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
+    monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": 770.0})
+    monkeypatch.setattr(spy_scanner, "get_intraday_history", _flaky)
+    monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [])
+    monkeypatch.setattr(lns, "live_feature_rows", lambda bars, d: list(bars))
+    monkeypatch.setattr(lns, "recent_signals", lambda *a, **k: [])
+    monkeypatch.setattr(spy_scanner, "initialize_discord", lambda *a, **k: object())
+    monkeypatch.setattr(spy_scanner, "read_report_state", lambda: {})
+    monkeypatch.setattr(spy_scanner, "write_report_state", lambda st: None)
+
+    spy_scanner.scan_new_strategy_entries()
+    assert calls["n"] == 3, "an empty intraday response was not retried"
