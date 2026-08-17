@@ -245,3 +245,54 @@ def test_the_scan_runner_and_exit_dispatch_are_wired():
     result = ss.evaluate_open_row(row, {}, ss.now_ct())
     assert result["signal"] == "HOLD"
     assert "unavailable" in result["note"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Per-strategy exits
+# ---------------------------------------------------------------------------
+
+def test_every_strategy_has_its_own_exit_rules():
+    """An earlier version applied one +200/-80 shape to all 14, discarding
+    the per-strategy target/stop the backtest actually measured."""
+    assert len(lns.NEW_STRATEGY_EXITS) == 14
+    for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+        assert play_type in lns.NEW_STRATEGY_EXITS, f"{play_type} has no exit of its own"
+        target, stop, _time_stop = lns.exit_rules_for(play_type)
+        assert target > 0 and stop < 0
+
+
+def test_exits_actually_differ_between_strategies():
+    """If they were all identical the per-strategy table would be theatre."""
+    shapes = {lns.exit_rules_for(p) for p in lns.NEW_STRATEGY_PLAY_TYPES}
+    assert len(shapes) >= 4, f"only {len(shapes)} distinct exit shapes"
+
+
+def test_the_three_strategies_measured_with_a_time_stop_have_one():
+    with_time_stop = {p for p in lns.NEW_STRATEGY_PLAY_TYPES
+                      if lns.exit_rules_for(p)[2] is not None}
+    assert with_time_stop == {"SPY_TOD_FINAL30", "SPY_EXHAUSTION_1ATR",
+                              "SPY_OPENING_GAP_FADE"}
+
+
+def test_a_time_stop_only_applies_to_the_strategy_that_measured_one():
+    held = 200.0
+    assert lns.new_strategy_exit_signal(
+        1.0, 1.1, 120, play_type="SPY_EXHAUSTION_1ATR", minutes_held=held)[0] == "TIME STOP"
+    assert lns.new_strategy_exit_signal(
+        1.0, 1.1, 120, play_type="SPY_GAP_CONT_50", minutes_held=held)[0] == "HOLD"
+
+
+def test_each_strategy_uses_its_own_target_not_a_shared_one():
+    """Exhaustion targets +40%, gap continuation +150%. A +45% mark must
+    take profit on one and hold on the other."""
+    assert lns.new_strategy_exit_signal(
+        1.0, 1.45, 120, play_type="SPY_EXHAUSTION_1ATR")[0] == "TAKE PROFIT"
+    assert lns.new_strategy_exit_signal(
+        1.0, 1.45, 120, play_type="SPY_GAP_CONT_50")[0] == "HOLD"
+
+
+def test_each_strategy_uses_its_own_stop_not_a_shared_one():
+    assert lns.new_strategy_exit_signal(
+        1.0, 0.55, 120, play_type="SPY_EXHAUSTION_1ATR")[0] == "STOP OUT"
+    assert lns.new_strategy_exit_signal(
+        1.0, 0.55, 120, play_type="SPY_GAP_CONT_50")[0] == "HOLD"

@@ -248,9 +248,50 @@ NEW_STRATEGY_MAX_RISK_PER_TRADE = 500.0
 # other strategies it is the best-supported shape available rather than an
 # individually measured one, which is a reason to watch the early live
 # results rather than trust these numbers.
-NEW_STRATEGY_TARGET_PCT = 200.0
-NEW_STRATEGY_STOP_PCT = -80.0
+# Each strategy carries its OWN exit, derived from the target/stop the
+# backtest actually measured as best for it (docs/BACKTEST_RESULTS.md) -
+# not one shape flattened across all 14, which is what an earlier version
+# of this did and which threw away a real per-strategy result.
+#
+# Converting the measured ATR exits into option-premium percent: at SPY's
+# ~$2.30 average ATR and ~0.50 delta on a near-ATM contract, an underlying
+# move of N ATR moves premium by roughly N x 2.30 x 0.50 dollars. Against a
+# typical ~$1.50 entry that gives:
+#
+#   2.00 ATR -> ~+153%     1.00 ATR -> ~+77%
+#   1.50 ATR -> ~+115%     0.75 ATR -> ~-58%
+#   0.50 ATR -> ~+38%      0.50 ATR -> ~-38%
+#
+# Rounded to sensible levels below. Time stops are carried across directly
+# in minutes, since three of the 15 measured better with one.
 NEW_STRATEGY_LAST_EXIT_MINUTE = 375        # 15:45 - flat before expiry
+NEW_STRATEGY_DEFAULT_TARGET_PCT = 150.0
+NEW_STRATEGY_DEFAULT_STOP_PCT = -75.0
+
+# play_type -> (target_pct, stop_pct, time_stop_minutes | None)
+NEW_STRATEGY_EXITS: dict[str, tuple[float, float, int | None]] = {
+    "SPY_GAP_CONT_50":      (150.0, -75.0, None),   # measured t2.0/s1.0
+    "SPY_FAILED_BREAK":     (115.0, -75.0, None),   # t1.5/s1.0
+    "SPY_GAP_CONT_25":      (115.0, -75.0, None),   # t1.5/s1.0
+    "SPY_SWEEP_10":         (150.0, -75.0, None),   # t2.0/s1.0
+    "SPY_SWEEP_5":          (115.0, -75.0, None),   # t1.5/s1.0
+    "SPY_MOMENTUM_ADX25":   (115.0, -75.0, None),   # t1.5/s1.0
+    "SPY_TOD_MIDDAY":       (150.0, -75.0, None),   # t2.0/s1.0
+    "SPY_CONFLUENCE_4":     (115.0, -75.0, None),   # t1.5/s1.0
+    "SPY_TOD_FINAL30":      (115.0, -75.0, 30),     # t1.5/s1.0/m30
+    "SPY_MTF_4OF4":         (150.0, -75.0, None),   # t2.0/s1.0
+    "SPY_EXHAUSTION_1ATR":  (40.0,  -40.0, 30),     # t0.5/s0.5/m30
+    "SPY_GAP_CONT_100":     (150.0, -75.0, None),   # t2.0/s1.0
+    "SPY_FIRST_PULLBACK":   (75.0,  -58.0, None),   # t1.0/s0.75
+    "SPY_OPENING_GAP_FADE": (40.0,  -40.0, 15),     # t0.5/s0.5/m15
+}
+
+
+def exit_rules_for(play_type: str) -> tuple[float, float, int | None]:
+    """This strategy's own target/stop/time-stop."""
+    return NEW_STRATEGY_EXITS.get(
+        play_type, (NEW_STRATEGY_DEFAULT_TARGET_PCT, NEW_STRATEGY_DEFAULT_STOP_PCT, None)
+    )
 
 
 def scan_new_strategy_candidates(
@@ -315,21 +356,32 @@ def scan_new_strategy_candidates(
 
 
 def new_strategy_exit_signal(
-    entry_price: float, mark: float, minutes_remaining: float, peak_pct: float = 0.0,
+    entry_price: float,
+    mark: float,
+    minutes_remaining: float,
+    peak_pct: float = 0.0,
+    *,
+    play_type: str | None = None,
+    minutes_held: float | None = None,
 ) -> tuple[str, str]:
-    """Exit for all 14, in option-premium percent - the same units the rest
-    of the live system manages positions in."""
+    """Exit in option-premium percent, using THIS strategy's own rules.
+
+    play_type selects the target/stop/time-stop the backtest measured for
+    that specific strategy. Three of them exit better on a time stop than
+    on price, so minutes_held is honoured when the caller can supply it."""
     if entry_price <= 0:
         return "HOLD", "no entry price to evaluate against"
+    target_pct, stop_pct, time_stop = exit_rules_for(play_type or "")
     pnl_pct = (mark - entry_price) / entry_price * 100.0
 
-    if pnl_pct <= NEW_STRATEGY_STOP_PCT:
-        return "STOP OUT", (
-            f"down {pnl_pct:.0f}%, past the {NEW_STRATEGY_STOP_PCT:.0f}% stop"
-        )
-    if pnl_pct >= NEW_STRATEGY_TARGET_PCT:
-        return "TAKE PROFIT", (
-            f"up {pnl_pct:.0f}%, past the {NEW_STRATEGY_TARGET_PCT:.0f}% target"
+    if pnl_pct <= stop_pct:
+        return "STOP OUT", f"down {pnl_pct:.0f}%, past this strategy's {stop_pct:.0f}% stop"
+    if pnl_pct >= target_pct:
+        return "TAKE PROFIT", f"up {pnl_pct:.0f}%, past this strategy's {target_pct:.0f}% target"
+    if time_stop is not None and minutes_held is not None and minutes_held >= time_stop:
+        return "TIME STOP", (
+            f"held {minutes_held:.0f} minutes at {pnl_pct:+.0f}% - past this "
+            f"strategy's {time_stop}-minute time stop"
         )
     if minutes_remaining <= 15:
         return "EOD CLOSE", "closing ahead of same-day expiration - never holds overnight"

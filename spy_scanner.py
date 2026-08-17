@@ -4433,9 +4433,21 @@ def evaluate_open_new_strategy_row(
     close_time = timestamp.replace(hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1],
                                    second=0, microsecond=0)
     minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
+    # How long this position has been open, so a strategy with a measured
+    # time stop can actually use it.
+    minutes_held: float | None = None
+    opened = row.get("timestamp") or row.get("entry_timestamp")
+    if opened:
+        try:
+            opened_at = datetime.fromisoformat(str(opened))
+            minutes_held = max((timestamp - opened_at).total_seconds() / 60, 0)
+        except (TypeError, ValueError):
+            minutes_held = None
+
     try:
         signal, exit_note = lns.new_strategy_exit_signal(
-            entry, mark, minutes_remaining, peak_pct
+            entry, mark, minutes_remaining, peak_pct,
+            play_type=row.get("play_type"), minutes_held=minutes_held,
         )
     except Exception as exc:
         print(f"new_strategy_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
