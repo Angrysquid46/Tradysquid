@@ -90,7 +90,6 @@ CATEGORY_ORDER = [
     "MARKET INTELLIGENCE",
     "LEARNING CENTER",
     STRATEGIES_CATEGORY_NAME,
-    RATCHET_CATEGORY_NAME,
     "PERFORMANCE",
     "SYSTEM",
     "STRATEGY CONTROL",
@@ -162,21 +161,15 @@ def _ratchet_slug(play_type: str) -> str:
     return play_type.removeprefix("SPY_RATCHET_").lower().replace("_", "-")
 
 
-# One shared pair of channels for all 10 ratchet variants: a leaderboard
-# dashboard ranking them against each other, and a combined results feed
-# where each variant still posts (and updates) its own distinct card - see
-# performance_reconciliation.py's REPORT_ROUTES/REPORT_MARKERS, which keep
-# each variant's state and search-marker text unique even though they now
-# share a real channel.
-CHANNELS.append(ChannelSpec(
-    RATCHET_CATEGORY_NAME, "ratchet-dashboard",
-    "Leaderboard comparing all 10 ratchet-floor variants, plus each variant's own monthly "
-    "performance index - see #ratchet-results for individual trade history.",
-))
-CHANNELS.append(ChannelSpec(
-    RATCHET_CATEGORY_NAME, "ratchet-results",
-    "Every ratchet-floor variant's results, each tracked and tagged separately in one feed.",
-))
+# All 10 ratchet variants were retired 2026-08-17, so the shared pair of
+# channels they used is no longer created - see DELETE_CHANNELS and
+# DELETE_CATEGORIES below, which remove the category outright.
+#
+# They were retired on measurement, not preference: the ORB entry all ten
+# shared came out at +0.0004 ATR/trade (t=+0.39) over 3,347 sessions, and
+# when the exit shapes were finally separable - which needed the Phase 5
+# option model, since step_pct/stop_pct are defined in option-premium
+# percent - every ratchet placed below the SPY_0DTE shape already running.
 
 # Old per-variant channels (10 categories x 2 channels), retired in favor
 # of the shared pair above.
@@ -187,6 +180,12 @@ for _variant in spy_scanner.SPY_RATCHET_VARIANTS:
     _OLD_RATCHET_CHANNEL_NAMES.add(f"ratchet-{_slug}-results")
 
 DELETE_CHANNELS = {
+    # All 10 ratchet-floor variants retired 2026-08-17: their shared ORB
+    # entry measured at essentially zero (+0.0004 ATR/trade, t=+0.39), and
+    # every ratchet exit shape came last when scored as options - the best
+    # of them lost $275k against the SPY_0DTE shape's $156k. Only the
+    # locked top-15 strategies survive.
+    "ratchet-dashboard", "ratchet-results",
     "qualified-trades", "scratches", "expired", "exit-alerts",
     "f-dashboard", "f-options-setups", "f-charts", "f-news-events",
     "f-research-performance", "vale-dashboard", "vale-options-setups",
@@ -211,6 +210,7 @@ DELETE_CHANNELS = {
 
 DELETE_CATEGORIES = {
     "ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE",
+    RATCHET_CATEGORY_NAME,
     *_OLD_RATCHET_CATEGORY_NAMES,
     *_OLD_STRATEGY_CATEGORY_NAMES,
 }
