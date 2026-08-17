@@ -721,15 +721,52 @@ def main() -> int:
                 except spy_scanner.DiscordError as exc:
                     warnings.append(f"#{spec.name}: {exc}")
 
+    # Deletions report what ACTUALLY happened, not what was attempted.
+    #
+    # This previously printed "DELETE #x" before trying, and pushed failures
+    # into `warnings` where they were easy to miss - so the script reported
+    # deleting three objects it had not touched. It also looked the channel up
+    # in `by_name`, which only holds channels matched to a ChannelSpec, so any
+    # channel being retired (and therefore no longer specced) was silently
+    # skipped.
+    #
+    # Now it searches every existing channel, and on --apply it re-queries the
+    # guild afterwards to confirm the object is really gone before claiming it.
+    all_by_name = {
+        normalized(item.get("name")): item
+        for item in existing
+        if item.get("type") != 4
+    }
+    deleted_ids: list[tuple[str, str]] = []
     for name in sorted(DELETE_CHANNELS):
-        item = by_name.get(normalized(name))
-        if item:
-            print(f"{'DELETE' if apply else 'WOULD DELETE'} #{name}")
-            if apply:
-                try:
-                    tracker._request("DELETE", f"/channels/{item['id']}")
-                except spy_scanner.DiscordError as exc:
-                    warnings.append(f"delete #{name}: {exc}")
+        item = all_by_name.get(normalized(name))
+        if not item:
+            continue
+        if not apply:
+            print(f"WOULD DELETE #{name}")
+            continue
+        try:
+            tracker._request("DELETE", f"/channels/{item['id']}")
+            deleted_ids.append((name, str(item["id"])))
+        except spy_scanner.DiscordError as exc:
+            print(f"DELETE FAILED #{name}: {exc}")
+            warnings.append(f"delete #{name}: {exc}")
+
+    if apply and deleted_ids:
+        try:
+            remaining = {
+                str(item["id"])
+                for item in tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
+            }
+        except spy_scanner.DiscordError as exc:
+            remaining = set()
+            warnings.append(f"could not verify deletions: {exc}")
+        for name, channel_id in deleted_ids:
+            if channel_id in remaining:
+                print(f"DELETE UNCONFIRMED #{name} - still present after delete")
+                warnings.append(f"#{name} still present after delete")
+            else:
+                print(f"DELETE #{name}")
 
     for category_name in sorted(DELETE_CATEGORIES):
         category = next(
