@@ -56,7 +56,9 @@ Understand authorized shares, issued shares, outstanding shares, treasury shares
 Buying because a share price looks low, confusing an ETF with the companies it holds, using stale last prices, ignoring dilution, treating dividends as free money, assuming after-hours liquidity matches regular hours, and opening several highly correlated positions while calling them diversified.
 <!-- EXPANDED:indices-and-etfs -->
 
-## Indices, ETF Structure & Creation Units — expanded reference
+## Indices, ETF Structure & Creation Units — Foundation reference
+**Level: FOUNDATION.** Assumes no prior knowledge. Start here if terms like *strike*, *premium* or *expiration* are new.
+
 How SPY actually works - index construction, ETF creation and redemption, tracking, and why an ETF can trade away from its basket. Consolidated from source modules 70; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Market-Cap Weighted Indices (S&P 500) vs. Price-Weighted Indices (DJIA)
@@ -72,7 +74,6 @@ Covered in source module 70. See the surrounding sections for the full treatment
 Covered in source module 70. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:indices-and-etfs -->
-
 <!-- END:01-stock-market-foundations -->
 
 <!-- CHANNEL:02-company-fundamentals -->
@@ -264,7 +265,9 @@ Create at least three cases with explicit assumptions. Include an adverse case w
 Buying the lowest multiple in a collapsing industry, using one year of peak earnings, comparing unrelated businesses, assuming all growth deserves the same multiple, ignoring dilution, treating analyst targets as valuation work, and confusing a good company with an automatically good investment.
 <!-- EXPANDED:fundamentals-and-valuation -->
 
-## Corporate Finance, Valuation & Statements — expanded reference
+## Corporate Finance, Valuation & Statements — Foundation reference
+**Level: FOUNDATION.** Assumes no prior knowledge. Start here if terms like *strike*, *premium* or *expiration* are new.
+
 Fundamentals for context rather than for day trading: statements, multiples, ratios, and credit analysis. Consolidated from source modules 67, 68, 69, 92; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Revenue, Cost of Goods Sold, and Gross Profit Margins
@@ -316,7 +319,6 @@ Covered in source module 92. See the surrounding sections for the full treatment
 Covered in source module 92. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:fundamentals-and-valuation -->
-
 <!-- END:04-valuation-and-quality -->
 
 <!-- CHANNEL:05-market-mechanics-orders -->
@@ -374,7 +376,9 @@ For a long position, liquidation value is closer to the bid than the ask. For a 
 Using market orders in thin options, chasing a moving ask, canceling and resubmitting without checking fills, forgetting GTC orders, reading midpoint as profit, legging spreads unintentionally, and sizing a trade before considering how it can be exited.
 <!-- EXPANDED:market-microstructure -->
 
-## Market Microstructure & Execution — expanded reference
+## Market Microstructure & Execution — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 How the double-sided auction actually works, and what it costs to cross it: the limit order book, bid/ask spreads, slippage, routing, dark pools and internalisation. Consolidated from source modules 28, 41, 46, 58, 71, 72, 88, 96, 102, 107, 117; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## The Double-Sided Auction Mechanics
@@ -507,7 +511,6 @@ Covered in source module 117. See the surrounding sections for the full treatmen
 Covered in source module 117. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:market-microstructure -->
-
 <!-- END:05-market-mechanics-orders -->
 
 <!-- CHANNEL:06-charts-price-action -->
@@ -577,7 +580,9 @@ Splits, dividends, futures rolls, and corporate actions affect historical charts
 Drawing levels after price turns, using too many lines, switching timeframes until a desired signal appears, treating one candle as certainty, ignoring extended-hours effects, and moving invalidation because the original line has become emotionally inconvenient.
 <!-- EXPANDED:candlestick-and-chart-anatomy -->
 
-## Candlestick Math & Chart Anatomy — expanded reference
+## Candlestick Math & Chart Anatomy — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 The arithmetic under the bars - body size, upper and lower shadows, rejection wicks - plus classical patterns and how price rejection actually prints. Consolidated from source modules 30, 47, 73, 121; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Candlestick Body Size (Body_Size)
@@ -626,7 +631,6 @@ Covered in source module 121. See the surrounding sections for the full treatmen
 Covered in source module 121. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:candlestick-and-chart-anatomy -->
-
 <!-- END:06-charts-price-action -->
 
 <!-- CHANNEL:07-technical-analysis -->
@@ -686,7 +690,9 @@ Indicators fail during gaps, structural regime changes, low liquidity, news, and
 Calling overbought an automatic sell, using default settings without purpose, changing settings after losses, ignoring look-ahead behavior, and treating indicator agreement as probability without historical evidence.
 <!-- EXPANDED:trend-strength-and-regimes -->
 
-## Trend Strength, Velocity & Chop Filters — expanded reference
+## Trend Strength, Velocity & Chop Filters — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 Distinguishing a trend from noise: velocity measures, efficiency ratios, ADX-style strength, and the filters that switch a strategy off in chop. Consolidated from source modules 31, 122; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Average Directional Index (ADX_14)
@@ -708,10 +714,11 @@ Covered in source module 122. See the surrounding sections for the full treatmen
 Covered in source module 122. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:trend-strength-and-regimes -->
-
 <!-- EXPANDED:gaps-and-oscillators -->
 
-## Gaps, Oscillators & Volatility Bands — expanded reference
+## Gaps, Oscillators & Volatility Bands — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 Opening gaps and their statistics, momentum oscillators, mean-reversion signals, and Bollinger-style statistical bands. Consolidated from source modules 74, 75, 76, 97; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Common Gaps, Breakaway Gaps, Runaway Gaps, and Exhaustion Gaps
@@ -763,7 +770,6 @@ Covered in source module 97. See the surrounding sections for the full treatment
 Covered in source module 97. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:gaps-and-oscillators -->
-
 <!-- END:07-technical-analysis -->
 
 <!-- CHANNEL:08-volume-breadth-internals -->
@@ -823,7 +829,9 @@ A breakout with expanding volume, broad participation, supportive sector behavio
 Assuming every large options trade is bullish, ignoring time-of-day seasonality, using breadth from the wrong universe, treating volume spikes as direction, and repeating “institutions are buying” without evidence that survives contact with the actual tape.
 <!-- EXPANDED:volume-and-flow -->
 
-## Volume, Flow & Tape Reading — expanded reference
+## Volume, Flow & Tape Reading — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 Reading participation rather than price: dollar volume, volume z-scores, volume volatility, breadth, and the tape signatures that separate a real breakout from a low-volume fake. Consolidated from source modules 29, 77, 78, 123; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Dollar Volume Traded (Dollar_Volume_Traded)
@@ -872,7 +880,6 @@ Covered in source module 123. See the surrounding sections for the full treatmen
 Covered in source module 123. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:volume-and-flow -->
-
 <!-- END:08-volume-breadth-internals -->
 
 <!-- CHANNEL:09-macro-sectors-catalysts -->
@@ -920,7 +927,9 @@ For each major event, define:
 Trading headlines without reading details, assuming good economic news is always bullish, ignoring revisions, treating sector correlation as company causation, and holding short-dated options through events without understanding implied movement.
 <!-- EXPANDED:macro-regimes -->
 
-## Macro Regimes, Central Banks & Intermarket — expanded reference
+## Macro Regimes, Central Banks & Intermarket — Advanced reference
+**Level: ADVANCED.** Assumes the Greeks, implied volatility and position sizing are already comfortable. This material is about market structure and dealer behaviour, not the basics.
+
 Rates, inflation, central-bank policy and the cross-asset relationships that set the regime a strategy has to survive. Consolidated from source modules 43, 50, 79, 90, 104, 113; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## The Yield Curve Spread (Yield_Curve_Spread)
@@ -990,7 +999,6 @@ Covered in source module 113. See the surrounding sections for the full treatmen
 Covered in source module 113. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:macro-regimes -->
-
 <!-- END:09-macro-sectors-catalysts -->
 
 <!-- CHANNEL:10-stock-trading-strategies -->
@@ -1196,7 +1204,9 @@ Before entry know:
 Buying the cheapest OTM contract, confusing premium with total cost, ignoring multiplier, holding through expiration without understanding exercise, believing defined risk means small risk, and assuming a correct direction automatically creates profit.
 <!-- EXPANDED:option-contracts-basics -->
 
-## Option Contracts: Definitions & Long vs Short — expanded reference
+## Option Contracts: Definitions & Long vs Short — Foundation reference
+**Level: FOUNDATION.** Assumes no prior knowledge. Start here if terms like *strike*, *premium* or *expiration* are new.
+
 What a contract actually is, the difference between buying and selling premium, and the obligations each side carries. Consolidated from source modules 53, 66; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## The Concept of Options: Rights vs. Obligations
@@ -1224,7 +1234,6 @@ Covered in source module 66. See the surrounding sections for the full treatment
 Covered in source module 66. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:option-contracts-basics -->
-
 <!-- END:13-options-basics -->
 
 <!-- CHANNEL:14-option-chain-liquidity -->
@@ -1286,7 +1295,9 @@ Start with a defensible limit, wait for market response, and adjust intentionall
 Using last price, choosing by premium alone, ignoring percentage spread width, mixing expirations accidentally, reading open interest as bullish, and paper-filling every trade at midpoint as if market makers were a public charity.
 <!-- EXPANDED:moneyness-and-leverage -->
 
-## Moneyness, Contract Selection & Leverage — expanded reference
+## Moneyness, Contract Selection & Leverage — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 ITM, ATM and OTM as regimes rather than labels, how moneyness drives leverage and probability, and how contract choice changes the trade you are actually taking. Consolidated from source modules 39, 51, 118; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## In-The-Money (ITM)
@@ -1323,7 +1334,6 @@ Covered in source module 118. See the surrounding sections for the full treatmen
 Covered in source module 118. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:moneyness-and-leverage -->
-
 <!-- END:14-option-chain-liquidity -->
 
 <!-- CHANNEL:15-option-pricing-greeks -->
@@ -1378,7 +1388,9 @@ Before trading, estimate option behavior if:
 Treating Greeks as guarantees, adding individual Greek estimates linearly after a large move, confusing theta with guaranteed seller profit, ignoring vega around events, and using delta as a precise probability without product and model context.
 <!-- EXPANDED:the-greeks -->
 
-## The Greeks & 0DTE Acceleration — expanded reference
+## The Greeks & 0DTE Acceleration — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 Delta, gamma, theta, vega and rho as working tools, with the way each one behaves differently on a same-day expiry where gamma dominates and theta compounds by the minute. Consolidated from source modules 32, 55, 119; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Options Delta (Delta)
@@ -1418,7 +1430,6 @@ Covered in source module 119. See the surrounding sections for the full treatmen
 Covered in source module 119. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:the-greeks -->
-
 <!-- END:15-option-pricing-greeks -->
 
 <!-- CHANNEL:16-volatility -->
@@ -1473,7 +1484,9 @@ Compare current realized movement, gaps, correlation, breadth, events, and liqui
 Calling high IV automatically expensive, assuming low IV cannot fall further, using one IV value for a spread, ignoring skew, confusing expected move with support/resistance, and selling premium without modeling tail loss.
 <!-- EXPANDED:volatility-surface -->
 
-## Implied Volatility, Skew & Term Structure — expanded reference
+## Implied Volatility, Skew & Term Structure — Advanced reference
+**Level: ADVANCED.** Assumes the Greeks, implied volatility and position sizing are already comfortable. This material is about market structure and dealer behaviour, not the basics.
+
 Why the same underlying carries different volatilities at different strikes and dates, how skew and term structure move, and what a volatility risk premium is. Consolidated from source modules 33, 42, 56, 57; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Implied Volatility (IV) vs. Realized Volatility (RV)
@@ -1522,7 +1535,6 @@ Covered in source module 57. See the surrounding sections for the full treatment
 Covered in source module 57. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:volatility-surface -->
-
 <!-- END:16-volatility -->
 
 <!-- CHANNEL:17-directional-options -->
@@ -1576,7 +1588,9 @@ Use long premium when expecting movement and/or IV support. Use debit spreads wh
 Buying far OTM lottery contracts, choosing DTE shorter than the thesis, using options because shares “cost too much” without comparing risk, holding after the catalyst has passed, and interpreting defined premium as permission to lose it repeatedly.
 <!-- EXPANDED:directional-strategies -->
 
-## Directional & Long-Premium Strategies — expanded reference
+## Directional & Long-Premium Strategies — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 Long calls and puts, debit structures, and the conditions under which paying premium is the right expression of a view. Consolidated from source modules 59, 60; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Straight Outright Call Buying: Capitalizing on Aggressive Bullish Velocity
@@ -1604,7 +1618,6 @@ Covered in source module 60. See the surrounding sections for the full treatment
 Covered in source module 60. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:directional-strategies -->
-
 <!-- END:17-directional-options -->
 
 <!-- CHANNEL:18-income-and-hedging -->
@@ -1655,7 +1668,9 @@ Annualizing short-term premium can create absurd-looking numbers that ignore rep
 Calling covered calls risk-free, selling puts solely for high IV, chasing annualized yield, rolling forever to avoid recognizing loss, ignoring ex-dividend assignment, and selling options on a company one would never willingly own.
 <!-- EXPANDED:hedging-and-synthetics -->
 
-## Hedging, Synthetics & Arbitrage — expanded reference
+## Hedging, Synthetics & Arbitrage — Advanced reference
+**Level: ADVANCED.** Assumes the Greeks, implied volatility and position sizing are already comfortable. This material is about market structure and dealer behaviour, not the basics.
+
 Portfolio protection, synthetic positions, put-call parity, and the arbitrage relationships that keep option prices honest. Consolidated from source modules 63, 64, 95, 105, 106; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Covered Calls: Liquidating Short Upside Premium Against Core Underlying Stock
@@ -1719,7 +1734,6 @@ Covered in source module 106. See the surrounding sections for the full treatmen
 Covered in source module 106. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:hedging-and-synthetics -->
-
 <!-- END:18-income-and-hedging -->
 
 <!-- CHANNEL:19-spreads-multi-leg -->
@@ -1776,7 +1790,9 @@ An adjustment closes or changes existing risk and may open new risk. Track reali
 Using expiration diagrams as current value, ignoring one illiquid leg, assuming defined risk means easy management, legging unintentionally, overlooking early assignment, and adding adjustments until nobody, including the trader, can explain the position.
 <!-- EXPANDED:neutral-and-multileg -->
 
-## Market-Neutral, Range-Bound & Multi-Leg — expanded reference
+## Market-Neutral, Range-Bound & Multi-Leg — Advanced reference
+**Level: ADVANCED.** Assumes the Greeks, implied volatility and position sizing are already comfortable. This material is about market structure and dealer behaviour, not the basics.
+
 Iron condors, butterflies, calendars and volatility structures - trades that profit from time or from volatility rather than direction. Consolidated from source modules 61, 62; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Classic Iron Condors: Exploiting Double-Sided Horizontal Sideways Chop
@@ -1804,7 +1820,6 @@ Covered in source module 62. See the surrounding sections for the full treatment
 Covered in source module 62. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:neutral-and-multileg -->
-
 <!-- END:19-spreads-multi-leg -->
 
 <!-- CHANNEL:20-trade-planning-execution -->
@@ -1903,7 +1918,9 @@ Brokers may liquidate positions that create unacceptable exercise or assignment 
 Assuming OTM at the close means safe, holding narrow spreads for pennies, forgetting buying-power needs, ignoring early assignment, and believing defined-risk diagrams control what happens after-hours.
 <!-- EXPANDED:expiration-dynamics -->
 
-## Expiration Dynamics, Assignment & Exotics — expanded reference
+## Expiration Dynamics, Assignment & Exotics — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 Pin risk, assignment and exercise mechanics, settlement, and the exotic behaviour that shows up as an expiry approaches. Consolidated from source modules 40, 54, 65, 103; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## 0DTE (Zero Days to Expiration)
@@ -1955,7 +1972,6 @@ Covered in source module 103. See the surrounding sections for the full treatmen
 Covered in source module 103. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:expiration-dynamics -->
-
 <!-- END:21-expiration-assignment -->
 
 <!-- CHANNEL:22-events-corporate-actions -->
@@ -2062,7 +2078,9 @@ Change one rule at a time, define the expected effect, test it out of sample, an
 Journaling only losers, rewriting entry reasons, recording feelings without data, focusing only on win rate, and treating discipline as a personality trait rather than a system of constraints.
 <!-- EXPANDED:psychology-and-journaling -->
 
-## Psychology, Behavioural Bias & Journaling — expanded reference
+## Psychology, Behavioural Bias & Journaling — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 The failure modes that are the trader rather than the strategy, plus the journal and mistake log that make them visible. Consolidated from source modules 82, 91, 101, 116, 120, 125, 126; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Cognitive Biases: Overconfidence, Confirmation, and Anchoring Pitfalls
@@ -2150,7 +2168,6 @@ Covered in source module 126. See the surrounding sections for the full treatmen
 Covered in source module 126. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:psychology-and-journaling -->
-
 <!-- END:23-psychology-journaling -->
 
 <!-- CHANNEL:24-backtesting-statistics -->
@@ -2222,7 +2239,9 @@ Tag root-cause hypotheses such as regime conflict, liquidity failure, adverse IV
 Optimizing win rate, ignoring open risk, using midpoint fills, changing multiple rules, selecting the best backtest from hundreds without correction, and believing a beautiful equity curve has signed a contract with the future.
 <!-- EXPANDED:risk-and-backtesting -->
 
-## Risk Architecture, Backtesting & Stress Testing — expanded reference
+## Risk Architecture, Backtesting & Stress Testing — Advanced reference
+**Level: ADVANCED.** Assumes the Greeks, implied volatility and position sizing are already comfortable. This material is about market structure and dealer behaviour, not the basics.
+
 Expectancy, profit factor, drawdown, walk-forward validation, backtester architecture, and the stress tests that separate a real edge from a curve fit. Consolidated from source modules 37, 52, 84, 98, 115; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Average True Range (ATR_14)
@@ -2283,7 +2302,6 @@ Covered in source module 115. See the surrounding sections for the full treatmen
 Covered in source module 115. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:risk-and-backtesting -->
-
 <!-- END:24-backtesting-statistics -->
 
 <!-- CHANNEL:25-brokers-accounts-taxes -->
@@ -2328,7 +2346,9 @@ Use unique passwords, multifactor authentication, withdrawal locks, alerts, veri
 Assuming all brokers handle expiration alike, using unsettled funds without understanding restrictions, ignoring margin interest, relying on social-media tax advice, and treating broker approval as a certificate of competence.
 <!-- EXPANDED:accounts-tax-and-funding -->
 
-## Accounts, Margin, Tax & Prop Funding — expanded reference
+## Accounts, Margin, Tax & Prop Funding — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 Brokerage mechanics, margin and PDT rules, wash sales and tax treatment, legal structures, and how prop-firm funding works. Consolidated from source modules 83, 85, 86, 87, 93, 94, 99, 100, 109, 110, 114, 127, 128; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Risk-per-Trade Scaling Rules (The R-Multiple Framework)
@@ -2479,7 +2499,6 @@ Covered in source module 128. See the surrounding sections for the full treatmen
 Covered in source module 128. See the surrounding sections for the full treatment.
 
 <!-- /EXPANDED:accounts-tax-and-funding -->
-
 <!-- END:25-brokers-accounts-taxes -->
 
 <!-- CHANNEL:26-research-data-tools -->
@@ -2598,7 +2617,9 @@ A legitimate trader, educator, broker, or bot can explain risk, limitations, and
 <!-- CHANNEL:32-dealer-gamma-and-hedging -->
 # 32 · Dealer Gamma, GEX & Market-Maker Hedging
 
-## Dealer Gamma, GEX & Market-Maker Hedging — expanded reference
+## Dealer Gamma, GEX & Market-Maker Hedging — Advanced reference
+**Level: ADVANCED.** Assumes the Greeks, implied volatility and position sizing are already comfortable. This material is about market structure and dealer behaviour, not the basics.
+
 The mechanical flow created when market makers hedge their books: gamma exposure landscapes, re-hedging pressure, inventory management, and why price pins near large open interest. Consolidated from source modules 34, 44, 45, 112; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## The Role of the Options Dealer
@@ -2651,7 +2672,9 @@ Covered in source module 112. See the surrounding sections for the full treatmen
 <!-- CHANNEL:33-fair-value-and-mean-reversion -->
 # 33 · Fair-Value Anchors & Mean Reversion
 
-## Fair-Value Anchors & Mean Reversion — expanded reference
+## Fair-Value Anchors & Mean Reversion — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 The reference prices institutions actually trade around - VWAP, prior-day levels, settlement anchors - and the conditions under which price reverts to them rather than trending away. Consolidated from source modules 35, 49; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Volume-Weighted Average Price (VWAP)
@@ -2677,7 +2700,9 @@ Covered in source module 49. See the surrounding sections for the full treatment
 <!-- CHANNEL:34-the-market-clock -->
 # 34 · The Institutional Market Clock
 
-## The Institutional Market Clock — expanded reference
+## The Institutional Market Clock — Intermediate reference
+**Level: INTERMEDIATE.** Assumes you know what a contract is, how to read a chain, and what the four main Greeks do. If not, read the FOUNDATION channels first.
+
 The trading day as a sequence of distinct regimes: the opening auction, the mid-morning trend window, the lunch lull, the afternoon repositioning, and the closing imbalance. Consolidated from source modules 36, 48, 124; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## The 9:45 AM Retail Clearing Window
@@ -2715,7 +2740,9 @@ Covered in source module 124. See the surrounding sections for the full treatmen
 <!-- CHANNEL:35-algorithmic-glossary -->
 # 35 · Algorithmic Trading, HFT & Bot Logic
 
-## Algorithmic Trading, HFT & Bot Logic — expanded reference
+## Algorithmic Trading, HFT & Bot Logic — Advanced reference
+**Level: ADVANCED.** Assumes the Greeks, implied volatility and position sizing are already comfortable. This material is about market structure and dealer behaviour, not the basics.
+
 The vocabulary and mechanics of automated trading: execution algorithms, latency, HFT microstructure, and how a bot's logic is specified and audited. Consolidated from source modules 38, 89, 111; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## The Bid-Ask Matrix (Bid / Ask)
@@ -2759,7 +2786,9 @@ Covered in source module 111. See the surrounding sections for the full treatmen
 <!-- CHANNEL:36-commodities-and-fixed-income -->
 # 36 · Fixed Income, Commodities & Term Structure
 
-## Fixed Income, Commodities & Term Structure — expanded reference
+## Fixed Income, Commodities & Term Structure — Advanced reference
+**Level: ADVANCED.** Assumes the Greeks, implied volatility and position sizing are already comfortable. This material is about market structure and dealer behaviour, not the basics.
+
 Bonds, the yield curve, commodity term structures and contango - the signals that lead equity regimes. Consolidated from source modules 80, 81, 108; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Bond Pricing Foundations: Inverse Pricing-to-Yield Vector Rules

@@ -424,8 +424,11 @@ def channel_budget_check(existing_channel_count: int) -> dict[str, Any]:
 
 def _sections_markdown(channel: ExpansionChannel) -> str:
     """The `##` sections for one theme, with provenance."""
+    level = level_for(channel.slug)
     lines = [
-        f"## {channel.title} — expanded reference",
+        f"## {channel.title} — {level.title()} reference",
+        f"**Level: {level}.** {LEVEL_PREREQS[level]}",
+        "",
         f"{channel.summary} Consolidated from source modules "
         f"{', '.join(str(m) for m in channel.modules)}; those modules covered "
         f"overlapping ground, so the material is kept in full with the "
@@ -492,3 +495,78 @@ def install_expansion(library_path: Path, start_number: int = 32) -> dict[str, A
 def new_channel_names(start_number: int = 32) -> list[str]:
     return [f"{start_number + offset:02d}-{channel.slug}"
             for offset, channel in enumerate(new_channel_themes())]
+
+# ---------------------------------------------------------------------------
+# Skill levels
+# ---------------------------------------------------------------------------
+#
+# Owner: "i want this learning center to be based on entry level shit to
+# intermediate to advanced and to read like that. i want this to be able to
+# teach anyone about everything we do with options and trades."
+#
+# The 27 original channels already run roughly foundation -> advanced by their
+# numbering. The problem this fixes is WITHIN a channel: 331 advanced sections
+# were folded into channels that open at beginner level, so a reader could go
+# from "what a stock is" straight into dealer gamma with no signpost. Every
+# inserted block now declares its level and states what a reader should
+# already know, so the jump is announced rather than ambushing them.
+LEVELS: dict[str, str] = {
+    # Foundation - assumes nothing.
+    "option-contracts-basics": "FOUNDATION",
+    "indices-and-etfs": "FOUNDATION",
+    "fundamentals-and-valuation": "FOUNDATION",
+    # Intermediate - assumes the foundation channels.
+    "market-microstructure": "INTERMEDIATE",
+    "volume-and-flow": "INTERMEDIATE",
+    "candlestick-and-chart-anatomy": "INTERMEDIATE",
+    "trend-strength-and-regimes": "INTERMEDIATE",
+    "the-greeks": "INTERMEDIATE",
+    "moneyness-and-leverage": "INTERMEDIATE",
+    "directional-strategies": "INTERMEDIATE",
+    "gaps-and-oscillators": "INTERMEDIATE",
+    "psychology-and-journaling": "INTERMEDIATE",
+    "accounts-tax-and-funding": "INTERMEDIATE",
+    "expiration-dynamics": "INTERMEDIATE",
+    "the-market-clock": "INTERMEDIATE",
+    "fair-value-and-mean-reversion": "INTERMEDIATE",
+    # Advanced - assumes the Greeks and volatility are already understood.
+    "volatility-surface": "ADVANCED",
+    "dealer-gamma-and-hedging": "ADVANCED",
+    "neutral-and-multileg": "ADVANCED",
+    "hedging-and-synthetics": "ADVANCED",
+    "macro-regimes": "ADVANCED",
+    "risk-and-backtesting": "ADVANCED",
+    "algorithmic-glossary": "ADVANCED",
+    "commodities-and-fixed-income": "ADVANCED",
+}
+
+LEVEL_PREREQS: dict[str, str] = {
+    "FOUNDATION": (
+        "Assumes no prior knowledge. Start here if terms like *strike*, "
+        "*premium* or *expiration* are new."
+    ),
+    "INTERMEDIATE": (
+        "Assumes you know what a contract is, how to read a chain, and what "
+        "the four main Greeks do. If not, read the FOUNDATION channels first."
+    ),
+    "ADVANCED": (
+        "Assumes the Greeks, implied volatility and position sizing are "
+        "already comfortable. This material is about market structure and "
+        "dealer behaviour, not the basics."
+    ),
+}
+
+LEVEL_ORDER = ("FOUNDATION", "INTERMEDIATE", "ADVANCED")
+
+
+def level_for(slug: str) -> str:
+    return LEVELS.get(slug, "INTERMEDIATE")
+
+
+def curriculum_path() -> list[tuple[str, list[str]]]:
+    """The reading order, grouped by level - what the index should show."""
+    out = []
+    for level in LEVEL_ORDER:
+        out.append((level, [c.slug for c in build_channels()
+                            if level_for(c.slug) == level]))
+    return out
