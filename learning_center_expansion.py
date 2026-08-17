@@ -437,12 +437,58 @@ def _sections_markdown(channel: ExpansionChannel) -> str:
     ]
     for topic in channel.topics:
         lines.append(f"## {topic.title}")
-        lines.append(topic.body or (
-            f"Covered in source module {topic.module}. See the surrounding "
-            f"sections for the full treatment."
-        ))
+        lines.append(body_for(topic))
         lines.append("")
     return "\n".join(lines)
+
+
+def body_for(topic: Topic) -> str:
+    """Authored text first, then the source's own, then the placeholder.
+
+    The source only explains 17 of its 101 modules, so most topics arrive as
+    a bare title. An authored body always wins - including over a source body
+    - because the source's explanations are uneven and the authored ones are
+    written to a consistent standard."""
+    try:
+        import learning_center_authored as authored
+        written = authored.authored_body(topic.title)
+    except Exception:
+        written = None
+    if written:
+        return written
+    if topic.body and len(topic.body) > 40:
+        return topic.body
+    return (
+        f"*Not yet written.* This topic comes from source module "
+        f"{topic.module}, which supplied the title without an explanation. "
+        f"It is queued for authoring - ask TradeBot directly in the meantime, "
+        f"or check a related section in this channel."
+    )
+
+
+def authoring_progress() -> dict[str, Any]:
+    """How much of the curriculum still needs writing."""
+    try:
+        import learning_center_authored as authored
+    except Exception:
+        return {"authored": 0}
+    written = source = missing = 0
+    for channel in build_channels():
+        for topic in channel.topics:
+            if authored.authored_body(topic.title):
+                written += 1
+            elif topic.body and len(topic.body) > 40:
+                source += 1
+            else:
+                missing += 1
+    total = written + source + missing
+    return {
+        "total_topics": total,
+        "authored": written,
+        "from_source": source,
+        "still_placeholder": missing,
+        "percent_real": round(100 * (written + source) / total, 1) if total else 0.0,
+    }
 
 
 BEGIN_TEMPLATE = "<!-- EXPANDED:{slug} -->"

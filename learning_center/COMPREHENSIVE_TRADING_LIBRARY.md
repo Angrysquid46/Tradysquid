@@ -62,16 +62,16 @@ Buying because a share price looks low, confusing an ETF with the companies it h
 How SPY actually works - index construction, ETF creation and redemption, tracking, and why an ETF can trade away from its basket. Consolidated from source modules 70; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Market-Cap Weighted Indices (S&P 500) vs. Price-Weighted Indices (DJIA)
-Covered in source module 70. See the surrounding sections for the full treatment.
+The S&P 500 weights by market capitalisation, so a company's influence tracks its size - which means the largest handful of names drive most of the index's movement. The Dow weights by SHARE PRICE, an artefact of 1896 arithmetic, so a $500 stock moves it more than a $50 stock regardless of which company is larger. This is why SPY and DIA diverge, and why S&P breadth can be poor while the index rises: a handful of mega-caps can carry it while the median constituent falls.
 
 ## Understanding Exchange-Traded Funds (ETFs) vs. Mutual Funds
-Covered in source module 70. See the surrounding sections for the full treatment.
+Both pool assets, but an ETF trades continuously on an exchange at a market price, while a mutual fund transacts once daily at net asset value. That single difference gives ETFs intraday liquidity, short-ability, and an options market - none of which mutual funds have. SPY is the oldest and most liquid US ETF, which is precisely why it supports penny-wide spreads and daily expirations. The tradability of this entire system rests on that liquidity.
 
 ## Authorized Participants and the ETF Creation-Redemption Mechanism
-Covered in source module 70. See the surrounding sections for the full treatment.
+Large institutions (Authorized Participants) can exchange a basket of the underlying shares for new ETF units, or vice versa. If SPY trades above the value of its holdings, an AP buys the basket, creates units, and sells them - pushing the price back down. If it trades below, the reverse. This arbitrage is why an ETF tracks its index closely rather than drifting like a closed-end fund. It also explains why tracking breaks down in a crisis: when the underlying basket becomes hard to trade, the arbitrage widens and the ETF can dislocate.
 
 ## Leveraged and Inverse ETFs: Tracking Compounding Tracking Errors
-Covered in source module 70. See the surrounding sections for the full treatment.
+A 3x ETF targets three times the DAILY return, not three times the return over any longer period. Because it rebalances daily, returns compound path-dependently: an index that falls 10% then rises 11.1% is flat, while its 3x version is down about 2%. Choppy markets grind these products down even when the index goes nowhere. They are instruments for a single session, not holdings. The decay is structural and is not a fee you can avoid by choosing a cheaper issuer.
 
 <!-- /EXPANDED:indices-and-etfs -->
 <!-- END:01-stock-market-foundations -->
@@ -271,52 +271,52 @@ Buying the lowest multiple in a collapsing industry, using one year of peak earn
 Fundamentals for context rather than for day trading: statements, multiples, ratios, and credit analysis. Consolidated from source modules 67, 68, 69, 92; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Revenue, Cost of Goods Sold, and Gross Profit Margins
-Covered in source module 67. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 67, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## EBITDA, Operating Income, and Net Profit Margin Allocations
-Covered in source module 67. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 67, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Free Cash Flow (FCF) Generation vs. Net Accounting Earnings
-Covered in source module 67. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 67, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Deconstructing Earnings Per Share (EPS) and Dilution Risk
-Covered in source module 67. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 67, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Price-to-Earnings Ratio (P/E): Trailing vs. Forward Multiples
-Covered in source module 68. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 68, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Price-to-Sales (P/S) and Enterprise Value-to-EBITDA (EV/EBITDA)
-Covered in source module 68. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 68, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Return on Equity (ROE) and Return on Invested Capital (ROIC)
-Covered in source module 68. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 68, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Price-to-Book (P/B) and the Debt-to-Equity Balance Sheet Filter
-Covered in source module 68. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 68, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Balance Sheet Matrix: Assets, Liabilities, and Shareholders' Equity
-Covered in source module 69. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 69, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Income Statement Layer: Tracking Revenue down to Net Profit
-Covered in source module 69. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 69, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Cash Flow Statement: Operating, Investing, and Financing Flows
-Covered in source module 69. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 69, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Reading the 10-K Annual Report and 10-Q Quarterly Disclosures
-Covered in source module 69. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 69, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Commercial Paper and Interbank Funding: Libor/SOFR Spread Anchors
-Covered in source module 92. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 92, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Corporate Credit Spreads: High-Yield (Junk) vs. Investment Grade Bonds
-Covered in source module 92. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 92, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Debt Maturity Walls: Evaluating Corporate Refinancing and Insolvency Risks
-Covered in source module 92. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 92, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Credit Default Swaps (CDS): Measuring Systemic Corporate Default Stress
-Covered in source module 92. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 92, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:fundamentals-and-valuation -->
 <!-- END:04-valuation-and-quality -->
@@ -403,112 +403,112 @@ What it means: Measures the percentage distance between the absolute highest pri
 What it means: Tracks the exact percentage location of a candle's closing price relative to its overall high-low trading boundary for that session. * The Math: (Close - Low) / (High - Low) * Trading Ingestion Key: This maps out true end-of-session control. A value > 0.90 proves intense institutional buying right up to the final second of the bar. A value < 0.10 confirms aggressive liquidation.
 
 ## Real-Time Bid-Ask Spread Spread-Widening Risk Shocks
-Covered in source module 46. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 46, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Intraday Liquidity Depletion Vacuums (High_Low_Spread_Pct)
-Covered in source module 46. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 46, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Volume Velocity Shock Standard Deviations (Volume_ZScore_20)
-Covered in source module 46. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 46, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## True Capital Flow Tracking Matrices (Dollar_Volume_Traded)
-Covered in source module 46. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 46, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Role of the Options Exchange Specialist and Liquid Market Makers
-Covered in source module 58. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 58, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Bid-Ask Spread Dynamics, Order Flow, and Transactional Friction
-Covered in source module 58. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 58, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Mechanics of Delta-Neutral Dealer Re-Hedging Profiles
-Covered in source module 58. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 58, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Tracking Options Daily Trading Volume vs. Active Overnight Open Interest (OI)
-Covered in source module 58. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 58, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Institutional Asset Managers, Pension Funds, and Sovereign Wealth
-Covered in source module 71. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 71, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Hedge Fund Mandates (Long/Short, Global Macro, Quantitative Multi-Strat)
-Covered in source module 71. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 71, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Retail Brokers, Clearing Firms, and Payment for Order Flow (PFOF)
-Covered in source module 71. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 71, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Dark Pools, Internalizers, and Lit Public Exchange Order Routing
-Covered in source module 71. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 71, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Level 1 Data (Top of Book) vs. Level 2 Data (Order Book Depth)
-Covered in source module 72. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 72, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Inside Bid-Ask Spreads, Market Orders, and Limit Order Ingestion
-Covered in source module 72. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 72, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Conditional Order Routing (Stop-Market, Stop-Limit, Trailing Stops)
-Covered in source module 72. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 72, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Immediate-or-Cancel (IOC), Fill-or-Kill (FOK), and Good-Til-Canceled (GTC)
-Covered in source module 72. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 72, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Time and Sales (The Tape): Decoding Real-Time Transaction Logs
-Covered in source module 88. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 88, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Volume At Price (Horizontal Volume Profile / Market Profile Matrices)
-Covered in source module 88. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 88, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Order Book Imbalances: Bid-Ask Net Order Flow Analytics
-Covered in source module 88. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 88, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Identifying Block Trades, Iceberg Orders, and Hidden Algo Footprints
-Covered in source module 88. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 88, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Lit Exchanges (NYSE/NASDAQ) vs. Dark Pools (Alternative Trading Systems)
-Covered in source module 96. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 96, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Direct Market Access (DMA) vs. Retail Payment for Order Flow (PFOF)
-Covered in source module 96. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 96, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Maker-Taker Fee Models: Rebate Optimization across Execution Venues
-Covered in source module 96. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 96, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Smart Order Routers (SOR): How Algos Shred and Distribute Order Blocks
-Covered in source module 96. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 96, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Volume-Weighted Average Price Execution Loops (Algorithmic Ingestion)
-Covered in source module 102. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 102, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Time-Weighted Average Price Block Distribution Engines
-Covered in source module 102. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 102, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Percentage-of-Volume (POV) Slicers: Hiding Institutional Transactions Natively
-Covered in source module 102. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 102, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Minimum-Quantity, Discretionary, and Pegged Order Microstructure Codes
-Covered in source module 102. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 102, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Alternative Trading Systems (ATS): Tracking Institutional Tier Block Crosses
-Covered in source module 107. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 107, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Wholesaler Internalization: Payment for Order Flow (PFOF) Order Ingestion Routing
-Covered in source module 107. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 107, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Continuous Crossing vs. Midpoint Match Execution Venue Frictions
-Covered in source module 107. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 107, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Reg NMS Rule 611 (Order Protection Rule): The Mandated Public Market Intersection
-Covered in source module 107. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 107, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Bid-Ask Matrix: Knowing Who Is Buying the Floor and Who Is Selling the Ceiling
-Covered in source module 117. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 117, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Defining Market Orders vs. Limit Orders and Avoiding Entry Slippage
-Covered in source module 117. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 117, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## How Illiquid Order Books and Wide Spreads Quietly Steal Pennies from Beginners
-Covered in source module 117. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 117, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Scaling Into and Out of Positions without Impacting the Active Price
-Covered in source module 117. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 117, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:market-microstructure -->
 <!-- END:05-market-mechanics-orders -->
@@ -595,40 +595,40 @@ What it means: The thin lines stretching above the solid candle body. It calcula
 What it means: The thin lines stretching beneath the solid candle body. This mathematically identifies the exact structural floors where big money algorithms stepped in to buy up a rapid market drop and push the price back up. * The Math: (Min(Close, Open) - Low) / Close
 
 ## Conviction Measurement Ratios (Body_Size)
-Covered in source module 47. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 47, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Failed Breakout Upper Rejection Wicks (Upper_Shadow)
-Covered in source module 47. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 47, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Institutional Floor Absorption Lower Wicks (Lower_Shadow)
-Covered in source module 47. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 47, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## True Intraday Trend Cleanliness Metrics (Intraday_Efficiency_Ratio)
-Covered in source module 47. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 47, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Support and Resistance Horizontal Floors and Ceilings
-Covered in source module 73. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 73, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Trendlines, Parallel Channels, and Fan Line Matrix Overlays
-Covered in source module 73. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 73, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Classical Reversal Structures (Head and Shoulders, Double Tops/Bottoms)
-Covered in source module 73. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 73, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Classical Continuation Patterns (Bull/Bear Flags, Pennants, Wedges)
-Covered in source module 73. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 73, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Reading the Candlestick Shape: Deconstructing Open, High, Low, and Close Actions
-Covered in source module 121. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 121, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Candle Body Sizes: Spotting Clean Buyer or Seller Conviction instantly
-Covered in source module 121. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 121, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Upper Shadow Wicks: Spotting Failed Bullish Breakouts and Rejections
-Covered in source module 121. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 121, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Lower Absorption Wicks: Identifying Key Structural Floors Where Institutional Support Steps In
-Covered in source module 121. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 121, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:candlestick-and-chart-anatomy -->
 <!-- END:06-charts-price-action -->
@@ -702,16 +702,16 @@ What it means: A technical indicator that scores the absolute strength of a mark
 What it means: An Exponential Moving Average (EMA) tracks a stock's average price while placing heavier weight on the most recent data. The slope calculates the moving rate of change (the steepness of the angle) of that line. * The Rule: Standard line crosses are often false whipsaw traps. Tracking a steep, accelerating slope angle guarantees true price speed is entering the market.
 
 ## Defining Market States: Separating Clean Vertical Trends from Messy Sideways Chop
-Covered in source module 122. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 122, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Average Directional Index (ADX): Knowing When to Buy and When to Stand Down
-Covered in source module 122. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 122, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Moving Average ribbon Slopes: Verifying True Price Speed entries
-Covered in source module 122. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 122, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Support and Resistance Levels: Mapping Out Historical Supply and Demand Zones
-Covered in source module 122. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 122, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:trend-strength-and-regimes -->
 <!-- EXPANDED:gaps-and-oscillators -->
@@ -722,52 +722,52 @@ Covered in source module 122. See the surrounding sections for the full treatmen
 Opening gaps and their statistics, momentum oscillators, mean-reversion signals, and Bollinger-style statistical bands. Consolidated from source modules 74, 75, 76, 97; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Common Gaps, Breakaway Gaps, Runaway Gaps, and Exhaustion Gaps
-Covered in source module 74. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 74, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Mechanics of Opening Gaps and Overnight Order Re-Matching
-Covered in source module 74. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 74, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Intraday Range Spreads and Liquidity Exhaustion Price Vacuums
-Covered in source module 74. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 74, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Candlestick Close Placement Metrics Relative to Daily Range Bars
-Covered in source module 74. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 74, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Relative Strength Index (RSI): Evaluating Overbought/Oversold Overextensions
-Covered in source module 75. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 75, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Moving Average Convergence Divergence (MACD): Signal Line Cross-Overs
-Covered in source module 75. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 75, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Stochastic Oscillator: Tracking Fast and Slow Closing Placements
-Covered in source module 75. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 75, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Commodity Channel Index (CCI) and Williams %R Oscillator Ingestion
-Covered in source module 75. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 75, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Bollinger Bands: Standard Deviation Volatility Envelope Widths
-Covered in source module 76. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 76, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Keltner Channels: Average True Range (ATR) Envelope Boundaries
-Covered in source module 76. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 76, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Donchian Channels: High-Low Range Breakout Tracking Matrices
-Covered in source module 76. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 76, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Moving Average Envelopes and Percentage Band Filters
-Covered in source module 76. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 76, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Ichimoku Kinko Hyo: Tenkan-Sen, Kijun-Sen, and Cloud Equilibrium
-Covered in source module 97. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 97, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Parabolic SAR: Systematic Stop-and-Reverse Directional Wave Gauges
-Covered in source module 97. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 97, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Keltner Channels vs. Bollinger Bands: Measuring Volatility Squeezes
-Covered in source module 97. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 97, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Linear Regression Channels: Standard Deviation Trend Variance Channels
-Covered in source module 97. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 97, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:gaps-and-oscillators -->
 <!-- END:07-technical-analysis -->
@@ -844,40 +844,40 @@ What it means: A statistical tracking tool that measures exactly how many standa
 What it means: Measures the standard deviation of daily log volume changes over 20 days. It tracks how erratic or stable the asset's share turnover is, warning the system when trading volume is completely drying up.
 
 ## Volume-at-Price Distributions (Volume Profile / Market Profile)
-Covered in source module 77. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 77, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL)
-Covered in source module 77. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 77, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## On-Balance Volume (OBV) and Accumulation/Distribution Accumulators
-Covered in source module 77. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 77, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Chaikin Money Flow (CMF) and Volume-Weighted Moving Averages (VWMA)
-Covered in source module 77. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 77, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Advance-Decline Line (A/D) and Volume Breadth Multipliers
-Covered in source module 78. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 78, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## New Highs vs. New Lows Intermarket Expansion Metrics
-Covered in source module 78. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 78, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## S&P 500 Stocks Above the 50-day and 200-day Moving Averages
-Covered in source module 78. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 78, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Cumulative Tick Index and Arms Index (TRIN) Intraday Ratios
-Covered in source module 78. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 78, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Role of Volume: Validating Real Price Breaks vs. Low-Volume Retail Fakes
-Covered in source module 123. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 123, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Capital Velocity: Understanding How Cash Flows Move Markets
-Covered in source module 123. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 123, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Volume Extremes and Shocks: Recognizing the Footprints of Big Institutional Buyers
-Covered in source module 123. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 123, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Opening Range Boxes: Drawing the Boundaries of the First 30 Minutes of the Day
-Covered in source module 123. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 123, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:volume-and-flow -->
 <!-- END:08-volume-breadth-internals -->
@@ -939,64 +939,64 @@ What it means: The macroeconomic interest rate difference between long-term gove
 What it means: An intermarket relative strength index calculated by dividing the closing price of the SPY equity ETF by the closing price of the long-term Treasury Bond ETF (TLT). * The Math: SPY Close / TLT Close * Trading Ingestion Key: Capital flows through the market like a pendulum between risk assets (stocks) and safe-haven assets (bonds). When this ratio turns down sharply, it signals that big money funds are actively fleeing equities to hide in bonds, alerting your system to look for short put plays.
 
 ## Sovereign Credit Imbalance Spreads (Yield_Curve_Spread)
-Covered in source module 50. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 50, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Institutional Risk-On vs. Risk-Off Pendulums (SPY_vs_TLT_Ratio)
-Covered in source module 50. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 50, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Corporate Debt Liquidity Credit Stress Markers (VTI_vs_HYG_Ratio)
-Covered in source module 50. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 50, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Multi-Session Intraday Morning Opening Gap Actions (Opening_Gap_Pct)
-Covered in source module 50. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 50, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Gross Domestic Product (GDP) Waves and Economic Growth Cycles
-Covered in source module 79. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 79, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Inflation Metrics: Consumer Price Index (CPI) vs. Core PCE Allocations
-Covered in source module 79. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 79, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Employment Metrics: Non-Farm Payrolls (NFP) and Unemployment Shifts
-Covered in source module 79. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 79, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Central Bank Policies: Federal Open Market Committee (FOMC) Interest Decisions
-Covered in source module 79. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 79, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Intermarket Real Estate Gauges: NAHB Housing Market Index Registries
-Covered in source module 90. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 90, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Global Supply Chain Metrics: The Baltic Dry Index Cargo Tracker
-Covered in source module 90. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 90, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Intermarket Currency Correlates: Emerging Market Risk vs. Strong Dollar
-Covered in source module 90. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 90, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Global Central Bank Networks: ECB, BOJ, and BOE Liquidity Injections
-Covered in source module 90. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 90, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Federal Reserve Reverse Repo (RRP) Facilities: Tracking Systemic Cash Excess
-Covered in source module 104. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 104, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Eurodollar Markets: The Offshore Funding Matrix Shaping Broad US Equities
-Covered in source module 104. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 104, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Central Bank Liquidity Swaps: Cross-Border Dollar Funding Shock Mitigators
-Covered in source module 104. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 104, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Commercial Paper Funding Facility Mechanics: Monitoring Corporate Credit Stress
-Covered in source module 104. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 104, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Counterparty Risk: Clearinghouse Defalcation Frameworks and Default Waterfalls
-Covered in source module 113. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 113, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Cross-Asset Liquidations: Why Bonds, Gold, and Equities Collapse Simultaneously in Shocks
-Covered in source module 113. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 113, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Haircut and Repo Haircut Adjustments: The Fuel Behind Sudden Liquidity Drops
-Covered in source module 113. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 113, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Interbank Lending Freeze: Ted Spreads and Credit Funding Gridlocks
-Covered in source module 113. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 113, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:macro-regimes -->
 <!-- END:09-macro-sectors-catalysts -->
@@ -1210,28 +1210,28 @@ Buying the cheapest OTM contract, confusing premium with total cost, ignoring mu
 What a contract actually is, the difference between buying and selling premium, and the obligations each side carries. Consolidated from source modules 53, 66; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## The Concept of Options: Rights vs. Obligations
-Covered in source module 53. See the surrounding sections for the full treatment.
+An option is a contract, not a share. Buying one gives you the RIGHT to buy (call) or sell (put) 100 shares at a fixed price before expiry, with no obligation to do so - your maximum loss is the premium paid. Selling one gives you the OBLIGATION to take the other side if assigned, in exchange for receiving that premium - and your loss can far exceed what you collected. That asymmetry is the whole subject. Everything else - the Greeks, spreads, assignment - is detail about how the right or the obligation is priced and managed. This system only ever BUYS options, so risk per trade is capped at the premium.
 
 ## Deconstructing the Option Premium: Intrinsic vs. Extrinsic Value
-Covered in source module 53. See the surrounding sections for the full treatment.
+Premium splits into two parts. Intrinsic value is the amount the contract is already in the money: for a call, max(spot - strike, 0). Extrinsic value is everything else - what you pay for the possibility of further movement in the time remaining. A $770 call with SPY at $775 trading at $6.20 is $5.00 intrinsic and $1.20 extrinsic. At expiry extrinsic value is zero by definition, so the entire $1.20 must be earned back by movement or it is lost. Theta is the schedule on which that $1.20 disappears; on a 0DTE it disappears within hours.
 
 ## Definition and Role of the Strike Price (Exercise Price)
-Covered in source module 53. See the surrounding sections for the full treatment.
+The strike is the fixed price at which the contract converts to shares. It determines moneyness, and through moneyness it determines almost everything else - delta, the intrinsic/extrinsic split, the cost, and the probability of finishing in the money. Strike selection is the trade. Two traders can be equally right about direction and get opposite results because one bought a strike needing a 0.3% move and the other bought one needing 1.5% in the same session.
 
 ## Option Expiration Dates and the Lifecycle of a Contract
-Covered in source module 53. See the surrounding sections for the full treatment.
+Every contract has a fixed death date. SPY now lists expirations every trading day, which is what makes 0DTE possible - but that is recent: daily expiries only became universal in 2023. Before that, same-day contracts existed on 38-157 days a year depending on the era, which is a real limit on how far back 0DTE strategies can honestly be tested. The lifecycle: extrinsic value decays continuously, gamma rises as expiry nears, and at the close the contract is worth exactly its intrinsic value or nothing. Anything not closed is auto-exercised if in the money, which is why this system forces every position flat before the bell.
 
 ## Common Stock vs. Preferred Stock Ownership
-Covered in source module 66. See the surrounding sections for the full treatment.
+Common stock is fractional ownership with voting rights and residual claim - you are paid last, after employees, suppliers, lenders and preferred holders. Preferred stock trades more like a bond: a fixed dividend, priority over common in a liquidation, usually no vote. For an options trader this matters mainly through capital structure: a company with heavy preferred or debt obligations has more leveraged common equity, which shows up as higher realised volatility.
 
 ## Market Capitalization Regimes (Mega, Large, Mid, Small Cap)
-Covered in source module 66. See the surrounding sections for the full treatment.
+Market cap is share price times shares outstanding. The conventional bands - mega above $200B, large $10-200B, mid $2-10B, small under $2B - matter to a trader because they proxy liquidity. Liquidity determines whether an options market is tradeable at all: tight spreads and real open interest exist on mega-caps and major ETFs, and essentially nowhere else at the size and speed 0DTE requires. It is not an accident that this system trades SPY exclusively.
 
 ## The Dividend Distribution Cycle (Declaration, Ex-Date, Record, Payment)
-Covered in source module 66. See the surrounding sections for the full treatment.
+Four dates. Declaration is the announcement; ex-dividend is the first day the stock trades without the right to the payout (and the price typically drops by roughly the dividend amount); record is who is on the books; payment is when cash arrives. The one that matters for options is the ex-date. It causes a mechanical price drop that is NOT a bearish signal, and it is the main trigger for early assignment on short in-the-money calls - someone exercising to capture the dividend. SPY pays quarterly, so the ex-date is a scheduled, checkable event.
 
 ## Stock Splits, Reverse Splits, and Fractional Share Mechanics
-Covered in source module 66. See the surrounding sections for the full treatment.
+A split multiplies share count and divides price, leaving market cap unchanged - a 4-for-1 turns one $400 share into four $100 shares. A reverse split does the opposite, usually to maintain an exchange listing. For options, splits trigger contract adjustment: strike and multiplier are restated so the economics are preserved. Adjusted contracts often become illiquid and behave oddly, and are best avoided. A price chart that has not been split-adjusted will show a phantom crash on the split date - a common way backtests get corrupted.
 
 <!-- /EXPANDED:option-contracts-basics -->
 <!-- END:13-options-basics -->
@@ -1310,28 +1310,28 @@ What it means: A structural state where the underlying stock price is trading ex
 What it means: A structural state where an options contract contains zero intrinsic cash value, and its entire premium price consists purely of time value and volatility hope. * Trading Ingestion Key: For a Long Call, the strike sits above the current stock price. For a Long Put, the strike sits below the current stock price. OTM options carry a low Delta (10 to 40) but hold the highest Gamma, meaning their premiums explode at the fastest exponential rate if a fast vertical breakout shifts them toward the money.
 
 ## Capital Leverage Selection Matrix (ITM vs. ATM vs. OTM)
-Covered in source module 51. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 51, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Lifespan Time Horizon Risk Profiles (DTE Continuous Lifelines)
-Covered in source module 51. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 51, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Speculative Volume vs. Overnight Institutional Positioning (OI)
-Covered in source module 51. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 51, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Sentiment Outlier Scanners (SPY_OI_PC_Ratio / SPY_Volume_PC_Ratio)
-Covered in source module 51. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 51, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Deconstructing In-The-Money (ITM) vs. Out-of-The-Money (OTM) Contracts
-Covered in source module 118. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 118, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Lottery-Ticket Fallacy: Why Buying Cheap Options Feels Good but Loses Money
-Covered in source module 118. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 118, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## At-The-Money (ATM) Options: Balancing Risk, Premium Price, and Directional Speed
-Covered in source module 118. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 118, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Understanding Option Premiums: Separating True Cash Worth from Extrinsic Time Value
-Covered in source module 118. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 118, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:moneyness-and-leverage -->
 <!-- END:14-option-chain-liquidity -->
@@ -1403,31 +1403,31 @@ What it means: The Greek metric that measures the acceleration or rate of change
 What it means: The Greek that tracks same-day time decay. It represents the constant, bleeding loss of option premium value as the clock ticks closer to the 4:00 PM expiration deadline. * The Rule: Theta decay is an options buyer's worst enemy. If SPY goes flat or chops sideways for even 20 minutes, your contract premium melts to zero. This is why every play must be locked into high-velocity time windows.
 
 ## Delta: Price Sensitivity, Hedge Ratios, and Moneyness Probabilities
-Covered in source module 55. See the surrounding sections for the full treatment.
+Delta is how much the option price moves for a $1 move in the underlying. A 0.45-delta call gains roughly $0.45 of premium (i.e. $45 per contract) when SPY rises $1. It does three jobs at once: it is the sensitivity, it is the hedge ratio (100 shares per 1.00 of delta), and it is a rough market-implied probability the contract finishes in the money. For decisions: delta is what you are actually buying. A 0.20-delta lottery ticket needs a large move to pay; a 0.60-delta contract behaves more like stock and costs accordingly. The failure mode is treating delta as fixed - it changes constantly, which is what gamma measures.
 
 ## Gamma: The Acceleration Engine of Delta and Long Option Squeezes
-Covered in source module 55. See the surrounding sections for the full treatment.
+Gamma is the rate delta itself changes per $1 move. If delta is speed, gamma is acceleration. A 0.40-delta call with 0.08 gamma becomes a 0.48-delta call after a $1 rise, so the next dollar earns more than the last. Gamma is largest at the money and explodes as expiry approaches - which is the entire character of 0DTE. A same-day at-the-money contract can go from 0.50 delta to 0.90 or to 0.10 within an hour. That cuts both ways: the convexity that makes a winner run is the same mechanism that makes a loser collapse before you can react. Long options own gamma; short options are short it, which is why selling naked near expiry is how accounts die.
 
 ## Theta: The Mechanics of Time Decay and Premium Bleed Schedules
-Covered in source module 55. See the surrounding sections for the full treatment.
+Theta is how much premium the contract loses per day purely from time passing, holding price and volatility constant. A theta of -0.25 means about $25 per contract per day evaporates if nothing else changes. Decay is not linear. It accelerates into expiry, and on the final day it is brutal: an at-the-money 0DTE option is nearly all extrinsic value at 09:45 and nearly all intrinsic by 15:59. That is the single most important fact for this system - our own Phase 5 modelling showed a flat session takes an ATM 0DTE call from $1.52 to the -50% stop without the underlying moving at all. Being right on direction and slow on timing still loses.
 
 ## Vega: Implied Volatility Sensitivity and the Impact of IV Expansion/Contraction
-Covered in source module 55. See the surrounding sections for the full treatment.
+Vega is how much premium changes per 1 percentage point change in implied volatility. A vega of 0.12 means the contract gains about $12 if IV rises from 15% to 16%, with price unchanged. This is how you lose money while being right about direction: buying calls into an event at inflated IV, watching the stock rise, and still losing because IV collapsed afterwards ("IV crush"). Vega is largest on longer-dated contracts and shrinks toward expiry - a 0DTE has very little vega and enormous gamma, which is why 0DTE is a bet on movement now rather than on volatility levels.
 
 ## Rho: Assessing the Structural Impact of Interest Rate Shifts on LEAPs
-Covered in source module 55. See the surrounding sections for the full treatment.
+Rho is sensitivity to interest rates: how much premium changes per 1 percentage point move in the risk-free rate. Calls gain value as rates rise (holding a call is cheaper than holding the stock, and that financing advantage is worth more when rates are high); puts lose. For day trading it is irrelevant - a 0DTE contract has essentially zero rho, which is why this system uses a flat 2% assumption in its pricing model without materially affecting anything. Rho matters for LEAPs and other year-plus contracts, where a rate regime change is a real component of return.
 
 ## Options Delta: Gauging Price Tracking Speed and Contract Probabilities
-Covered in source module 119. See the surrounding sections for the full treatment.
+The same measure as Delta above, framed as contract selection. This system's scanners choose by delta band rather than by strike, because the delta band is what actually fixes the trade's character: 0.40-0.60 keeps contracts responsive enough to capture a real move while staying liquid and inside the $5.00 ask cap. Picking a strike without checking delta means the same nominal distance from spot buys a very different trade on a quiet day than on a volatile one.
 
 ## Options Gamma: The Gas Pedal and Accelerator of Long Option Premiums
-Covered in source module 119. See the surrounding sections for the full treatment.
+Gamma restated as position management. Because gamma peaks at the money and near expiry, a 0DTE position's risk profile changes faster than a trader can monitor it manually. Practical consequence: exits must be rule-based and pre-committed. A stop you intend to "watch for" is not a stop on a contract whose delta can double in ten minutes - by the time you have decided, the premium has already made the decision for you.
 
 ## Options Theta: The Relentless Clock and Time Decay Bleed Schedules
-Covered in source module 119. See the surrounding sections for the full treatment.
+Theta restated as a schedule rather than a number. Decay is slow with weeks left, steep in the final days, and near-vertical in the final hours. This is why holding to the close is the worst pattern for a long 0DTE, and why our own backtest found the underlying edge in several strategies did not survive being expressed as same-day options: the entry was right, the holding period handed the profit to decay.
 
 ## Options Vega: Identifying How Changes in Market Implied Volatility Crash or Inflate Premiums
-Covered in source module 119. See the surrounding sections for the full treatment.
+Vega restated as event risk. Premium is inflated before scheduled events (earnings, FOMC, CPI) because the market prices in a larger expected move, and deflates immediately afterward regardless of outcome. The trap is buying the anticipation. If you are long premium into an event, you need the move to exceed what was already priced in - not merely to be directionally correct.
 
 <!-- /EXPANDED:the-greeks -->
 <!-- END:15-option-pricing-greeks -->
@@ -1508,31 +1508,31 @@ What it means: The structural percentage variance calculated by subtracting the 
 What it means: Measures the sharp premium pricing difference between out-of-the-money 25-delta put options and out-of-the-money 25-delta call options. * Trading Ingestion Key: When this metric spikes higher, it indicates that institutional managers are aggressively overpaying for downside protection relative to upside speculation, giving your system an early radar warning of an impending market top or institutional fear surge.
 
 ## Historical Realized Volatility vs. Forward-Looking Implied Volatility (IV)
-Covered in source module 56. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 56, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Theoretical Baseline: Demystifying the Black-Scholes-Merton Pricing Model
-Covered in source module 56. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 56, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Modern Real-World Variations: The Binomial Options Pricing Framework
-Covered in source module 56. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 56, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Implied Volatility Percentile (IVP) vs. Implied Volatility Rank (IVR)
-Covered in source module 56. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 56, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Volatility Risk Premium (VRP): Why Options Are Systematically Overpriced
-Covered in source module 56. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 56, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Understanding the Implied Volatility Smile: Out-of-the-Money Tail Risk Pricing
-Covered in source module 57. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 57, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Understanding the Implied Volatility Skew: Equity Puts vs. Commodities Calls
-Covered in source module 57. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 57, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Mapping the Three-Dimensional Volatility Surface Matrix
-Covered in source module 57. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 57, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Volatility Term Structure: Navigating Contango vs. Backwardation Regimes
-Covered in source module 57. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 57, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:volatility-surface -->
 <!-- END:16-volatility -->
@@ -1594,28 +1594,28 @@ Buying far OTM lottery contracts, choosing DTE shorter than the thesis, using op
 Long calls and puts, debit structures, and the conditions under which paying premium is the right expression of a view. Consolidated from source modules 59, 60; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Straight Outright Call Buying: Capitalizing on Aggressive Bullish Velocity
-Covered in source module 59. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 59, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Straight Outright Put Buying: Capitalizing on Catastrophic Bearish Cascades
-Covered in source module 59. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 59, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Long Straddles: Profiting from Mass Volatility Explosions in Either Direction
-Covered in source module 59. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 59, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Long Strangles: Budget-Conscious Volatility Plays with Out-of-the-Money Wings
-Covered in source module 59. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 59, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Bull Call Spreads: Capping Upside Profits to Drastically Reduce Contract Costs
-Covered in source module 60. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 60, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Bear Put Spreads: Capping Downside Gains to Mitigate Implied Volatility Crushes
-Covered in source module 60. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 60, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Bull Put Credit Spreads: High-Probability Income Generation on Structural Floors
-Covered in source module 60. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 60, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Bear Call Credit Spreads: Systematically Selling Premium Beneath Ceilings
-Covered in source module 60. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 60, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:directional-strategies -->
 <!-- END:17-directional-options -->
@@ -1674,64 +1674,64 @@ Calling covered calls risk-free, selling puts solely for high IV, chasing annual
 Portfolio protection, synthetic positions, put-call parity, and the arbitrage relationships that keep option prices honest. Consolidated from source modules 63, 64, 95, 105, 106; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Covered Calls: Liquidating Short Upside Premium Against Core Underlying Stock
-Covered in source module 63. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 63, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Protective Puts: Establishing Institutional Tail-Risk Capital Insurance Policies
-Covered in source module 63. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 63, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Collar Strategy: Financing Downside Puts via Short Out-of-the-Money Calls
-Covered in source module 63. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 63, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Stock Repair Strategies: Using Spreads to Recover Trapped Capital without Adding Risk
-Covered in source module 63. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 63, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Put-Call Parity: The Core Mathematical Rule of Derivatives Pricing
-Covered in source module 64. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 64, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Synthetic Long Stock: Combining Long Calls and Short Puts to Mimic Shares
-Covered in source module 64. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 64, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Synthetic Short Stock: Combining Long Puts and Short Calls to Mimic Short Selling
-Covered in source module 64. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 64, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Conversion and Reversal Arbitrage: Risk-Free Exploitations of Mispriced Spreads
-Covered in source module 64. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 64, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Dynamic Delta Hedging: Calculating Real-Time Portfolio Share Rebalancing
-Covered in source module 95. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 95, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Gamma Scalping: Trading Stock Around Short-Term Options Positions
-Covered in source module 95. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 95, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Vanna and Volga Risk Multipliers: Implied Volatility and Spot Price Intersects
-Covered in source module 95. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 95, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Tail-Risk Hedging: Executing Low-Probability Out-of-the-Money Option Insurances
-Covered in source module 95. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 95, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Variance Swaps vs. Volatility Swaps: Exploiting Pure Implied Variance Returns
-Covered in source module 105. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 105, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## VIX Options Pricing: Navigating Volatility of Volatility Surges Natively
-Covered in source module 105. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 105, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Vanna-Volga Pricing Modifiers: Formulating Advanced Exotic Strike Corrections
-Covered in source module 105. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 105, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Log-Contract Replications: The Mathematical Foundation of the VIX Index Engine
-Covered in source module 105. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 105, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Treasury Futures Contracts: Cheaper-to-Deliver (CTD) Bond Matching Models
-Covered in source module 106. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 106, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Interest Rate Swaps: OIS Spreads and Structural Corporate Fixed Funding Rates
-Covered in source module 106. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 106, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Eurodollar Futures: Hedging Multi-Year Institutional Borrowing Cost Trajectories
-Covered in source module 106. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 106, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Mortgage-Backed Securities (MBS): Pricing Prepayment Volatility Tail Shocks
-Covered in source module 106. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 106, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:hedging-and-synthetics -->
 <!-- END:18-income-and-hedging -->
@@ -1796,28 +1796,28 @@ Using expiration diagrams as current value, ignoring one illiquid leg, assuming 
 Iron condors, butterflies, calendars and volatility structures - trades that profit from time or from volatility rather than direction. Consolidated from source modules 61, 62; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Classic Iron Condors: Exploiting Double-Sided Horizontal Sideways Chop
-Covered in source module 61. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 61, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Iron Butterflies: Pinning At-The-Money Premium to Maximize Intraday Theta Melt
-Covered in source module 61. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 61, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Long & Short Calendar Spreads: Exploiting Differing Time Horizon Decay Horizons
-Covered in source module 61. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 61, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Long & Short Diagonal Spreads: Blending Structural Time and Strike Variations
-Covered in source module 61. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 61, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Ratio Spreads: Unbalanced Contract Counts for Delta-Neutral Volatility Exploitations
-Covered in source module 62. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 62, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Broken Wing Butterflies: Structuring Zero-Downside Risk Profiles on Premium Spreads
-Covered in source module 62. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 62, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Box Spreads: Multi-Leg Arbitrage Matrix for Capturing Pure Synthetic Financing Rates
-Covered in source module 62. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 62, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Christmas Tree Spreads: Non-Standard Strike Configurations for Precision Targets
-Covered in source module 62. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 62, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:neutral-and-multileg -->
 <!-- END:19-spreads-multi-leg -->
@@ -1936,40 +1936,40 @@ What it means: The total cumulative number of target options contracts that have
 What it means: A structural index calculated by dividing the total active open interest of put options by the total active open interest of call options for a specific asset. * The Math: Total Put Open Interest / Total Call Open Interest * Trading Ingestion Key: This indicator filters out short-term noise to map out institutional sentiment. Because institutions constantly buy protective puts to shield multi-billion dollar portfolios, a permanent structural baseline skew exists. When this ratio spikes to historic extremes, it signals peak defensive panic, frequently tracking major macro market bottoms.
 
 ## Long Call/Put Positions: The Rights of the Premium Buyer
-Covered in source module 54. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 54, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Short Call/Put Positions: The Obligations of the Premium Seller (Writing Options)
-Covered in source module 54. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 54, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Understanding Options Exercise, Delivery, and Settlement Processes
-Covered in source module 54. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 54, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Navigating Assignment Risk, Early Assignment, and Margin Calls
-Covered in source module 54. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 54, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Mechanics of Pin Risk: Navigating 3:59 PM Expiration Imbalances
-Covered in source module 65. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 65, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Cash Settlement vs. Physical Delivery: Index Options (SPX/NDX) vs. Equity Options (SPY/QQQ)
-Covered in source module 65. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 65, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Understanding American-Style Options vs. European-Style Options Contract Rules
-Covered in source module 65. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 65, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Introduction to Binary Options, Barrier Options, and Exotic Derivatives Structures
-Covered in source module 65. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 65, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Special Cash Dividends: Structural Adjustments to Options Strike Matrices
-Covered in source module 103. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 103, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Spin-offs and Carve-outs: Managing Deliverable Basket Options Changes
-Covered in source module 103. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 103, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Rights Offerings and Warrants: Evaluating Synthetic Dilution Vectors
-Covered in source module 103. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 103, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Tender Offers and Stock Buyback Mechanics: The Impact on Floating Liquidity
-Covered in source module 103. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 103, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:expiration-dynamics -->
 <!-- END:21-expiration-assignment -->
@@ -2084,88 +2084,88 @@ Journaling only losers, rewriting entry reasons, recording feelings without data
 The failure modes that are the trader rather than the strategy, plus the journal and mistake log that make them visible. Consolidated from source modules 82, 91, 101, 116, 120, 125, 126; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Cognitive Biases: Overconfidence, Confirmation, and Anchoring Pitfalls
-Covered in source module 82. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 82, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Emotional Friction: Navigating FOMO (Fear of Missing Out) and Revenge Trading
-Covered in source module 82. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 82, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Risk Management Psychology: Mastering Risk-Aversion and Loss-Mitigation
-Covered in source module 82. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 82, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Trading Journal Matrix: Categorizing and Scoring Execution Errors
-Covered in source module 82. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 82, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## VIX Futures Term Structure: Contango vs. Backwardation Roll Yields
-Covered in source module 91. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 91, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Put-Call Volume Ratios vs. Open Interest Long-Term Sentiment Skews
-Covered in source module 91. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 91, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Fear and Greed Index: Aggregating Multi-Variable Market Panics
-Covered in source module 91. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 91, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## High-Frequency Option Sentiment: Tracking Sweeps and Block Purchases
-Covered in source module 91. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 91, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Prospect Theory: The Asymmetric Psychology of Utility and Financial Loss
-Covered in source module 101. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 101, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Overreaction and Underreaction Anomalies: The Core of Swing Trading Alpha
-Covered in source module 101. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 101, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Disposition Effect: Why Traders Sell Winners Early and Hold Losers Natively
-Covered in source module 101. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 101, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Herding Behavior: Tracking Retail Crowd Waves and Momentum Extinction Points
-Covered in source module 101. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 101, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Establishing the Hard Rules of Your Strategy before the Market Opens
-Covered in source module 116. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 116, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Defining Your Checklist: What Must Happen before You Click Buy
-Covered in source module 116. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 116, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Setting Your Maximum Capital Allocations and Risk per Single Position
-Covered in source module 116. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 116, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Writing Down an Exit Plan for Your Profit Target and Stop-Loss Levels
-Covered in source module 116. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 116, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Calculating the Risk-per-Trade (The Core R-Multiple Principle)
-Covered in source module 120. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 120, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Position Sizing: How to Determine Exactly How Many Contracts to Buy
-Covered in source module 120. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 120, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Exponential Math of Drawdowns: Why Rebounding from a Loss Gets Harder
-Covered in source module 120. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 120, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Win Rate vs. Risk-Reward Intersect: Why You Can Be Wrong and Still Profitable
-Covered in source module 120. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 120, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Overcoming FOMO (Fear of Missing Out) and Chasing Overextended Runs
-Covered in source module 125. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 125, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Preventing Revenge Trading after a Loss: Maintaining Discipline in Drawdowns
-Covered in source module 125. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 125, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Disposition Effect: Overcoming the Urge to Sell Winners Early and Hold Losers Long
-Covered in source module 125. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 125, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Anchoring Pitfalls: Letting Past Prices Distort Current Market Analysis
-Covered in source module 125. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 125, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Keeping a Consistent Journal: Documenting the Rationale behind Every Position
-Covered in source module 126. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 126, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Categorizing Errors: Separating Flawed Strategies from Emotional Execution Failures
-Covered in source module 126. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 126, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Tracking Statistics: Finding Your True Historical Win Rate and Profit Factor
-Covered in source module 126. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 126, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Reviewing Past Data to Continuously Refine Rules and Protect Capital
-Covered in source module 126. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 126, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:psychology-and-journaling -->
 <!-- END:23-psychology-journaling -->
@@ -2254,52 +2254,52 @@ What it means: Maps out the absolute worst peak-to-trough capital drop experienc
 What it means: An institutional scorecard metric that measures risk-adjusted return efficiency. It proves whether a strategy's profits are driven by smart execution or just high-risk gambling volatility. The channels are expanded from # 28 through # 37 to complete your category setup. Let me know if you want me to write out the exact text blocks for any more numbers in this sequence, or if you're ready to proceed to something else!
 
 ## Volatility-Adjusted Trailing Safety Envelopes (ATR_14)
-Covered in source module 52. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 52, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Worst-Case Peak-to-Trough Account Fuse Boxes (Max_Drawdown_60d)
-Covered in source module 52. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 52, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Risk-Adjusted Portfolio Variance Scorecards (Rolling_Sharpe_60d)
-Covered in source module 52. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 52, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Multi-Module Database Ingestion Joining without Forward Ingestion Bias
 The channels are now thoroughly mapped from # 28 all the way through # 52 to capture every structural metric, index tracker, calendar time block, and option variable. Let me know if you want me to expand this list to create more channel nodes further out, or if you're ready to proceed to another task! That was completely my mistake—I fell back into formatting numbers like section codes (5.9 to 5.10) instead of following your exact channel list sequence (# 44, # 45, # 46...). Let me fix that sequencing error immediately so it stays perfectly clean and sequential for your Discord bot layout. Here is the corrected, continuous progression starting right from # 53 onwards, expanding into general option mechanics, strategies, and lookups
 
 ## Defining Expectancy, Profit Factor, and System Edge Metrics
-Covered in source module 84. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 84, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Sample Size Requirements, Out-of-Sample Testing, and Forward Testing
-Covered in source module 84. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 84, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Identifying and Eliminating Over-Fitting and Curve-Fitting Bias Errors
-Covered in source module 84. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 84, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Monte Carlo Risk Simulations: Evaluating System Ruin Probability Curves
-Covered in source module 84. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 84, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Walk-Forward Optimization: Testing Strategy Adaptability across Changing Regimes
-Covered in source module 98. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 98, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Out-of-Sample Validation: Protecting Against Historical Data Curve-Fitting
-Covered in source module 98. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 98, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Monte Carlo Testing: Evaluating Strategy Ruin Risks across 10,000 Simulations
-Covered in source module 98. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 98, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Historical Black Swan Replications: Stress-Testing Portfolios against 1987, 2008, and 2020
-Covered in source module 98. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 98, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Backtest Speed Optimization: Vectorized Execution Arrays vs. Event-Driven Simulators
-Covered in source module 115. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 115, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Slippage and Fee Modeling: Incorporating Dynamic Maker-Taker Exchange Frictions
-Covered in source module 115. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 115, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Survivorship Bias Resolution: Incorporating Bankrupt and De-listed Assets into Data Sheets
-Covered in source module 115. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 115, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Multi-Asset Rebalancing Delays: Simulating Real-World Execution Latencies
-Covered in source module 115. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 115, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:risk-and-backtesting -->
 <!-- END:24-backtesting-statistics -->
@@ -2352,151 +2352,151 @@ Assuming all brokers handle expiration alike, using unsettled funds without unde
 Brokerage mechanics, margin and PDT rules, wash sales and tax treatment, legal structures, and how prop-firm funding works. Consolidated from source modules 83, 85, 86, 87, 93, 94, 99, 100, 109, 110, 114, 127, 128; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Risk-per-Trade Scaling Rules (The R-Multiple Framework)
-Covered in source module 83. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 83, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Position Sizing Models: Fixed Fractional vs. Kelly Criterion Formulas
-Covered in source module 83. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 83, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Math of Drawdown Recovery: Exponential Curves of Capital Recovery
-Covered in source module 83. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 83, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Win Rate vs. Risk-Reward Ratio Profit Factor Intersect Matrices
-Covered in source module 83. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 83, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Reg T Margin Accounts vs. Portfolio Margin Allocation Architectures
-Covered in source module 85. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 85, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Maintenance Margin Requirements, House Surpluses, and Margin Calls
-Covered in source module 85. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 85, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Pattern Day Trader (PDT) Classification Boundaries and Routing Limits
-Covered in source module 85. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 85, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Options Clearing Corporation (OCC) Clearing House Assignment Processes
-Covered in source module 85. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 85, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Short-Term vs. Long-Term Capital Gains Tax Rate Thresholds
-Covered in source module 86. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 86, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Internal Revenue Code Section 1256 Contracts: 60/40 Tax Multipliers
-Covered in source module 86. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 86, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Wash Sale Rule: Identifying and Preventing Disallowed Capital Losses
-Covered in source module 86. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 86, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Trader Tax Status (TTS) Requirements and Business Expense Deductions
-Covered in source module 86. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 86, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Turn-of-the-Month Effect: Tracking Institutional Capital Inflows
-Covered in source module 87. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 87, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Options Expiration (OpEx) Week Anomalies: Max Pain Strike Reversion
-Covered in source module 87. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 87, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Quarter-End Window Dressing: Institutional Portfolio Rebalancing Loops
-Covered in source module 87. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 87, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Santa Claus Rally and January Effect: Tax-Loss Harvesting Cycles
-Covered in source module 87. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 87, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Satellite Imagery Analytics: Tracking Retail Foot-Traffic and Supply Chains
-Covered in source module 93. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 93, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Natural Language Processing (NLP): Scraping Central Bank Speech Transcripts
-Covered in source module 93. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 93, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Consumer Spending Tracking: Anonymous Credit Card Transaction Aggregations
-Covered in source module 93. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 93, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Freight and Logistics Tracking: Marine Vessel and Fleet Telemetry Logs
-Covered in source module 93. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 93, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Modern Portfolio Theory (MPT): Efficient Frontier Optimization Models
-Covered in source module 94. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 94, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Black-Litterman Model: Blending Market Equilibrium with Trader Views
-Covered in source module 94. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 94, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Risk Parity Allocation Frameworks: Equalizing Volatility Contributions
-Covered in source module 94. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 94, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Factor Investing Matrix Overlays: Value, Momentum, Quality, and Size Tilts
-Covered in source module 94. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 94, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Proprietary Trading Models: Evaluation Stages and Profit-Split Milestones
-Covered in source module 99. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 99, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Trailing Drawdown Rules: Navigating Relative vs. Absolute Capital Loss Caps
-Covered in source module 99. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 99, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Scaling Plans: Automatically Expanding Position Sizing via Profit Accrual
-Covered in source module 99. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 99, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Institutional Risk Auditing: Tracking Consistency Scores and Sharpe Thresholds
-Covered in source module 99. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 99, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## LLC Entity Creation: Operating Trading Operations as a Business Structure
-Covered in source module 100. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 100, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Section 475(f) Mark-to-Market Election: Eliminating Wash Sale Rules
-Covered in source module 100. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 100, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## S-Corporation Election: Optimizing Self-Employment and Salary Tax Dividends
-Covered in source module 100. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 100, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Offshore and Trust Asset Protections: Safeguarding Compounding Trading Wealth
-Covered in source module 100. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 100, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Cointegration vs. Correlation: Building Reliable Mathematical Spreads
-Covered in source module 109. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 109, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Mean-Reversion Half-Life: Formulating Optimal Exit Windows on Asset Pairs
-Covered in source module 109. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 109, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Synthetic Asset Matching: Balancing Capital Allocation across Cross-Sector Equities
-Covered in source module 109. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 109, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Statistical Z-Score Modeling: Triggering Mean-Reversion Reversals on Dynamic Spreads
-Covered in source module 109. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 109, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Marginal Value-at-Risk (MVaR) vs. Component Value-at-Risk (CVaR) Frameworks
-Covered in source module 110. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 110, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Contribution to Portfolio Variance: Identifying Undesired Concentrated Risk Fields
-Covered in source module 110. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 110, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Ex-Ante vs. Ex-Post Risk Profiles: Evaluating Systemic Performance vs. Expected Math
-Covered in source module 110. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 110, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Liquidity-Adjusted VaR (LVaR): Factor-Weighting Capital Drops During Panic Regimes
-Covered in source module 110. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 110, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Corporate Insider Transaction Filings: Tracking Form 4 C-Suite Accumulations
-Covered in source module 114. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 114, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Congressional Stock Transaction Registers: Monitoring Government Policy Vectors
-Covered in source module 114. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 114, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## IP Address and Web Traffic Intelligence: Tracking Enterprise Software Subscriptions Real-Time
-Covered in source module 114. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 114, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Patent Office Scraping Matrix: Identifying Hidden Research and Development Breakthroughs
-Covered in source module 114. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 114, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Pattern Day Trader (PDT) Classification Boundaries and Capital Limits
-Covered in source module 127. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 127, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Reg T Margin Accounts vs. Cash Accounts for Options Execution
-Covered in source module 127. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 127, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Navigating Assignment Risk, Early Assignment, and Cash Settlement
-Covered in source module 127. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 127, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Section 1256 Contracts: Understanding Tax Advantages on Broader Index Instruments
-Covered in source module 128. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 128, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Managing Trades across Accounts to Ensure Compliant Reporting
-Covered in source module 128. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 128, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- /EXPANDED:accounts-tax-and-funding -->
 <!-- END:25-brokers-accounts-taxes -->
@@ -2632,40 +2632,40 @@ What it means: The total estimated dollar amount of stock exposure options deale
 The Rule: In Positive Gamma Zones, dealer hedging acts as a stabilizer—they buy drops and sell rallies, pinning the market in place. In Negative Gamma Zones, dealer hedging acts as an accelerant—they are forced to sell drops and chase rallies, causing rapid intraday market crashes.
 
 ## At-The-Money Implied Volatility Straddle Matrix
-Covered in source module 44. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 44, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Out-of-the-Money Implied Volatility Smile Wings
-Covered in source module 44. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 44, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Intermarket Volatility Cross-Correlations (VIX vs. VVIX)
-Covered in source module 44. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 44, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Volatility Skew Term Structure Contango vs. Backwardation
-Covered in source module 44. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 44, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Estimated Net Dealer Gamma Exposure Thresholds (GEX)
-Covered in source module 45. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 45, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Intraday Volatility Buffering via Positive Gamma Anchors
-Covered in source module 45. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 45, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Intraday Volatility Acceleration via Negative Gamma Cascades
-Covered in source module 45. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 45, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Option Strike Pinning and Expiration Gamma Clustered Volume
-Covered in source module 45. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 45, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Pin Risk Optimization: Hedging At-The-Money Contracts at Friday 3:59 PM EST
-Covered in source module 112. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 112, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Bid-Ask Inventory Management: Skewing Pricing Sheets to Force Retail Order Flow
-Covered in source module 112. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 112, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Adverse Selection Risks: How Toxic Institutional Order Flow Burns Option Dealers
-Covered in source module 112. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 112, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Inter-Exchange Arbitrage: High-Frequency Sweep Models Aligning Fragmented Options Order Books
-Covered in source module 112. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 112, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- END:32-dealer-gamma-and-hedging -->
 
@@ -2684,16 +2684,16 @@ What it means: The single most important baseline anchor line used by institutio
 What it means: Measures the percentage deviation between the current price and the daily VWAP line. * The Math: (Current Price - VWAP) / VWAP * The Rule: Stocks act like rubber bands around VWAP. If the price stretches too far out (≥ ±0.25%) during low-volume hours, the momentum runs out of breath, creating a highly predictable mean-reversion scalp back to the center line.
 
 ## Volume-Weighted Average Price Baseline Proxies (VWAP)
-Covered in source module 49. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 49, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Intraday Deviation From Institutional Mean (Price_to_VWAP_Distance_Pct)
-Covered in source module 49. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 49, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Mid-Day Overextended Premium Exhaustion Extremes (RSI_14 > 75 / < 25)
-Covered in source module 49. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 49, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Overextended Reversion Rubber-Band Envelopes (BB_Upper / BB_Lower)
-Covered in source module 49. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 49, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- END:33-fair-value-and-mean-reversion -->
 
@@ -2718,22 +2718,22 @@ What it is: Institutional algorithms and floor traders go to lunch from 11:30 AM
 What it is: The final 30 minutes before option expiration. Dealers are forced to execute massive stock blocks to clear out vanishing delta/gamma risks, creating explosive price velocity runs right into the 4:00 PM closing bell.
 
 ## The 9:30 AM Opening Retail Order Clearing Block
-Covered in source module 48. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The 10:30 AM EST European Equity Settlement Pivot
-Covered in source module 48. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The 11:30 AM Mid-Day New York Institutional Lunch Lull
-Covered in source module 48. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The 1:30 PM Post-Lunch Portfolio Execution Resumption
-Covered in source module 48. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The 3:30 PM OpEx Expiration Options Gamma Flush
-Covered in source module 48. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The 9:30 AM Opening Retail Order Clearing Window
-Covered in source module 124. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 124, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- END:34-the-market-clock -->
 
@@ -2758,28 +2758,28 @@ What it means: The total market price cash value that an options buyer pays upfr
 What it means: The fixed, predetermined dollar price boundary at which an options contract holder has the legal right to buy or sell the underlying asset before the expiration deadline. * Trading Ingestion Key: For a Long Call, the strike is the price you have the right to buy the asset at. For a Long Put, the strike is the price you have the right to sell the asset at.
 
 ## High-Frequency Trading (HFT): Internalizers and Latency Arbitrage
-Covered in source module 89. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 89, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Algorithmic Execution Styles: TWAP, VWAP, and Implementation Shortfall
-Covered in source module 89. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 89, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Quantitative Market Making: Managing Inventory Risk and Adverse Selection
-Covered in source module 89. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 89, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Machine Learning Features: Transforming Technicals into Predictive Arrays
-Covered in source module 89. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 89, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Stationarity Conversions: Transforming Raw Asset Pricing into Fractional Differences
-Covered in source module 111. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 111, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Labeling Financial Arrays: Triple-Barrier Methods vs. Standard Price Diffs
-Covered in source module 111. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 111, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Feature Importance Shuffling: Identifying Alpha Degradation across Model Elements
-Covered in source module 111. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 111, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Cross-Validation Schemas: Purging and Embargoing Time Series to Prevent Leakage
-Covered in source module 111. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 111, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- END:35-algorithmic-glossary -->
 
@@ -2792,39 +2792,39 @@ Covered in source module 111. See the surrounding sections for the full treatmen
 Bonds, the yield curve, commodity term structures and contango - the signals that lead equity regimes. Consolidated from source modules 80, 81, 108; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Bond Pricing Foundations: Inverse Pricing-to-Yield Vector Rules
-Covered in source module 80. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 80, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Treasury Yield Curve: Fed Funds Rate, 2-Year, and 10-Year Notes
-Covered in source module 80. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 80, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Yield Curve Inversions and Macro Recessionary Filtering Signals
-Covered in source module 80. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 80, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Currency Cross-Rates: The US Dollar Index (DXY) vs. Equity Assets
-Covered in source module 80. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 80, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Crude Oil, Natural Gas, and Energy Sector Capital Dependencies
-Covered in source module 81. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 81, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Gold and Silver: Safe-Haven Precious Metal Inflows vs. Risk Assets
-Covered in source module 81. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 81, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Copper and Agricultural Futures: Real Economy Demand Radar Systems
-Covered in source module 81. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 81, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Commodity Research Bureau (CRB) Continuous Index Tracker
-Covered in source module 81. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 81, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Physical Storage Arbitrage: Cost of Carry and Financial Futures Convergence
-Covered in source module 108. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 108, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Super-Contango Regimes: Exploiting Floating Storage Maritime Arbitrage Plays
-Covered in source module 108. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 108, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Backwardation Injections: Evaluating Physical Inventory Shortfalls on Ticker Spikes
-Covered in source module 108. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 108, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## The Crack Spread and Crush Spread: Processing Raw Materials into Final Deliverables
-Covered in source module 108. See the surrounding sections for the full treatment.
+*Not yet written.* This topic comes from source module 108, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 <!-- END:36-commodities-and-fixed-income -->
