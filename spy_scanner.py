@@ -441,14 +441,6 @@ CHANNEL_NAMES = {
     # Owner: "do the ratchet thing but instead all the other trades
     # tradebot makes... tabs can stay meaningful and not scattered
     # craziness."
-    "performance_1m": "strategies-dashboard",
-    "results_1m": "strategies-results",
-    "performance_5m": "strategies-dashboard",
-    "results_5m": "strategies-results",
-    "performance_key_levels": "strategies-dashboard",
-    "results_key_levels": "strategies-results",
-    "performance_expansion": "strategies-dashboard",
-    "results_expansion": "strategies-results",
     "ticker_results": "ticker-results",
     "learning_results": "learning-results",
     "examples_reviews": "examples-and-reviews",
@@ -579,13 +571,23 @@ for _ratchet_variant in SPY_RATCHET_VARIANTS:
 # 10 variants against each other by real P&L - owner: "a dashboard so we
 # can see top performers." See performance_reconciliation.py's
 # format_ratchet_leaderboard.
-CHANNEL_NAMES["ratchet_leaderboard"] = "ratchet-dashboard"
+# All 10 ratchet variants were retired 2026-08-17 and #ratchet-dashboard was
+# deleted with them, but this route survived - pointing at a channel that no
+# longer exists. A card sent to a dead channel is silently dropped, so it is
+# removed rather than left dangling. (Found by checking every route resolves
+# to a live channel; the per-variant routes above go empty on their own,
+# since they are generated from the now-empty SPY_RATCHET_VARIANTS.)
+CHANNEL_NAMES.pop("ratchet_leaderboard", None)
 AUTOMATED_CHANNEL_KEYS.append("ratchet_leaderboard")
 # Same idea for the other 4 live strategies (1-Minute, 5-Minute,
 # Key-Levels, Expansion-Level) - a leaderboard ranking them against each
 # other in the shared strategies-dashboard channel. See
 # performance_reconciliation.py's format_strategy_leaderboard.
-CHANNEL_NAMES["strategy_leaderboard"] = "strategies-dashboard"
+# Moved to PERFORMANCE when #strategies-dashboard was deleted 2026-08-17.
+# A cross-strategy ranking is not duplicated by the period recaps - those
+# are per-period totals, not a comparison of strategies against each other -
+# so it moves rather than being dropped.
+CHANNEL_NAMES["strategy_leaderboard"] = "monthly-dashboard"
 AUTOMATED_CHANNEL_KEYS.append("strategy_leaderboard")
 
 SYSTEM_CHANNEL_KEYS = {

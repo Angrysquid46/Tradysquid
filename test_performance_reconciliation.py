@@ -129,14 +129,27 @@ class PerformanceScorecardTests(unittest.TestCase):
             rows.append(row)
         return rows
 
-    def test_six_distinct_discord_routes_are_installed(self) -> None:
+    def test_period_and_per_strategy_routes_are_installed(self) -> None:
         self.assertEqual(spy_scanner.CHANNEL_NAMES["daily_recap"], "daily-recap")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["weekly_report"], "weekly-report")
         self.assertEqual(spy_scanner.CHANNEL_NAMES["monthly_recap"], "monthly-dashboard")
-        self.assertEqual(spy_scanner.CHANNEL_NAMES["performance_1m"], "strategies-dashboard")
-        self.assertEqual(spy_scanner.CHANNEL_NAMES["results_1m"], "strategies-results")
-        self.assertEqual(spy_scanner.CHANNEL_NAMES["performance_5m"], "strategies-dashboard")
-        self.assertEqual(spy_scanner.CHANNEL_NAMES["results_5m"], "strategies-results")
+
+        # The shared #strategies-dashboard / #strategies-results pair was
+        # deleted 2026-08-17 - owner: "we have performance tab for all this".
+        # Each surviving strategy routes to its own channel instead, and the
+        # retired ones (0DTE 1m/5m, expansion) have no route at all rather
+        # than one pointing at a deleted channel.
+        import spy_live_new_strategies as lns
+        for retired in ("performance_1m", "results_1m", "performance_5m",
+                        "results_5m", "performance_expansion", "results_expansion"):
+            self.assertNotIn(retired, spy_scanner.CHANNEL_NAMES)
+
+        for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+            own = lns.channel_slug(play_type)
+            self.assertEqual(
+                spy_scanner.CHANNEL_NAMES[lns.performance_key(play_type)], own)
+            self.assertEqual(
+                spy_scanner.CHANNEL_NAMES[lns.results_key(play_type)], own)
 
     def test_structure_contains_each_scorecard_channel_once(self) -> None:
         original = list(structure.CHANNELS)

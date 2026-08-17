@@ -462,3 +462,31 @@ def test_every_routing_key_points_at_a_channel_the_sync_creates():
     created = {name for _cat, name, _desc in lns.channel_specs()}
     for key, channel in lns.channel_names().items():
         assert channel in created, f"{key} routes to #{channel}, which is never created"
+
+
+def test_no_route_points_at_a_channel_that_does_not_exist():
+    """A card sent to a deleted channel is silently dropped.
+
+    This caught two real orphans: #ratchet-dashboard survived as a route
+    after the 10 ratchet variants were retired and their channel deleted,
+    and the retired 0DTE/expansion strategies still routed to the deleted
+    #strategies-dashboard pair. Neither raised anything - the cards simply
+    went nowhere.
+    """
+    import spy_scanner as ss
+    import performance_reconciliation as pr
+    import sync_discord_structure as sd
+
+    # Only the DELETE set is checked, not the create set: several channels
+    # are appended by installers (performance_channel_structure, the Learning
+    # Center) rather than declared at import, so "is created" is not knowable
+    # from a bare import. Routing at a channel the sync actively deletes is
+    # the real bug class, and it is unambiguous.
+    deleted = set(sd.DELETE_CHANNELS)
+    for source, table in (("CHANNEL_NAMES", ss.CHANNEL_NAMES),
+                          ("REPORT_ROUTES", pr.REPORT_ROUTES)):
+        for key, channel in table.items():
+            assert channel not in deleted, (
+                f"{source}[{key!r}] routes to #{channel}, which the sync deletes - "
+                f"cards sent there are silently dropped"
+            )

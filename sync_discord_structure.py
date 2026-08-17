@@ -115,8 +115,6 @@ CHANNELS = [
     ChannelSpec("MARKET INTELLIGENCE", "market-regime", "Broad-market context, trend, and volatility conditions."),
     ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "SPY off-hours screen status and on-demand snapshot."),
     ChannelSpec("MARKET INTELLIGENCE", "spy-technicals", "SPY technical history from the standalone market-memory store: SMA/EMA/VWAP, MACD, RSI, ADX, Bollinger and ATR across intraday, short, medium and long horizons, plus what each tracked pattern is actually worth against the base rate."),
-    ChannelSpec(STRATEGIES_CATEGORY_NAME, "strategies-dashboard", "Leaderboard comparing every live strategy, plus each one's own monthly performance index."),
-    ChannelSpec(STRATEGIES_CATEGORY_NAME, "strategies-results", "Every strategy's results, each tracked and tagged separately in one feed."),
     ChannelSpec("PERFORMANCE", "ticker-results", "Results by underlying, combined across every live SPY strategy."),
     ChannelSpec("PERFORMANCE", "learning-results", "Evidence summaries that never change filters automatically."),
     ChannelSpec("LEARNING CENTER", "learning-index", "Complete organized curriculum and recommended learning path."),
@@ -189,6 +187,11 @@ except Exception as _exc:   # pragma: no cover - import guard only
     _RETIRED_STRATEGY_CHANNELS = ()
 
 DELETE_CHANNELS = {
+    # Retired 2026-08-17 - owner: "we have performance tab for all this".
+    # Every strategy now has its own channel, and period recaps live in
+    # PERFORMANCE, so this shared pair duplicated both. The cross-strategy
+    # leaderboard moved to #monthly-dashboard rather than being lost.
+    "strategies-dashboard", "strategies-results",
     # Strategy channels whose strategy was removed, or whose rank shifted -
     # an orphaned channel looks live but never updates again.
     *_RETIRED_STRATEGY_CHANNELS,

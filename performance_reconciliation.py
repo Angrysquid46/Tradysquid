@@ -73,16 +73,35 @@ REPORT_ROUTES = {
     "weekly_report": "weekly-report",
     "monthly_recap": "monthly-dashboard",
 }
-# All 4 non-ratchet strategies now share one dashboard channel and one
-# results channel - each keeps its own logical key, own state_key, and own
-# REPORT_MARKERS text below, so it still gets its own distinct,
-# independently-tracked card within the shared channel; only the REAL
-# channel name changed here.
+# The shared #strategies-dashboard / #strategies-results pair was deleted
+# 2026-08-17, so these routes are resolved per strategy instead.
+#
+# SPY_0DTE_1M, SPY_0DTE_5M and SPY_EXPANSION_LEVEL are retired: their routes
+# are dropped entirely rather than left pointing at a deleted channel, which
+# would silently discard any card built from a historical row. SPY_KEY_LEVELS
+# survives and routes to its own channel like the other 13.
+_RETIRED_ROUTE_PLAY_TYPES = {"SPY_0DTE_1M", "SPY_0DTE_5M", "SPY_EXPANSION_LEVEL"}
 for _play_type, _perf_logical, _results_logical, _label in OTHER_STRATEGY_VARIANTS:
-    REPORT_ROUTES[_perf_logical] = "strategies-dashboard"
-    REPORT_ROUTES[_results_logical] = "strategies-results"
+    if _play_type in _RETIRED_ROUTE_PLAY_TYPES:
+        REPORT_ROUTES.pop(_perf_logical, None)
+        REPORT_ROUTES.pop(_results_logical, None)
+        continue
+    _own_channel = spy_scanner.CHANNEL_NAMES.get(_perf_logical)
+    if _own_channel:
+        REPORT_ROUTES[_perf_logical] = _own_channel
+        REPORT_ROUTES[_results_logical] = spy_scanner.CHANNEL_NAMES.get(
+            _results_logical, _own_channel
+        )
 STRATEGY_LEADERBOARD_LOGICAL = "strategy_leaderboard"
-REPORT_ROUTES[STRATEGY_LEADERBOARD_LOGICAL] = "strategies-dashboard"
+# #strategies-dashboard and #strategies-results were deleted 2026-08-17 -
+# owner: "we have performance tab for all this". Each of the 14 strategies
+# now has its own channel for its own card, and period recaps live in
+# PERFORMANCE, so a shared pair in STRATEGIES was duplicating both.
+#
+# The cross-strategy leaderboard is NOT duplicated by the period recaps
+# (those are per-period totals, not a ranking of strategies against each
+# other), so it moves to #monthly-dashboard rather than being dropped.
+REPORT_ROUTES[STRATEGY_LEADERBOARD_LOGICAL] = "monthly-dashboard"
 # All 10 ratchet variants now share one dashboard channel and one results
 # channel (owner: "all the ratchet stratagies in a single catagory instead
 # of 11 different channels") - same pattern as above, its own separate
@@ -91,7 +110,9 @@ for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
     REPORT_ROUTES[_perf_logical] = "ratchet-dashboard"
     REPORT_ROUTES[_results_logical] = "ratchet-results"
 RATCHET_LEADERBOARD_LOGICAL = "ratchet_leaderboard"
-REPORT_ROUTES[RATCHET_LEADERBOARD_LOGICAL] = "ratchet-dashboard"
+# #ratchet-dashboard was deleted with the 10 ratchet variants; a route to a
+# dead channel silently drops its card.
+REPORT_ROUTES.pop(RATCHET_LEADERBOARD_LOGICAL, None)
 
 REPORT_MARKERS = {
     "daily_recap": (
