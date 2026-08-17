@@ -139,7 +139,19 @@ MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.25"))
 # play type, and nothing above is read by this one.
 SPY_0DTE_TICKER = "SPY"
 SPY_MANUAL_PLAY_TYPE = "SPY_MANUAL"
-SPY_0DTE_PLAY_TYPES = ("SPY_0DTE_1M", "SPY_0DTE_5M", SPY_MANUAL_PLAY_TYPE)
+# SPY_0DTE_1M and SPY_0DTE_5M retired 2026-08-17. Their shared opening-range
+# entry measured +0.0004 ATR/trade (t=+0.39) on 1-minute bars and -0.0004
+# (t=-0.64, negative in all four eras) on 5-minute bars across 3,347
+# sessions - indistinguishable from random entries on the same bars.
+#
+# SPY_MANUAL stays: it is not a scanner-driven strategy, it is the play
+# type an owner-opened position carries, so removing it would strand any
+# manual trade with no exit evaluator.
+#
+# The 0DTE exit machinery (spy_0dte_exit_signal and its tests) is left in
+# place, so restoring either variant is a one-line change.
+# See docs/BACKTEST_RESULTS.md.
+SPY_0DTE_PLAY_TYPES = (SPY_MANUAL_PLAY_TYPE,)
 
 
 def is_spy_0dte_play_type(play_type: str | None) -> bool:
@@ -7312,10 +7324,11 @@ def scan_candidates(
     if TICKER == SPY_0DTE_TICKER:
         today_str = now_ct().date().isoformat()
         if today_str in expirations:
-            variants = (
-                ("SPY_0DTE_5M", 5, intraday_5m, enabled.get("spy_0dte_5m")),
-                ("SPY_0DTE_1M", 1, intraday_1m, enabled.get("spy_0dte_1m")),
-            )
+            # Both retired 2026-08-17 - see SPY_0DTE_PLAY_TYPES. The loop
+            # is kept (rather than deleted) so restoring a variant means
+            # re-adding one line here, and so the surrounding expiration /
+            # chain plumbing stays exercised.
+            variants: tuple[tuple[str, int, list, bool], ...] = ()
             for play_type, bar_minutes, intraday_history, variant_enabled in variants:
                 if not variant_enabled:
                     stats["spy_0dte_market_context"][play_type] = _unavailable_context(
@@ -7381,7 +7394,10 @@ def scan_candidates(
     # SPY_KEY_LEVELS did above.
     if TICKER == SPY_EXPANSION_TICKER:
         today_str = now_ct().date().isoformat()
-        if enabled.get("spy_expansion_level"):
+        # SPY_EXPANSION_LEVEL retired 2026-08-17: -0.0044 ATR/trade
+        # (t=-0.34) over 818 trades, positive in only 2 of 4 eras. The gate
+        # is left in place so the config flag remains the single switch.
+        if False and enabled.get("spy_expansion_level"):
             stats["spy_expansion_context"] = _run_spy_expansion_variant(
                 spot_price=spot_price,
                 today_str=today_str,
