@@ -297,8 +297,14 @@ def summarize(trades: Sequence[Trade]) -> dict[str, Any]:
     # is well inside the noise. Without this, a tiny positive number
     # reads as a finding when it is a coin flip.
     stdev = statistics.stdev(pnl) if len(pnl) > 1 else 0.0
-    stderr = stdev / math.sqrt(len(pnl)) if stdev else 0.0
-    t_stat = expectancy / stderr if stderr else 0.0
+    # Near-zero variance means every trade in the group had effectively
+    # identical P/L - true of any group sliced BY its exit, since every
+    # stop loses exactly the stop distance. The residual spread is then
+    # float noise around 1e-16, and dividing by it produced t-statistics
+    # like 2.3e15. There is no meaningful t-test on a constant.
+    degenerate = stdev < 1e-9
+    stderr = 0.0 if degenerate else stdev / math.sqrt(len(pnl))
+    t_stat = (expectancy / stderr) if stderr > 0 else 0.0
 
     return {
         "trades": len(trades),
@@ -307,7 +313,7 @@ def summarize(trades: Sequence[Trade]) -> dict[str, Any]:
         "stdev_atr": stdev,
         "stderr_atr": stderr,
         "t_stat": t_stat,
-        "significant_95": abs(t_stat) >= 1.96,
+        "significant_95": (not degenerate) and abs(t_stat) >= 1.96,
         "total_atr": sum(pnl),
         "profit_factor": (gross_win / gross_loss) if gross_loss > 0 else math.inf,
         "avg_win_atr": statistics.fmean(wins) if wins else 0.0,

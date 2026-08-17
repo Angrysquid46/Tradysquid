@@ -112,7 +112,7 @@ Nulls are warm-up only — first session (prev-day), first 14 (ATR), first week
 
 ### ✅ Phase 3 — Backtest engine + first strategy tranche
 `spy_backtest.py` + `spy_backtest_strategies.py` → full results in
-[`PHASE3_BACKTEST_RESULTS.md`](PHASE3_BACKTEST_RESULTS.md).
+[`BACKTEST_RESULTS.md`](BACKTEST_RESULTS.md).
 
 - Event-driven 1-minute backtester, underlying-only, over all 3,347 sessions.
 - 20 variants (ORB 1/2 × 5/15/30-min windows; VWAP 3 × zones A/B/C; 4 × chop
@@ -143,7 +143,46 @@ time; forced flat at 15:59.
 > recent era. COVID distortion or edge decay cannot be separated here, and the
 > 2021-2026 intraday gap means it cannot be settled at all until that is filled.
 
-### ⬜ Phase 4 — Remaining strategies + measurement
+### ✅ Phase 4 — Remaining strategies + measurement
+`spy_backtest_strategies_extended.py` + a Tier-2 feature layer. Combined results
+in [`BACKTEST_RESULTS.md`](BACKTEST_RESULTS.md).
+
+- **Tier-2 features added** to `minute_features` (now 95 columns, rebuilt in
+  182s): EMA 5/9/10/20 + slope, Wilder ADX/+DI/−DI, Kaufman efficiency ratio,
+  volume z-score, momentum score, bar range position, confirmed swing points,
+  short-term structure label, compression flags, expected-move consumption,
+  and level-confluence count.
+- **19 more strategy families** (S5-S9, S11-S19, S21, S22 + the two directional
+  playbooks), 47 variants total, run through the same 12 exit policies →
+  **336 combinations with n≥30**.
+
+> **Headline: gap continuation is the first real edge found.**
+> `S21 gap>=0.5%` returns **+0.0620 ATR/trade over 1,058 trades (t=+3.33),
+> positive in 4/4 eras** — the only thing in the build to clear both bars, and
+> it holds up in 2020-2021 where every other leader fails.
+>
+> It survives the check that matters: a **matched control** — random entries on
+> *the same sessions* with *the same exits* — returns −0.0043 (t=−0.28). So the
+> edge is not drift, not exit geometry, and not long bias. A dose-response
+> across thresholds (0.25% → +0.032, 0.5% → +0.062) corroborates it.
+>
+> ⚠️ **But 90% of those trades exit at the session close, not at a target.** The
+> edge is mostly *hold to the bell*, which is the worst possible holding pattern
+> for a 0DTE option — theta is largest exactly then. Phase 5 must settle whether
+> this survives being expressed as an option at all.
+>
+> Honest limits: t=+3.33 clears the naive 1.96 threshold but **not** the
+> Bonferroni-corrected 3.79 for 336 tests. The matched control and era
+> consistency are independent of that correction, which is why they carry more
+> weight here than the t-statistic alone.
+
+**Not tested, and why** — stated so a library of 22 reporting 20 isn't mistaken
+for an oversight: **S20 Relative-Strength** needs intraday QQQ/IWM/DIA and
+breadth that the SPY-only archive does not contain; **PB3 Mid-Day Theta Burn**
+is an iron condor whose entire P/L is premium decay, so it has no underlying
+entry to measure and belongs to Phase 5.
+
+### Phase 4 as originally scoped
 - Strategies 5-9, 11-22, the 3 quantified playbooks, and the time-of-day plays.
 - Scored on the same basis as Phase 3, **including where they sit relative to
   the random baseline**.

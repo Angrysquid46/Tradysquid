@@ -1,4 +1,4 @@
-"""Phase 3 sweep runner - measures every strategy/parameter/exit combination.
+"""Backtest sweep runner - measures every strategy/parameter/exit combination.
 
 The point of this phase is measurement, not selection. Nothing is culled
 here: every variant is reported with its full statistics, including the
@@ -29,12 +29,23 @@ from typing import Any
 import spy_backtest as bt
 import spy_backtest_strategies as strat
 
-REPORT_PATH = Path("docs/PHASE3_BACKTEST_RESULTS.md")
-JSON_PATH = Path("state/phase3_backtest.json")
+REPORT_PATH = Path("docs/BACKTEST_RESULTS.md")
+JSON_PATH = Path("state/backtest_results.json")
+ERA_LABELS = [name for name, _, _ in bt.ERAS]
 
 
-def run_sweep(conn, *, limit: int | None = None, progress_every: int = 250) -> dict[str, Any]:
+def all_variants(*, extended: bool = True) -> dict[str, dict[str, Any]]:
+    """Phase 3's tranche plus Phase 4's, in one registry."""
     variants = strat.build_variants()
+    if extended:
+        import spy_backtest_strategies_extended as ext
+        variants.update(ext.build_extended_variants())
+    return variants
+
+
+def run_sweep(conn, *, limit: int | None = None, progress_every: int = 250,
+              extended: bool = True) -> dict[str, Any]:
+    variants = all_variants(extended=extended)
     policies = strat.build_exit_policies()
 
     pnl: dict[tuple[str, str, str], list[float]] = defaultdict(list)
@@ -92,9 +103,63 @@ def _stub(pnl_atr: float) -> bt.Trade:
     )
 
 
-def run_detail(conn, best: dict[str, Any], *, limit: int | None = None) -> dict[str, Any]:
+def matched_control(conn, best: dict[str, Any], keys: list[str], *,
+                    limit: int | None = None, extended: bool = True) -> dict[str, Any]:
+    """Random entries on the SAME sessions, under the SAME exit policy.
+
+    The headline table compares each variant's best exit policy against
+    the baseline's best exit policy, which is not a fair fight - the two
+    differ in exit geometry and in which days they traded at all. This
+    re-runs the control on exactly the days a variant fired, with exactly
+    that variant's exits, so the only remaining difference is the entry
+    rule. It is the test that separates a real signal from inherited
+    drift, and it is worth running for anything that looks significant."""
+    variants = all_variants(extended=extended)
+    policies = {p.label(): p for p in strat.build_exit_policies()}
+    control_fn = strat.random_baseline(2)
+
+    targets = {}
+    for key in keys:
+        family, variant = key.split(" | ", 1)
+        targets[key] = (variants[family][variant], policies[best[key]["policy"]])
+
+    strategy_trades: dict[str, list[bt.Trade]] = defaultdict(list)
+    control_trades: dict[str, list[bt.Trade]] = defaultdict(list)
+
+    for session, rows in bt.load_sessions(conn, limit=limit):
+        control_signals = None
+        for key, (signal_fn, policy) in targets.items():
+            signals = signal_fn(rows)
+            if not signals:
+                continue
+            strategy_trades[key].extend(
+                bt.simulate(rows, signals, policy, strategy=key, variant="strategy")
+            )
+            if control_signals is None:
+                control_signals = control_fn(rows)
+            if control_signals:
+                control_trades[key].extend(
+                    bt.simulate(rows, control_signals, policy, strategy=key, variant="control")
+                )
+
+    out: dict[str, Any] = {}
+    for key in keys:
+        strategy_stats = bt.summarize(strategy_trades[key])
+        control_stats = bt.summarize(control_trades[key])
+        out[key] = {
+            "policy": best[key]["policy"],
+            "strategy": strategy_stats,
+            "control": control_stats,
+            "difference_atr": strategy_stats.get("expectancy_atr", 0.0)
+                              - control_stats.get("expectancy_atr", 0.0),
+        }
+    return out
+
+
+def run_detail(conn, best: dict[str, Any], *, limit: int | None = None,
+               extended: bool = True) -> dict[str, Any]:
     """Second pass: full trades for the winning policy of each variant."""
-    variants = strat.build_variants()
+    variants = all_variants(extended=extended)
     policies = {p.label(): p for p in strat.build_exit_policies()}
     wanted: dict[tuple[str, str], Any] = {}
     for key, info in best.items():
@@ -139,13 +204,46 @@ def _fmt(stats: dict[str, Any]) -> str:
     )
 
 
-def write_report(result: dict[str, Any], detail: dict[str, Any]) -> str:
+def _control_section(control: dict[str, Any], n_tests: int) -> list[str]:
+    if not control:
+        return []
+    lines = ["\n## Matched control: same days, same exits, random entries\n"]
+    lines.append(
+        "The headline table pits each variant's best exit policy against the "
+        "baseline's best exit policy, which is not a fair fight. Here the control "
+        "trades **the same sessions** with **the same exits**, so the entry rule is "
+        "the only thing that differs. This is what separates a real signal from "
+        "inherited drift and favourable exit geometry.\n"
+    )
+    lines.append("| Variant | Exit | Strategy exp | t | Random exp (same days) | t | Difference |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for key, info in sorted(control.items(), key=lambda kv: -kv[1]["difference_atr"]):
+        s, c = info["strategy"], info["control"]
+        lines.append(
+            f"| {key} | `{info['policy']}` | {s.get('expectancy_atr', 0):+.4f} "
+            f"({s.get('trades', 0):,}) | {s.get('t_stat', 0):+.2f} | "
+            f"{c.get('expectancy_atr', 0):+.4f} ({c.get('trades', 0):,}) | "
+            f"{c.get('t_stat', 0):+.2f} | **{info['difference_atr']:+.4f}** |"
+        )
+    lines.append(
+        f"\n**Multiple-comparison note.** {n_tests} combinations with n>=30 were "
+        f"scored. A Bonferroni correction at that width requires |t| >= 3.79 rather "
+        f"than 1.96, so a raw t of ~3.3 clears the naive threshold but not the "
+        f"corrected one. The matched control above and per-era consistency are "
+        f"independent of that correction, which is why they carry more weight here "
+        f"than the t-statistic alone.\n"
+    )
+    return lines
+
+
+def write_report(result: dict[str, Any], detail: dict[str, Any],
+                 control: dict[str, Any] | None = None) -> str:
     baseline_key = next((k for k in result["best"] if k.startswith("BASELINE")), None)
     baseline = result["best"].get(baseline_key, {}) if baseline_key else {}
     base_exp = baseline.get("expectancy_atr")
 
     lines: list[str] = []
-    lines.append("# Phase 3 - Underlying Backtest Results\n")
+    lines.append("# Underlying Backtest Results (Phases 3-4)\n")
     lines.append(
         f"Generated from `minute_features` over **{result['sessions']:,} sessions** "
         f"(2008-01-22 - 2021-05-06). Every number below is the **SPY underlying**, "
@@ -156,6 +254,23 @@ def write_report(result: dict[str, Any], detail: dict[str, Any]) -> str:
         "**Nothing is eliminated.** Every variant tested is listed, including the "
         "losing ones. Where a strategy does not work, that is the finding.\n"
     )
+
+    try:
+        import spy_backtest_strategies_extended as ext
+    except ImportError:
+        ext = None
+    if ext is not None:
+        lines.append("\n### Not tested, and why\n")
+        lines.append(
+            "Stated up front so a list of 22 strategies with 20 results does not "
+            "look like an oversight.\n"
+        )
+        for name, reason in ext.UNTESTABLE.items():
+            lines.append(f"- **{name}** — {reason}.")
+        lines.append("\n### Tested, but read with a caveat\n")
+        for name, reason in ext.CAVEATS.items():
+            lines.append(f"- **{name}** — {reason}.")
+        lines.append("")
 
     if base_exp is not None:
         lines.append(
@@ -215,6 +330,36 @@ def write_report(result: dict[str, Any], detail: dict[str, Any]) -> str:
         f"- **{len(stable)} of {len(result['best']) - 1} variants** are profitable in "
         f"every one of the four eras.\n"
     )
+    if real:
+        lines.append("\nThe variants that clear both bars:\n")
+        for key in sorted(real, key=lambda k: -result["best"][k]["expectancy_atr"]):
+            info = result["best"][key]
+            eras = detail.get(key, {}).get("by_era", {})
+            positive = sum(1 for s in eras.values() if s.get("trades") and s["expectancy_atr"] > 0)
+            total = sum(1 for s in eras.values() if s.get("trades"))
+            lines.append(
+                f"- **{key}** — {info['expectancy_atr']:+.4f} ATR/trade over "
+                f"{info['trades']:,} trades (t={info['t_stat']:+.2f}), positive in "
+                f"{positive}/{total} eras."
+            )
+
+            # How the edge is actually realised decides whether it can
+            # survive being expressed as a 0DTE option at all.
+            reasons = detail.get(key, {}).get("by_exit_reason", {})
+            total_trades = sum(s.get("trades", 0) for s in reasons.values())
+            held = reasons.get("session_close", {}).get("trades", 0)
+            if total_trades and held / total_trades > 0.5:
+                lines.append(
+                    f"  - ⚠️ **{100 * held / total_trades:.0f}% of these exit at the "
+                    f"session close**, not at a target. The edge is therefore mostly "
+                    f"*hold to the bell*, which is the single worst holding pattern "
+                    f"for a 0DTE option — theta is largest exactly then. A positive "
+                    f"underlying edge realised this way may not survive being "
+                    f"expressed as a 0DTE call or put at all. Phase 5 has to settle "
+                    f"that before this becomes a strategy."
+                )
+        lines.append("")
+
     if not real:
         lines.append(
             "\nNo variant in this tranche produced an edge that is distinguishable "
@@ -236,13 +381,31 @@ def write_report(result: dict[str, Any], detail: dict[str, Any]) -> str:
         "push every one of them further toward zero, not away from it. Treat the "
         "column as an upper bound.\n"
     )
-    lines.append(
-        "\nOne pattern is consistent enough to call out: **every leading variant "
-        "loses money in the 2020-2021 era**, the most recent one available. Whether "
-        "that is COVID-era distortion or genuine edge decay cannot be settled here - "
-        "and the 2021-2026 gap in the intraday data means it cannot be settled at "
-        "all until that gap is filled.\n"
-    )
+    # Computed, not asserted - this claim was hardcoded from an earlier
+    # tranche and went stale the moment a variant held up in all eras.
+    recent_era = ERA_LABELS[-1]
+    ranked_keys = sorted(
+        (k for k in result["best"] if not k.startswith("BASELINE")),
+        key=lambda k: -result["best"][k]["expectancy_atr"],
+    )[:8]
+    losing_recent = [
+        k for k in ranked_keys
+        if (detail.get(k, {}).get("by_era", {}).get(recent_era, {}).get("expectancy_atr", 0) or 0) < 0
+    ]
+    if losing_recent:
+        lines.append(
+            f"\nOne pattern worth calling out: **{len(losing_recent)} of the top "
+            f"{len(ranked_keys)} variants lose money in {recent_era}**, the "
+            f"most recent era available"
+            + (f" — the exceptions being {', '.join(k for k in ranked_keys if k not in losing_recent)}"
+               if len(losing_recent) < len(ranked_keys) else "")
+            + ". Whether that is COVID-era distortion or genuine edge decay cannot be "
+            "settled here, and the 2021-2026 gap in the intraday data means it cannot "
+            "be settled at all until that gap is filled.\n"
+        )
+
+    n_tests = len([c for c in result["combos"] if c.get("trades", 0) >= 30])
+    lines.extend(_control_section(control or {}, n_tests))
 
     lines.append("\n## Walk-forward: does it hold across eras?\n")
     lines.append(
@@ -309,14 +472,32 @@ def main() -> None:
         result = run_sweep(conn, limit=args.limit, progress_every=0 if args.quiet else 250)
         print(f"sweep: {result['sessions']:,} sessions in {result['elapsed_s']:.1f}s", flush=True)
         detail = run_detail(conn, result["best"], limit=args.limit)
+
+        # Run the matched control on anything that looked significant,
+        # plus the next few by expectancy - a strong-looking result that
+        # collapses against its own control is the finding that matters.
+        ranked = sorted(
+            (k for k in result["best"] if not k.startswith("BASELINE")),
+            key=lambda k: -result["best"][k]["expectancy_atr"],
+        )
+        interesting = [k for k in ranked if result["best"][k].get("significant_95")]
+        for key in ranked:
+            if len(interesting) >= 8:
+                break
+            if key not in interesting:
+                interesting.append(key)
+        control = matched_control(conn, result["best"], interesting, limit=args.limit)
     finally:
         conn.close()
 
     JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-    JSON_PATH.write_text(json.dumps({"summary": result, "detail": detail}, indent=2, default=str),
-                         encoding="utf-8")
+    JSON_PATH.write_text(
+        json.dumps({"summary": result, "detail": detail, "control": control},
+                   indent=2, default=str),
+        encoding="utf-8",
+    )
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(write_report(result, detail), encoding="utf-8")
+    REPORT_PATH.write_text(write_report(result, detail, control), encoding="utf-8")
     print(f"wrote {REPORT_PATH} and {JSON_PATH}")
 
 

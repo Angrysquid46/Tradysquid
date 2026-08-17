@@ -34,6 +34,7 @@ is describing.
 
 from __future__ import annotations
 
+import math
 import re
 import sqlite3
 import statistics
@@ -92,6 +93,17 @@ CREATE TABLE IF NOT EXISTS minute_features (
 
     regime TEXT, day_type TEXT,
 
+    -- Tier 2: added for Phase 4's remaining strategies and playbooks.
+    ema_5 REAL, ema_9 REAL, ema_10 REAL, ema_20 REAL,
+    ema_9_slope REAL, above_ema_5_10 INTEGER,
+    adx_14 REAL, plus_di_14 REAL, minus_di_14 REAL,
+    efficiency_ratio REAL, volume_zscore_20 REAL, momentum_score REAL,
+    range_position REAL, bar_range_atr REAL,
+    swing_high REAL, swing_low REAL, structure TEXT,
+    compression INTEGER, compression_ratio REAL,
+    expected_move_pct REAL, move_consumed_pct REAL,
+    confluence_count INTEGER, nearest_level_atr REAL,
+
     PRIMARY KEY (ticker, bar_time)
 );
 CREATE INDEX IF NOT EXISTS minute_features_session
@@ -115,7 +127,25 @@ FEATURE_COLUMNS: tuple[str, ...] = (
       for f in ("high", "low", "mid", "width", "width_atr", "state", "break_minute")],
     "trend_5m", "trend_15m", "trend_60m", "trend_daily",
     "alignment", "alignment_score", "regime", "day_type",
+    "ema_5", "ema_9", "ema_10", "ema_20", "ema_9_slope", "above_ema_5_10",
+    "adx_14", "plus_di_14", "minus_di_14",
+    "efficiency_ratio", "volume_zscore_20", "momentum_score",
+    "range_position", "bar_range_atr",
+    "swing_high", "swing_low", "structure",
+    "compression", "compression_ratio",
+    "expected_move_pct", "move_consumed_pct",
+    "confluence_count", "nearest_level_atr",
 )
+
+# Tier-2 parameters. Each is the value the spec names, or the standard
+# period where the spec names an indicator without one.
+EMA_PERIODS = (5, 9, 10, 20)
+EFFICIENCY_LOOKBACK = 10          # Kaufman ratio window
+VOLUME_ZSCORE_LOOKBACK = 20       # playbook 1's Volume_ZScore_20
+MOMENTUM_LOOKBACK = 10
+SWING_STRENGTH = 3                # bars either side of a confirmed pivot
+COMPRESSION_LOOKBACK = 30
+CONFLUENCE_ATR = 0.15             # how close counts as "at" a level
 
 
 def _declared_columns() -> list[tuple[str, str]]:
@@ -123,11 +153,26 @@ def _declared_columns() -> list[tuple[str, str]]:
     match = re.search(r"CREATE TABLE IF NOT EXISTS minute_features \((.*?)\n\);", SCHEMA, re.S)
     if not match:
         return []
+    # Strip `--` comments first. Without this a comment line inside the
+    # table body is parsed as a column and emitted as `ADD COLUMN --`,
+    # which fails with a bare "incomplete input".
+    body = re.sub(r"--[^\n]*", "", match.group(1))
+
     columns: list[tuple[str, str]] = []
-    for part in match.group(1).split(","):
+    for part in body.split(","):
         tokens = part.strip().split()
-        if len(tokens) >= 2 and tokens[0].upper() not in {"PRIMARY", "FOREIGN", "UNIQUE", "CHECK"}:
-            columns.append((tokens[0], tokens[1]))
+        if len(tokens) < 2:
+            continue
+        name, column_type = tokens[0], tokens[1]
+        if name.upper() in {"PRIMARY", "FOREIGN", "UNIQUE", "CHECK"}:
+            continue
+        # Only ever interpolate a plain identifier and a known type -
+        # these go straight into an ALTER TABLE string.
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            continue
+        if column_type.upper() not in {"REAL", "INTEGER", "TEXT", "BLOB", "NUMERIC"}:
+            continue
+        columns.append((name, column_type))
     return columns
 
 
@@ -175,6 +220,10 @@ class SessionContext:
     atr_14: float | None = None
     daily_trend: str = "UNKNOWN"
     rvol_baseline: dict[int, float] = field(default_factory=dict)
+    # Prior-session implied vol (annualised, decimal) when available.
+    # Strategy 17 needs an expected move; leaving it None makes the
+    # ATR fallback visible rather than passing it off as an IV figure.
+    implied_vol: float | None = None
 
     @property
     def prev_day_mid(self) -> float | None:
@@ -364,6 +413,119 @@ def classify_day_type(
 # The single forward pass
 # ---------------------------------------------------------------------------
 
+class _Ema:
+    """Streaming EMA. Seeds on the first value rather than waiting for a
+    full period, so early-session bars have a usable (if young) value -
+    the alternative is a blind first 20 minutes every day."""
+
+    def __init__(self, period: int) -> None:
+        self.multiplier = 2.0 / (period + 1)
+        self.value: float | None = None
+
+    def update(self, price: float) -> float:
+        self.value = price if self.value is None else (
+            (price - self.value) * self.multiplier + self.value
+        )
+        return self.value
+
+
+class _Adx:
+    """Wilder's ADX/+DI/-DI on intraday bars.
+
+    Wilder smoothing, not a simple average - the two differ enough that a
+    threshold tuned on one misfires on the other, and playbook 2 gates
+    entirely on ADX > 25."""
+
+    def __init__(self, period: int = 14) -> None:
+        self.period = period
+        self.prev_high: float | None = None
+        self.prev_low: float | None = None
+        self.prev_close: float | None = None
+        self.tr = self.plus = self.minus = 0.0
+        self.count = 0
+        self.adx: float | None = None
+
+    def update(self, high: float, low: float, close: float) -> tuple[float | None, float | None, float | None]:
+        if self.prev_close is None:
+            self.prev_high, self.prev_low, self.prev_close = high, low, close
+            return None, None, None
+
+        up_move = high - self.prev_high
+        down_move = self.prev_low - low
+        plus_dm = up_move if (up_move > down_move and up_move > 0) else 0.0
+        minus_dm = down_move if (down_move > up_move and down_move > 0) else 0.0
+        true_range = max(high - low, abs(high - self.prev_close), abs(low - self.prev_close))
+        self.prev_high, self.prev_low, self.prev_close = high, low, close
+
+        if self.count < self.period:
+            self.tr += true_range
+            self.plus += plus_dm
+            self.minus += minus_dm
+            self.count += 1
+            if self.count < self.period:
+                return None, None, None
+        else:
+            self.tr = self.tr - (self.tr / self.period) + true_range
+            self.plus = self.plus - (self.plus / self.period) + plus_dm
+            self.minus = self.minus - (self.minus / self.period) + minus_dm
+
+        if self.tr <= 0:
+            return self.adx, None, None
+        plus_di = 100.0 * self.plus / self.tr
+        minus_di = 100.0 * self.minus / self.tr
+        total = plus_di + minus_di
+        dx = (100.0 * abs(plus_di - minus_di) / total) if total > 0 else 0.0
+        self.adx = dx if self.adx is None else ((self.adx * (self.period - 1)) + dx) / self.period
+        return self.adx, plus_di, minus_di
+
+
+def _efficiency_ratio(closes: Sequence[float]) -> float | None:
+    """Kaufman efficiency: net travel over total travel.
+
+    1.0 is a straight line, near 0 is chop. Playbook 2 uses this as its
+    stated main safety filter."""
+    if len(closes) < 2:
+        return None
+    net = abs(closes[-1] - closes[0])
+    path = sum(abs(b - a) for a, b in zip(closes, closes[1:]))
+    return (net / path) if path > 0 else 0.0
+
+
+def _swing_points(
+    highs: Sequence[float], lows: Sequence[float], strength: int
+) -> tuple[float | None, float | None]:
+    """Most recent CONFIRMED swing high/low.
+
+    A pivot is only confirmed once `strength` bars have printed after it,
+    so this deliberately lags. That lag is the honest part: live, a swing
+    high is not knowable at the moment it forms."""
+    swing_high = swing_low = None
+    for i in range(strength, len(highs) - strength):
+        window_h = highs[i - strength: i + strength + 1]
+        window_l = lows[i - strength: i + strength + 1]
+        if highs[i] == max(window_h):
+            swing_high = highs[i]
+        if lows[i] == min(window_l):
+            swing_low = lows[i]
+    return swing_high, swing_low
+
+
+def _structure(closes: Sequence[float], highs: Sequence[float], lows: Sequence[float]) -> str:
+    """Short-term structure label for strategies 12/13/15."""
+    if len(closes) < 6:
+        return "UNKNOWN"
+    recent_high, recent_low = max(highs[-3:]), min(lows[-3:])
+    prior_high, prior_low = max(highs[-6:-3]), min(lows[-6:-3])
+    higher_high, higher_low = recent_high > prior_high, recent_low > prior_low
+    if higher_high and higher_low:
+        return "UPTREND"
+    if not higher_high and not higher_low:
+        return "DOWNTREND"
+    if higher_low and not higher_high:
+        return "HIGHER_LOW"
+    return "LOWER_HIGH"
+
+
 def compute_session_features(
     bars: Sequence[dict[str, Any]], context: SessionContext
 ) -> list[dict[str, Any]]:
@@ -391,6 +553,26 @@ def compute_session_features(
     trends = {
         5: _TimeframeTrend(5), 15: _TimeframeTrend(15), 60: _TimeframeTrend(60),
     }
+
+    # Tier-2 running state. All streaming/rolling so the pass stays O(N).
+    emas = {period: _Ema(period) for period in EMA_PERIODS}
+    ema9_history: deque[float] = deque(maxlen=VWAP_SLOPE_LOOKBACK + 1)
+    adx_calc = _Adx(ATR_PERIOD)
+    close_history: deque[float] = deque(maxlen=max(EFFICIENCY_LOOKBACK, MOMENTUM_LOOKBACK) + 1)
+    volume_history: deque[float] = deque(maxlen=VOLUME_ZSCORE_LOOKBACK)
+    high_history: deque[float] = deque(maxlen=COMPRESSION_LOOKBACK)
+    low_history: deque[float] = deque(maxlen=COMPRESSION_LOOKBACK)
+    range_history: deque[float] = deque(maxlen=COMPRESSION_LOOKBACK)
+
+    # Expected daily move from the prior close and a 1-day scaling of
+    # annualised IV. Strategy 17 asks what fraction of the expected move
+    # has been consumed; without an IV feed this falls back to ATR, which
+    # is a different quantity and is labelled as such by being NULL.
+    expected_move_pct: float | None = None
+    if context.implied_vol and context.prev_day_close:
+        expected_move_pct = 100.0 * context.implied_vol / math.sqrt(252.0)
+    elif context.atr_14 and context.prev_day_close:
+        expected_move_pct = 100.0 * context.atr_14 / context.prev_day_close
 
     out: list[dict[str, Any]] = []
     atr = context.atr_14
@@ -479,9 +661,92 @@ def compute_session_features(
             vwap_crosses=vwap_crosses, or30_state=opening_ranges[30]["state"],
         )
 
+        # ---- Tier 2 ----------------------------------------------------
+        ema_values = {period: calc.update(close) for period, calc in emas.items()}
+        ema9_history.append(ema_values[9])
+        ema_9_slope = (
+            (ema9_history[-1] - ema9_history[0]) / len(ema9_history)
+            if len(ema9_history) > 1 else None
+        )
+        above_ema_5_10 = int(close > ema_values[5] and close > ema_values[10])
+
+        adx_value, plus_di, minus_di = adx_calc.update(high, low, close)
+
+        close_history.append(close)
+        volume_history.append(volume)
+        high_history.append(high)
+        low_history.append(low)
+        range_history.append(high - low)
+
+        efficiency = _efficiency_ratio(list(close_history)[-EFFICIENCY_LOOKBACK:])
+
+        volume_zscore = None
+        if len(volume_history) >= 5:
+            mean_volume = statistics.fmean(volume_history)
+            sd_volume = statistics.stdev(volume_history) if len(volume_history) > 1 else 0.0
+            if sd_volume > 0:
+                volume_zscore = (volume - mean_volume) / sd_volume
+
+        momentum_score = None
+        if len(close_history) > MOMENTUM_LOOKBACK and atr:
+            momentum_score = 100.0 * (close - close_history[-MOMENTUM_LOOKBACK - 1]) / atr
+
+        # Where the bar closed inside its own range - playbook 1 reads
+        # this on the 1-minute chart to detect closing at the floor.
+        bar_span = high - low
+        range_position = ((close - low) / bar_span) if bar_span > 0 else 0.5
+        bar_range_atr = (bar_span / atr) if atr else None
+
+        swing_high, swing_low = _swing_points(
+            list(high_history), list(low_history), SWING_STRENGTH
+        )
+        structure = _structure(list(close_history), list(high_history), list(low_history))
+
+        # Compression: current bar range against the recent average.
+        compression_ratio = None
+        compression = 0
+        if len(range_history) >= COMPRESSION_LOOKBACK:
+            average_range = statistics.fmean(range_history)
+            if average_range > 0:
+                compression_ratio = bar_span / average_range
+                compression = int(compression_ratio < 0.6)
+
+        move_consumed_pct = None
+        if expected_move_pct and context.prev_day_close and session_range is not None:
+            expected_points = expected_move_pct / 100.0 * context.prev_day_close
+            if expected_points > 0:
+                move_consumed_pct = 100.0 * session_range / expected_points
+
+        # Strategy 16: how many independent references sit at this price.
+        confluence_count = 0
+        nearest_level_atr = None
+        if atr:
+            levels = [
+                context.prev_day_high, context.prev_day_low, context.prev_day_close,
+                context.prev_week_high, context.prev_week_low,
+                premarket_high, premarket_low, vwap,
+                opening_ranges[15]["high"], opening_ranges[15]["low"],
+            ]
+            distances = [abs(close - level) / atr for level in levels if level is not None]
+            confluence_count = sum(1 for d in distances if d <= CONFLUENCE_ATR)
+            nearest_level_atr = min(distances) if distances else None
+
         row: dict[str, Any] = {
             "bar_time": bar_time,
             "session_date": bar_time[:10],
+            "ema_5": ema_values[5], "ema_9": ema_values[9],
+            "ema_10": ema_values[10], "ema_20": ema_values[20],
+            "ema_9_slope": ema_9_slope, "above_ema_5_10": above_ema_5_10,
+            "adx_14": adx_value, "plus_di_14": plus_di, "minus_di_14": minus_di,
+            "efficiency_ratio": efficiency, "volume_zscore_20": volume_zscore,
+            "momentum_score": momentum_score,
+            "range_position": range_position, "bar_range_atr": bar_range_atr,
+            "swing_high": swing_high, "swing_low": swing_low, "structure": structure,
+            "compression": compression, "compression_ratio": compression_ratio,
+            "expected_move_pct": expected_move_pct,
+            "move_consumed_pct": move_consumed_pct,
+            "confluence_count": confluence_count,
+            "nearest_level_atr": nearest_level_atr,
             "minutes_since_open": since_open,
             "minutes_until_close": SESSION_CLOSE_MINUTES - minutes,
             "time_bucket": _time_bucket(since_open),

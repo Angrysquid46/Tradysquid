@@ -1,8 +1,21 @@
-# Phase 3 - Underlying Backtest Results
+# Underlying Backtest Results (Phases 3-4)
 
 Generated from `minute_features` over **3,347 sessions** (2008-01-22 - 2021-05-06). Every number below is the **SPY underlying**, measured in ATR multiples. There is no option P/L here - that is Phase 5, and mixing the two would misreport what was actually tested.
 
 **Nothing is eliminated.** Every variant tested is listed, including the losing ones. Where a strategy does not work, that is the finding.
+
+
+### Not tested, and why
+
+Stated up front so a list of 22 strategies with 20 results does not look like an oversight.
+
+- **S20 Relative-Strength Breakout** — needs intraday QQQ/IWM/DIA and breadth to confirm against; the archive is SPY-only, so there is nothing to compare SPY with.
+- **PB3 Mid-Day Theta Burn** — an iron condor - all of its P/L is option premium decay, with no underlying entry to measure. Belongs to Phase 5.
+
+### Tested, but read with a caveat
+
+- **S5 Premarket breakout** — only 226 of 3,347 sessions carry premarket bars (6.8%), nearly all in 2020 - not comparable to the other samples.
+- **S17 Expected-move breakout** — expected move is derived from daily ATR, not a 0DTE implied move; no intraday IV exists in this archive.
 
 ## The comparison that matters
 
@@ -17,38 +30,71 @@ Exit labels read `t<target>/s<stop>/m<time-stop>`, all in ATR multiples. `t` is 
 
 | Strategy | Variant | Best exit | Trades | Win% | Expectancy (ATR) | t | Sig? | PF | MaxDD | vs random |
 |---|---|---|---|---|---|---|---|---|---|---|
+| S21 Gap continuation | gap>=0.5% | `t2.0/s1.0/m-` | 1,058 | 56.8% | +0.0620 | +3.33 | **yes** | 1.30 | -7.4 | +0.0622 |
+| S21 Gap continuation | gap>=1.0% | `t2.0/s1.0/m-` | 388 | 58.8% | +0.0532 | +1.65 | no | 1.23 | -8.8 | +0.0534 |
+| S21 Gap continuation | gap>=0.25% | `t1.5/s1.0/m-` | 1,956 | 52.9% | +0.0315 | +2.44 | **yes** | 1.15 | -11.7 | +0.0317 |
 | S10 VWAP reversion | 0.5atr | `t1.0/s0.75/m-` | 420 | 52.1% | +0.0284 | +1.37 | no | 1.19 | -10.7 | +0.0286 |
 | S2 ORB immediate | or5 | `t1.0/s0.75/m-` | 1,565 | 50.5% | +0.0251 | +1.75 | no | 1.11 | -11.9 | +0.0254 |
 | S4 VWAP reclaim | chop<=2 | `t2.0/s1.0/m-` | 2,164 | 49.8% | +0.0217 | +1.78 | no | 1.11 | -17.1 | +0.0219 |
 | S1 ORB retest | or5 | `t2.0/s1.0/m-` | 3,198 | 50.0% | +0.0172 | +1.74 | no | 1.08 | -25.5 | +0.0175 |
 | S3 VWAP pullback | zoneC 0.50atr | `t2.0/s1.0/m-` | 3,489 | 51.0% | +0.0143 | +1.53 | no | 1.07 | -28.0 | +0.0146 |
 | S3 VWAP pullback | zoneB 0.25atr | `t2.0/s1.0/m-` | 3,392 | 51.1% | +0.0142 | +1.49 | no | 1.07 | -21.8 | +0.0144 |
+| S18 Time-of-day | FINAL_30 | `t2.0/s1.0/m30` | 857 | 49.9% | +0.0098 | +1.36 | no | 1.14 | -2.8 | +0.0100 |
 | S4 VWAP reclaim | chop<=5 | `t1.0/s0.75/m-` | 3,249 | 48.9% | +0.0087 | +0.96 | no | 1.04 | -28.7 | +0.0089 |
 | S4 VWAP reclaim | chop<=3 | `t1.0/s0.75/m-` | 2,761 | 48.5% | +0.0084 | +0.85 | no | 1.04 | -20.2 | +0.0086 |
 | S4 VWAP reclaim | chop<=4 | `t1.0/s0.75/m-` | 3,105 | 48.7% | +0.0072 | +0.78 | no | 1.04 | -28.6 | +0.0074 |
 | S3 VWAP pullback | zoneA vwap | `t1.0/s0.75/m-` | 2,374 | 51.4% | +0.0066 | +0.70 | no | 1.04 | -23.9 | +0.0068 |
 | S2 ORB immediate | or30 | `t2.0/s1.0/m-` | 1,472 | 48.0% | +0.0027 | +0.17 | no | 1.01 | -19.8 | +0.0029 |
+| S18 Time-of-day | OPEN | `t1.0/s0.75/m15` | 5,476 | 49.3% | +0.0023 | +1.05 | no | 1.04 | -9.1 | +0.0025 |
 | S2 ORB immediate | or15 | `t0.5/s0.5/m-` | 1,506 | 50.7% | +0.0011 | +0.10 | no | 1.01 | -10.1 | +0.0013 |
+| S22 Gap fade | gap>=0.25% | `t0.5/s0.5/m30` | 12,561 | 48.4% | +0.0006 | +0.40 | no | 1.01 | -20.0 | +0.0009 |
 | S1 ORB retest | or15 | `t1.0/s0.75/m-` | 3,324 | 48.5% | +0.0001 | +0.01 | no | 1.00 | -34.2 | +0.0003 |
 | S1 ORB retest | or30 | `t2.0/s1.0/m-` | 3,267 | 48.3% | -0.0001 | -0.01 | no | 1.00 | -34.3 | +0.0002 |
 | BASELINE random | 2/session | `t0.5/s0.5/m30` | 6,133 | 48.8% | -0.0002 | -0.12 | no | 1.00 | -13.1 |  |
+| S18 Time-of-day | MIDMORNING | `t1.0/s0.75/m30` | 6,638 | 46.4% | -0.0008 | -0.38 | no | 0.99 | -18.0 | -0.0006 |
+| S18 Time-of-day | MIDDAY | `t0.5/s0.5/m30` | 12,795 | 46.5% | -0.0012 | -1.02 | no | 0.98 | -23.1 | -0.0010 |
+| S22 Gap fade | gap>=0.5% | `t2.0/s1.0/m15` | 10,814 | 48.1% | -0.0013 | -1.10 | no | 0.97 | -19.3 | -0.0011 |
+| S18 Time-of-day | MORNING | `t0.5/s0.5/m15` | 6,196 | 47.0% | -0.0016 | -0.91 | no | 0.97 | -20.0 | -0.0014 |
+| S18 Time-of-day | AFTERNOON | `t0.5/s0.5/m30` | 12,849 | 47.2% | -0.0018 | -1.28 | no | 0.97 | -38.4 | -0.0015 |
+| S22 Gap fade | gap>=1.0% | `t1.0/s0.75/m15` | 3,878 | 48.1% | -0.0026 | -1.16 | no | 0.95 | -17.0 | -0.0024 |
 | S10 VWAP reversion | 0.75atr | `t1.0/s0.75/m15` | 88 | 50.0% | -0.0245 | -1.44 | no | 0.67 | -3.2 | -0.0242 |
 
 ## Verdict
 
-- **0 of 15 variants** clear statistical significance at 95% AND beat the random baseline.
-- **0 of 15 variants** are profitable in every one of the four eras.
+- **2 of 27 variants** clear statistical significance at 95% AND beat the random baseline.
+- **3 of 27 variants** are profitable in every one of the four eras.
 
 
-No variant in this tranche produced an edge that is distinguishable from noise on this data. The best expectancies are a few hundredths of an ATR per trade with t-statistics well under 2 - which is what a coin flip looks like when you measure it a few thousand times.
+The variants that clear both bars:
 
-That is a real result, not a failure of the test. It says the ORB and VWAP families **as literally specified** do not, on their own, predict the SPY underlying over 2008-2021. The spec's own instinct was right: it repeatedly insists the filters matter as much as the pattern. This tranche deliberately ran them with light filtering to establish that baseline first, so later phases can show whether a filter adds anything real rather than merely appearing to.
+- **S21 Gap continuation | gap>=0.5%** — +0.0620 ATR/trade over 1,058 trades (t=+3.33), positive in 4/4 eras.
+  - ⚠️ **90% of these exit at the session close**, not at a target. The edge is therefore mostly *hold to the bell*, which is the single worst holding pattern for a 0DTE option — theta is largest exactly then. A positive underlying edge realised this way may not survive being expressed as a 0DTE call or put at all. Phase 5 has to settle that before this becomes a strategy.
+- **S21 Gap continuation | gap>=0.25%** — +0.0315 ATR/trade over 1,956 trades (t=+2.44), positive in 4/4 eras.
+  - ⚠️ **89% of these exit at the session close**, not at a target. The edge is therefore mostly *hold to the bell*, which is the single worst holding pattern for a 0DTE option — theta is largest exactly then. A positive underlying edge realised this way may not survive being expressed as a 0DTE call or put at all. Phase 5 has to settle that before this becomes a strategy.
 
 
 The t-statistics above are also **optimistic by construction**: each row is the best of 12 exit policies for that variant, so the selection has already had 12 chances to find a favourable draw. Correcting for that search would push every one of them further toward zero, not away from it. Treat the column as an upper bound.
 
 
-One pattern is consistent enough to call out: **every leading variant loses money in the 2020-2021 era**, the most recent one available. Whether that is COVID-era distortion or genuine edge decay cannot be settled here - and the 2021-2026 gap in the intraday data means it cannot be settled at all until that gap is filled.
+One pattern worth calling out: **5 of the top 8 variants lose money in 2020-2021 covid era**, the most recent era available — the exceptions being S21 Gap continuation | gap>=0.5%, S21 Gap continuation | gap>=1.0%, S21 Gap continuation | gap>=0.25%. Whether that is COVID-era distortion or genuine edge decay cannot be settled here, and the 2021-2026 gap in the intraday data means it cannot be settled at all until that gap is filled.
+
+
+## Matched control: same days, same exits, random entries
+
+The headline table pits each variant's best exit policy against the baseline's best exit policy, which is not a fair fight. Here the control trades **the same sessions** with **the same exits**, so the entry rule is the only thing that differs. This is what separates a real signal from inherited drift and favourable exit geometry.
+
+| Variant | Exit | Strategy exp | t | Random exp (same days) | t | Difference |
+|---|---|---|---|---|---|---|
+| S21 Gap continuation | gap>=0.5% | `t2.0/s1.0/m-` | +0.0620 (1,058) | +3.33 | -0.0043 (1,044) | -0.28 | **+0.0663** |
+| S21 Gap continuation | gap>=1.0% | `t2.0/s1.0/m-` | +0.0532 (388) | +1.65 | -0.0116 (380) | -0.40 | **+0.0648** |
+| S2 ORB immediate | or5 | `t1.0/s0.75/m-` | +0.0251 (1,565) | +1.75 | -0.0281 (1,685) | -2.47 | **+0.0532** |
+| S21 Gap continuation | gap>=0.25% | `t1.5/s1.0/m-` | +0.0315 (1,956) | +2.44 | -0.0145 (1,916) | -1.35 | **+0.0460** |
+| S10 VWAP reversion | 0.5atr | `t1.0/s0.75/m-` | +0.0284 (420) | +1.37 | -0.0096 (475) | -0.34 | **+0.0380** |
+| S4 VWAP reclaim | chop<=2 | `t2.0/s1.0/m-` | +0.0217 (2,164) | +1.78 | -0.0058 (2,206) | -0.59 | **+0.0275** |
+| S1 ORB retest | or5 | `t2.0/s1.0/m-` | +0.0172 (3,198) | +1.74 | -0.0090 (3,236) | -1.11 | **+0.0262** |
+| S3 VWAP pullback | zoneC 0.50atr | `t2.0/s1.0/m-` | +0.0143 (3,489) | +1.53 | -0.0101 (3,392) | -1.28 | **+0.0245** |
+
+**Multiple-comparison note.** 336 combinations with n>=30 were scored. A Bonferroni correction at that width requires |t| >= 3.79 rather than 1.96, so a raw t of ~3.3 clears the naive threshold but not the corrected one. The matched control above and per-era consistency are independent of that correction, which is why they carry more weight here than the t-statistic alone.
 
 
 ## Walk-forward: does it hold across eras?
@@ -110,6 +156,60 @@ A strategy that only works in one era is an artefact of that era. These are the 
 | 2016-2019 late bull | 24 | 45.8% | -0.0529 | 0.45 | -1.3 |
 | 2020-2021 covid era | 7 | 42.9% | -0.0309 | 0.43 | -0.3 |
 
+### S18 Time-of-day | AFTERNOON
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 3,822 | 48.1% | -0.0013 | 0.98 | -15.6 |
+| 2012-2015 low-vol bull | 3,829 | 47.2% | -0.0026 | 0.95 | -12.0 |
+| 2016-2019 late bull | 3,871 | 45.9% | -0.0033 | 0.94 | -14.6 |
+| 2020-2021 covid era | 1,327 | 48.2% | +0.0042 | 1.08 | -3.9 |
+
+### S18 Time-of-day | FINAL_30
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 246 | 49.2% | +0.0041 | 1.05 | -2.8 |
+| 2012-2015 low-vol bull | 220 | 49.5% | +0.0090 | 1.14 | -1.5 |
+| 2016-2019 late bull | 295 | 47.5% | +0.0035 | 1.05 | -2.8 |
+| 2020-2021 covid era | 96 | 60.4% | +0.0456 | 1.77 | -1.1 |
+
+### S18 Time-of-day | MIDDAY
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 3,779 | 46.9% | +0.0015 | 1.03 | -6.3 |
+| 2012-2015 low-vol bull | 3,829 | 46.4% | -0.0020 | 0.96 | -10.5 |
+| 2016-2019 late bull | 3,859 | 46.3% | -0.0017 | 0.97 | -16.6 |
+| 2020-2021 covid era | 1,328 | 45.7% | -0.0052 | 0.90 | -9.2 |
+
+### S18 Time-of-day | MIDMORNING
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 1,962 | 47.3% | +0.0004 | 1.01 | -6.1 |
+| 2012-2015 low-vol bull | 2,002 | 45.2% | -0.0053 | 0.92 | -12.7 |
+| 2016-2019 late bull | 2,000 | 45.8% | +0.0001 | 1.00 | -8.9 |
+| 2020-2021 covid era | 674 | 48.8% | +0.0064 | 1.11 | -5.1 |
+
+### S18 Time-of-day | MORNING
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 1,832 | 47.2% | -0.0054 | 0.90 | -11.4 |
+| 2012-2015 low-vol bull | 1,881 | 46.7% | -0.0034 | 0.94 | -8.6 |
+| 2016-2019 late bull | 1,851 | 47.7% | +0.0026 | 1.05 | -5.2 |
+| 2020-2021 covid era | 632 | 45.9% | +0.0023 | 1.05 | -4.8 |
+
+### S18 Time-of-day | OPEN
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 1,649 | 50.9% | +0.0038 | 1.06 | -4.8 |
+| 2012-2015 low-vol bull | 1,645 | 48.6% | +0.0004 | 1.01 | -9.1 |
+| 2016-2019 late bull | 1,641 | 49.4% | +0.0052 | 1.10 | -3.0 |
+| 2020-2021 covid era | 541 | 46.6% | -0.0057 | 0.91 | -5.0 |
+
 ### S2 ORB immediate | or15
 
 | Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
@@ -136,6 +236,60 @@ A strategy that only works in one era is an artefact of that era. These are the 
 | 2012-2015 low-vol bull | 468 | 52.4% | +0.0505 | 1.24 | -8.4 |
 | 2016-2019 late bull | 467 | 49.9% | +0.0221 | 1.10 | -7.0 |
 | 2020-2021 covid era | 158 | 46.2% | -0.0226 | 0.91 | -9.2 |
+
+### S21 Gap continuation | gap>=0.25%
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 715 | 53.1% | +0.0350 | 1.17 | -11.7 |
+| 2012-2015 low-vol bull | 488 | 54.5% | +0.0489 | 1.25 | -9.4 |
+| 2016-2019 late bull | 504 | 49.8% | +0.0099 | 1.04 | -9.0 |
+| 2020-2021 covid era | 249 | 55.0% | +0.0311 | 1.16 | -6.7 |
+
+### S21 Gap continuation | gap>=0.5%
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 462 | 56.5% | +0.0641 | 1.32 | -7.4 |
+| 2012-2015 low-vol bull | 217 | 58.5% | +0.0639 | 1.30 | -5.3 |
+| 2016-2019 late bull | 220 | 53.2% | +0.0357 | 1.16 | -7.3 |
+| 2020-2021 covid era | 159 | 60.4% | +0.0894 | 1.49 | -6.2 |
+
+### S21 Gap continuation | gap>=1.0%
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 217 | 61.8% | +0.0786 | 1.36 | -8.8 |
+| 2012-2015 low-vol bull | 52 | 55.8% | +0.0205 | 1.08 | -6.0 |
+| 2016-2019 late bull | 48 | 41.7% | -0.0964 | 0.70 | -7.0 |
+| 2020-2021 covid era | 71 | 63.4% | +0.1005 | 1.58 | -3.4 |
+
+### S22 Gap fade | gap>=0.25%
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 4,674 | 48.7% | -0.0027 | 0.96 | -20.0 |
+| 2012-2015 low-vol bull | 3,163 | 47.7% | +0.0014 | 1.02 | -6.2 |
+| 2016-2019 late bull | 3,176 | 48.6% | +0.0043 | 1.07 | -7.3 |
+| 2020-2021 covid era | 1,548 | 48.2% | +0.0014 | 1.02 | -7.4 |
+
+### S22 Gap fade | gap>=0.5%
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 4,851 | 48.3% | -0.0009 | 0.98 | -10.7 |
+| 2012-2015 low-vol bull | 2,268 | 47.9% | +0.0002 | 1.00 | -5.2 |
+| 2016-2019 late bull | 2,228 | 48.7% | -0.0003 | 0.99 | -6.0 |
+| 2020-2021 covid era | 1,467 | 46.7% | -0.0067 | 0.87 | -10.6 |
+
+### S22 Gap fade | gap>=1.0%
+
+| Era | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| 2008-2011 crisis+recovery | 2,171 | 48.6% | -0.0025 | 0.95 | -11.2 |
+| 2012-2015 low-vol bull | 587 | 50.4% | +0.0020 | 1.04 | -3.5 |
+| 2016-2019 late bull | 482 | 48.8% | +0.0076 | 1.14 | -2.0 |
+| 2020-2021 covid era | 638 | 43.7% | -0.0147 | 0.75 | -11.4 |
 
 ### S3 VWAP pullback | zoneA vwap
 
@@ -434,6 +588,224 @@ A strategy that only works in one era is an artefact of that era. These are the 
 |---|---|---|---|---|---|
 | time_stop | 88 | 50.0% | -0.0245 | 0.67 | -3.2 |
 
+### S18 Time-of-day | AFTERNOON
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 669 | 45.4% | -0.0025 | 0.92 | -4.0 |
+| EXPANSION | 586 | 47.4% | -0.0102 | 0.86 | -9.4 |
+| HIGH_VOLATILITY_REVERSAL | 987 | 49.7% | +0.0001 | 1.00 | -5.3 |
+| HIGH_VOLATILITY_TREND | 42 | 47.6% | -0.0017 | 0.99 | -2.5 |
+| RANGE | 9,281 | 47.0% | -0.0010 | 0.98 | -24.9 |
+| STRONG_BEAR_TREND | 89 | 53.9% | +0.0136 | 1.20 | -1.2 |
+| STRONG_BULL_TREND | 281 | 43.4% | -0.0111 | 0.75 | -3.9 |
+| WEAK_BEAR_TREND | 349 | 49.9% | -0.0028 | 0.96 | -4.1 |
+| WEAK_BULL_TREND | 565 | 46.4% | -0.0045 | 0.91 | -4.3 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| AFTERNOON | 12,792 | 47.2% | -0.0019 | 0.97 | -40.7 |
+| FINAL_30 | 57 | 49.1% | +0.0380 | 1.68 | -0.7 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| SHORT | 12,849 | 47.2% | -0.0018 | 0.97 | -38.4 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| stop | 164 | 0.0% | -0.5000 | 0.00 | -82.0 |
+| stop_and_target_same_bar | 1 | 0.0% | -0.5000 | 0.00 | -0.5 |
+| target | 215 | 100.0% | +0.5000 | inf | 0.0 |
+| time_stop | 12,469 | 46.9% | -0.0038 | 0.93 | -53.4 |
+
+### S18 Time-of-day | FINAL_30
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 27 | 63.0% | +0.0341 | 2.29 | -0.2 |
+| EXPANSION | 47 | 44.7% | +0.0058 | 1.07 | -1.4 |
+| HIGH_VOLATILITY_REVERSAL | 93 | 58.1% | +0.0684 | 1.63 | -1.4 |
+| HIGH_VOLATILITY_TREND | 4 | 25.0% | -0.1594 | 0.06 | -0.6 |
+| RANGE | 607 | 49.6% | +0.0040 | 1.06 | -4.8 |
+| STRONG_BEAR_TREND | 3 | 66.7% | +0.1394 | 7.56 | -0.1 |
+| STRONG_BULL_TREND | 11 | 36.4% | -0.0687 | 0.33 | -0.8 |
+| WEAK_BEAR_TREND | 38 | 44.7% | -0.0002 | 1.00 | -1.4 |
+| WEAK_BULL_TREND | 27 | 40.7% | -0.0232 | 0.66 | -0.8 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| FINAL_30 | 857 | 49.9% | +0.0098 | 1.14 | -2.8 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| SHORT | 857 | 49.9% | +0.0098 | 1.14 | -2.8 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| session_close | 857 | 49.9% | +0.0098 | 1.14 | -2.8 |
+
+### S18 Time-of-day | MIDDAY
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 1,362 | 45.4% | -0.0032 | 0.90 | -4.9 |
+| EXPANSION | 325 | 48.3% | +0.0033 | 1.05 | -1.8 |
+| HIGH_VOLATILITY_REVERSAL | 565 | 48.7% | -0.0058 | 0.94 | -6.4 |
+| HIGH_VOLATILITY_TREND | 45 | 46.7% | -0.0061 | 0.94 | -2.0 |
+| RANGE | 8,584 | 46.5% | -0.0005 | 0.99 | -14.5 |
+| STRONG_BEAR_TREND | 132 | 53.0% | +0.0229 | 1.46 | -1.1 |
+| STRONG_BULL_TREND | 415 | 49.6% | -0.0006 | 0.98 | -1.8 |
+| WEAK_BEAR_TREND | 569 | 44.1% | -0.0004 | 0.99 | -3.5 |
+| WEAK_BULL_TREND | 798 | 44.4% | -0.0086 | 0.83 | -7.3 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| AFTERNOON | 74 | 55.4% | +0.0400 | 2.13 | -0.7 |
+| MIDDAY | 12,721 | 46.4% | -0.0015 | 0.97 | -25.3 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| SHORT | 12,795 | 46.5% | -0.0012 | 0.98 | -23.1 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| session_close | 22 | 59.1% | +0.0364 | 2.20 | -0.4 |
+| stop | 77 | 0.0% | -0.5000 | 0.00 | -38.5 |
+| target | 138 | 100.0% | +0.5000 | inf | 0.0 |
+| time_stop | 12,558 | 46.1% | -0.0037 | 0.92 | -52.7 |
+
+### S18 Time-of-day | MIDMORNING
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 1,579 | 44.9% | -0.0001 | 1.00 | -7.5 |
+| EXPANSION | 175 | 49.1% | -0.0001 | 1.00 | -3.7 |
+| HIGH_VOLATILITY_REVERSAL | 74 | 52.7% | +0.0067 | 1.05 | -3.2 |
+| RANGE | 2,785 | 46.6% | -0.0013 | 0.98 | -13.8 |
+| WEAK_BEAR_TREND | 813 | 44.6% | -0.0002 | 1.00 | -7.5 |
+| WEAK_BULL_TREND | 1,212 | 48.2% | -0.0016 | 0.97 | -6.7 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| MIDDAY | 11 | 27.3% | -0.0897 | 0.12 | -1.1 |
+| MIDMORNING | 6,627 | 46.4% | -0.0007 | 0.99 | -17.3 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| SHORT | 6,638 | 46.4% | -0.0008 | 0.99 | -18.0 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| stop | 9 | 0.0% | -0.7500 | 0.00 | -6.7 |
+| target | 14 | 100.0% | +1.0000 | inf | 0.0 |
+| time_stop | 6,615 | 46.3% | -0.0019 | 0.97 | -21.9 |
+
+### S18 Time-of-day | MORNING
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 2,678 | 45.7% | -0.0043 | 0.90 | -15.4 |
+| EXPANSION | 56 | 57.1% | +0.0430 | 1.50 | -1.1 |
+| HIGH_VOLATILITY_REVERSAL | 10 | 50.0% | -0.0011 | 0.99 | -0.5 |
+| RANGE | 1,118 | 48.5% | +0.0036 | 1.06 | -3.7 |
+| WEAK_BEAR_TREND | 1,078 | 46.2% | -0.0066 | 0.90 | -11.9 |
+| WEAK_BULL_TREND | 1,256 | 48.9% | +0.0018 | 1.04 | -4.0 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| MIDMORNING | 99 | 40.4% | -0.0109 | 0.81 | -2.1 |
+| MORNING | 6,097 | 47.2% | -0.0015 | 0.97 | -19.1 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| SHORT | 6,196 | 47.0% | -0.0016 | 0.97 | -20.0 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| stop | 26 | 0.0% | -0.5000 | 0.00 | -13.0 |
+| target | 54 | 100.0% | +0.5000 | inf | 0.0 |
+| time_stop | 6,116 | 46.8% | -0.0039 | 0.92 | -27.9 |
+
+### S18 Time-of-day | OPEN
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 1,533 | 47.7% | -0.0024 | 0.96 | -5.8 |
+| EXPANSION | 7 | 42.9% | -0.0323 | 0.85 | -1.4 |
+| RANGE | 520 | 47.7% | -0.0031 | 0.96 | -4.7 |
+| UNCERTAIN | 3,024 | 50.3% | +0.0050 | 1.09 | -4.5 |
+| WEAK_BEAR_TREND | 221 | 51.1% | +0.0133 | 1.20 | -2.7 |
+| WEAK_BULL_TREND | 171 | 49.7% | -0.0010 | 0.98 | -2.0 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| MORNING | 190 | 46.8% | +0.0017 | 1.03 | -1.7 |
+| OPEN | 5,286 | 49.4% | +0.0023 | 1.04 | -8.4 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| SHORT | 5,476 | 49.3% | +0.0023 | 1.04 | -9.1 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| stop | 7 | 0.0% | -0.7500 | 0.00 | -5.2 |
+| target | 5 | 100.0% | +1.0000 | inf | 0.0 |
+| time_stop | 5,464 | 49.4% | +0.0023 | 1.04 | -9.3 |
+
 ### S2 ORB immediate | or15
 
 
@@ -547,6 +919,269 @@ A strategy that only works in one era is an artefact of that era. These are the 
 | session_close | 1,083 | 56.2% | +0.0760 | 1.66 | -3.5 |
 | stop | 300 | 0.0% | -0.7500 | 0.00 | -225.0 |
 | target | 182 | 100.0% | +1.0000 | inf | 0.0 |
+
+### S21 Gap continuation | gap>=0.25%
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 270 | 52.6% | -0.0058 | 0.97 | -9.9 |
+| EXPANSION | 33 | 48.5% | -0.1031 | 0.61 | -5.8 |
+| HIGH_VOLATILITY_REVERSAL | 47 | 68.1% | +0.2922 | 2.56 | -2.1 |
+| HIGH_VOLATILITY_TREND | 5 | 60.0% | +0.0387 | 1.25 | -0.6 |
+| RANGE | 68 | 45.6% | +0.0204 | 1.10 | -4.0 |
+| STRONG_BEAR_TREND | 5 | 80.0% | +0.2071 | 53.81 | -0.0 |
+| STRONG_BULL_TREND | 1 | 0.0% | -0.1413 | 0.00 | -0.1 |
+| UNCERTAIN | 1,349 | 52.9% | +0.0288 | 1.13 | -14.2 |
+| WEAK_BEAR_TREND | 95 | 56.8% | +0.1167 | 1.62 | -4.0 |
+| WEAK_BULL_TREND | 83 | 47.0% | +0.0053 | 1.03 | -5.1 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| AFTERNOON | 68 | 61.8% | +0.1735 | 2.25 | -2.6 |
+| FINAL_30 | 2 | 50.0% | +0.0369 | 1.22 | -0.3 |
+| MIDDAY | 45 | 55.6% | +0.1205 | 1.89 | -1.1 |
+| MIDMORNING | 65 | 46.2% | -0.0615 | 0.73 | -6.0 |
+| MORNING | 153 | 48.4% | +0.0284 | 1.15 | -8.4 |
+| OPEN | 1,623 | 53.1% | +0.0271 | 1.13 | -10.3 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| LONG | 1,090 | 57.2% | +0.0395 | 1.21 | -6.2 |
+| SHORT | 866 | 47.5% | +0.0214 | 1.09 | -11.3 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| session_close | 1,739 | 56.7% | +0.0912 | 1.67 | -5.1 |
+| stop | 169 | 0.0% | -1.0000 | 0.00 | -169.0 |
+| target | 48 | 100.0% | +1.5000 | inf | 0.0 |
+
+### S21 Gap continuation | gap>=0.5%
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 147 | 58.5% | +0.0195 | 1.10 | -6.8 |
+| EXPANSION | 15 | 40.0% | -0.2842 | 0.33 | -4.5 |
+| HIGH_VOLATILITY_REVERSAL | 22 | 59.1% | +0.1837 | 1.80 | -3.0 |
+| HIGH_VOLATILITY_TREND | 1 | 0.0% | -0.3647 | 0.00 | -0.4 |
+| RANGE | 41 | 51.2% | +0.0417 | 1.21 | -2.6 |
+| STRONG_BEAR_TREND | 4 | 75.0% | +0.1921 | 40.20 | -0.0 |
+| STRONG_BULL_TREND | 1 | 0.0% | -0.1413 | 0.00 | -0.1 |
+| UNCERTAIN | 735 | 56.7% | +0.0628 | 1.30 | -7.0 |
+| WEAK_BEAR_TREND | 57 | 61.4% | +0.1642 | 1.97 | -2.3 |
+| WEAK_BULL_TREND | 35 | 57.1% | +0.1556 | 1.81 | -2.2 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| AFTERNOON | 32 | 65.6% | +0.1858 | 2.53 | -3.0 |
+| MIDDAY | 22 | 45.5% | -0.0150 | 0.92 | -1.6 |
+| MIDMORNING | 37 | 54.1% | +0.0105 | 1.05 | -4.0 |
+| MORNING | 81 | 54.3% | +0.0550 | 1.28 | -5.2 |
+| OPEN | 886 | 57.1% | +0.0622 | 1.30 | -7.5 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| LONG | 576 | 61.5% | +0.0729 | 1.42 | -6.0 |
+| SHORT | 482 | 51.2% | +0.0489 | 1.20 | -8.7 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| session_close | 948 | 62.3% | +0.1535 | 2.23 | -3.6 |
+| stop | 100 | 0.0% | -1.0000 | 0.00 | -100.0 |
+| target | 10 | 100.0% | +2.0000 | inf | 0.0 |
+
+### S21 Gap continuation | gap>=1.0%
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 55 | 65.5% | +0.0291 | 1.15 | -2.6 |
+| EXPANSION | 11 | 27.3% | -0.4077 | 0.26 | -4.7 |
+| HIGH_VOLATILITY_REVERSAL | 14 | 64.3% | +0.1412 | 1.65 | -3.0 |
+| HIGH_VOLATILITY_TREND | 1 | 0.0% | -0.3647 | 0.00 | -0.4 |
+| RANGE | 17 | 47.1% | -0.0259 | 0.89 | -1.6 |
+| STRONG_BEAR_TREND | 1 | 100.0% | +0.2043 | inf | 0.0 |
+| UNCERTAIN | 256 | 59.0% | +0.0690 | 1.31 | -7.2 |
+| WEAK_BEAR_TREND | 28 | 64.3% | +0.1891 | 2.15 | -2.3 |
+| WEAK_BULL_TREND | 5 | 40.0% | -0.1629 | 0.61 | -2.1 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| AFTERNOON | 18 | 72.2% | +0.2221 | 2.59 | -2.0 |
+| MIDDAY | 9 | 33.3% | -0.0706 | 0.60 | -1.0 |
+| MIDMORNING | 15 | 40.0% | -0.2610 | 0.41 | -4.1 |
+| MORNING | 31 | 51.6% | -0.0237 | 0.90 | -4.5 |
+| OPEN | 315 | 60.3% | +0.0696 | 1.32 | -7.2 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| LONG | 190 | 63.7% | +0.0680 | 1.34 | -4.2 |
+| SHORT | 198 | 54.0% | +0.0390 | 1.15 | -7.1 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| session_close | 333 | 67.0% | +0.1821 | 2.60 | -3.4 |
+| stop | 50 | 0.0% | -1.0000 | 0.00 | -50.0 |
+| target | 5 | 100.0% | +2.0000 | inf | 0.0 |
+
+### S22 Gap fade | gap>=0.25%
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 1,639 | 48.4% | -0.0007 | 0.99 | -4.6 |
+| EXPANSION | 402 | 47.8% | -0.0129 | 0.86 | -10.1 |
+| HIGH_VOLATILITY_REVERSAL | 550 | 48.4% | -0.0076 | 0.93 | -7.2 |
+| HIGH_VOLATILITY_TREND | 25 | 52.0% | +0.0158 | 1.16 | -1.5 |
+| RANGE | 6,514 | 48.3% | +0.0033 | 1.06 | -11.8 |
+| STRONG_BEAR_TREND | 95 | 47.4% | -0.0249 | 0.66 | -2.9 |
+| STRONG_BULL_TREND | 109 | 48.6% | +0.0148 | 1.41 | -0.7 |
+| UNCERTAIN | 1,487 | 49.0% | -0.0086 | 0.91 | -22.1 |
+| WEAK_BEAR_TREND | 905 | 45.5% | +0.0024 | 1.03 | -4.0 |
+| WEAK_BULL_TREND | 835 | 51.3% | +0.0097 | 1.17 | -5.5 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| AFTERNOON | 3,701 | 47.8% | -0.0005 | 0.99 | -14.9 |
+| FINAL_30 | 60 | 50.0% | +0.0262 | 1.50 | -0.7 |
+| MIDDAY | 3,667 | 47.1% | +0.0018 | 1.04 | -6.4 |
+| MIDMORNING | 2,126 | 50.0% | +0.0061 | 1.10 | -4.1 |
+| MORNING | 1,291 | 50.4% | +0.0013 | 1.02 | -8.6 |
+| OPEN | 1,716 | 48.8% | -0.0077 | 0.92 | -22.8 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| LONG | 6,134 | 50.5% | +0.0011 | 1.02 | -9.1 |
+| SHORT | 6,427 | 46.3% | +0.0002 | 1.00 | -13.8 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| session_close | 31 | 45.2% | -0.0141 | 0.75 | -0.8 |
+| stop | 226 | 0.0% | -0.5000 | 0.00 | -113.0 |
+| target | 243 | 100.0% | +0.5000 | inf | 0.0 |
+| time_stop | 12,061 | 48.2% | -0.0000 | 1.00 | -18.7 |
+
+### S22 Gap fade | gap>=0.5%
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 1,587 | 48.8% | -0.0012 | 0.97 | -5.0 |
+| EXPANSION | 334 | 54.2% | +0.0080 | 1.16 | -1.7 |
+| HIGH_VOLATILITY_REVERSAL | 631 | 49.8% | -0.0009 | 0.99 | -3.9 |
+| HIGH_VOLATILITY_TREND | 19 | 52.6% | +0.0199 | 1.28 | -0.9 |
+| RANGE | 5,766 | 47.3% | -0.0012 | 0.97 | -8.6 |
+| STRONG_BEAR_TREND | 90 | 52.2% | +0.0107 | 1.29 | -0.7 |
+| STRONG_BULL_TREND | 71 | 42.3% | -0.0160 | 0.61 | -1.3 |
+| UNCERTAIN | 824 | 49.9% | -0.0055 | 0.92 | -9.2 |
+| WEAK_BEAR_TREND | 821 | 47.7% | -0.0008 | 0.98 | -3.5 |
+| WEAK_BULL_TREND | 671 | 46.6% | -0.0041 | 0.92 | -3.7 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| AFTERNOON | 3,238 | 48.2% | -0.0005 | 0.99 | -7.9 |
+| FINAL_30 | 54 | 51.9% | +0.0000 | 1.00 | -0.8 |
+| MIDDAY | 3,327 | 46.2% | -0.0016 | 0.96 | -8.4 |
+| MIDMORNING | 1,841 | 48.7% | +0.0011 | 1.02 | -6.0 |
+| MORNING | 989 | 47.9% | -0.0069 | 0.88 | -8.4 |
+| OPEN | 1,365 | 51.6% | -0.0020 | 0.97 | -8.3 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| LONG | 5,463 | 48.9% | -0.0019 | 0.96 | -11.8 |
+| SHORT | 5,351 | 47.2% | -0.0008 | 0.98 | -11.4 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| session_close | 2 | 0.0% | -0.0742 | 0.00 | -0.1 |
+| stop | 6 | 0.0% | -1.0000 | 0.00 | -6.0 |
+| target | 1 | 100.0% | +2.0000 | inf | 0.0 |
+| time_stop | 10,805 | 48.1% | -0.0010 | 0.98 | -15.2 |
+
+### S22 Gap fade | gap>=1.0%
+
+
+**Regime**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| COMPRESSION | 562 | 47.3% | -0.0076 | 0.81 | -4.8 |
+| EXPANSION | 122 | 53.3% | +0.0096 | 1.13 | -2.2 |
+| HIGH_VOLATILITY_REVERSAL | 358 | 48.9% | +0.0020 | 1.03 | -3.2 |
+| HIGH_VOLATILITY_TREND | 15 | 53.3% | +0.0455 | 1.83 | -0.6 |
+| RANGE | 2,015 | 48.1% | -0.0013 | 0.97 | -6.2 |
+| STRONG_BEAR_TREND | 29 | 51.7% | -0.0092 | 0.78 | -0.5 |
+| STRONG_BULL_TREND | 12 | 50.0% | -0.0389 | 0.46 | -0.7 |
+| UNCERTAIN | 300 | 48.7% | -0.0052 | 0.92 | -3.3 |
+| WEAK_BEAR_TREND | 270 | 48.5% | -0.0004 | 0.99 | -4.9 |
+| WEAK_BULL_TREND | 195 | 42.6% | -0.0168 | 0.72 | -3.3 |
+
+**Time of day**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| AFTERNOON | 1,151 | 47.3% | -0.0043 | 0.92 | -7.8 |
+| FINAL_30 | 13 | 46.2% | -0.0258 | 0.57 | -0.4 |
+| MIDDAY | 1,196 | 48.4% | +0.0005 | 1.01 | -4.6 |
+| MIDMORNING | 652 | 48.6% | +0.0016 | 1.03 | -2.2 |
+| MORNING | 363 | 44.6% | -0.0164 | 0.75 | -7.9 |
+| OPEN | 503 | 51.1% | -0.0011 | 0.98 | -3.6 |
+
+**Direction**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| LONG | 2,124 | 49.0% | -0.0030 | 0.94 | -8.9 |
+| SHORT | 1,754 | 47.0% | -0.0021 | 0.95 | -8.9 |
+
+**Exit reason**
+
+| | Trades | Win% | Expectancy (ATR) | PF | MaxDD |
+|---|---|---|---|---|---|
+| stop | 7 | 0.0% | -0.7500 | 0.00 | -5.2 |
+| target | 4 | 100.0% | +1.0000 | inf | 0.0 |
+| time_stop | 3,867 | 48.1% | -0.0023 | 0.95 | -14.1 |
 
 ### S3 VWAP pullback | zoneA vwap
 
@@ -842,7 +1477,7 @@ A strategy that only works in one era is an artefact of that era. These are the 
 
 ## Every combination tested
 
-216 (variant x exit-policy) pairs. Listed in full so the size of the search is visible - a best result picked from a large grid deserves more scepticism than one picked from a small grid.
+360 (variant x exit-policy) pairs. Listed in full so the size of the search is visible - a best result picked from a large grid deserves more scepticism than one picked from a small grid.
 
 | Strategy | Variant | Exit | Trades | Win% | Expectancy (ATR) | PF |
 |---|---|---|---|---|---|---|
@@ -942,6 +1577,78 @@ A strategy that only works in one era is an artefact of that era. These are the 
 | S10 VWAP reversion | 1.25atr | `t1.0/s0.75/m30` | 2 | 50.0% | +0.2056 | 12.17 |
 | S10 VWAP reversion | 1.25atr | `t1.5/s1.0/m30` | 2 | 50.0% | +0.2056 | 12.17 |
 | S10 VWAP reversion | 1.25atr | `t2.0/s1.0/m30` | 2 | 50.0% | +0.2056 | 12.17 |
+| S18 Time-of-day | AFTERNOON | `t0.5/s0.5/m30` | 12,849 | 47.2% | -0.0018 | 0.97 |
+| S18 Time-of-day | AFTERNOON | `t0.5/s0.5/m15` | 20,842 | 46.5% | -0.0018 | 0.95 |
+| S18 Time-of-day | AFTERNOON | `t1.5/s1.0/m15` | 20,788 | 46.5% | -0.0021 | 0.95 |
+| S18 Time-of-day | AFTERNOON | `t1.0/s0.75/m15` | 20,795 | 46.5% | -0.0021 | 0.95 |
+| S18 Time-of-day | AFTERNOON | `t2.0/s1.0/m15` | 20,788 | 46.5% | -0.0022 | 0.94 |
+| S18 Time-of-day | AFTERNOON | `t2.0/s1.0/m30` | 12,759 | 47.1% | -0.0026 | 0.95 |
+| S18 Time-of-day | AFTERNOON | `t1.5/s1.0/m30` | 12,760 | 47.1% | -0.0028 | 0.95 |
+| S18 Time-of-day | AFTERNOON | `t1.0/s0.75/m30` | 12,768 | 47.1% | -0.0028 | 0.95 |
+| S18 Time-of-day | AFTERNOON | `t0.5/s0.5/m-` | 4,003 | 45.9% | -0.0068 | 0.95 |
+| S18 Time-of-day | AFTERNOON | `t1.5/s1.0/m-` | 3,347 | 45.3% | -0.0079 | 0.94 |
+| S18 Time-of-day | AFTERNOON | `t2.0/s1.0/m-` | 3,346 | 45.3% | -0.0080 | 0.94 |
+| S18 Time-of-day | AFTERNOON | `t1.0/s0.75/m-` | 3,449 | 45.3% | -0.0087 | 0.94 |
+| S18 Time-of-day | FINAL_30 | `t2.0/s1.0/m30` | 857 | 49.9% | +0.0098 | 1.14 |
+| S18 Time-of-day | FINAL_30 | `t2.0/s1.0/m-` | 857 | 49.9% | +0.0098 | 1.14 |
+| S18 Time-of-day | FINAL_30 | `t1.5/s1.0/m30` | 857 | 49.9% | +0.0097 | 1.14 |
+| S18 Time-of-day | FINAL_30 | `t1.5/s1.0/m-` | 857 | 49.9% | +0.0097 | 1.14 |
+| S18 Time-of-day | FINAL_30 | `t1.0/s0.75/m30` | 857 | 49.8% | +0.0079 | 1.11 |
+| S18 Time-of-day | FINAL_30 | `t1.0/s0.75/m-` | 857 | 49.8% | +0.0079 | 1.11 |
+| S18 Time-of-day | FINAL_30 | `t0.5/s0.5/m30` | 857 | 49.7% | +0.0050 | 1.07 |
+| S18 Time-of-day | FINAL_30 | `t0.5/s0.5/m-` | 857 | 49.7% | +0.0050 | 1.07 |
+| S18 Time-of-day | FINAL_30 | `t0.5/s0.5/m15` | 857 | 47.3% | +0.0000 | 1.00 |
+| S18 Time-of-day | FINAL_30 | `t1.5/s1.0/m15` | 857 | 47.1% | -0.0010 | 0.98 |
+| S18 Time-of-day | FINAL_30 | `t2.0/s1.0/m15` | 857 | 47.1% | -0.0010 | 0.98 |
+| S18 Time-of-day | FINAL_30 | `t1.0/s0.75/m15` | 857 | 47.1% | -0.0011 | 0.98 |
+| S18 Time-of-day | MIDDAY | `t0.5/s0.5/m30` | 12,795 | 46.5% | -0.0012 | 0.98 |
+| S18 Time-of-day | MIDDAY | `t0.5/s0.5/m15` | 20,673 | 46.4% | -0.0016 | 0.96 |
+| S18 Time-of-day | MIDDAY | `t1.0/s0.75/m15` | 20,644 | 46.4% | -0.0018 | 0.95 |
+| S18 Time-of-day | MIDDAY | `t1.0/s0.75/m30` | 12,750 | 46.5% | -0.0018 | 0.96 |
+| S18 Time-of-day | MIDDAY | `t2.0/s1.0/m30` | 12,743 | 46.6% | -0.0018 | 0.96 |
+| S18 Time-of-day | MIDDAY | `t1.5/s1.0/m30` | 12,743 | 46.6% | -0.0018 | 0.96 |
+| S18 Time-of-day | MIDDAY | `t1.5/s1.0/m15` | 20,642 | 46.4% | -0.0019 | 0.95 |
+| S18 Time-of-day | MIDDAY | `t2.0/s1.0/m15` | 20,642 | 46.4% | -0.0019 | 0.95 |
+| S18 Time-of-day | MIDDAY | `t0.5/s0.5/m-` | 3,841 | 45.9% | -0.0112 | 0.93 |
+| S18 Time-of-day | MIDDAY | `t2.0/s1.0/m-` | 3,349 | 44.6% | -0.0121 | 0.93 |
+| S18 Time-of-day | MIDDAY | `t1.5/s1.0/m-` | 3,350 | 44.6% | -0.0127 | 0.93 |
+| S18 Time-of-day | MIDDAY | `t1.0/s0.75/m-` | 3,402 | 44.5% | -0.0130 | 0.92 |
+| S18 Time-of-day | MIDMORNING | `t1.0/s0.75/m30` | 6,638 | 46.4% | -0.0008 | 0.99 |
+| S18 Time-of-day | MIDMORNING | `t0.5/s0.5/m30` | 6,709 | 46.5% | -0.0009 | 0.99 |
+| S18 Time-of-day | MIDMORNING | `t1.0/s0.75/m15` | 11,100 | 47.3% | -0.0011 | 0.98 |
+| S18 Time-of-day | MIDMORNING | `t1.5/s1.0/m30` | 6,631 | 46.3% | -0.0011 | 0.98 |
+| S18 Time-of-day | MIDMORNING | `t2.0/s1.0/m30` | 6,631 | 46.3% | -0.0012 | 0.98 |
+| S18 Time-of-day | MIDMORNING | `t0.5/s0.5/m15` | 11,117 | 47.3% | -0.0013 | 0.97 |
+| S18 Time-of-day | MIDMORNING | `t1.5/s1.0/m15` | 11,099 | 47.3% | -0.0014 | 0.97 |
+| S18 Time-of-day | MIDMORNING | `t2.0/s1.0/m15` | 11,099 | 47.3% | -0.0014 | 0.97 |
+| S18 Time-of-day | MIDMORNING | `t0.5/s0.5/m-` | 3,601 | 46.9% | -0.0072 | 0.96 |
+| S18 Time-of-day | MIDMORNING | `t1.0/s0.75/m-` | 3,365 | 45.5% | -0.0078 | 0.96 |
+| S18 Time-of-day | MIDMORNING | `t1.5/s1.0/m-` | 3,340 | 45.5% | -0.0101 | 0.95 |
+| S18 Time-of-day | MIDMORNING | `t2.0/s1.0/m-` | 3,339 | 45.4% | -0.0119 | 0.94 |
+| S18 Time-of-day | MORNING | `t0.5/s0.5/m15` | 6,196 | 47.0% | -0.0016 | 0.97 |
+| S18 Time-of-day | MORNING | `t1.5/s1.0/m15` | 6,176 | 47.1% | -0.0016 | 0.97 |
+| S18 Time-of-day | MORNING | `t2.0/s1.0/m15` | 6,176 | 47.1% | -0.0016 | 0.97 |
+| S18 Time-of-day | MORNING | `t1.0/s0.75/m15` | 6,179 | 47.0% | -0.0017 | 0.97 |
+| S18 Time-of-day | MORNING | `t1.5/s1.0/m30` | 3,333 | 45.8% | -0.0036 | 0.95 |
+| S18 Time-of-day | MORNING | `t2.0/s1.0/m30` | 3,333 | 45.8% | -0.0037 | 0.95 |
+| S18 Time-of-day | MORNING | `t0.5/s0.5/m30` | 3,421 | 45.7% | -0.0037 | 0.95 |
+| S18 Time-of-day | MORNING | `t1.0/s0.75/m30` | 3,340 | 45.7% | -0.0039 | 0.95 |
+| S18 Time-of-day | MORNING | `t0.5/s0.5/m-` | 3,421 | 46.3% | -0.0083 | 0.96 |
+| S18 Time-of-day | MORNING | `t1.0/s0.75/m-` | 3,340 | 44.5% | -0.0141 | 0.93 |
+| S18 Time-of-day | MORNING | `t2.0/s1.0/m-` | 3,333 | 44.3% | -0.0142 | 0.93 |
+| S18 Time-of-day | MORNING | `t1.5/s1.0/m-` | 3,333 | 44.3% | -0.0158 | 0.92 |
+| S18 Time-of-day | OPEN | `t1.0/s0.75/m15` | 5,476 | 49.3% | +0.0023 | 1.04 |
+| S18 Time-of-day | OPEN | `t0.5/s0.5/m15` | 5,484 | 49.3% | +0.0023 | 1.04 |
+| S18 Time-of-day | OPEN | `t2.0/s1.0/m15` | 5,473 | 49.3% | +0.0021 | 1.04 |
+| S18 Time-of-day | OPEN | `t1.5/s1.0/m15` | 5,473 | 49.3% | +0.0020 | 1.03 |
+| S18 Time-of-day | OPEN | `t1.0/s0.75/m30` | 3,331 | 48.7% | +0.0016 | 1.02 |
+| S18 Time-of-day | OPEN | `t2.0/s1.0/m30` | 3,324 | 48.7% | +0.0011 | 1.01 |
+| S18 Time-of-day | OPEN | `t1.5/s1.0/m30` | 3,324 | 48.7% | +0.0009 | 1.01 |
+| S18 Time-of-day | OPEN | `t0.5/s0.5/m30` | 3,389 | 48.7% | +0.0006 | 1.01 |
+| S18 Time-of-day | OPEN | `t1.0/s0.75/m-` | 3,331 | 45.2% | -0.0064 | 0.97 |
+| S18 Time-of-day | OPEN | `t0.5/s0.5/m-` | 3,389 | 47.5% | -0.0065 | 0.97 |
+| S18 Time-of-day | OPEN | `t2.0/s1.0/m-` | 3,324 | 44.9% | -0.0116 | 0.95 |
+| S18 Time-of-day | OPEN | `t1.5/s1.0/m-` | 3,324 | 45.0% | -0.0136 | 0.94 |
 | S2 ORB immediate | or15 | `t0.5/s0.5/m-` | 1,506 | 50.7% | +0.0011 | 1.01 |
 | S2 ORB immediate | or15 | `t1.0/s0.75/m-` | 1,506 | 49.1% | +0.0002 | 1.00 |
 | S2 ORB immediate | or15 | `t1.5/s1.0/m-` | 1,506 | 49.6% | -0.0020 | 0.99 |
@@ -978,6 +1685,78 @@ A strategy that only works in one era is an artefact of that era. These are the 
 | S2 ORB immediate | or5 | `t1.5/s1.0/m15` | 1,565 | 48.8% | -0.0066 | 0.90 |
 | S2 ORB immediate | or5 | `t2.0/s1.0/m15` | 1,565 | 48.8% | -0.0066 | 0.90 |
 | S2 ORB immediate | or5 | `t0.5/s0.5/m15` | 1,565 | 48.8% | -0.0067 | 0.90 |
+| S21 Gap continuation | gap>=0.25% | `t1.5/s1.0/m-` | 1,956 | 52.9% | +0.0315 | 1.15 |
+| S21 Gap continuation | gap>=0.25% | `t2.0/s1.0/m-` | 1,936 | 52.4% | +0.0312 | 1.15 |
+| S21 Gap continuation | gap>=0.25% | `t1.0/s0.75/m-` | 2,144 | 51.6% | +0.0267 | 1.13 |
+| S21 Gap continuation | gap>=0.25% | `t0.5/s0.5/m-` | 3,112 | 52.5% | +0.0195 | 1.11 |
+| S21 Gap continuation | gap>=0.25% | `t1.5/s1.0/m30` | 13,342 | 50.5% | +0.0039 | 1.07 |
+| S21 Gap continuation | gap>=0.25% | `t2.0/s1.0/m30` | 13,340 | 50.5% | +0.0037 | 1.07 |
+| S21 Gap continuation | gap>=0.25% | `t1.0/s0.75/m30` | 13,350 | 50.5% | +0.0035 | 1.06 |
+| S21 Gap continuation | gap>=0.25% | `t0.5/s0.5/m30` | 13,441 | 50.5% | +0.0030 | 1.05 |
+| S21 Gap continuation | gap>=0.25% | `t1.5/s1.0/m15` | 21,842 | 49.7% | +0.0016 | 1.04 |
+| S21 Gap continuation | gap>=0.25% | `t2.0/s1.0/m15` | 21,841 | 49.7% | +0.0016 | 1.04 |
+| S21 Gap continuation | gap>=0.25% | `t1.0/s0.75/m15` | 21,847 | 49.7% | +0.0014 | 1.03 |
+| S21 Gap continuation | gap>=0.25% | `t0.5/s0.5/m15` | 21,883 | 49.7% | +0.0010 | 1.02 |
+| S21 Gap continuation | gap>=0.5% | `t2.0/s1.0/m-` | 1,058 | 56.8% | +0.0620 | 1.30 |
+| S21 Gap continuation | gap>=0.5% | `t1.5/s1.0/m-` | 1,067 | 57.2% | +0.0617 | 1.30 |
+| S21 Gap continuation | gap>=0.5% | `t1.0/s0.75/m-` | 1,184 | 55.2% | +0.0512 | 1.25 |
+| S21 Gap continuation | gap>=0.5% | `t0.5/s0.5/m-` | 1,752 | 55.1% | +0.0356 | 1.21 |
+| S21 Gap continuation | gap>=0.5% | `t1.0/s0.75/m30` | 7,460 | 51.7% | +0.0060 | 1.11 |
+| S21 Gap continuation | gap>=0.5% | `t1.5/s1.0/m30` | 7,455 | 51.8% | +0.0060 | 1.11 |
+| S21 Gap continuation | gap>=0.5% | `t2.0/s1.0/m30` | 7,454 | 51.8% | +0.0056 | 1.10 |
+| S21 Gap continuation | gap>=0.5% | `t0.5/s0.5/m30` | 7,514 | 51.9% | +0.0048 | 1.08 |
+| S21 Gap continuation | gap>=0.5% | `t1.5/s1.0/m15` | 12,280 | 50.2% | +0.0020 | 1.05 |
+| S21 Gap continuation | gap>=0.5% | `t2.0/s1.0/m15` | 12,280 | 50.2% | +0.0020 | 1.05 |
+| S21 Gap continuation | gap>=0.5% | `t1.0/s0.75/m15` | 12,281 | 50.2% | +0.0019 | 1.05 |
+| S21 Gap continuation | gap>=0.5% | `t0.5/s0.5/m15` | 12,304 | 50.2% | +0.0013 | 1.03 |
+| S21 Gap continuation | gap>=1.0% | `t2.0/s1.0/m-` | 388 | 58.8% | +0.0532 | 1.23 |
+| S21 Gap continuation | gap>=1.0% | `t1.5/s1.0/m-` | 391 | 59.3% | +0.0518 | 1.23 |
+| S21 Gap continuation | gap>=1.0% | `t1.0/s0.75/m-` | 437 | 56.5% | +0.0427 | 1.19 |
+| S21 Gap continuation | gap>=1.0% | `t0.5/s0.5/m-` | 659 | 55.7% | +0.0292 | 1.16 |
+| S21 Gap continuation | gap>=1.0% | `t1.0/s0.75/m30` | 2,722 | 52.1% | +0.0028 | 1.05 |
+| S21 Gap continuation | gap>=1.0% | `t1.5/s1.0/m30` | 2,720 | 52.2% | +0.0027 | 1.05 |
+| S21 Gap continuation | gap>=1.0% | `t2.0/s1.0/m30` | 2,720 | 52.2% | +0.0027 | 1.05 |
+| S21 Gap continuation | gap>=1.0% | `t0.5/s0.5/m30` | 2,748 | 52.1% | +0.0008 | 1.01 |
+| S21 Gap continuation | gap>=1.0% | `t1.5/s1.0/m15` | 4,487 | 50.5% | -0.0004 | 0.99 |
+| S21 Gap continuation | gap>=1.0% | `t2.0/s1.0/m15` | 4,487 | 50.5% | -0.0004 | 0.99 |
+| S21 Gap continuation | gap>=1.0% | `t1.0/s0.75/m15` | 4,487 | 50.5% | -0.0005 | 0.99 |
+| S21 Gap continuation | gap>=1.0% | `t0.5/s0.5/m15` | 4,496 | 50.4% | -0.0014 | 0.97 |
+| S22 Gap fade | gap>=0.25% | `t0.5/s0.5/m30` | 12,561 | 48.4% | +0.0006 | 1.01 |
+| S22 Gap fade | gap>=0.25% | `t2.0/s1.0/m30` | 12,469 | 48.4% | +0.0006 | 1.01 |
+| S22 Gap fade | gap>=0.25% | `t1.5/s1.0/m30` | 12,469 | 48.4% | +0.0005 | 1.01 |
+| S22 Gap fade | gap>=0.25% | `t1.0/s0.75/m30` | 12,477 | 48.3% | +0.0003 | 1.00 |
+| S22 Gap fade | gap>=0.25% | `t0.5/s0.5/m15` | 20,350 | 48.1% | -0.0001 | 1.00 |
+| S22 Gap fade | gap>=0.25% | `t1.0/s0.75/m15` | 20,321 | 48.0% | -0.0002 | 0.99 |
+| S22 Gap fade | gap>=0.25% | `t2.0/s1.0/m15` | 20,319 | 48.0% | -0.0003 | 0.99 |
+| S22 Gap fade | gap>=0.25% | `t1.5/s1.0/m15` | 20,319 | 48.0% | -0.0003 | 0.99 |
+| S22 Gap fade | gap>=0.25% | `t0.5/s0.5/m-` | 3,124 | 48.0% | -0.0081 | 0.96 |
+| S22 Gap fade | gap>=0.25% | `t1.0/s0.75/m-` | 2,159 | 46.4% | -0.0160 | 0.93 |
+| S22 Gap fade | gap>=0.25% | `t1.5/s1.0/m-` | 1,967 | 46.9% | -0.0218 | 0.91 |
+| S22 Gap fade | gap>=0.25% | `t2.0/s1.0/m-` | 1,938 | 46.7% | -0.0235 | 0.90 |
+| S22 Gap fade | gap>=0.5% | `t2.0/s1.0/m15` | 10,814 | 48.1% | -0.0013 | 0.97 |
+| S22 Gap fade | gap>=0.5% | `t1.0/s0.75/m15` | 10,815 | 48.1% | -0.0014 | 0.97 |
+| S22 Gap fade | gap>=0.5% | `t1.5/s1.0/m15` | 10,814 | 48.1% | -0.0014 | 0.97 |
+| S22 Gap fade | gap>=0.5% | `t0.5/s0.5/m15` | 10,836 | 48.1% | -0.0014 | 0.97 |
+| S22 Gap fade | gap>=0.5% | `t2.0/s1.0/m30` | 6,653 | 48.0% | -0.0022 | 0.97 |
+| S22 Gap fade | gap>=0.5% | `t1.5/s1.0/m30` | 6,653 | 48.0% | -0.0024 | 0.96 |
+| S22 Gap fade | gap>=0.5% | `t0.5/s0.5/m30` | 6,719 | 47.9% | -0.0027 | 0.96 |
+| S22 Gap fade | gap>=0.5% | `t1.0/s0.75/m30` | 6,658 | 48.0% | -0.0027 | 0.96 |
+| S22 Gap fade | gap>=0.5% | `t0.5/s0.5/m-` | 1,740 | 45.7% | -0.0295 | 0.86 |
+| S22 Gap fade | gap>=0.5% | `t1.0/s0.75/m-` | 1,194 | 42.4% | -0.0459 | 0.82 |
+| S22 Gap fade | gap>=0.5% | `t1.5/s1.0/m-` | 1,078 | 42.3% | -0.0570 | 0.79 |
+| S22 Gap fade | gap>=0.5% | `t2.0/s1.0/m-` | 1,065 | 42.0% | -0.0601 | 0.78 |
+| S22 Gap fade | gap>=1.0% | `t1.0/s0.75/m15` | 3,878 | 48.1% | -0.0026 | 0.95 |
+| S22 Gap fade | gap>=1.0% | `t2.0/s1.0/m15` | 3,877 | 48.1% | -0.0027 | 0.95 |
+| S22 Gap fade | gap>=1.0% | `t1.5/s1.0/m15` | 3,877 | 48.1% | -0.0028 | 0.94 |
+| S22 Gap fade | gap>=1.0% | `t0.5/s0.5/m15` | 3,892 | 48.1% | -0.0031 | 0.94 |
+| S22 Gap fade | gap>=1.0% | `t2.0/s1.0/m30` | 2,386 | 47.4% | -0.0053 | 0.93 |
+| S22 Gap fade | gap>=1.0% | `t1.5/s1.0/m30` | 2,386 | 47.4% | -0.0057 | 0.92 |
+| S22 Gap fade | gap>=1.0% | `t1.0/s0.75/m30` | 2,388 | 47.4% | -0.0058 | 0.92 |
+| S22 Gap fade | gap>=1.0% | `t0.5/s0.5/m30` | 2,427 | 47.4% | -0.0064 | 0.92 |
+| S22 Gap fade | gap>=1.0% | `t0.5/s0.5/m-` | 690 | 43.2% | -0.0477 | 0.79 |
+| S22 Gap fade | gap>=1.0% | `t1.0/s0.75/m-` | 449 | 38.5% | -0.0644 | 0.77 |
+| S22 Gap fade | gap>=1.0% | `t1.5/s1.0/m-` | 391 | 38.1% | -0.0743 | 0.75 |
+| S22 Gap fade | gap>=1.0% | `t2.0/s1.0/m-` | 386 | 38.1% | -0.0793 | 0.73 |
 | S3 VWAP pullback | zoneA vwap | `t1.0/s0.75/m-` | 2,374 | 51.4% | +0.0066 | 1.04 |
 | S3 VWAP pullback | zoneA vwap | `t2.0/s1.0/m-` | 2,347 | 51.6% | +0.0041 | 1.02 |
 | S3 VWAP pullback | zoneA vwap | `t1.5/s1.0/m15` | 4,066 | 49.9% | +0.0011 | 1.02 |

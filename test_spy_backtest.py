@@ -335,6 +335,17 @@ def _pnl_trade(pnl: float) -> bt.Trade:
                     max(pnl, 0.0), max(-pnl, 0.0), "RANGE", "NORMAL_DAY", "BULLISH", 0.0, "e")
 
 
+def test_a_group_of_identical_results_reports_no_t_statistic():
+    """Grouping by exit reason makes every 'stop' row lose exactly the
+    stop distance. The residual spread is float noise around 1e-16, and
+    dividing by it produced t-statistics like +2.3e15 in the report."""
+    trades = [_pnl_trade(-1.0) for _ in range(100)]
+    stats = bt.summarize(trades)
+    assert stats["t_stat"] == 0.0
+    assert stats["significant_95"] is False
+    assert abs(stats["t_stat"]) < 1e6
+
+
 def test_max_drawdown_is_measured_from_the_running_peak():
     assert bt._max_drawdown([1.0, 1.0, -3.0, 0.5]) == pytest.approx(-3.0)
     assert bt._max_drawdown([1.0, 2.0, 3.0]) == pytest.approx(0.0)
