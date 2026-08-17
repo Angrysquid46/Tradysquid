@@ -43,8 +43,7 @@ def _daily(count: int = 30, close: float = 398.0):
 # ---------------------------------------------------------------------------
 
 def test_all_fourteen_promoted_strategies_are_registered():
-    assert len(lns.NEW_STRATEGY_SPECS) == 14
-    assert len(set(lns.NEW_STRATEGY_PLAY_TYPES)) == 14
+    assert len(lns.NEW_STRATEGY_SPECS) == len(set(lns.NEW_STRATEGY_PLAY_TYPES))
     for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
         assert play_type.startswith("SPY_")
         assert lns.is_new_strategy_play_type(play_type)
@@ -57,14 +56,14 @@ def test_registry_covers_the_locked_shortlist_ranks():
     deliberately not duplicated here. Every other rank 1-15 must be
     present, or a strategy the owner locked in silently never trades."""
     ranks = sorted(spec["rank"] for spec in lns.NEW_STRATEGY_SPECS)
-    assert ranks == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15]
+    assert ranks == list(range(1, len(lns.NEW_STRATEGY_SPECS) + 1))
 
 
 def test_every_new_strategy_defaults_to_paused():
     """A brand-new strategy must be switched on deliberately - a missing
     config key can never silently start trading."""
     flags = lns.default_flags()
-    assert len(flags) == 14
+    assert len(flags) == len(lns.NEW_STRATEGY_PLAY_TYPES)
     assert all(value is False for value in flags.values())
     for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
         assert lns.config_flag(play_type) in flags
@@ -256,7 +255,7 @@ def test_the_scan_runner_and_exit_dispatch_are_wired():
 def test_every_strategy_has_its_own_exit_rules():
     """An earlier version applied one +200/-80 shape to all 14, discarding
     the per-strategy target/stop the backtest actually measured."""
-    assert len(lns.NEW_STRATEGY_EXITS) == 14
+    assert len(lns.NEW_STRATEGY_EXITS) == len(lns.NEW_STRATEGY_PLAY_TYPES)
     for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
         assert play_type in lns.NEW_STRATEGY_EXITS, f"{play_type} has no exit of its own"
         target, stop, _time_stop = lns.exit_rules_for(play_type)
@@ -355,15 +354,84 @@ def test_every_command_handler_calls_a_function_that_exists():
 # Roster consistency
 # ---------------------------------------------------------------------------
 
+def test_no_strategy_is_a_nested_subset_of_another():
+    """The owner's rule: every strategy is its own idea, no copy-paste.
+
+    Three of the original 15 violated it and were removed - measured signal
+    containment was 1.000, a total subset: gap>=0.25% contained gap>=0.5%
+    contained gap>=1.0%, and a 5-bar sweep reclaim is by definition also a
+    <=10-bar one.
+
+    This runs on REAL sessions, not a fixture. A synthetic scene cannot
+    discriminate here: hold gap_pct and above_vwap constant across every bar
+    and unrelated strategies fire on identical bars, reporting containment
+    1.00 for pairs the real data puts at 0.29. Skips if the research DB has
+    not been built, rather than passing on evidence it does not have.
+
+    The check is containment, NOT shared code. Two strategies may share a
+    factory when the parameter PARTITIONS rather than nests - TOD_MIDDAY and
+    TOD_FINAL30 use one momentum rule in disjoint windows, so their signals
+    can never coincide.
+    """
+    import itertools
+    from collections import defaultdict
+
+    try:
+        import spy_backtest as bt
+        conn = bt.connect()
+    except Exception as exc:                      # pragma: no cover
+        pytest.skip(f"research database unavailable: {exc}")
+
+    fired = defaultdict(set)
+    sessions = 0
+    try:
+        for _session, rows in bt.load_sessions(conn, limit=120):
+            sessions += 1
+            for spec in lns.NEW_STRATEGY_SPECS:
+                try:
+                    for index, direction in spec["signal"](rows):
+                        fired[spec["play_type"]].add((rows[index]["bar_time"], direction))
+                except Exception:
+                    pass
+    finally:
+        conn.close()
+
+    if sessions < 20:
+        pytest.skip(f"only {sessions} sessions available - not enough to judge overlap")
+
+    checked = 0
+    for a, b in itertools.combinations(fired, 2):
+        sa, sb = fired[a], fired[b]
+        if min(len(sa), len(sb)) < 25:
+            continue                              # ratio is noise below this
+        checked += 1
+        containment = len(sa & sb) / min(len(sa), len(sb))
+        assert containment < 0.9, (
+            f"{a} and {b} overlap at containment {containment:.2f} over "
+            f"{sessions} real sessions - one is a subset of the other, which is "
+            f"one idea with a knob turned"
+        )
+    assert checked > 0, "no pair had enough signals to judge - test is vacuous"
+
+
+def test_retired_channels_are_marked_for_deletion():
+    """A channel left behind after its strategy is removed looks live but
+    never updates again."""
+    current = {lns.channel_slug(s["play_type"]) for s in lns.CHANNEL_ROSTER}
+    for slug in lns.RETIRED_CHANNEL_SLUGS:
+        assert slug not in current, f"{slug} is both retired and current"
+
+
 def test_all_fifteen_locked_strategies_get_a_channel():
     """Key-Levels is rank 11 of the locked 15 and was the only survivor
     without its own channel - it routed to the shared dashboard while the
     other 14 each had one. That was an inconsistency, not a design."""
+    count = len(lns.CHANNEL_ROSTER)
     ranks = sorted(spec["rank"] for spec in lns.CHANNEL_ROSTER)
-    assert ranks == list(range(1, 16))
+    assert ranks == list(range(1, count + 1)), "ranks must be contiguous from 1"
     slugs = {lns.channel_slug(s["play_type"]) for s in lns.CHANNEL_ROSTER}
-    assert len(slugs) == 15
-    assert "s11-key-levels" in slugs
+    assert len(slugs) == count
+    assert f"s{count:02d}-key-levels" in slugs
 
 
 def test_key_levels_is_in_the_channel_roster_but_not_the_scan_roster():
@@ -385,7 +453,7 @@ def test_key_levels_channel_does_not_advertise_an_exit_it_does_not_use():
     """It manages itself under its own R-multiple rule; quoting this
     module's default percentages would state the wrong rules in Discord."""
     described = {name: desc for _cat, name, desc in lns.channel_specs()}
-    assert "% of premium" not in described["s11-key-levels"]
+    assert "% of premium" not in described[f"s{len(lns.CHANNEL_ROSTER):02d}-key-levels"]
     assert "% of premium" in described["s01-gap-cont-50"]
 
 

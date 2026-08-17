@@ -39,17 +39,42 @@ import spy_intraday_features as sif
 # `signal` is the exact backtested entry function.
 # ---------------------------------------------------------------------------
 
+# Three of the original 15 were REMOVED on 2026-08-17 after measuring signal
+# overlap: they were the same idea with a threshold turned, not distinct
+# strategies. Containment was 1.000 in every case - a total subset:
+#
+#   GAP_CONT_25 contained GAP_CONT_50 contained GAP_CONT_100
+#   SWEEP_10 contained SWEEP_5
+#
+# Structurally inevitable: gap >= 0.25% is a superset of gap >= 0.5%, and a
+# 5-bar reclaim is by definition also a <=10-bar reclaim. Running all of
+# them just multiplied size on one idea while looking like diversification.
+# Kept the best of each family (GAP_CONT_50 at t=+3.33, SWEEP_10) and
+# replaced the rest with ideas measured distinct from everything already
+# here (worst containment 0.21 and 0.36).
+#
+# Candidates rejected for redundancy rather than performance, so the same
+# mistake is not repeated: ORB_RETEST_5 (0.750 contained in ORB_IMMEDIATE),
+# GAP_FADE_25 (1.000 contained in OPENING_GAP_FADE), EXPECTED_MOVE_50
+# (swallowed both replacements at 0.93/0.97 - a loose near-universal filter,
+# not a strategy).
+#
+# That leaves 14, not 15. No 15th candidate was both distinct AND positive:
+# range-reversal is distinct but measured -0.0015 (t=-2.23), compression is
+# distinct but fires 28 times in 600 sessions. Padding to a round number
+# with a negative-expectancy or untestably-rare strategy would be adding
+# noise to hit a target.
 NEW_STRATEGY_SPECS: tuple[dict[str, Any], ...] = (
     {"play_type": "SPY_GAP_CONT_50", "rank": 1, "label": "Gap Continuation 0.5%",
      "signal": ext.gap_continuation(0.5)},
     {"play_type": "SPY_FAILED_BREAK", "rank": 2, "label": "Failed Breakout (prev-day)",
      "signal": ext.failed_breakout_reversal("prev_day")},
-    {"play_type": "SPY_GAP_CONT_25", "rank": 3, "label": "Gap Continuation 0.25%",
-     "signal": ext.gap_continuation(0.25)},
+    {"play_type": "SPY_ORB_IMMEDIATE", "rank": 3, "label": "ORB Immediate (5-min)",
+     "signal": base.orb_immediate(5)},
     {"play_type": "SPY_SWEEP_10", "rank": 4, "label": "Liquidity Sweep 10-bar",
      "signal": ext.liquidity_sweep(10)},
-    {"play_type": "SPY_SWEEP_5", "rank": 5, "label": "Liquidity Sweep 5-bar",
-     "signal": ext.liquidity_sweep(5)},
+    {"play_type": "SPY_VWAP_RECLAIM", "rank": 5, "label": "VWAP Reclaim (chop<=2)",
+     "signal": base.vwap_reclaim(2)},
     {"play_type": "SPY_MOMENTUM_ADX25", "rank": 6, "label": "Momentum Continuation ADX25",
      "signal": ext.momentum_continuation(25.0, require_alignment=False)},
     {"play_type": "SPY_TOD_MIDDAY", "rank": 7, "label": "Time-of-Day Midday",
@@ -60,13 +85,11 @@ NEW_STRATEGY_SPECS: tuple[dict[str, Any], ...] = (
      "signal": ext.time_of_day_momentum("FINAL_30")},
     {"play_type": "SPY_MTF_4OF4", "rank": 10, "label": "MTF Breakout 4/4",
      "signal": ext.multi_timeframe_breakout(4)},
-    {"play_type": "SPY_EXHAUSTION_1ATR", "rank": 12, "label": "Momentum Exhaustion 1 ATR",
+    {"play_type": "SPY_EXHAUSTION_1ATR", "rank": 11, "label": "Momentum Exhaustion 1 ATR",
      "signal": ext.momentum_exhaustion(1.0)},
-    {"play_type": "SPY_GAP_CONT_100", "rank": 13, "label": "Gap Continuation 1.0%",
-     "signal": ext.gap_continuation(1.0)},
-    {"play_type": "SPY_FIRST_PULLBACK", "rank": 14, "label": "First Pullback 0.5 ATR",
+    {"play_type": "SPY_FIRST_PULLBACK", "rank": 12, "label": "First Pullback 0.5 ATR",
      "signal": ext.first_pullback_after_drive(0.5)},
-    {"play_type": "SPY_OPENING_GAP_FADE", "rank": 15, "label": "Opening Gap Fade",
+    {"play_type": "SPY_OPENING_GAP_FADE", "rank": 13, "label": "Opening Gap Fade",
      "signal": ext.playbook_opening_gap_fade()},
 )
 
@@ -76,7 +99,7 @@ NEW_STRATEGY_SPECS: tuple[dict[str, Any], ...] = (
 # otherwise the one surviving original strategy is the only one without its
 # own channel, which is an inconsistency rather than a design.
 KEY_LEVELS_SPEC: dict[str, Any] = {
-    "play_type": "SPY_KEY_LEVELS", "rank": 11, "label": "Key-Levels Strategy",
+    "play_type": "SPY_KEY_LEVELS", "rank": 14, "label": "Key-Levels Strategy",
     "signal": None,          # entry handled by spy_scanner, not this module
 }
 
@@ -301,16 +324,15 @@ NEW_STRATEGY_DEFAULT_STOP_PCT = -75.0
 NEW_STRATEGY_EXITS: dict[str, tuple[float, float, int | None]] = {
     "SPY_GAP_CONT_50":      (150.0, -75.0, None),   # measured t2.0/s1.0
     "SPY_FAILED_BREAK":     (115.0, -75.0, None),   # t1.5/s1.0
-    "SPY_GAP_CONT_25":      (115.0, -75.0, None),   # t1.5/s1.0
+    "SPY_ORB_IMMEDIATE":    (115.0, -75.0, None),   # measured t1.0/s0.75
     "SPY_SWEEP_10":         (150.0, -75.0, None),   # t2.0/s1.0
-    "SPY_SWEEP_5":          (115.0, -75.0, None),   # t1.5/s1.0
+    "SPY_VWAP_RECLAIM":     (150.0, -75.0, None),   # measured t2.0/s1.0
     "SPY_MOMENTUM_ADX25":   (115.0, -75.0, None),   # t1.5/s1.0
     "SPY_TOD_MIDDAY":       (150.0, -75.0, None),   # t2.0/s1.0
     "SPY_CONFLUENCE_4":     (115.0, -75.0, None),   # t1.5/s1.0
     "SPY_TOD_FINAL30":      (115.0, -75.0, 30),     # t1.5/s1.0/m30
     "SPY_MTF_4OF4":         (150.0, -75.0, None),   # t2.0/s1.0
     "SPY_EXHAUSTION_1ATR":  (40.0,  -40.0, 30),     # t0.5/s0.5/m30
-    "SPY_GAP_CONT_100":     (150.0, -75.0, None),   # t2.0/s1.0
     "SPY_FIRST_PULLBACK":   (75.0,  -58.0, None),   # t1.0/s0.75
     "SPY_OPENING_GAP_FADE": (40.0,  -40.0, 15),     # t0.5/s0.5/m15
 }
@@ -420,6 +442,16 @@ def new_strategy_exit_signal(
 # ---------------------------------------------------------------------------
 # Discord wiring
 # ---------------------------------------------------------------------------
+
+# Channels created for strategies that have since been removed, or under a
+# rank that has since shifted. Listed explicitly so the sync deletes them
+# instead of leaving orphans that look live but never update again.
+RETIRED_CHANNEL_SLUGS: tuple[str, ...] = (
+    "s03-gap-cont-25", "s05-sweep-5", "s13-gap-cont-100",      # duplicate ideas
+    "s11-key-levels", "s12-exhaustion-1atr", "s14-first-pullback",
+    "s15-opening-gap-fade",                                     # rank shifts
+)
+
 
 def channel_slug(play_type: str) -> str:
     """Discord channel name for a strategy, rank-prefixed.

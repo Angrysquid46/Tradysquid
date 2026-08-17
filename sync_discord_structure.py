@@ -179,7 +179,19 @@ for _variant in spy_scanner.SPY_RATCHET_VARIANTS:
     _OLD_RATCHET_CHANNEL_NAMES.add(f"ratchet-{_slug}-performance")
     _OLD_RATCHET_CHANNEL_NAMES.add(f"ratchet-{_slug}-results")
 
+# Imported here rather than further down: DELETE_CHANNELS below needs the
+# retired-slug list, and a later import would leave it silently empty.
+try:
+    import spy_live_new_strategies as _new_strategies
+    _RETIRED_STRATEGY_CHANNELS = tuple(_new_strategies.RETIRED_CHANNEL_SLUGS)
+except Exception as _exc:   # pragma: no cover - import guard only
+    print(f"retired strategy channels unavailable: {_exc}")
+    _RETIRED_STRATEGY_CHANNELS = ()
+
 DELETE_CHANNELS = {
+    # Strategy channels whose strategy was removed, or whose rank shifted -
+    # an orphaned channel looks live but never updates again.
+    *_RETIRED_STRATEGY_CHANNELS,
     # All 10 ratchet-floor variants retired 2026-08-17: their shared ORB
     # entry measured at essentially zero (+0.0004 ATR/trade, t=+0.39), and
     # every ratchet exit shape came last when scored as options - the best

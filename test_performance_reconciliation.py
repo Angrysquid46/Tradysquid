@@ -182,8 +182,15 @@ class PerformanceScorecardTests(unittest.TestCase):
         # ratchet-floor variants used to add 1 each here, but all 10 were
         # retired 2026-08-17 (see spy_scanner.SPY_RATCHET_VARIANTS). The four
         # legacy strategies give 2 + 2 + 1 + 1 = 6, plus 1 each for the 14
-        # strategies promoted from the locked top 15 = 20.
-        self.assertEqual(state["performance_reconciliation_monthly_reports"], 20)
+        # strategies promoted from the locked set. That count is derived
+        # rather than hard-coded: the roster changed once already (three
+        # threshold-variant strategies were removed as duplicates) and a
+        # literal here goes stale silently every time it changes again.
+        import spy_live_new_strategies as _lns
+        self.assertEqual(
+            state["performance_reconciliation_monthly_reports"],
+            6 + len(_lns.NEW_STRATEGY_PLAY_TYPES),
+        )
         # One combined results card per variant that actually has trades
         # (1m, 5m) - SPY_KEY_LEVELS/SPY_EXPANSION_LEVEL/ratchets have none
         # in this synthetic ledger, contributing 0 each.
