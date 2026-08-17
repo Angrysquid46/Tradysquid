@@ -8152,9 +8152,18 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
     if spot_price is None:
         return {"scanned": 0, "opened": 0, "reason": "no spot quote"}
 
-    intraday = get_intraday_history(TICKER, interval="1min")
+    # Tradier's timesales intermittently returns an empty series for a
+    # perfectly valid window - measured 2 empty responses out of 3 calls in
+    # a row, then a full 390-bar session on the next. An empty read here
+    # means zero feature rows, which means the cycle silently scans nothing,
+    # so it is retried rather than treated as "no bars yet".
+    intraday: list[dict[str, Any]] = []
+    for _attempt in range(3):
+        intraday = get_intraday_history(TICKER, interval="1min") or []
+        if intraday:
+            break
     daily = get_daily_history(TICKER)
-    feature_rows = lns.live_feature_rows(intraday or [], daily or [])
+    feature_rows = lns.live_feature_rows(intraday, daily or [])
     if not feature_rows:
         feature_rows = []
 

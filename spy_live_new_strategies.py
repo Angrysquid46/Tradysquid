@@ -162,6 +162,62 @@ def _bar(row: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+_RVOL_BASELINE_CACHE: dict[str, dict[int, float]] = {}
+
+
+def rvol_baseline_from_store(sessions: int = 20) -> dict[int, float]:
+    """Average cumulative-volume profile of the last N recorded sessions.
+
+    Without this, relative_volume is None on every live bar while the
+    backtest has a real number - and SPY_ORB_IMMEDIATE filters on
+    `(relative_volume or 0) >= 1.0`, so None collapses to 0 and the
+    strategy could NEVER fire live no matter what the market did. It
+    backtests at 0.45 signals/session and had produced nothing.
+
+    The live feature build only sees today's bars, so the 20-session
+    baseline has to come from the research store, which the daily
+    recording job now keeps current. Degrades to an empty dict - exactly
+    today's behaviour - if the store is unavailable, rather than taking
+    the scan down.
+    """
+    import datetime as _dt
+
+    key = _dt.date.today().isoformat()
+    cached = _RVOL_BASELINE_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    baseline: dict[int, float] = {}
+    try:
+        conn = sif.connect()
+        try:
+            dates = [
+                row[0] for row in conn.execute(
+                    "SELECT DISTINCT session_date FROM minute_features "
+                    "WHERE ticker='SPY' ORDER BY session_date DESC LIMIT ?",
+                    (sessions,),
+                )
+            ]
+            if dates:
+                for row in conn.execute(
+                    "SELECT minutes_since_open m, AVG(cumulative_volume) v "
+                    "FROM minute_features WHERE ticker='SPY' AND session_date >= ? "
+                    "AND cumulative_volume IS NOT NULL GROUP BY minutes_since_open",
+                    (min(dates),),
+                ):
+                    if row[0] is not None and row[1]:
+                        baseline[int(row[0])] = float(row[1])
+        finally:
+            conn.close()
+    except Exception:
+        baseline = {}
+
+    _RVOL_BASELINE_CACHE.clear()
+    _RVOL_BASELINE_CACHE[key] = baseline
+    return baseline
+
+
+
 def build_session_context(
     daily_history: Sequence[dict[str, Any]], *, session: str | None = None
 ) -> sif.SessionContext:
@@ -223,6 +279,9 @@ def build_session_context(
         closes = [b["close"] for b in bars[-6:]]
         context.daily_trend = "UP" if closes[-1] > closes[0] else (
             "DOWN" if closes[-1] < closes[0] else "FLAT")
+
+    if not context.rvol_baseline:
+        context.rvol_baseline = rvol_baseline_from_store()
     return context
 
 
