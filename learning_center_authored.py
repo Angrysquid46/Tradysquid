@@ -463,6 +463,282 @@ AUTHORED_BODIES: dict[str, str] = {
         "dealer hedging concentrates there - see the dealer gamma channel. The practical "
         "rule is simple: close near-the-money positions before the bell rather than "
         "gambling on which side of the strike the last print lands.",
+
+    # ---------------------------------------------------------------
+    # Risk architecture and backtesting
+    # ---------------------------------------------------------------
+    "Defining Expectancy, Profit Factor, and System Edge Metrics":
+        "Expectancy is average profit per trade: (win rate x average win) - (loss rate "
+        "x average loss). It is the only number that answers 'should I take this trade "
+        "again'. Profit factor is gross wins divided by gross losses - above 1.0 is "
+        "profitable, and below about 1.2 is too thin to survive costs. "
+        "Win rate alone is meaningless. This system's own results make the point: the "
+        "strongest strategy found wins 56.8% with a profit factor of 1.30, while "
+        "several 60%+ win-rate variants lose money because their losses are larger "
+        "than their wins.",
+
+    "Sample Size Requirements, Out-of-Sample Testing, and Forward Testing":
+        "Per-trade results scatter enormously, so a handful of trades tells you almost "
+        "nothing. A rough guide: a few hundred trades before an expectancy estimate "
+        "means anything, and more when the edge is small. "
+        "Two entries in this system's own top-15 rest on 34 and 46 trades and are "
+        "explicitly labelled unproven for exactly this reason. Out-of-sample testing "
+        "means holding data back; forward testing means paper trading before real "
+        "money. Both exist because a strategy fitted to history will always look good "
+        "on that history.",
+
+    "Identifying and Eliminating Over-Fitting and Curve-Fitting Bias Errors":
+        "Overfitting is tuning a strategy until it describes past noise rather than a "
+        "repeatable effect. The tell is fragility: change a threshold slightly and the "
+        "result collapses. "
+        "The defence is to count how many configurations you tried. This system tested "
+        "336 combinations, so a naive 95% significance threshold of t=1.96 is far too "
+        "loose - a Bonferroni correction at that width requires t=3.79. Reporting the "
+        "size of the search is not modesty, it is part of the result.",
+
+    "Monte Carlo Risk Simulations: Evaluating System Ruin Probability Curves":
+        "Monte Carlo reshuffles your trade sequence thousands of times to see what ELSE "
+        "could have happened. The same set of trades in a different order produces very "
+        "different drawdowns, and the worst of those orderings is the risk you actually "
+        "carry. "
+        "It answers the question a single equity curve cannot: what is the probability "
+        "this system draws down 40% before it works? A strategy with positive "
+        "expectancy can still ruin an account through sequence risk alone.",
+
+    "Walk-Forward Optimization: Testing Strategy Adaptability across Changing Regimes":
+        "Walk-forward fits parameters on one period and tests them on the next, rolling "
+        "forward - so every result is out-of-sample. It answers whether an edge persists "
+        "when the regime changes. "
+        "This system splits history into four eras (2008-2011 crisis, 2012-2015 low-vol "
+        "bull, 2016-2019 late bull, 2020-2021 COVID) and reports each separately. That "
+        "is how it found that most strategies with a good blended number were positive "
+        "in only one or two eras - and that gap continuation held up in all four.",
+
+    "Out-of-Sample Validation: Protecting Against Historical Data Curve-Fitting":
+        "Any parameter chosen by looking at data is contaminated by that data. "
+        "Out-of-sample validation reserves a slice the fitting process never saw. "
+        "The subtle version of the mistake is choosing the best of many exit policies "
+        "and then reporting its statistics as if it were the only one tried. This "
+        "system's reports state explicitly that each headline t-statistic is the best "
+        "of 12 exit policies, and is therefore an upper bound rather than an estimate.",
+
+    "Monte Carlo Testing: Evaluating Strategy Ruin Risks across 10,000 Simulations":
+        "The same technique applied at scale: simulate thousands of possible futures "
+        "using your measured win rate and payoff distribution, and count how many end in "
+        "ruin at your chosen position size. "
+        "The output that matters is not average return but the left tail. If 5% of "
+        "simulations wipe the account, the strategy is unusable at that size regardless "
+        "of its expectancy.",
+
+    "Historical Black Swan Replications: Stress-Testing Portfolios against 1987, 2008, and 2020":
+        "Replay the worst days on record through your current positions. October 1987 "
+        "(-20% in a session), 2008 (sustained collapse with liquidity failure), March "
+        "2020 (fastest 30% drawdown in history, with circuit breakers). "
+        "For 0DTE the specific hazard is not just the move but the market breaking: "
+        "spreads widen to unusable, fills disappear, and a 'defined risk' position "
+        "cannot be closed at any price you would accept.",
+
+    "Backtest Speed Optimization: Vectorized Execution Arrays vs. Event-Driven Simulators":
+        "Vectorised backtests compute across whole arrays at once - fast, but they make "
+        "path-dependent logic (trailing stops, one-position-at-a-time) awkward and easy "
+        "to get subtly wrong. Event-driven simulators walk bar by bar, which is slower "
+        "but models reality directly. "
+        "This system is event-driven for that reason. Speed came from data access "
+        "instead: replacing per-session queries with one sequential scan took a full "
+        "sweep from an hour of I/O to 103 seconds without changing a single result.",
+
+    "Slippage and Fee Modeling: Incorporating Dynamic Maker-Taker Exchange Frictions":
+        "A backtest that fills at the mid-price is fiction. Real entries pay the ask and "
+        "real exits receive the bid, and every round trip pays that spread plus "
+        "commission. "
+        "At the profit factors typical of intraday strategies - 1.05 to 1.30 - costs "
+        "decide the outcome. This system's option model pays ask on entry, bid on exit "
+        "and $0.65 per contract each way, and a bug that let the bid clamp at zero on "
+        "cheap contracts (halving the effective spread) had to be fixed precisely "
+        "because that is where 0DTE costs bite hardest.",
+
+    "Survivorship Bias Resolution: Incorporating Bankrupt and De-listed Assets into Data Sheets":
+        "If your dataset contains only companies that still exist, your backtest has "
+        "quietly excluded every failure. Returns look far better than reality because "
+        "the losers were deleted from history. "
+        "Less of an issue for an index ETF like SPY, but the same logic applies to "
+        "strategies: a library of strategies that only keeps the ones that worked is "
+        "survivorship bias applied to your own research, which is why failed strategies "
+        "here are reported rather than deleted.",
+
+    "Multi-Asset Rebalancing Delays: Simulating Real-World Execution Latencies":
+        "Signals are computed on a closed bar, orders take time to route, and fills "
+        "arrive after that. A backtest that acts instantly on the closing price of the "
+        "bar it is evaluating has stolen a tick. "
+        "This system fills at the NEXT bar's open for that reason, and enforces it with "
+        "a test: a signal at bar i must still be a signal when every bar after i is "
+        "deleted, because live that is all that exists.",
+
+    "Volatility-Adjusted Trailing Safety Envelopes (ATR_14)":
+        "Average True Range over 14 periods measures typical movement, including gaps. "
+        "Using it to set stops means your risk adapts to conditions instead of being a "
+        "fixed dollar amount that is too tight in volatile markets and too loose in "
+        "quiet ones. "
+        "This system reports all underlying results in ATR multiples specifically so "
+        "that 2008 and 2021 are comparable - a 2-point move meant something very "
+        "different in each.",
+
+    "Worst-Case Peak-to-Trough Account Fuse Boxes (Max_Drawdown_60d)":
+        "Maximum drawdown is the largest fall from a peak to a subsequent trough. It is "
+        "the number that decides whether a strategy is survivable, because it describes "
+        "the worst stretch you must sit through. "
+        "Two strategies with identical total profit are not equivalent if one got there "
+        "with a 7-unit drawdown and the other with 21. The second requires either more "
+        "capital or more tolerance than most people actually have.",
+
+    "Risk-Adjusted Portfolio Variance Scorecards (Rolling_Sharpe_60d)":
+        "Sharpe divides excess return by its standard deviation - return per unit of "
+        "volatility. Rolling it over 60 days shows whether risk-adjusted performance is "
+        "improving or decaying rather than giving one blended number for all time. "
+        "Its weakness is treating upside and downside volatility identically, which "
+        "penalises a strategy for making money quickly. Useful as a comparison across "
+        "strategies, misleading as a target to optimise.",
+
+    # ---------------------------------------------------------------
+    # Trade planning and position sizing
+    # ---------------------------------------------------------------
+    "Establishing the Hard Rules of Your Strategy before the Market Opens":
+        "Every decision made while a position is open is made under pressure by a "
+        "person who wants to be right. Rules written beforehand are made by someone "
+        "with no money at stake. "
+        "This is why this system's strategies carry explicit entry conditions and "
+        "explicit exits (+150%/-75%, or +40%/-40% with a 30-minute time stop) rather "
+        "than discretion. The rules can be wrong and still beat improvisation, because "
+        "a wrong rule is measurable and improvisation is not.",
+
+    "Defining Your Checklist: What Must Happen before You Click Buy":
+        "A checklist converts a strategy into a repeatable procedure: what regime, what "
+        "signal, what contract, what size, what invalidates it. If any item fails, there "
+        "is no trade. "
+        "Its real function is preventing the trade you take because you are bored or "
+        "behind. Automation is a checklist that cannot be talked out of itself.",
+
+    "Setting Your Maximum Capital Allocations and Risk per Single Position":
+        "Decide the most one position may cost you BEFORE choosing the position. A "
+        "common rule is 1-2% of account per trade; this system uses a hard $500 cap and "
+        "one open position per strategy. "
+        "Sizing from a fixed risk budget rather than from conviction is what keeps a "
+        "losing streak survivable. Conviction is highest exactly when it is least "
+        "reliable.",
+
+    "Writing Down an Exit Plan for Your Profit Target and Stop-Loss Levels":
+        "Both exits must exist before entry. Without a target you hold winners until "
+        "they reverse; without a stop you hold losers hoping. "
+        "For 0DTE the exit is more decisive than the entry. This system's Phase 5 work "
+        "found the same signal returning -$156k with a +/-50% exit and +$211k with a "
+        "+200/-80 exit - identical entries, opposite outcomes, purely from exit "
+        "geometry.",
+
+    "Calculating the Risk-per-Trade (The Core R-Multiple Principle)":
+        "R is the amount you risk on a trade. Every result is then measured in R: a "
+        "trade that makes twice what it risked is +2R, one that stops out is -1R. "
+        "Thinking in R makes results comparable across sizes and account balances, and "
+        "makes expectancy directly interpretable - 'this system averages +0.3R' is a "
+        "complete description of an edge.",
+
+    "Position Sizing: How to Determine Exactly How Many Contracts to Buy":
+        "Contracts = risk budget / (premium x 100). At a $500 cap and a $1.50 contract, "
+        "that is 3 contracts risking $450. "
+        "The mistake is sizing from what you can afford rather than what you are willing "
+        "to lose. Because a long option can go to zero, the premium paid IS the risk - "
+        "there is no stop that saves you from a gap through your strike.",
+
+    "The Exponential Math of Drawdowns: Why Rebounding from a Loss Gets Harder":
+        "Losses and gains are asymmetric. Down 10% needs +11.1% to recover; down 50% "
+        "needs +100%; down 80% needs +400%. "
+        "This is why capital preservation outranks return capture. Avoiding a single "
+        "catastrophic loss contributes more to long-run growth than several good months, "
+        "and it is the entire argument for position limits.",
+
+    "The Win Rate vs. Risk-Reward Intersect: Why You Can Be Wrong and Still Profitable":
+        "Break-even win rate = 1 / (1 + reward-to-risk). At 2:1 you need only 33%; at "
+        "1:1 you need above 50%; at 1:2 you need 67%. "
+        "This is exactly why symmetric exits fail on 0DTE. A +/-50% target and stop "
+        "needs above a 50% win rate to break even, and theta plus spread push realised "
+        "win rates to 38-45% - which is how a genuinely positive underlying edge turns "
+        "into a losing option strategy.",
+
+    # ---------------------------------------------------------------
+    # Psychology
+    # ---------------------------------------------------------------
+    "Cognitive Biases: Overconfidence, Confirmation, and Anchoring Pitfalls":
+        "Overconfidence inflates your estimate of your own skill, usually after a "
+        "winning streak that was mostly variance. Confirmation bias makes you seek "
+        "evidence for the position you already hold. Anchoring fixes your judgement to "
+        "an irrelevant reference price. "
+        "The countermeasure is written records made before the outcome is known. A "
+        "journal entry written at entry cannot be revised by memory afterwards.",
+
+    "Emotional Friction: Navigating FOMO (Fear of Missing Out) and Revenge Trading":
+        "FOMO is entering because a move is happening rather than because your setup "
+        "occurred - reliably the worst entry price of the move. Revenge trading is "
+        "sizing up to recover a loss, which converts a bad trade into a bad week. "
+        "Both are consequences of treating a missed opportunity as a loss. There will be "
+        "another setup; there is not always another account.",
+
+    "Risk Management Psychology: Mastering Risk-Aversion and Loss-Mitigation":
+        "People are risk-averse over gains and risk-SEEKING over losses: happy to take a "
+        "small certain profit, but willing to gamble to avoid booking a loss. That is "
+        "precisely backwards for a trading system. "
+        "It produces cut winners and held losers, which inverts the payoff distribution "
+        "any positive-expectancy strategy depends on.",
+
+    "Prospect Theory: The Asymmetric Psychology of Utility and Financial Loss":
+        "Kahneman and Tversky's finding that a loss hurts roughly twice as much as an "
+        "equivalent gain pleases, and that both are judged against a reference point "
+        "rather than in absolute terms. "
+        "For traders this explains why a break-even trade after being up feels like a "
+        "loss, and why the reference point - your entry price - has no bearing on what "
+        "the position is worth now.",
+
+    "The Disposition Effect: Why Traders Sell Winners Early and Hold Losers Natively":
+        "The measured tendency to realise gains quickly and defer losses, because "
+        "closing a loser makes it real. The result is a portfolio of losers and a "
+        "history of small wins. "
+        "It is the direct mechanism by which the previous two biases destroy an edge, "
+        "and the reason exits should be rule-based rather than felt.",
+
+    "Preventing Revenge Trading after a Loss: Maintaining Discipline in Drawdowns":
+        "The most dangerous moment is immediately after a loss, when the impulse is to "
+        "trade bigger and sooner to get it back. "
+        "Practical defences: a fixed maximum number of trades per day, a daily loss "
+        "limit that stops trading entirely when hit, and a required pause after any "
+        "stop-out. This system's one-position-per-strategy rule serves the same purpose "
+        "mechanically.",
+
+    "Keeping a Consistent Journal: Documenting the Rationale behind Every Position":
+        "Record before the outcome: what signalled, why now, what invalidates it, what "
+        "size and why. Afterwards record what actually happened. "
+        "Without the pre-trade note, review becomes storytelling - memory reliably "
+        "rewrites the reasoning to fit the result. The journal's value is entirely in "
+        "the part written while the outcome is still unknown.",
+
+    "Categorizing Errors: Separating Flawed Strategies from Emotional Execution Failures":
+        "Two different problems need two different fixes. A strategy error means the "
+        "rules were followed and lost - that is data. An execution error means the rules "
+        "were not followed - that is discipline. "
+        "Conflating them is expensive in both directions: abandoning a sound strategy "
+        "after a run of losses you caused, or blaming yourself for a losing month that "
+        "was ordinary variance.",
+
+    "Tracking Statistics: Finding Your True Historical Win Rate and Profit Factor":
+        "Your actual numbers, from your actual fills - not the backtest's. Measured per "
+        "strategy, because a blended figure hides which one is carrying the others. "
+        "That is why every strategy in this system has its own channel and its own "
+        "ledger: an aggregate P/L cannot tell you which of fourteen rules is worth "
+        "keeping.",
+
+    "Reviewing Past Data to Continuously Refine Rules and Protect Capital":
+        "Regular review with a fixed cadence and a fixed question: is each rule still "
+        "performing as measured, and has anything decayed? "
+        "The discipline is changing rules on evidence rather than on the last few "
+        "trades. A strategy that is positive in 4 of 4 eras and negative this month is "
+        "probably fine; one positive in 1 of 4 was never fine.",
 }
 
 
