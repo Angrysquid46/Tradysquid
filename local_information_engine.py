@@ -1141,6 +1141,52 @@ def system_digest_job(connection: sqlite3.Connection) -> str:
 
 
 
+
+def research_store_refresh_job(connection: sqlite3.Connection) -> str:
+    """Record each session into the research store so it stays current.
+
+    This exists because the store had gone five years stale - it ended
+    2021-05-06 while the system traded 2026 - and every backtest run
+    against it was describing a market that no longer existed. Nothing
+    was recording sessions as they happened.
+
+    That is the only fix available, because the gap cannot be bought
+    back: no provider sells real 1-minute history beyond about a month
+    (Tradier ~20 days, Yahoo 30, Robinhood ~30 and it returns SYNTHETIC
+    flat bars past that rather than erroring). Data not captured within
+    the month is gone permanently. Captured daily, the store grows a real
+    1-minute session every trading day.
+
+    Runs after the close as well as during the day, re-requests the last
+    few days so a missed run self-heals, and rebuilds features only for
+    sessions whose bar count actually changed.
+    """
+    import spy_research_refresh as srr
+
+    conn = srr.sif.connect()
+    try:
+        result = srr.refresh(conn, srr.fetch_recent_bars(5))
+        # Daily bars carry the session context across the 2021-2026 hole.
+        # Optional: yfinance is a research dependency, and a missing one
+        # must not take the job down.
+        try:
+            if now_ct().hour >= 16:
+                result.update(srr.refresh_daily(conn, srr.fetch_daily_history()))
+        except Exception as exc:
+            result["daily_error"] = str(exc)[:120]
+        result["coverage"] = srr.coverage(conn)
+    finally:
+        conn.close()
+
+    store_observation(connection, "research-store-refresh",
+                      {**result, "completed_at": iso_now()})
+    cov = result["coverage"]
+    changed = result.get("changed") or []
+    return (f"{result.get('bars_new', 0)} new bars; "
+            f"{len(changed)} session(s) rebuilt; "
+            f"store {cov['first']}..{cov['last']} ({cov['sessions']} sessions)")
+
+
 def new_strategy_entry_scan_job(connection: sqlite3.Connection) -> str:
     """Fast entry-only scan for the 13 promoted strategies.
 
@@ -2075,6 +2121,14 @@ JOBS = [
         background=True,
         provider_heavy=True,
         retry_interval=timedelta(minutes=5),
+    ),
+    Job(
+        "research-store-refresh",
+        timedelta(hours=4),
+        research_store_refresh_job,
+        background=True,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=30),
     ),
     Job(
         "new-strategy-entry-scan",

@@ -25,9 +25,30 @@ import spy_intraday_features as sif
 import spy_research_data as srd
 
 
+def _is_synthetic(bar: dict[str, Any]) -> bool:
+    """Gap-fill masquerading as data.
+
+    Robinhood returns `interpolated: true` bars - flat price, zero volume -
+    for any range older than its real retention, instead of erroring. A
+    probe for May 2026 came back 2,340 bars of which 0 were real: every one
+    was the same 772.68 with no volume. Ingesting that would write a
+    perfectly flat, zero-volume week into the store, which is far worse
+    than having no data, because nothing downstream would flag it.
+    """
+    if bar.get("interpolated"):
+        return True
+    volume = bar.get("volume")
+    if volume is not None and float(volume) <= 0:
+        # A regular-hours SPY minute never has zero volume.
+        return True
+    return False
+
+
 def _rows_from_timesales(bars: list[dict[str, Any]]) -> list[tuple]:
     rows: list[tuple] = []
     for bar in bars:
+        if _is_synthetic(bar):
+            continue
         bar_time = bar.get("time") or bar.get("timestamp")
         if not isinstance(bar_time, str) or len(bar_time) < 19:
             continue
@@ -131,11 +152,25 @@ def refresh(conn, rows: list[tuple], *, rebuild_features: bool = True) -> dict[s
     conn.commit()
     inserted = conn.total_changes - before
 
+    # Only sessions that actually gained bars need their features rebuilt.
+    # The scheduled job re-requests the last few days every run, so without
+    # this it would recompute unchanged sessions forever.
     sessions = sorted({row[1][:10] for row in rows})
+    changed = [
+        session for session in sessions
+        if conn.execute(
+            "SELECT COUNT(*) FROM minute_bars WHERE ticker='SPY' "
+            "AND bar_time >= ? AND bar_time < ?", (f"{session}T", f"{session}U")
+        ).fetchone()[0] != conn.execute(
+            "SELECT COUNT(*) FROM minute_features WHERE ticker='SPY' "
+            "AND session_date = ?", (session,)
+        ).fetchone()[0]
+    ]
     result: dict[str, Any] = {
         "bars_seen": len(rows), "bars_new": inserted,
-        "sessions": sessions, "feature_rows": 0,
+        "sessions": sessions, "changed": changed, "feature_rows": 0,
     }
+    sessions = changed
     if rebuild_features and sessions:
         # Only the touched sessions. build_features still walks earlier
         # sessions to carry prior-day context forward, it just does not
