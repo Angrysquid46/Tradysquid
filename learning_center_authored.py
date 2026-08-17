@@ -1460,6 +1460,241 @@ AUTHORED_BODIES: dict[str, str] = {
         "More statistically grounded than a hand-drawn trendline, and it makes the "
         "trend's slope explicit - which is the difference between 'uptrend' as an "
         "opinion and as a measurement.",
+
+    # ---------------------------------------------------------------
+    # Volatility surface
+    # ---------------------------------------------------------------
+    "Historical Realized Volatility vs. Forward-Looking Implied Volatility (IV)":
+        "Realised volatility is what price ACTUALLY did, measured from past returns. "
+        "Implied volatility is what the option market expects, backed out of current "
+        "premiums. They are different quantities and routinely disagree. "
+        "The gap between them is the trade. Buying options is a bet realised will "
+        "exceed implied; selling is the reverse. This system's option model takes IV "
+        "from the real chain and prices from there - the IV is real data, the resulting "
+        "premium is modelled.",
+
+    "The Theoretical Baseline: Demystifying the Black-Scholes-Merton Pricing Model":
+        "Prices an option from five inputs: spot, strike, time, rate and volatility. "
+        "Four are observable; volatility is not, which is why quoting 'implied' "
+        "volatility means solving the formula backwards from the market price. "
+        "Its assumptions are all wrong - constant volatility, no jumps, lognormal "
+        "returns - and it remains the universal language anyway, because everyone "
+        "agrees to speak in its terms. This system uses it, validated against real "
+        "1DTE quotes at a median error of -8.2% with 87% within 25%: good enough to "
+        "rank strategies, not good enough to quote a market.",
+
+    "Modern Real-World Variations: The Binomial Options Pricing Framework":
+        "Models price as a tree of discrete up/down steps, valuing the option backwards "
+        "from expiry. Slower than Black-Scholes but it handles EARLY EXERCISE, which "
+        "closed-form solutions cannot. "
+        "That makes it the correct tool for American-style options like SPY, where the "
+        "right to exercise early has real value near dividends.",
+
+    "Implied Volatility Percentile (IVP) vs. Implied Volatility Rank (IVR)":
+        "IV Rank places current IV between its 52-week low and high: (IV - low) / "
+        "(high - low). IV Percentile is the share of days in the past year IV was "
+        "LOWER than today. "
+        "They diverge when the year contained one spike: a single crisis inflates the "
+        "high, so rank reads low while percentile correctly reports that IV is elevated "
+        "relative to most days. Percentile is the more robust of the two.",
+
+    "The Volatility Risk Premium (VRP): Why Options Are Systematically Overpriced":
+        "Implied volatility exceeds subsequent realised volatility most of the time - "
+        "buyers pay a premium for protection, sellers are compensated for carrying the "
+        "risk. That persistent gap is the VRP. "
+        "It is the structural reason option SELLING wins most months and loses "
+        "catastrophically in the rest. It is also the headwind every long-premium "
+        "strategy, including this one, trades against: you are paying an insurance "
+        "premium and need the move to be worth more than it.",
+
+    "Understanding the Implied Volatility Smile: Out-of-the-Money Tail Risk Pricing":
+        "Plot IV against strike and it curves upward at both ends rather than sitting "
+        "flat - out-of-the-money options in both directions carry higher implied "
+        "volatility than at-the-money. "
+        "This exists because real returns have fatter tails than the lognormal "
+        "assumption. The smile is the market correcting Black-Scholes for a known flaw "
+        "in its own assumptions.",
+
+    "Understanding the Implied Volatility Skew: Equity Puts vs. Commodities Calls":
+        "In equity indices the curve is a lopsided SKEW rather than a symmetric smile: "
+        "downside puts carry much higher IV than equidistant calls, because crashes are "
+        "faster and more feared than rallies. Commodities often skew the other way, "
+        "since supply shocks spike prices upward. "
+        "Practically: SPY puts are structurally more expensive than equivalent calls. "
+        "You are always buying downside protection at a worse price.",
+
+    "Mapping the Three-Dimensional Volatility Surface Matrix":
+        "IV plotted across both strike and expiry simultaneously - skew in one "
+        "dimension, term structure in the other. The surface is the complete statement "
+        "of how the market prices risk. "
+        "Distortions in it are information: a bulge at one expiry usually marks a known "
+        "event date, and a steepening skew marks rising demand for protection before "
+        "price has moved.",
+
+    "Volatility Term Structure: Navigating Contango vs. Backwardation Regimes":
+        "Normally longer-dated options carry higher IV than short-dated - contango, "
+        "reflecting greater uncertainty further out. In stress this inverts: near-term "
+        "IV spikes above long-term, which is backwardation. "
+        "Inversion is one of the more reliable stress signals available, because it "
+        "means the market is pricing danger NOW rather than someday. For 0DTE it "
+        "directly inflates the premium you must pay.",
+
+    # ---------------------------------------------------------------
+    # Dealer gamma
+    # ---------------------------------------------------------------
+    "Estimated Net Dealer Gamma Exposure Thresholds (GEX)":
+        "GEX estimates the aggregate gamma dealers hold across the option chain. When "
+        "dealers are net LONG gamma they hedge against the move - selling rallies, "
+        "buying dips - which damps volatility. When net SHORT they hedge WITH the move, "
+        "amplifying it. "
+        "The zero-gamma level is the flip point, and it is the single most useful "
+        "number from this framework: above it expect mean reversion, below it expect "
+        "trend and acceleration. Estimates vary by provider because dealer positioning "
+        "is inferred, not published.",
+
+    "Intraday Volatility Buffering via Positive Gamma Anchors":
+        "In a positive-gamma regime, dealer hedging mechanically opposes price. Rallies "
+        "meet selling, dips meet buying, and the market grinds in a range. "
+        "This is why some sessions refuse to trend despite news - the flow is "
+        "structurally mean-reverting. It is the environment where breakout strategies "
+        "fail repeatedly and fade strategies work.",
+
+    "Intraday Volatility Acceleration via Negative Gamma Cascades":
+        "In negative gamma, hedging runs WITH price: dealers sell as it falls and buy "
+        "as it rises, feeding the move. Small imbalances become large ones. "
+        "This is the mechanism behind sessions that go one way all day, and behind "
+        "crash dynamics generally. It is the environment where a 0DTE directional trade "
+        "pays best - and where fading is most dangerous.",
+
+    "The Mechanics of Delta-Neutral Dealer Re-Hedging Profiles":
+        "A dealer who sells you a call is short delta and must buy stock to neutralise "
+        "it. As price moves, the required hedge changes, forcing continuous trading "
+        "that is mechanical rather than opinionated. "
+        "Understanding this reframes 'the market did X' as often just hedging flow. It "
+        "is not manipulation and it is not a view - it is an obligation being "
+        "discharged.",
+
+    "Option Strike Pinning and Expiration Gamma Clustered Volume":
+        "Price tends to gravitate toward strikes with very large open interest into "
+        "expiry, because dealer hedging around those strikes is self-correcting - "
+        "buying below and selling above. "
+        "The effect is real but weak and easy to over-read. It matters most on large "
+        "monthly expirations, and far less on a single daily expiry where open interest "
+        "is thinner.",
+
+    "Pin Risk Optimization: Hedging At-The-Money Contracts at Friday 3:59 PM EST":
+        "In the final minutes, an at-the-money contract's outcome is genuinely "
+        "uncertain - assigned or not, depending on the last print. Dealers hedge this "
+        "aggressively, which itself concentrates volume at the strike. "
+        "The retail lesson is simply not to be there: close near-the-money positions "
+        "before the bell rather than gambling on which side the close lands. This "
+        "system forces flat at 15:45 for exactly that reason.",
+
+    "At-The-Money Implied Volatility Straddle Matrix":
+        "The ATM straddle price is the market's direct quote for the expected move: "
+        "roughly, call + put at the money is what the market thinks the underlying will "
+        "travel by expiry. "
+        "It is the cleanest read available on expected magnitude - and the number any "
+        "long-premium trade must beat to be worth taking.",
+
+    "Out-of-the-Money Implied Volatility Smile Wings":
+        "The far ends of the smile, where IV rises steeply. Wings price tail risk, and "
+        "they are where the largest gaps between implied and realised volatility "
+        "usually sit. "
+        "It is why far-OTM options are persistently expensive relative to how often "
+        "they pay, and why buying them systematically is a slow bleed.",
+
+    "Intermarket Volatility Cross-Correlations (VIX vs. VVIX)":
+        "VIX measures expected S&P volatility; VVIX measures expected volatility OF "
+        "VIX. High VVIX with low VIX means the market is calm but pricing the "
+        "possibility of a sudden shift. "
+        "That combination is one of the more useful early warnings available, because "
+        "it appears before VIX itself moves.",
+
+    "Volatility Skew Term Structure Contango vs. Backwardation":
+        "Skew and term structure interact: skew steepness varies by expiry, so "
+        "protection can be cheap in one tenor and expensive in another. "
+        "Near-dated skew steepens fastest in stress, which is precisely when short-"
+        "dated downside protection becomes most expensive - the insurance reprices as "
+        "you reach for it.",
+
+    "Bid-Ask Inventory Management: Skewing Pricing Sheets to Force Retail Order Flow":
+        "Market makers do not quote symmetrically around fair value. Holding too much "
+        "of one side, they skew quotes to attract the offsetting flow - making it "
+        "slightly cheaper to trade in the direction that reduces their risk. "
+        "So the quoted mid is not necessarily fair value; it is fair value adjusted for "
+        "someone else's inventory problem.",
+
+    "Adverse Selection Risks: How Toxic Institutional Order Flow Burns Option Dealers":
+        "Dealers profit from uninformed flow and lose to informed flow. Order flow that "
+        "systematically knows something is 'toxic', and dealers respond by widening "
+        "spreads or refusing to quote size. "
+        "This is why retail flow is valuable enough to pay for, and why spreads widen "
+        "immediately before major announcements - the dealer cannot tell who is "
+        "informed, so charges everyone.",
+
+    "Inter-Exchange Arbitrage: High-Frequency Sweep Models Aligning Fragmented Options Order Books":
+        "US options trade across many exchanges. When prices drift apart, "
+        "high-frequency firms arbitrage the difference within microseconds, which is "
+        "what keeps the fragmented market coherent. "
+        "For anyone slower, the practical consequence is that visible cross-exchange "
+        "discrepancies are already gone by the time a human sees them.",
+
+    # ---------------------------------------------------------------
+    # Expiration mechanics
+    # ---------------------------------------------------------------
+    "Cash Settlement vs. Physical Delivery: Index Options (SPX/NDX) vs. Equity Options (SPY/QQQ)":
+        "SPX and NDX settle in CASH: the difference is paid, no shares change hands, "
+        "and there is no assignment risk. SPY and QQQ deliver actual shares. "
+        "This is a meaningful practical difference. An unclosed in-the-money SPY call "
+        "leaves you holding roughly $77,500 of stock; the SPX equivalent simply pays "
+        "cash. Combined with Section 1256 tax treatment, it is why many serious 0DTE "
+        "traders prefer SPX despite wider spreads.",
+
+    "Understanding American-Style Options vs. European-Style Options Contract Rules":
+        "American-style can be exercised any time before expiry; European-style only at "
+        "expiry. US equity and ETF options are American; index options like SPX are "
+        "European. "
+        "The distinction only matters if you are SHORT - it determines whether you can "
+        "be assigned early. It is also why a box spread is genuinely riskless in "
+        "European-style contracts and dangerous in American-style ones.",
+
+    "Introduction to Binary Options, Barrier Options, and Exotic Derivatives Structures":
+        "Binaries pay a fixed amount if a condition is met, nothing otherwise. Barrier "
+        "options activate or extinguish when price touches a level. Both are exotics "
+        "with discontinuous payoffs. "
+        "Retail 'binary options' platforms are largely unregulated and structured so the "
+        "house holds the edge - closer to a betting product than to a derivatives "
+        "market. Legitimate exotics trade institutionally, over the counter.",
+
+    "Special Cash Dividends: Structural Adjustments to Options Strike Matrices":
+        "Ordinary dividends do not adjust option contracts; special dividends above a "
+        "threshold (typically 12.5% of share price) do - strikes are reduced by the "
+        "dividend amount. "
+        "The trap is assuming an adjustment where none occurs. An ordinary dividend "
+        "still drops the share price on the ex-date, and option holders absorb that "
+        "with no compensating change to the strike.",
+
+    "Spin-offs and Carve-outs: Managing Deliverable Basket Options Changes":
+        "When a company spins off a division, existing options are adjusted to deliver "
+        "a BASKET - shares of both entities - rather than 100 shares of one. "
+        "Adjusted contracts become illiquid, quote poorly, and are easy to misprice. "
+        "Generally best exited before the corporate action rather than held through it.",
+
+    "Rights Offerings and Warrants: Evaluating Synthetic Dilution Vectors":
+        "A rights offering lets existing holders buy new shares at a discount; warrants "
+        "are long-dated call-like instruments issued by the company itself. Both dilute "
+        "existing shareholders when exercised. "
+        "Unlike exchange-traded options, warrants create NEW shares - so the dilution is "
+        "real rather than a transfer between traders.",
+
+    "Tender Offers and Stock Buyback Mechanics: The Impact on Floating Liquidity":
+        "A tender offer bids for shares at a premium, usually to acquire control. "
+        "Buybacks reduce shares outstanding, mechanically raising earnings per share "
+        "without any improvement in the business. "
+        "Both shrink the tradeable float, which reduces liquidity and can amplify "
+        "subsequent volatility - fewer shares available means each order moves price "
+        "more.",
 }
 
 
