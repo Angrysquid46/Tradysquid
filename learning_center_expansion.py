@@ -271,3 +271,224 @@ def coverage(path: Path | None = None) -> dict[str, Any]:
         "channels": len(channels),
         "within_budget": len(channels) <= CHANNEL_BUDGET,
     }
+
+
+# ---------------------------------------------------------------------------
+# Library emission
+# ---------------------------------------------------------------------------
+#
+# The bot answers /ask and /explain by searching
+# learning_center_content.library_sections(), which parses
+# learning_center/COMPREHENSIVE_TRADING_LIBRARY.md into one LibrarySection per
+# `##` heading. So content only becomes answerable once it is IN that file -
+# defining channels alone would create empty tabs the bot could not cite.
+
+LIBRARY_MARKER = "<!-- EXPANSION:modules-28-128 -->"
+
+
+def render_library_markdown(path: Path | None = None, start_number: int = 31) -> str:
+    """Markdown for the 24 consolidated channels, in library format.
+
+    Each source sub-topic becomes its own `##` section, which is the unit the
+    bot indexes and cites - so a question about, say, volume z-scores lands on
+    that specific section rather than a whole channel."""
+    channels = build_channels(path)
+    lines = [LIBRARY_MARKER, ""]
+    for offset, channel in enumerate(channels):
+        number = start_number + offset
+        lines.append(f"<!-- CHANNEL:{number:02d}-{channel.slug} -->")
+        lines.append(f"# {number:02d} · {channel.title}")
+        lines.append("")
+        lines.append(channel.summary)
+        lines.append("")
+        source_list = ", ".join(str(m) for m in channel.modules)
+        lines.append(
+            f"Consolidated from source modules {source_list}. Those modules "
+            f"covered overlapping ground; the material is kept in full here "
+            f"with the repetition removed."
+        )
+        lines.append("")
+        for topic in channel.topics:
+            lines.append(f"## {topic.title}")
+            body = topic.body or (
+                f"Covered in source module {topic.module}. See the surrounding "
+                f"sections in this channel for the full treatment."
+            )
+            lines.append(body)
+            lines.append("")
+        # CHANNEL_PATTERN requires a matching END marker. Without it the whole
+        # block is invisible to the parser, so library_sections() reports the
+        # channel missing even though its text sits right there in the file -
+        # 88KB of content indexed as nothing.
+        lines.append(f"<!-- END:{number:02d}-{channel.slug} -->")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def channel_names(start_number: int = 31, path: Path | None = None) -> list[str]:
+    """Discord channel names, numbered to continue the existing curriculum."""
+    return [
+        f"{start_number + offset:02d}-{channel.slug}"
+        for offset, channel in enumerate(build_channels(path))
+    ]
+
+
+def install_into_library(library_path: Path, source: Path | None = None,
+                         start_number: int = 31) -> dict[str, Any]:
+    """Append (or replace) the expansion block in the library file.
+
+    Idempotent: re-running replaces the previous block rather than appending a
+    second copy, which would double every section and make the bot cite
+    duplicates."""
+    existing = library_path.read_text(encoding="utf-8") if library_path.exists() else ""
+    block = render_library_markdown(source, start_number=start_number)
+    if LIBRARY_MARKER in existing:
+        head = existing.split(LIBRARY_MARKER)[0].rstrip() + "\n\n"
+        updated = head + block
+        action = "replaced"
+    else:
+        updated = existing.rstrip() + "\n\n" + block
+        action = "appended"
+    library_path.write_text(updated, encoding="utf-8")
+    return {"action": action, "channels": len(build_channels(source)),
+            "chars": len(block)}
+
+# ---------------------------------------------------------------------------
+# Where each theme's content actually goes
+# ---------------------------------------------------------------------------
+#
+# 31 LEARNING CENTER channels already exist and 24 new ones would make 55 -
+# past Discord's 50-per-category cap, which the owner explicitly said not to
+# exceed. But most of the new material is not new SUBJECT matter: 19 of the
+# 24 themes cover ground an existing channel already owns.
+#
+# So the new sections are appended to the existing channel for that subject,
+# and only genuinely new subjects get their own channel. Owner: "include the
+# first 28 as well so we can have a super huge learning center but not exceed
+# limits on channels." That gives one dense channel per subject rather than
+# two thin ones competing - and it is the same deduplication applied to the
+# curriculum that was applied to the source modules.
+#
+# theme slug -> existing channel to extend, or None to create a new one.
+THEME_TARGETS: dict[str, str | None] = {
+    "market-microstructure": "05-market-mechanics-orders",
+    "volume-and-flow": "08-volume-breadth-internals",
+    "candlestick-and-chart-anatomy": "06-charts-price-action",
+    "trend-strength-and-regimes": "07-technical-analysis",
+    "the-greeks": "15-option-pricing-greeks",
+    "volatility-surface": "16-volatility",
+    "dealer-gamma-and-hedging": None,        # no existing channel covers GEX
+    "fair-value-and-mean-reversion": None,   # VWAP/anchor mean reversion
+    "the-market-clock": None,                # intraday session regimes
+    "risk-and-backtesting": "24-backtesting-statistics",
+    "algorithmic-glossary": None,            # HFT / bot mechanics
+    "moneyness-and-leverage": "14-option-chain-liquidity",
+    "expiration-dynamics": "21-expiration-assignment",
+    "macro-regimes": "09-macro-sectors-catalysts",
+    "option-contracts-basics": "13-options-basics",
+    "directional-strategies": "17-directional-options",
+    "neutral-and-multileg": "19-spreads-multi-leg",
+    "hedging-and-synthetics": "18-income-and-hedging",
+    "fundamentals-and-valuation": "04-valuation-and-quality",
+    "indices-and-etfs": "01-stock-market-foundations",
+    "gaps-and-oscillators": "07-technical-analysis",
+    "commodities-and-fixed-income": None,    # rates/commodities term structure
+    "psychology-and-journaling": "23-psychology-journaling",
+    "accounts-tax-and-funding": "25-brokers-accounts-taxes",
+}
+
+
+def new_channel_themes() -> list[ExpansionChannel]:
+    """Only the themes that need a channel of their own."""
+    return [c for c in build_channels() if THEME_TARGETS.get(c.slug) is None]
+
+
+def appended_themes() -> list[tuple[str, ExpansionChannel]]:
+    """(existing channel, theme) pairs whose sections extend that channel."""
+    return [(THEME_TARGETS[c.slug], c) for c in build_channels()
+            if THEME_TARGETS.get(c.slug)]
+
+
+def channel_budget_check(existing_channel_count: int) -> dict[str, Any]:
+    """Proof the result stays under the per-category cap."""
+    new = len(new_channel_themes())
+    return {
+        "existing": existing_channel_count,
+        "new_channels": new,
+        "total": existing_channel_count + new,
+        "cap": MAX_CHANNELS_PER_CATEGORY,
+        "within_cap": existing_channel_count + new <= MAX_CHANNELS_PER_CATEGORY,
+        "themes_appended_to_existing": len(appended_themes()),
+    }
+
+
+def _sections_markdown(channel: ExpansionChannel) -> str:
+    """The `##` sections for one theme, with provenance."""
+    lines = [
+        f"## {channel.title} — expanded reference",
+        f"{channel.summary} Consolidated from source modules "
+        f"{', '.join(str(m) for m in channel.modules)}; those modules covered "
+        f"overlapping ground, so the material is kept in full with the "
+        f"repetition removed.",
+        "",
+    ]
+    for topic in channel.topics:
+        lines.append(f"## {topic.title}")
+        lines.append(topic.body or (
+            f"Covered in source module {topic.module}. See the surrounding "
+            f"sections for the full treatment."
+        ))
+        lines.append("")
+    return "\n".join(lines)
+
+
+BEGIN_TEMPLATE = "<!-- EXPANDED:{slug} -->"
+END_TEMPLATE = "<!-- /EXPANDED:{slug} -->"
+
+
+def install_expansion(library_path: Path, start_number: int = 32) -> dict[str, Any]:
+    """Fold the expansion into the library.
+
+    Appended themes are inserted INSIDE the target channel's existing block,
+    just before its `<!-- END:channel -->` marker, so they become sections of
+    that channel rather than a competing channel. New themes get their own
+    block. Idempotent - a previous expansion block is replaced, not stacked,
+    since duplicating sections would have the bot cite the same text twice.
+    """
+    text = library_path.read_text(encoding="utf-8")
+    appended = 0
+
+    for target, channel in appended_themes():
+        begin = BEGIN_TEMPLATE.format(slug=channel.slug)
+        end = END_TEMPLATE.format(slug=channel.slug)
+        block = f"{begin}\n\n{_sections_markdown(channel)}\n{end}\n"
+        if begin in text:
+            head, rest = text.split(begin, 1)
+            text = head + block + rest.split(end, 1)[1].lstrip("\n")
+        else:
+            marker = f"<!-- END:{target} -->"
+            if marker not in text:
+                continue
+            text = text.replace(marker, block + "\n" + marker, 1)
+        appended += 1
+
+    new_blocks = []
+    for offset, channel in enumerate(new_channel_themes()):
+        number = start_number + offset
+        slug = f"{number:02d}-{channel.slug}"
+        new_blocks.append(
+            f"<!-- CHANNEL:{slug} -->\n# {number:02d} · {channel.title}\n\n"
+            f"{_sections_markdown(channel)}\n<!-- END:{slug} -->\n"
+        )
+    joined = "\n".join(new_blocks)
+    if LIBRARY_MARKER in text:
+        text = text.split(LIBRARY_MARKER)[0].rstrip() + "\n\n"
+    text = text.rstrip() + f"\n\n{LIBRARY_MARKER}\n\n" + joined
+    library_path.write_text(text, encoding="utf-8")
+    return {"appended_to_existing": appended, "new_channels": len(new_blocks),
+            "chars": len(text)}
+
+
+def new_channel_names(start_number: int = 32) -> list[str]:
+    return [f"{start_number + offset:02d}-{channel.slug}"
+            for offset, channel in enumerate(new_channel_themes())]

@@ -54,6 +54,25 @@ Understand authorized shares, issued shares, outstanding shares, treasury shares
 
 ## Common beginner errors
 Buying because a share price looks low, confusing an ETF with the companies it holds, using stale last prices, ignoring dilution, treating dividends as free money, assuming after-hours liquidity matches regular hours, and opening several highly correlated positions while calling them diversified.
+<!-- EXPANDED:indices-and-etfs -->
+
+## Indices, ETF Structure & Creation Units — expanded reference
+How SPY actually works - index construction, ETF creation and redemption, tracking, and why an ETF can trade away from its basket. Consolidated from source modules 70; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Market-Cap Weighted Indices (S&P 500) vs. Price-Weighted Indices (DJIA)
+Covered in source module 70. See the surrounding sections for the full treatment.
+
+## Understanding Exchange-Traded Funds (ETFs) vs. Mutual Funds
+Covered in source module 70. See the surrounding sections for the full treatment.
+
+## Authorized Participants and the ETF Creation-Redemption Mechanism
+Covered in source module 70. See the surrounding sections for the full treatment.
+
+## Leveraged and Inverse ETFs: Tracking Compounding Tracking Errors
+Covered in source module 70. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:indices-and-etfs -->
+
 <!-- END:01-stock-market-foundations -->
 
 <!-- CHANNEL:02-company-fundamentals -->
@@ -243,6 +262,61 @@ Create at least three cases with explicit assumptions. Include an adverse case w
 
 ## Common mistakes
 Buying the lowest multiple in a collapsing industry, using one year of peak earnings, comparing unrelated businesses, assuming all growth deserves the same multiple, ignoring dilution, treating analyst targets as valuation work, and confusing a good company with an automatically good investment.
+<!-- EXPANDED:fundamentals-and-valuation -->
+
+## Corporate Finance, Valuation & Statements — expanded reference
+Fundamentals for context rather than for day trading: statements, multiples, ratios, and credit analysis. Consolidated from source modules 67, 68, 69, 92; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Revenue, Cost of Goods Sold, and Gross Profit Margins
+Covered in source module 67. See the surrounding sections for the full treatment.
+
+## EBITDA, Operating Income, and Net Profit Margin Allocations
+Covered in source module 67. See the surrounding sections for the full treatment.
+
+## Free Cash Flow (FCF) Generation vs. Net Accounting Earnings
+Covered in source module 67. See the surrounding sections for the full treatment.
+
+## Deconstructing Earnings Per Share (EPS) and Dilution Risk
+Covered in source module 67. See the surrounding sections for the full treatment.
+
+## Price-to-Earnings Ratio (P/E): Trailing vs. Forward Multiples
+Covered in source module 68. See the surrounding sections for the full treatment.
+
+## Price-to-Sales (P/S) and Enterprise Value-to-EBITDA (EV/EBITDA)
+Covered in source module 68. See the surrounding sections for the full treatment.
+
+## Return on Equity (ROE) and Return on Invested Capital (ROIC)
+Covered in source module 68. See the surrounding sections for the full treatment.
+
+## Price-to-Book (P/B) and the Debt-to-Equity Balance Sheet Filter
+Covered in source module 68. See the surrounding sections for the full treatment.
+
+## The Balance Sheet Matrix: Assets, Liabilities, and Shareholders' Equity
+Covered in source module 69. See the surrounding sections for the full treatment.
+
+## The Income Statement Layer: Tracking Revenue down to Net Profit
+Covered in source module 69. See the surrounding sections for the full treatment.
+
+## The Cash Flow Statement: Operating, Investing, and Financing Flows
+Covered in source module 69. See the surrounding sections for the full treatment.
+
+## Reading the 10-K Annual Report and 10-Q Quarterly Disclosures
+Covered in source module 69. See the surrounding sections for the full treatment.
+
+## Commercial Paper and Interbank Funding: Libor/SOFR Spread Anchors
+Covered in source module 92. See the surrounding sections for the full treatment.
+
+## Corporate Credit Spreads: High-Yield (Junk) vs. Investment Grade Bonds
+Covered in source module 92. See the surrounding sections for the full treatment.
+
+## Debt Maturity Walls: Evaluating Corporate Refinancing and Insolvency Risks
+Covered in source module 92. See the surrounding sections for the full treatment.
+
+## Credit Default Swaps (CDS): Measuring Systemic Corporate Default Stress
+Covered in source module 92. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:fundamentals-and-valuation -->
+
 <!-- END:04-valuation-and-quality -->
 
 <!-- CHANNEL:05-market-mechanics-orders -->
@@ -298,6 +372,142 @@ For a long position, liquidation value is closer to the bid than the ask. For a 
 
 ## Common mistakes
 Using market orders in thin options, chasing a moving ask, canceling and resubmitting without checking fills, forgetting GTC orders, reading midpoint as profit, legging spreads unintentionally, and sizing a trade before considering how it can be exited.
+<!-- EXPANDED:market-microstructure -->
+
+## Market Microstructure & Execution — expanded reference
+How the double-sided auction actually works, and what it costs to cross it: the limit order book, bid/ask spreads, slippage, routing, dark pools and internalisation. Consolidated from source modules 28, 41, 46, 58, 71, 72, 88, 96, 102, 107, 117; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## The Double-Sided Auction Mechanics
+What it means: The stock market is not a store with fixed price tags; it is a live, continuous auction. At any millisecond, the price is set by the Bid (the highest price buyers are willing to pay) and the Ask (the lowest price sellers are willing to accept). Price moves purely based on which side is more aggressive.
+
+## Execution Friction & Slippage
+What it means: Slippage is the hidden loss you take when the price you expect to get when clicking buy doesn't match the price you actually get filled at. High-frequency institutional servers always step in front of slow retail traders using Market Orders (buy instantly at any price), stealing pennies on every contract. Using Limit Orders (buy only at an exact price or better) completely blocks this friction.
+
+## Intraday Efficiency Ratio (Intraday_Efficiency_Ratio)
+What it means: A data-science calculation that measures the "noise" or cleanliness of a daily trend by dividing the net daily price move by the total absolute distance traveled during the session. * The Math: |Close - Open| / (High - Low) * The Rule: A value near 1.0 means SPY is running in a pristine, straight vertical line. A value near 0 means a messy, zig-zagging sideways chop. Options buyers need straight lines to make money fast; this metric filters out muddy market noise.
+
+## Volume Rate of Change (Volume_Rate_Of_Change_5d)
+What it means: A momentum accelerator metric that calculates the percentage shift in total traded share volume over a rolling 5-day business horizon. * The Math: (Today's Volume - Volume 5 Days Ago) / Volume 5 Days Ago * Trading Ingestion Key: This indicator identifies sudden, hidden institutional accumulation cycles. If price is consolidating flat but the volume rate of change spikes aggressively, it signals institutions are silently vacuuming up inventory right before a massive breakout launches.
+
+## Opening Range Box High/Low
+What it means: The absolute boundary high and low price marks set by an index during a specific morning window (such as the highly volatile first 30 minutes of trading from 9:30 AM to 10:00 AM EST). * Trading Ingestion Key: This framework establishes your intraday trading field. The area inside the box is treated as a high-risk noise zone. The second price cracks past either the top or bottom of this range box on heavy volume, it triggers a clean Opening Range Breakout (ORB) play.
+
+## High-Low Candle Spread (High_Low_Spread_Pct)
+What it means: Measures the percentage distance between the absolute highest price and lowest price reached inside a single trading candle. * The Math: (High - Low) / Close * Trading Ingestion Key: This identifies intraday liquidity gaps. A tiny spread on massive volume reveals a "heavy" market where institutions are aggressively capping or absorbing prices. A massive spread on low volume reveals an absolute liquidity vacuum, where the price flips easily due to thin order books.
+
+## Candlestick Close Placement (Close_vs_Range_Pct)
+What it means: Tracks the exact percentage location of a candle's closing price relative to its overall high-low trading boundary for that session. * The Math: (Close - Low) / (High - Low) * Trading Ingestion Key: This maps out true end-of-session control. A value > 0.90 proves intense institutional buying right up to the final second of the bar. A value < 0.10 confirms aggressive liquidation.
+
+## Real-Time Bid-Ask Spread Spread-Widening Risk Shocks
+Covered in source module 46. See the surrounding sections for the full treatment.
+
+## Intraday Liquidity Depletion Vacuums (High_Low_Spread_Pct)
+Covered in source module 46. See the surrounding sections for the full treatment.
+
+## Volume Velocity Shock Standard Deviations (Volume_ZScore_20)
+Covered in source module 46. See the surrounding sections for the full treatment.
+
+## True Capital Flow Tracking Matrices (Dollar_Volume_Traded)
+Covered in source module 46. See the surrounding sections for the full treatment.
+
+## The Role of the Options Exchange Specialist and Liquid Market Makers
+Covered in source module 58. See the surrounding sections for the full treatment.
+
+## Bid-Ask Spread Dynamics, Order Flow, and Transactional Friction
+Covered in source module 58. See the surrounding sections for the full treatment.
+
+## The Mechanics of Delta-Neutral Dealer Re-Hedging Profiles
+Covered in source module 58. See the surrounding sections for the full treatment.
+
+## Tracking Options Daily Trading Volume vs. Active Overnight Open Interest (OI)
+Covered in source module 58. See the surrounding sections for the full treatment.
+
+## Institutional Asset Managers, Pension Funds, and Sovereign Wealth
+Covered in source module 71. See the surrounding sections for the full treatment.
+
+## Hedge Fund Mandates (Long/Short, Global Macro, Quantitative Multi-Strat)
+Covered in source module 71. See the surrounding sections for the full treatment.
+
+## Retail Brokers, Clearing Firms, and Payment for Order Flow (PFOF)
+Covered in source module 71. See the surrounding sections for the full treatment.
+
+## Dark Pools, Internalizers, and Lit Public Exchange Order Routing
+Covered in source module 71. See the surrounding sections for the full treatment.
+
+## Level 1 Data (Top of Book) vs. Level 2 Data (Order Book Depth)
+Covered in source module 72. See the surrounding sections for the full treatment.
+
+## Inside Bid-Ask Spreads, Market Orders, and Limit Order Ingestion
+Covered in source module 72. See the surrounding sections for the full treatment.
+
+## Conditional Order Routing (Stop-Market, Stop-Limit, Trailing Stops)
+Covered in source module 72. See the surrounding sections for the full treatment.
+
+## Immediate-or-Cancel (IOC), Fill-or-Kill (FOK), and Good-Til-Canceled (GTC)
+Covered in source module 72. See the surrounding sections for the full treatment.
+
+## Time and Sales (The Tape): Decoding Real-Time Transaction Logs
+Covered in source module 88. See the surrounding sections for the full treatment.
+
+## Volume At Price (Horizontal Volume Profile / Market Profile Matrices)
+Covered in source module 88. See the surrounding sections for the full treatment.
+
+## Order Book Imbalances: Bid-Ask Net Order Flow Analytics
+Covered in source module 88. See the surrounding sections for the full treatment.
+
+## Identifying Block Trades, Iceberg Orders, and Hidden Algo Footprints
+Covered in source module 88. See the surrounding sections for the full treatment.
+
+## Lit Exchanges (NYSE/NASDAQ) vs. Dark Pools (Alternative Trading Systems)
+Covered in source module 96. See the surrounding sections for the full treatment.
+
+## Direct Market Access (DMA) vs. Retail Payment for Order Flow (PFOF)
+Covered in source module 96. See the surrounding sections for the full treatment.
+
+## Maker-Taker Fee Models: Rebate Optimization across Execution Venues
+Covered in source module 96. See the surrounding sections for the full treatment.
+
+## Smart Order Routers (SOR): How Algos Shred and Distribute Order Blocks
+Covered in source module 96. See the surrounding sections for the full treatment.
+
+## Volume-Weighted Average Price Execution Loops (Algorithmic Ingestion)
+Covered in source module 102. See the surrounding sections for the full treatment.
+
+## Time-Weighted Average Price Block Distribution Engines
+Covered in source module 102. See the surrounding sections for the full treatment.
+
+## Percentage-of-Volume (POV) Slicers: Hiding Institutional Transactions Natively
+Covered in source module 102. See the surrounding sections for the full treatment.
+
+## Minimum-Quantity, Discretionary, and Pegged Order Microstructure Codes
+Covered in source module 102. See the surrounding sections for the full treatment.
+
+## Alternative Trading Systems (ATS): Tracking Institutional Tier Block Crosses
+Covered in source module 107. See the surrounding sections for the full treatment.
+
+## Wholesaler Internalization: Payment for Order Flow (PFOF) Order Ingestion Routing
+Covered in source module 107. See the surrounding sections for the full treatment.
+
+## Continuous Crossing vs. Midpoint Match Execution Venue Frictions
+Covered in source module 107. See the surrounding sections for the full treatment.
+
+## Reg NMS Rule 611 (Order Protection Rule): The Mandated Public Market Intersection
+Covered in source module 107. See the surrounding sections for the full treatment.
+
+## The Bid-Ask Matrix: Knowing Who Is Buying the Floor and Who Is Selling the Ceiling
+Covered in source module 117. See the surrounding sections for the full treatment.
+
+## Defining Market Orders vs. Limit Orders and Avoiding Entry Slippage
+Covered in source module 117. See the surrounding sections for the full treatment.
+
+## How Illiquid Order Books and Wide Spreads Quietly Steal Pennies from Beginners
+Covered in source module 117. See the surrounding sections for the full treatment.
+
+## Scaling Into and Out of Positions without Impacting the Active Price
+Covered in source module 117. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:market-microstructure -->
+
 <!-- END:05-market-mechanics-orders -->
 
 <!-- CHANNEL:06-charts-price-action -->
@@ -365,6 +575,58 @@ Splits, dividends, futures rolls, and corporate actions affect historical charts
 
 ## Common mistakes
 Drawing levels after price turns, using too many lines, switching timeframes until a desired signal appears, treating one candle as certainty, ignoring extended-hours effects, and moving invalidation because the original line has become emotionally inconvenient.
+<!-- EXPANDED:candlestick-and-chart-anatomy -->
+
+## Candlestick Math & Chart Anatomy — expanded reference
+The arithmetic under the bars - body size, upper and lower shadows, rejection wicks - plus classical patterns and how price rejection actually prints. Consolidated from source modules 30, 47, 73, 121; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Candlestick Body Size (Body_Size)
+What it means: The solid rectangular center block of a chart bar that tracks the distance between where a stock opened trading and where it closed trading. * The Math: |Close - Open| / Close * The Rule: Large bodies show aggressive, one-sided directional conviction. Tiny bodies prove a heavy mid-day tug-of-war where no trend is active.
+
+## Upper Rejection Wicks (Upper_Shadow)
+What it means: The thin lines stretching above the solid candle body. It calculates how far buyers tried to push the price up before being completely slammed back down by institutional sellers before the bar ended. * The Math: (High - Max(Close, Open)) / Close
+
+## Lower Absorption Wicks (Lower_Shadow)
+What it means: The thin lines stretching beneath the solid candle body. This mathematically identifies the exact structural floors where big money algorithms stepped in to buy up a rapid market drop and push the price back up. * The Math: (Min(Close, Open) - Low) / Close
+
+## Conviction Measurement Ratios (Body_Size)
+Covered in source module 47. See the surrounding sections for the full treatment.
+
+## Failed Breakout Upper Rejection Wicks (Upper_Shadow)
+Covered in source module 47. See the surrounding sections for the full treatment.
+
+## Institutional Floor Absorption Lower Wicks (Lower_Shadow)
+Covered in source module 47. See the surrounding sections for the full treatment.
+
+## True Intraday Trend Cleanliness Metrics (Intraday_Efficiency_Ratio)
+Covered in source module 47. See the surrounding sections for the full treatment.
+
+## Support and Resistance Horizontal Floors and Ceilings
+Covered in source module 73. See the surrounding sections for the full treatment.
+
+## Trendlines, Parallel Channels, and Fan Line Matrix Overlays
+Covered in source module 73. See the surrounding sections for the full treatment.
+
+## Classical Reversal Structures (Head and Shoulders, Double Tops/Bottoms)
+Covered in source module 73. See the surrounding sections for the full treatment.
+
+## Classical Continuation Patterns (Bull/Bear Flags, Pennants, Wedges)
+Covered in source module 73. See the surrounding sections for the full treatment.
+
+## Reading the Candlestick Shape: Deconstructing Open, High, Low, and Close Actions
+Covered in source module 121. See the surrounding sections for the full treatment.
+
+## Candle Body Sizes: Spotting Clean Buyer or Seller Conviction instantly
+Covered in source module 121. See the surrounding sections for the full treatment.
+
+## Upper Shadow Wicks: Spotting Failed Bullish Breakouts and Rejections
+Covered in source module 121. See the surrounding sections for the full treatment.
+
+## Lower Absorption Wicks: Identifying Key Structural Floors Where Institutional Support Steps In
+Covered in source module 121. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:candlestick-and-chart-anatomy -->
+
 <!-- END:06-charts-price-action -->
 
 <!-- CHANNEL:07-technical-analysis -->
@@ -422,6 +684,86 @@ Indicators fail during gaps, structural regime changes, low liquidity, news, and
 
 ## Common mistakes
 Calling overbought an automatic sell, using default settings without purpose, changing settings after losses, ignoring look-ahead behavior, and treating indicator agreement as probability without historical evidence.
+<!-- EXPANDED:trend-strength-and-regimes -->
+
+## Trend Strength, Velocity & Chop Filters — expanded reference
+Distinguishing a trend from noise: velocity measures, efficiency ratios, ADX-style strength, and the filters that switch a strategy off in chop. Consolidated from source modules 31, 122; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Average Directional Index (ADX_14)
+What it means: A technical indicator that scores the absolute strength of a market trend on a scale from 0 to 100, completely ignoring whether the direction is up or down. * The Rule: A score below 18 proves the market is locked in a dead, chopping box. A spike above 22 to 25 states that a powerful vertical trend has launched, giving a green light to buy directional options.
+
+## Moving Average Slope Acceleration (EMA_9_Slope)
+What it means: An Exponential Moving Average (EMA) tracks a stock's average price while placing heavier weight on the most recent data. The slope calculates the moving rate of change (the steepness of the angle) of that line. * The Rule: Standard line crosses are often false whipsaw traps. Tracking a steep, accelerating slope angle guarantees true price speed is entering the market.
+
+## Defining Market States: Separating Clean Vertical Trends from Messy Sideways Chop
+Covered in source module 122. See the surrounding sections for the full treatment.
+
+## The Average Directional Index (ADX): Knowing When to Buy and When to Stand Down
+Covered in source module 122. See the surrounding sections for the full treatment.
+
+## Moving Average ribbon Slopes: Verifying True Price Speed entries
+Covered in source module 122. See the surrounding sections for the full treatment.
+
+## Support and Resistance Levels: Mapping Out Historical Supply and Demand Zones
+Covered in source module 122. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:trend-strength-and-regimes -->
+
+<!-- EXPANDED:gaps-and-oscillators -->
+
+## Gaps, Oscillators & Volatility Bands — expanded reference
+Opening gaps and their statistics, momentum oscillators, mean-reversion signals, and Bollinger-style statistical bands. Consolidated from source modules 74, 75, 76, 97; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Common Gaps, Breakaway Gaps, Runaway Gaps, and Exhaustion Gaps
+Covered in source module 74. See the surrounding sections for the full treatment.
+
+## The Mechanics of Opening Gaps and Overnight Order Re-Matching
+Covered in source module 74. See the surrounding sections for the full treatment.
+
+## Intraday Range Spreads and Liquidity Exhaustion Price Vacuums
+Covered in source module 74. See the surrounding sections for the full treatment.
+
+## Candlestick Close Placement Metrics Relative to Daily Range Bars
+Covered in source module 74. See the surrounding sections for the full treatment.
+
+## Relative Strength Index (RSI): Evaluating Overbought/Oversold Overextensions
+Covered in source module 75. See the surrounding sections for the full treatment.
+
+## Moving Average Convergence Divergence (MACD): Signal Line Cross-Overs
+Covered in source module 75. See the surrounding sections for the full treatment.
+
+## Stochastic Oscillator: Tracking Fast and Slow Closing Placements
+Covered in source module 75. See the surrounding sections for the full treatment.
+
+## Commodity Channel Index (CCI) and Williams %R Oscillator Ingestion
+Covered in source module 75. See the surrounding sections for the full treatment.
+
+## Bollinger Bands: Standard Deviation Volatility Envelope Widths
+Covered in source module 76. See the surrounding sections for the full treatment.
+
+## Keltner Channels: Average True Range (ATR) Envelope Boundaries
+Covered in source module 76. See the surrounding sections for the full treatment.
+
+## Donchian Channels: High-Low Range Breakout Tracking Matrices
+Covered in source module 76. See the surrounding sections for the full treatment.
+
+## Moving Average Envelopes and Percentage Band Filters
+Covered in source module 76. See the surrounding sections for the full treatment.
+
+## Ichimoku Kinko Hyo: Tenkan-Sen, Kijun-Sen, and Cloud Equilibrium
+Covered in source module 97. See the surrounding sections for the full treatment.
+
+## Parabolic SAR: Systematic Stop-and-Reverse Directional Wave Gauges
+Covered in source module 97. See the surrounding sections for the full treatment.
+
+## Keltner Channels vs. Bollinger Bands: Measuring Volatility Squeezes
+Covered in source module 97. See the surrounding sections for the full treatment.
+
+## Linear Regression Channels: Standard Deviation Trend Variance Channels
+Covered in source module 97. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:gaps-and-oscillators -->
+
 <!-- END:07-technical-analysis -->
 
 <!-- CHANNEL:08-volume-breadth-internals -->
@@ -479,6 +821,58 @@ A breakout with expanding volume, broad participation, supportive sector behavio
 
 ## Common mistakes
 Assuming every large options trade is bullish, ignoring time-of-day seasonality, using breadth from the wrong universe, treating volume spikes as direction, and repeating “institutions are buying” without evidence that survives contact with the actual tape.
+<!-- EXPANDED:volume-and-flow -->
+
+## Volume, Flow & Tape Reading — expanded reference
+Reading participation rather than price: dollar volume, volume z-scores, volume volatility, breadth, and the tape signatures that separate a real breakout from a low-volume fake. Consolidated from source modules 29, 77, 78, 123; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Dollar Volume Traded (Dollar_Volume_Traded)
+What it means: The total amount of actual raw cash moving through a stock, calculated by multiplying the closing price by the number of shares traded. * The Math: Close * Volume * The Rule: Counting raw shares is misleading. Trading 1 million shares on a $500 stock moves $500 million in cash. Trading 1 million shares on a $1.00 stock moves only $1 million. Tracking dollar volume lets the algorithm see exactly where big money funds are moving actual capital wealth.
+
+## Volume Z-Score (Volume_ZScore_20)
+What it means: A statistical tracking tool that measures exactly how many standard deviations today's current trading volume is away from its recent 20-day average baseline. * The Rule: Breakouts on low volume are retail-driven fakes. A volume Z-score above 1.40 or 1.50 flags a major "Volumetric Shock," proving that massive institutional block orders are hitting the market, validating the trend.
+
+## Volume Volatility (Volume_Volatility_20d)
+What it means: Measures the standard deviation of daily log volume changes over 20 days. It tracks how erratic or stable the asset's share turnover is, warning the system when trading volume is completely drying up.
+
+## Volume-at-Price Distributions (Volume Profile / Market Profile)
+Covered in source module 77. See the surrounding sections for the full treatment.
+
+## Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL)
+Covered in source module 77. See the surrounding sections for the full treatment.
+
+## On-Balance Volume (OBV) and Accumulation/Distribution Accumulators
+Covered in source module 77. See the surrounding sections for the full treatment.
+
+## Chaikin Money Flow (CMF) and Volume-Weighted Moving Averages (VWMA)
+Covered in source module 77. See the surrounding sections for the full treatment.
+
+## The Advance-Decline Line (A/D) and Volume Breadth Multipliers
+Covered in source module 78. See the surrounding sections for the full treatment.
+
+## New Highs vs. New Lows Intermarket Expansion Metrics
+Covered in source module 78. See the surrounding sections for the full treatment.
+
+## S&P 500 Stocks Above the 50-day and 200-day Moving Averages
+Covered in source module 78. See the surrounding sections for the full treatment.
+
+## Cumulative Tick Index and Arms Index (TRIN) Intraday Ratios
+Covered in source module 78. See the surrounding sections for the full treatment.
+
+## The Role of Volume: Validating Real Price Breaks vs. Low-Volume Retail Fakes
+Covered in source module 123. See the surrounding sections for the full treatment.
+
+## Capital Velocity: Understanding How Cash Flows Move Markets
+Covered in source module 123. See the surrounding sections for the full treatment.
+
+## Volume Extremes and Shocks: Recognizing the Footprints of Big Institutional Buyers
+Covered in source module 123. See the surrounding sections for the full treatment.
+
+## Opening Range Boxes: Drawing the Boundaries of the First 30 Minutes of the Day
+Covered in source module 123. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:volume-and-flow -->
+
 <!-- END:08-volume-breadth-internals -->
 
 <!-- CHANNEL:09-macro-sectors-catalysts -->
@@ -524,6 +918,79 @@ For each major event, define:
 
 ## Common mistakes
 Trading headlines without reading details, assuming good economic news is always bullish, ignoring revisions, treating sector correlation as company causation, and holding short-dated options through events without understanding implied movement.
+<!-- EXPANDED:macro-regimes -->
+
+## Macro Regimes, Central Banks & Intermarket — expanded reference
+Rates, inflation, central-bank policy and the cross-asset relationships that set the regime a strategy has to survive. Consolidated from source modules 43, 50, 79, 90, 104, 113; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## The Yield Curve Spread (Yield_Curve_Spread)
+What it means: The macroeconomic interest rate difference between long-term government debt (the US 10-Year Treasury Bond) and short-term government debt (the US 2-Year Treasury Note). * Trading Ingestion Key: In a healthy economy, long-term bonds pay higher interest rates. When this spread goes negative (inverts), it means investors are panicking about immediate economic stability. This acts as your master algorithmic regime filter to cut equity position sizing before broad macro market recessions hit.
+
+## Stock-to-Bond Capital Flow Ratio (SPY_vs_TLT_Ratio)
+What it means: An intermarket relative strength index calculated by dividing the closing price of the SPY equity ETF by the closing price of the long-term Treasury Bond ETF (TLT). * The Math: SPY Close / TLT Close * Trading Ingestion Key: Capital flows through the market like a pendulum between risk assets (stocks) and safe-haven assets (bonds). When this ratio turns down sharply, it signals that big money funds are actively fleeing equities to hide in bonds, alerting your system to look for short put plays.
+
+## Sovereign Credit Imbalance Spreads (Yield_Curve_Spread)
+Covered in source module 50. See the surrounding sections for the full treatment.
+
+## Institutional Risk-On vs. Risk-Off Pendulums (SPY_vs_TLT_Ratio)
+Covered in source module 50. See the surrounding sections for the full treatment.
+
+## Corporate Debt Liquidity Credit Stress Markers (VTI_vs_HYG_Ratio)
+Covered in source module 50. See the surrounding sections for the full treatment.
+
+## Multi-Session Intraday Morning Opening Gap Actions (Opening_Gap_Pct)
+Covered in source module 50. See the surrounding sections for the full treatment.
+
+## Gross Domestic Product (GDP) Waves and Economic Growth Cycles
+Covered in source module 79. See the surrounding sections for the full treatment.
+
+## Inflation Metrics: Consumer Price Index (CPI) vs. Core PCE Allocations
+Covered in source module 79. See the surrounding sections for the full treatment.
+
+## Employment Metrics: Non-Farm Payrolls (NFP) and Unemployment Shifts
+Covered in source module 79. See the surrounding sections for the full treatment.
+
+## Central Bank Policies: Federal Open Market Committee (FOMC) Interest Decisions
+Covered in source module 79. See the surrounding sections for the full treatment.
+
+## Intermarket Real Estate Gauges: NAHB Housing Market Index Registries
+Covered in source module 90. See the surrounding sections for the full treatment.
+
+## Global Supply Chain Metrics: The Baltic Dry Index Cargo Tracker
+Covered in source module 90. See the surrounding sections for the full treatment.
+
+## Intermarket Currency Correlates: Emerging Market Risk vs. Strong Dollar
+Covered in source module 90. See the surrounding sections for the full treatment.
+
+## Global Central Bank Networks: ECB, BOJ, and BOE Liquidity Injections
+Covered in source module 90. See the surrounding sections for the full treatment.
+
+## Federal Reserve Reverse Repo (RRP) Facilities: Tracking Systemic Cash Excess
+Covered in source module 104. See the surrounding sections for the full treatment.
+
+## Eurodollar Markets: The Offshore Funding Matrix Shaping Broad US Equities
+Covered in source module 104. See the surrounding sections for the full treatment.
+
+## Central Bank Liquidity Swaps: Cross-Border Dollar Funding Shock Mitigators
+Covered in source module 104. See the surrounding sections for the full treatment.
+
+## Commercial Paper Funding Facility Mechanics: Monitoring Corporate Credit Stress
+Covered in source module 104. See the surrounding sections for the full treatment.
+
+## Counterparty Risk: Clearinghouse Defalcation Frameworks and Default Waterfalls
+Covered in source module 113. See the surrounding sections for the full treatment.
+
+## Cross-Asset Liquidations: Why Bonds, Gold, and Equities Collapse Simultaneously in Shocks
+Covered in source module 113. See the surrounding sections for the full treatment.
+
+## Haircut and Repo Haircut Adjustments: The Fuel Behind Sudden Liquidity Drops
+Covered in source module 113. See the surrounding sections for the full treatment.
+
+## The Interbank Lending Freeze: Ted Spreads and Credit Funding Gridlocks
+Covered in source module 113. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:macro-regimes -->
+
 <!-- END:09-macro-sectors-catalysts -->
 
 <!-- CHANNEL:10-stock-trading-strategies -->
@@ -727,6 +1194,37 @@ Before entry know:
 
 ## Common mistakes
 Buying the cheapest OTM contract, confusing premium with total cost, ignoring multiplier, holding through expiration without understanding exercise, believing defined risk means small risk, and assuming a correct direction automatically creates profit.
+<!-- EXPANDED:option-contracts-basics -->
+
+## Option Contracts: Definitions & Long vs Short — expanded reference
+What a contract actually is, the difference between buying and selling premium, and the obligations each side carries. Consolidated from source modules 53, 66; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## The Concept of Options: Rights vs. Obligations
+Covered in source module 53. See the surrounding sections for the full treatment.
+
+## Deconstructing the Option Premium: Intrinsic vs. Extrinsic Value
+Covered in source module 53. See the surrounding sections for the full treatment.
+
+## Definition and Role of the Strike Price (Exercise Price)
+Covered in source module 53. See the surrounding sections for the full treatment.
+
+## Option Expiration Dates and the Lifecycle of a Contract
+Covered in source module 53. See the surrounding sections for the full treatment.
+
+## Common Stock vs. Preferred Stock Ownership
+Covered in source module 66. See the surrounding sections for the full treatment.
+
+## Market Capitalization Regimes (Mega, Large, Mid, Small Cap)
+Covered in source module 66. See the surrounding sections for the full treatment.
+
+## The Dividend Distribution Cycle (Declaration, Ex-Date, Record, Payment)
+Covered in source module 66. See the surrounding sections for the full treatment.
+
+## Stock Splits, Reverse Splits, and Fractional Share Mechanics
+Covered in source module 66. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:option-contracts-basics -->
+
 <!-- END:13-options-basics -->
 
 <!-- CHANNEL:14-option-chain-liquidity -->
@@ -786,6 +1284,46 @@ Start with a defensible limit, wait for market response, and adjust intentionall
 
 ## Common mistakes
 Using last price, choosing by premium alone, ignoring percentage spread width, mixing expirations accidentally, reading open interest as bullish, and paper-filling every trade at midpoint as if market makers were a public charity.
+<!-- EXPANDED:moneyness-and-leverage -->
+
+## Moneyness, Contract Selection & Leverage — expanded reference
+ITM, ATM and OTM as regimes rather than labels, how moneyness drives leverage and probability, and how contract choice changes the trade you are actually taking. Consolidated from source modules 39, 51, 118; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## In-The-Money (ITM)
+What it means: A pricing state where an options contract possesses real, extractable baseline cash value (Intrinsic Value) because the current stock price has cleared the contract's strike boundary. * Trading Ingestion Key: For a Long Call, the contract is ITM if the stock price is above the strike. For a Long Put, the contract is ITM if the stock price is below the strike. ITM options carry a high Delta (45 to 90+), making them move almost dollar-for-dollar with the stock.
+
+## At-The-Money (ATM)
+What it means: A structural state where the underlying stock price is trading exactly identical to, or closest to, the option's specific contract strike price. * Trading Ingestion Key: ATM contracts carry an initial Delta hovering right at 50 (0.50). They offer the most balanced structural profile for late-day 0DTE trading, providing clean directional sensitivity while providing high order-book liquidity.
+
+## Out-Of-The-Money (OTM)
+What it means: A structural state where an options contract contains zero intrinsic cash value, and its entire premium price consists purely of time value and volatility hope. * Trading Ingestion Key: For a Long Call, the strike sits above the current stock price. For a Long Put, the strike sits below the current stock price. OTM options carry a low Delta (10 to 40) but hold the highest Gamma, meaning their premiums explode at the fastest exponential rate if a fast vertical breakout shifts them toward the money.
+
+## Capital Leverage Selection Matrix (ITM vs. ATM vs. OTM)
+Covered in source module 51. See the surrounding sections for the full treatment.
+
+## Lifespan Time Horizon Risk Profiles (DTE Continuous Lifelines)
+Covered in source module 51. See the surrounding sections for the full treatment.
+
+## Speculative Volume vs. Overnight Institutional Positioning (OI)
+Covered in source module 51. See the surrounding sections for the full treatment.
+
+## Sentiment Outlier Scanners (SPY_OI_PC_Ratio / SPY_Volume_PC_Ratio)
+Covered in source module 51. See the surrounding sections for the full treatment.
+
+## Deconstructing In-The-Money (ITM) vs. Out-of-The-Money (OTM) Contracts
+Covered in source module 118. See the surrounding sections for the full treatment.
+
+## The Lottery-Ticket Fallacy: Why Buying Cheap Options Feels Good but Loses Money
+Covered in source module 118. See the surrounding sections for the full treatment.
+
+## At-The-Money (ATM) Options: Balancing Risk, Premium Price, and Directional Speed
+Covered in source module 118. See the surrounding sections for the full treatment.
+
+## Understanding Option Premiums: Separating True Cash Worth from Extrinsic Time Value
+Covered in source module 118. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:moneyness-and-leverage -->
+
 <!-- END:14-option-chain-liquidity -->
 
 <!-- CHANNEL:15-option-pricing-greeks -->
@@ -838,6 +1376,49 @@ Before trading, estimate option behavior if:
 
 ## Common mistakes
 Treating Greeks as guarantees, adding individual Greek estimates linearly after a large move, confusing theta with guaranteed seller profit, ignoring vega around events, and using delta as a precise probability without product and model context.
+<!-- EXPANDED:the-greeks -->
+
+## The Greeks & 0DTE Acceleration — expanded reference
+Delta, gamma, theta, vega and rho as working tools, with the way each one behaves differently on a same-day expiry where gamma dominates and theta compounds by the minute. Consolidated from source modules 32, 55, 119; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Options Delta (Delta)
+What it means: An options Greek metric that calculates exactly how much an option's contract premium price changes for every single $1.00 move in the underlying stock. * The Rule: Buying a 35–40 Delta option targets an out-of-the-money contract that captures explosive acceleration during breakouts. Buying a 45–50 Delta option targets an at-the-money contract that provides heavy price sensitivity with safety against time decay.
+
+## Options Gamma (Gamma)
+What it means: The Greek metric that measures the acceleration or rate of change of Delta. Think of Delta as speed, and Gamma as the gas pedal. * The Rule: Gamma is highest on contracts expiring today (0DTE). When SPY runs vertically toward your strike, Gamma forces Delta to skyrocket, causing a tiny $50 contract premium to explode to $300 or $400 in minutes.
+
+## Options Theta (Theta)
+What it means: The Greek that tracks same-day time decay. It represents the constant, bleeding loss of option premium value as the clock ticks closer to the 4:00 PM expiration deadline. * The Rule: Theta decay is an options buyer's worst enemy. If SPY goes flat or chops sideways for even 20 minutes, your contract premium melts to zero. This is why every play must be locked into high-velocity time windows.
+
+## Delta: Price Sensitivity, Hedge Ratios, and Moneyness Probabilities
+Covered in source module 55. See the surrounding sections for the full treatment.
+
+## Gamma: The Acceleration Engine of Delta and Long Option Squeezes
+Covered in source module 55. See the surrounding sections for the full treatment.
+
+## Theta: The Mechanics of Time Decay and Premium Bleed Schedules
+Covered in source module 55. See the surrounding sections for the full treatment.
+
+## Vega: Implied Volatility Sensitivity and the Impact of IV Expansion/Contraction
+Covered in source module 55. See the surrounding sections for the full treatment.
+
+## Rho: Assessing the Structural Impact of Interest Rate Shifts on LEAPs
+Covered in source module 55. See the surrounding sections for the full treatment.
+
+## Options Delta: Gauging Price Tracking Speed and Contract Probabilities
+Covered in source module 119. See the surrounding sections for the full treatment.
+
+## Options Gamma: The Gas Pedal and Accelerator of Long Option Premiums
+Covered in source module 119. See the surrounding sections for the full treatment.
+
+## Options Theta: The Relentless Clock and Time Decay Bleed Schedules
+Covered in source module 119. See the surrounding sections for the full treatment.
+
+## Options Vega: Identifying How Changes in Market Implied Volatility Crash or Inflate Premiums
+Covered in source module 119. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:the-greeks -->
+
 <!-- END:15-option-pricing-greeks -->
 
 <!-- CHANNEL:16-volatility -->
@@ -890,6 +1471,58 @@ Compare current realized movement, gaps, correlation, breadth, events, and liqui
 
 ## Common mistakes
 Calling high IV automatically expensive, assuming low IV cannot fall further, using one IV value for a spread, ignoring skew, confusing expected move with support/resistance, and selling premium without modeling tail loss.
+<!-- EXPANDED:volatility-surface -->
+
+## Implied Volatility, Skew & Term Structure — expanded reference
+Why the same underlying carries different volatilities at different strikes and dates, how skew and term structure move, and what a volatility risk premium is. Consolidated from source modules 33, 42, 56, 57; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Implied Volatility (IV) vs. Realized Volatility (RV)
+What it means: Implied Volatility is a forward-looking guess priced into options contracts tracking how crazy the market might get. Realized Volatility tracks the actual, mathematically proven historical movement of the stock.
+
+## Volatility Risk Premium (VRP)
+What it means: A systematic mathematical edge that exists because options pricing models and market makers consistently overestimate real-world market turbulence, making option premiums systematically overpriced.
+
+## Intraday Range Volatility (Intraday_Range_Volatility)
+What it means: Calculates true volatility using only the current session's high and low prices, completely ignoring yesterday's close. This tells the system how violently the stock is swinging right now inside the active session.
+
+## The Volatility Surface
+What it means: A three-dimensional mathematical map that visualizes the implied volatility of options contracts across a wide matrix of different strike prices and different expiration dates. * Trading Ingestion Key: In a textbook model, volatility should look completely flat. In the real world, the surface twists because investors are terrified of sudden market crashes, causing out-of-the-money downside puts to carry a much higher premium price than upside calls.
+
+## Volatility Risk Premium (Volatility_Risk_Premium)
+What it means: The structural percentage variance calculated by subtracting the stock's actual, mathematically proven Realized Volatility from its forward-looking Implied Volatility priced in by options dealers. * The Math: Implied Volatility (IV) - Realized Volatility (RV) * Trading Ingestion Key: This is the ultimate mathematical foundation of options trading. Because humans are naturally driven by fear, options market makers intentionally overprice implied risk to safeguard their books. This premium difference acts as a structural edge that algorithmic models exploit.
+
+## Implied Volatility Skew (IV_Skew_25Delta)
+What it means: Measures the sharp premium pricing difference between out-of-the-money 25-delta put options and out-of-the-money 25-delta call options. * Trading Ingestion Key: When this metric spikes higher, it indicates that institutional managers are aggressively overpaying for downside protection relative to upside speculation, giving your system an early radar warning of an impending market top or institutional fear surge.
+
+## Historical Realized Volatility vs. Forward-Looking Implied Volatility (IV)
+Covered in source module 56. See the surrounding sections for the full treatment.
+
+## The Theoretical Baseline: Demystifying the Black-Scholes-Merton Pricing Model
+Covered in source module 56. See the surrounding sections for the full treatment.
+
+## Modern Real-World Variations: The Binomial Options Pricing Framework
+Covered in source module 56. See the surrounding sections for the full treatment.
+
+## Implied Volatility Percentile (IVP) vs. Implied Volatility Rank (IVR)
+Covered in source module 56. See the surrounding sections for the full treatment.
+
+## The Volatility Risk Premium (VRP): Why Options Are Systematically Overpriced
+Covered in source module 56. See the surrounding sections for the full treatment.
+
+## Understanding the Implied Volatility Smile: Out-of-the-Money Tail Risk Pricing
+Covered in source module 57. See the surrounding sections for the full treatment.
+
+## Understanding the Implied Volatility Skew: Equity Puts vs. Commodities Calls
+Covered in source module 57. See the surrounding sections for the full treatment.
+
+## Mapping the Three-Dimensional Volatility Surface Matrix
+Covered in source module 57. See the surrounding sections for the full treatment.
+
+## Volatility Term Structure: Navigating Contango vs. Backwardation Regimes
+Covered in source module 57. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:volatility-surface -->
+
 <!-- END:16-volatility -->
 
 <!-- CHANNEL:17-directional-options -->
@@ -941,6 +1574,37 @@ Use long premium when expecting movement and/or IV support. Use debit spreads wh
 
 ## Common mistakes
 Buying far OTM lottery contracts, choosing DTE shorter than the thesis, using options because shares “cost too much” without comparing risk, holding after the catalyst has passed, and interpreting defined premium as permission to lose it repeatedly.
+<!-- EXPANDED:directional-strategies -->
+
+## Directional & Long-Premium Strategies — expanded reference
+Long calls and puts, debit structures, and the conditions under which paying premium is the right expression of a view. Consolidated from source modules 59, 60; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Straight Outright Call Buying: Capitalizing on Aggressive Bullish Velocity
+Covered in source module 59. See the surrounding sections for the full treatment.
+
+## Straight Outright Put Buying: Capitalizing on Catastrophic Bearish Cascades
+Covered in source module 59. See the surrounding sections for the full treatment.
+
+## Long Straddles: Profiting from Mass Volatility Explosions in Either Direction
+Covered in source module 59. See the surrounding sections for the full treatment.
+
+## Long Strangles: Budget-Conscious Volatility Plays with Out-of-the-Money Wings
+Covered in source module 59. See the surrounding sections for the full treatment.
+
+## Bull Call Spreads: Capping Upside Profits to Drastically Reduce Contract Costs
+Covered in source module 60. See the surrounding sections for the full treatment.
+
+## Bear Put Spreads: Capping Downside Gains to Mitigate Implied Volatility Crushes
+Covered in source module 60. See the surrounding sections for the full treatment.
+
+## Bull Put Credit Spreads: High-Probability Income Generation on Structural Floors
+Covered in source module 60. See the surrounding sections for the full treatment.
+
+## Bear Call Credit Spreads: Systematically Selling Premium Beneath Ceilings
+Covered in source module 60. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:directional-strategies -->
+
 <!-- END:17-directional-options -->
 
 <!-- CHANNEL:18-income-and-hedging -->
@@ -989,6 +1653,73 @@ Annualizing short-term premium can create absurd-looking numbers that ignore rep
 
 ## Common mistakes
 Calling covered calls risk-free, selling puts solely for high IV, chasing annualized yield, rolling forever to avoid recognizing loss, ignoring ex-dividend assignment, and selling options on a company one would never willingly own.
+<!-- EXPANDED:hedging-and-synthetics -->
+
+## Hedging, Synthetics & Arbitrage — expanded reference
+Portfolio protection, synthetic positions, put-call parity, and the arbitrage relationships that keep option prices honest. Consolidated from source modules 63, 64, 95, 105, 106; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Covered Calls: Liquidating Short Upside Premium Against Core Underlying Stock
+Covered in source module 63. See the surrounding sections for the full treatment.
+
+## Protective Puts: Establishing Institutional Tail-Risk Capital Insurance Policies
+Covered in source module 63. See the surrounding sections for the full treatment.
+
+## The Collar Strategy: Financing Downside Puts via Short Out-of-the-Money Calls
+Covered in source module 63. See the surrounding sections for the full treatment.
+
+## Stock Repair Strategies: Using Spreads to Recover Trapped Capital without Adding Risk
+Covered in source module 63. See the surrounding sections for the full treatment.
+
+## Put-Call Parity: The Core Mathematical Rule of Derivatives Pricing
+Covered in source module 64. See the surrounding sections for the full treatment.
+
+## Synthetic Long Stock: Combining Long Calls and Short Puts to Mimic Shares
+Covered in source module 64. See the surrounding sections for the full treatment.
+
+## Synthetic Short Stock: Combining Long Puts and Short Calls to Mimic Short Selling
+Covered in source module 64. See the surrounding sections for the full treatment.
+
+## Conversion and Reversal Arbitrage: Risk-Free Exploitations of Mispriced Spreads
+Covered in source module 64. See the surrounding sections for the full treatment.
+
+## Dynamic Delta Hedging: Calculating Real-Time Portfolio Share Rebalancing
+Covered in source module 95. See the surrounding sections for the full treatment.
+
+## Gamma Scalping: Trading Stock Around Short-Term Options Positions
+Covered in source module 95. See the surrounding sections for the full treatment.
+
+## Vanna and Volga Risk Multipliers: Implied Volatility and Spot Price Intersects
+Covered in source module 95. See the surrounding sections for the full treatment.
+
+## Tail-Risk Hedging: Executing Low-Probability Out-of-the-Money Option Insurances
+Covered in source module 95. See the surrounding sections for the full treatment.
+
+## Variance Swaps vs. Volatility Swaps: Exploiting Pure Implied Variance Returns
+Covered in source module 105. See the surrounding sections for the full treatment.
+
+## VIX Options Pricing: Navigating Volatility of Volatility Surges Natively
+Covered in source module 105. See the surrounding sections for the full treatment.
+
+## Vanna-Volga Pricing Modifiers: Formulating Advanced Exotic Strike Corrections
+Covered in source module 105. See the surrounding sections for the full treatment.
+
+## Log-Contract Replications: The Mathematical Foundation of the VIX Index Engine
+Covered in source module 105. See the surrounding sections for the full treatment.
+
+## Treasury Futures Contracts: Cheaper-to-Deliver (CTD) Bond Matching Models
+Covered in source module 106. See the surrounding sections for the full treatment.
+
+## Interest Rate Swaps: OIS Spreads and Structural Corporate Fixed Funding Rates
+Covered in source module 106. See the surrounding sections for the full treatment.
+
+## Eurodollar Futures: Hedging Multi-Year Institutional Borrowing Cost Trajectories
+Covered in source module 106. See the surrounding sections for the full treatment.
+
+## Mortgage-Backed Securities (MBS): Pricing Prepayment Volatility Tail Shocks
+Covered in source module 106. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:hedging-and-synthetics -->
+
 <!-- END:18-income-and-hedging -->
 
 <!-- CHANNEL:19-spreads-multi-leg -->
@@ -1043,6 +1774,37 @@ An adjustment closes or changes existing risk and may open new risk. Track reali
 
 ## Common mistakes
 Using expiration diagrams as current value, ignoring one illiquid leg, assuming defined risk means easy management, legging unintentionally, overlooking early assignment, and adding adjustments until nobody, including the trader, can explain the position.
+<!-- EXPANDED:neutral-and-multileg -->
+
+## Market-Neutral, Range-Bound & Multi-Leg — expanded reference
+Iron condors, butterflies, calendars and volatility structures - trades that profit from time or from volatility rather than direction. Consolidated from source modules 61, 62; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Classic Iron Condors: Exploiting Double-Sided Horizontal Sideways Chop
+Covered in source module 61. See the surrounding sections for the full treatment.
+
+## Iron Butterflies: Pinning At-The-Money Premium to Maximize Intraday Theta Melt
+Covered in source module 61. See the surrounding sections for the full treatment.
+
+## Long & Short Calendar Spreads: Exploiting Differing Time Horizon Decay Horizons
+Covered in source module 61. See the surrounding sections for the full treatment.
+
+## Long & Short Diagonal Spreads: Blending Structural Time and Strike Variations
+Covered in source module 61. See the surrounding sections for the full treatment.
+
+## Ratio Spreads: Unbalanced Contract Counts for Delta-Neutral Volatility Exploitations
+Covered in source module 62. See the surrounding sections for the full treatment.
+
+## Broken Wing Butterflies: Structuring Zero-Downside Risk Profiles on Premium Spreads
+Covered in source module 62. See the surrounding sections for the full treatment.
+
+## Box Spreads: Multi-Leg Arbitrage Matrix for Capturing Pure Synthetic Financing Rates
+Covered in source module 62. See the surrounding sections for the full treatment.
+
+## Christmas Tree Spreads: Non-Standard Strike Configurations for Precision Targets
+Covered in source module 62. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:neutral-and-multileg -->
+
 <!-- END:19-spreads-multi-leg -->
 
 <!-- CHANNEL:20-trade-planning-execution -->
@@ -1139,6 +1901,61 @@ Brokers may liquidate positions that create unacceptable exercise or assignment 
 
 ## Common mistakes
 Assuming OTM at the close means safe, holding narrow spreads for pennies, forgetting buying-power needs, ignoring early assignment, and believing defined-risk diagrams control what happens after-hours.
+<!-- EXPANDED:expiration-dynamics -->
+
+## Expiration Dynamics, Assignment & Exotics — expanded reference
+Pin risk, assignment and exercise mechanics, settlement, and the exotic behaviour that shows up as an expiry approaches. Consolidated from source modules 40, 54, 65, 103; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## 0DTE (Zero Days to Expiration)
+What it means: Options contracts that expire, terminate, and settle on the exact same calendar day they are opened for trading [context]. * Trading Ingestion Key: 0DTE options possess no tomorrow. Because their expiration timer runs out at 4:00 PM EST, their Theta (time decay) curve is vertical, melting premium value by the minute if the market moves sideways. However, their Gamma is extreme, making them highly reactive to rapid intraday price velocity.
+
+## Days to Expiration (DTE)
+What it means: The raw integer countdown tracking the remaining lifespan of an options contract before it reaches its official settlement deadline. * Trading Ingestion Key: Our database maps this column precisely to isolate option profiles. Short-term contracts (0 to 1 DTE) track immediate intraday velocity, while longer-term contracts (30 to 90 DTE) absorb broad macro trends with slower decay curves.
+
+## Option Open Interest (OI)
+What it means: The total cumulative number of target options contracts that have been opened by market participants and remain active, unliquidated, and outstanding overnight. * Trading Ingestion Key: Unlike daily trading volume (which resets to zero every morning), Open Interest measures total overnight positional skin-in-the-game. Spikes in Open Interest reveal where large institutions are staking permanent defensive hedges or strike blocks.
+
+## Open Interest Put-Call Ratio (SPY_OI_PC_Ratio)
+What it means: A structural index calculated by dividing the total active open interest of put options by the total active open interest of call options for a specific asset. * The Math: Total Put Open Interest / Total Call Open Interest * Trading Ingestion Key: This indicator filters out short-term noise to map out institutional sentiment. Because institutions constantly buy protective puts to shield multi-billion dollar portfolios, a permanent structural baseline skew exists. When this ratio spikes to historic extremes, it signals peak defensive panic, frequently tracking major macro market bottoms.
+
+## Long Call/Put Positions: The Rights of the Premium Buyer
+Covered in source module 54. See the surrounding sections for the full treatment.
+
+## Short Call/Put Positions: The Obligations of the Premium Seller (Writing Options)
+Covered in source module 54. See the surrounding sections for the full treatment.
+
+## Understanding Options Exercise, Delivery, and Settlement Processes
+Covered in source module 54. See the surrounding sections for the full treatment.
+
+## Navigating Assignment Risk, Early Assignment, and Margin Calls
+Covered in source module 54. See the surrounding sections for the full treatment.
+
+## The Mechanics of Pin Risk: Navigating 3:59 PM Expiration Imbalances
+Covered in source module 65. See the surrounding sections for the full treatment.
+
+## Cash Settlement vs. Physical Delivery: Index Options (SPX/NDX) vs. Equity Options (SPY/QQQ)
+Covered in source module 65. See the surrounding sections for the full treatment.
+
+## Understanding American-Style Options vs. European-Style Options Contract Rules
+Covered in source module 65. See the surrounding sections for the full treatment.
+
+## Introduction to Binary Options, Barrier Options, and Exotic Derivatives Structures
+Covered in source module 65. See the surrounding sections for the full treatment.
+
+## Special Cash Dividends: Structural Adjustments to Options Strike Matrices
+Covered in source module 103. See the surrounding sections for the full treatment.
+
+## Spin-offs and Carve-outs: Managing Deliverable Basket Options Changes
+Covered in source module 103. See the surrounding sections for the full treatment.
+
+## Rights Offerings and Warrants: Evaluating Synthetic Dilution Vectors
+Covered in source module 103. See the surrounding sections for the full treatment.
+
+## Tender Offers and Stock Buyback Mechanics: The Impact on Floating Liquidity
+Covered in source module 103. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:expiration-dynamics -->
+
 <!-- END:21-expiration-assignment -->
 
 <!-- CHANNEL:22-events-corporate-actions -->
@@ -1243,6 +2060,97 @@ Change one rule at a time, define the expected effect, test it out of sample, an
 
 ## Common mistakes
 Journaling only losers, rewriting entry reasons, recording feelings without data, focusing only on win rate, and treating discipline as a personality trait rather than a system of constraints.
+<!-- EXPANDED:psychology-and-journaling -->
+
+## Psychology, Behavioural Bias & Journaling — expanded reference
+The failure modes that are the trader rather than the strategy, plus the journal and mistake log that make them visible. Consolidated from source modules 82, 91, 101, 116, 120, 125, 126; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Cognitive Biases: Overconfidence, Confirmation, and Anchoring Pitfalls
+Covered in source module 82. See the surrounding sections for the full treatment.
+
+## Emotional Friction: Navigating FOMO (Fear of Missing Out) and Revenge Trading
+Covered in source module 82. See the surrounding sections for the full treatment.
+
+## Risk Management Psychology: Mastering Risk-Aversion and Loss-Mitigation
+Covered in source module 82. See the surrounding sections for the full treatment.
+
+## The Trading Journal Matrix: Categorizing and Scoring Execution Errors
+Covered in source module 82. See the surrounding sections for the full treatment.
+
+## VIX Futures Term Structure: Contango vs. Backwardation Roll Yields
+Covered in source module 91. See the surrounding sections for the full treatment.
+
+## Put-Call Volume Ratios vs. Open Interest Long-Term Sentiment Skews
+Covered in source module 91. See the surrounding sections for the full treatment.
+
+## The Fear and Greed Index: Aggregating Multi-Variable Market Panics
+Covered in source module 91. See the surrounding sections for the full treatment.
+
+## High-Frequency Option Sentiment: Tracking Sweeps and Block Purchases
+Covered in source module 91. See the surrounding sections for the full treatment.
+
+## Prospect Theory: The Asymmetric Psychology of Utility and Financial Loss
+Covered in source module 101. See the surrounding sections for the full treatment.
+
+## Overreaction and Underreaction Anomalies: The Core of Swing Trading Alpha
+Covered in source module 101. See the surrounding sections for the full treatment.
+
+## The Disposition Effect: Why Traders Sell Winners Early and Hold Losers Natively
+Covered in source module 101. See the surrounding sections for the full treatment.
+
+## Herding Behavior: Tracking Retail Crowd Waves and Momentum Extinction Points
+Covered in source module 101. See the surrounding sections for the full treatment.
+
+## Establishing the Hard Rules of Your Strategy before the Market Opens
+Covered in source module 116. See the surrounding sections for the full treatment.
+
+## Defining Your Checklist: What Must Happen before You Click Buy
+Covered in source module 116. See the surrounding sections for the full treatment.
+
+## Setting Your Maximum Capital Allocations and Risk per Single Position
+Covered in source module 116. See the surrounding sections for the full treatment.
+
+## Writing Down an Exit Plan for Your Profit Target and Stop-Loss Levels
+Covered in source module 116. See the surrounding sections for the full treatment.
+
+## Calculating the Risk-per-Trade (The Core R-Multiple Principle)
+Covered in source module 120. See the surrounding sections for the full treatment.
+
+## Position Sizing: How to Determine Exactly How Many Contracts to Buy
+Covered in source module 120. See the surrounding sections for the full treatment.
+
+## The Exponential Math of Drawdowns: Why Rebounding from a Loss Gets Harder
+Covered in source module 120. See the surrounding sections for the full treatment.
+
+## The Win Rate vs. Risk-Reward Intersect: Why You Can Be Wrong and Still Profitable
+Covered in source module 120. See the surrounding sections for the full treatment.
+
+## Overcoming FOMO (Fear of Missing Out) and Chasing Overextended Runs
+Covered in source module 125. See the surrounding sections for the full treatment.
+
+## Preventing Revenge Trading after a Loss: Maintaining Discipline in Drawdowns
+Covered in source module 125. See the surrounding sections for the full treatment.
+
+## The Disposition Effect: Overcoming the Urge to Sell Winners Early and Hold Losers Long
+Covered in source module 125. See the surrounding sections for the full treatment.
+
+## Anchoring Pitfalls: Letting Past Prices Distort Current Market Analysis
+Covered in source module 125. See the surrounding sections for the full treatment.
+
+## Keeping a Consistent Journal: Documenting the Rationale behind Every Position
+Covered in source module 126. See the surrounding sections for the full treatment.
+
+## Categorizing Errors: Separating Flawed Strategies from Emotional Execution Failures
+Covered in source module 126. See the surrounding sections for the full treatment.
+
+## Tracking Statistics: Finding Your True Historical Win Rate and Profit Factor
+Covered in source module 126. See the surrounding sections for the full treatment.
+
+## Reviewing Past Data to Continuously Refine Rules and Protect Capital
+Covered in source module 126. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:psychology-and-journaling -->
+
 <!-- END:23-psychology-journaling -->
 
 <!-- CHANNEL:24-backtesting-statistics -->
@@ -1312,6 +2220,70 @@ Tag root-cause hypotheses such as regime conflict, liquidity failure, adverse IV
 
 ## Common mistakes
 Optimizing win rate, ignoring open risk, using midpoint fills, changing multiple rules, selecting the best backtest from hundreds without correction, and believing a beautiful equity curve has signed a contract with the future.
+<!-- EXPANDED:risk-and-backtesting -->
+
+## Risk Architecture, Backtesting & Stress Testing — expanded reference
+Expectancy, profit factor, drawdown, walk-forward validation, backtester architecture, and the stress tests that separate a real edge from a curve fit. Consolidated from source modules 37, 52, 84, 98, 115; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Average True Range (ATR_14)
+What it means: Measures the true mathematical trading span of a stock's chart candles over a trailing 14-period window. * The Rule: Instead of using a fixed, dangerous percentage stop-loss (like a rigid 20% stop), using an ATR multiplier (like a 1.5x ATR trailing stop) allows your risk boundaries to automatically breathe with market volatility.
+
+## Maximum Rolling Drawdown (Max_Drawdown_60d)
+What it means: Maps out the absolute worst peak-to-trough capital drop experienced by a trading account over a rolling 60-day window. It acts as a safety fuse box to slash position sizes if performance takes a structural hit.
+
+## Rolling Sharpe Ratio (Rolling_Sharpe_60d)
+What it means: An institutional scorecard metric that measures risk-adjusted return efficiency. It proves whether a strategy's profits are driven by smart execution or just high-risk gambling volatility. The channels are expanded from # 28 through # 37 to complete your category setup. Let me know if you want me to write out the exact text blocks for any more numbers in this sequence, or if you're ready to proceed to something else!
+
+## Volatility-Adjusted Trailing Safety Envelopes (ATR_14)
+Covered in source module 52. See the surrounding sections for the full treatment.
+
+## Worst-Case Peak-to-Trough Account Fuse Boxes (Max_Drawdown_60d)
+Covered in source module 52. See the surrounding sections for the full treatment.
+
+## Risk-Adjusted Portfolio Variance Scorecards (Rolling_Sharpe_60d)
+Covered in source module 52. See the surrounding sections for the full treatment.
+
+## Multi-Module Database Ingestion Joining without Forward Ingestion Bias
+The channels are now thoroughly mapped from # 28 all the way through # 52 to capture every structural metric, index tracker, calendar time block, and option variable. Let me know if you want me to expand this list to create more channel nodes further out, or if you're ready to proceed to another task! That was completely my mistake—I fell back into formatting numbers like section codes (5.9 to 5.10) instead of following your exact channel list sequence (# 44, # 45, # 46...). Let me fix that sequencing error immediately so it stays perfectly clean and sequential for your Discord bot layout. Here is the corrected, continuous progression starting right from # 53 onwards, expanding into general option mechanics, strategies, and lookups
+
+## Defining Expectancy, Profit Factor, and System Edge Metrics
+Covered in source module 84. See the surrounding sections for the full treatment.
+
+## Sample Size Requirements, Out-of-Sample Testing, and Forward Testing
+Covered in source module 84. See the surrounding sections for the full treatment.
+
+## Identifying and Eliminating Over-Fitting and Curve-Fitting Bias Errors
+Covered in source module 84. See the surrounding sections for the full treatment.
+
+## Monte Carlo Risk Simulations: Evaluating System Ruin Probability Curves
+Covered in source module 84. See the surrounding sections for the full treatment.
+
+## Walk-Forward Optimization: Testing Strategy Adaptability across Changing Regimes
+Covered in source module 98. See the surrounding sections for the full treatment.
+
+## Out-of-Sample Validation: Protecting Against Historical Data Curve-Fitting
+Covered in source module 98. See the surrounding sections for the full treatment.
+
+## Monte Carlo Testing: Evaluating Strategy Ruin Risks across 10,000 Simulations
+Covered in source module 98. See the surrounding sections for the full treatment.
+
+## Historical Black Swan Replications: Stress-Testing Portfolios against 1987, 2008, and 2020
+Covered in source module 98. See the surrounding sections for the full treatment.
+
+## Backtest Speed Optimization: Vectorized Execution Arrays vs. Event-Driven Simulators
+Covered in source module 115. See the surrounding sections for the full treatment.
+
+## Slippage and Fee Modeling: Incorporating Dynamic Maker-Taker Exchange Frictions
+Covered in source module 115. See the surrounding sections for the full treatment.
+
+## Survivorship Bias Resolution: Incorporating Bankrupt and De-listed Assets into Data Sheets
+Covered in source module 115. See the surrounding sections for the full treatment.
+
+## Multi-Asset Rebalancing Delays: Simulating Real-World Execution Latencies
+Covered in source module 115. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:risk-and-backtesting -->
+
 <!-- END:24-backtesting-statistics -->
 
 <!-- CHANNEL:25-brokers-accounts-taxes -->
@@ -1354,6 +2326,160 @@ Use unique passwords, multifactor authentication, withdrawal locks, alerts, veri
 
 ## Common mistakes
 Assuming all brokers handle expiration alike, using unsettled funds without understanding restrictions, ignoring margin interest, relying on social-media tax advice, and treating broker approval as a certificate of competence.
+<!-- EXPANDED:accounts-tax-and-funding -->
+
+## Accounts, Margin, Tax & Prop Funding — expanded reference
+Brokerage mechanics, margin and PDT rules, wash sales and tax treatment, legal structures, and how prop-firm funding works. Consolidated from source modules 83, 85, 86, 87, 93, 94, 99, 100, 109, 110, 114, 127, 128; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Risk-per-Trade Scaling Rules (The R-Multiple Framework)
+Covered in source module 83. See the surrounding sections for the full treatment.
+
+## Position Sizing Models: Fixed Fractional vs. Kelly Criterion Formulas
+Covered in source module 83. See the surrounding sections for the full treatment.
+
+## The Math of Drawdown Recovery: Exponential Curves of Capital Recovery
+Covered in source module 83. See the surrounding sections for the full treatment.
+
+## Win Rate vs. Risk-Reward Ratio Profit Factor Intersect Matrices
+Covered in source module 83. See the surrounding sections for the full treatment.
+
+## Reg T Margin Accounts vs. Portfolio Margin Allocation Architectures
+Covered in source module 85. See the surrounding sections for the full treatment.
+
+## Maintenance Margin Requirements, House Surpluses, and Margin Calls
+Covered in source module 85. See the surrounding sections for the full treatment.
+
+## Pattern Day Trader (PDT) Classification Boundaries and Routing Limits
+Covered in source module 85. See the surrounding sections for the full treatment.
+
+## Options Clearing Corporation (OCC) Clearing House Assignment Processes
+Covered in source module 85. See the surrounding sections for the full treatment.
+
+## Short-Term vs. Long-Term Capital Gains Tax Rate Thresholds
+Covered in source module 86. See the surrounding sections for the full treatment.
+
+## Internal Revenue Code Section 1256 Contracts: 60/40 Tax Multipliers
+Covered in source module 86. See the surrounding sections for the full treatment.
+
+## The Wash Sale Rule: Identifying and Preventing Disallowed Capital Losses
+Covered in source module 86. See the surrounding sections for the full treatment.
+
+## Trader Tax Status (TTS) Requirements and Business Expense Deductions
+Covered in source module 86. See the surrounding sections for the full treatment.
+
+## The Turn-of-the-Month Effect: Tracking Institutional Capital Inflows
+Covered in source module 87. See the surrounding sections for the full treatment.
+
+## Options Expiration (OpEx) Week Anomalies: Max Pain Strike Reversion
+Covered in source module 87. See the surrounding sections for the full treatment.
+
+## Quarter-End Window Dressing: Institutional Portfolio Rebalancing Loops
+Covered in source module 87. See the surrounding sections for the full treatment.
+
+## The Santa Claus Rally and January Effect: Tax-Loss Harvesting Cycles
+Covered in source module 87. See the surrounding sections for the full treatment.
+
+## Satellite Imagery Analytics: Tracking Retail Foot-Traffic and Supply Chains
+Covered in source module 93. See the surrounding sections for the full treatment.
+
+## Natural Language Processing (NLP): Scraping Central Bank Speech Transcripts
+Covered in source module 93. See the surrounding sections for the full treatment.
+
+## Consumer Spending Tracking: Anonymous Credit Card Transaction Aggregations
+Covered in source module 93. See the surrounding sections for the full treatment.
+
+## Freight and Logistics Tracking: Marine Vessel and Fleet Telemetry Logs
+Covered in source module 93. See the surrounding sections for the full treatment.
+
+## Modern Portfolio Theory (MPT): Efficient Frontier Optimization Models
+Covered in source module 94. See the surrounding sections for the full treatment.
+
+## The Black-Litterman Model: Blending Market Equilibrium with Trader Views
+Covered in source module 94. See the surrounding sections for the full treatment.
+
+## Risk Parity Allocation Frameworks: Equalizing Volatility Contributions
+Covered in source module 94. See the surrounding sections for the full treatment.
+
+## Factor Investing Matrix Overlays: Value, Momentum, Quality, and Size Tilts
+Covered in source module 94. See the surrounding sections for the full treatment.
+
+## Proprietary Trading Models: Evaluation Stages and Profit-Split Milestones
+Covered in source module 99. See the surrounding sections for the full treatment.
+
+## Trailing Drawdown Rules: Navigating Relative vs. Absolute Capital Loss Caps
+Covered in source module 99. See the surrounding sections for the full treatment.
+
+## Scaling Plans: Automatically Expanding Position Sizing via Profit Accrual
+Covered in source module 99. See the surrounding sections for the full treatment.
+
+## Institutional Risk Auditing: Tracking Consistency Scores and Sharpe Thresholds
+Covered in source module 99. See the surrounding sections for the full treatment.
+
+## LLC Entity Creation: Operating Trading Operations as a Business Structure
+Covered in source module 100. See the surrounding sections for the full treatment.
+
+## Section 475(f) Mark-to-Market Election: Eliminating Wash Sale Rules
+Covered in source module 100. See the surrounding sections for the full treatment.
+
+## S-Corporation Election: Optimizing Self-Employment and Salary Tax Dividends
+Covered in source module 100. See the surrounding sections for the full treatment.
+
+## Offshore and Trust Asset Protections: Safeguarding Compounding Trading Wealth
+Covered in source module 100. See the surrounding sections for the full treatment.
+
+## Cointegration vs. Correlation: Building Reliable Mathematical Spreads
+Covered in source module 109. See the surrounding sections for the full treatment.
+
+## Mean-Reversion Half-Life: Formulating Optimal Exit Windows on Asset Pairs
+Covered in source module 109. See the surrounding sections for the full treatment.
+
+## Synthetic Asset Matching: Balancing Capital Allocation across Cross-Sector Equities
+Covered in source module 109. See the surrounding sections for the full treatment.
+
+## Statistical Z-Score Modeling: Triggering Mean-Reversion Reversals on Dynamic Spreads
+Covered in source module 109. See the surrounding sections for the full treatment.
+
+## Marginal Value-at-Risk (MVaR) vs. Component Value-at-Risk (CVaR) Frameworks
+Covered in source module 110. See the surrounding sections for the full treatment.
+
+## Contribution to Portfolio Variance: Identifying Undesired Concentrated Risk Fields
+Covered in source module 110. See the surrounding sections for the full treatment.
+
+## Ex-Ante vs. Ex-Post Risk Profiles: Evaluating Systemic Performance vs. Expected Math
+Covered in source module 110. See the surrounding sections for the full treatment.
+
+## Liquidity-Adjusted VaR (LVaR): Factor-Weighting Capital Drops During Panic Regimes
+Covered in source module 110. See the surrounding sections for the full treatment.
+
+## Corporate Insider Transaction Filings: Tracking Form 4 C-Suite Accumulations
+Covered in source module 114. See the surrounding sections for the full treatment.
+
+## Congressional Stock Transaction Registers: Monitoring Government Policy Vectors
+Covered in source module 114. See the surrounding sections for the full treatment.
+
+## IP Address and Web Traffic Intelligence: Tracking Enterprise Software Subscriptions Real-Time
+Covered in source module 114. See the surrounding sections for the full treatment.
+
+## Patent Office Scraping Matrix: Identifying Hidden Research and Development Breakthroughs
+Covered in source module 114. See the surrounding sections for the full treatment.
+
+## Pattern Day Trader (PDT) Classification Boundaries and Capital Limits
+Covered in source module 127. See the surrounding sections for the full treatment.
+
+## Reg T Margin Accounts vs. Cash Accounts for Options Execution
+Covered in source module 127. See the surrounding sections for the full treatment.
+
+## Navigating Assignment Risk, Early Assignment, and Cash Settlement
+Covered in source module 127. See the surrounding sections for the full treatment.
+
+## Section 1256 Contracts: Understanding Tax Advantages on Broader Index Instruments
+Covered in source module 128. See the surrounding sections for the full treatment.
+
+## Managing Trades across Accounts to Ensure Compliant Reporting
+Covered in source module 128. See the surrounding sections for the full treatment.
+
+<!-- /EXPANDED:accounts-tax-and-funding -->
+
 <!-- END:25-brokers-accounts-taxes -->
 
 <!-- CHANNEL:26-research-data-tools -->
@@ -1466,3 +2592,210 @@ Review credentials, conflicts, refund terms, complete track record, methodology,
 ## Final principle
 A legitimate trader, educator, broker, or bot can explain risk, limitations, and evidence. Anyone who needs secrecy, urgency, or blind trust is offering a warning label disguised as an opportunity.
 <!-- END:27-scams-security-myths -->
+
+<!-- EXPANSION:modules-28-128 -->
+
+<!-- CHANNEL:32-dealer-gamma-and-hedging -->
+# 32 · Dealer Gamma, GEX & Market-Maker Hedging
+
+## Dealer Gamma, GEX & Market-Maker Hedging — expanded reference
+The mechanical flow created when market makers hedge their books: gamma exposure landscapes, re-hedging pressure, inventory management, and why price pins near large open interest. Consolidated from source modules 34, 44, 45, 112; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## The Role of the Options Dealer
+What it means: Market makers are institutional firms that are legally required to provide liquidity to the options order book. They do not gamble on market direction; they remain Delta-Neutral (completely balanced) by constantly buying or selling underlying stock to hedge their options exposure.
+
+## Dealer Gamma Exposure (GEX)
+What it means: The total estimated dollar amount of stock exposure options dealers must buy or sell per 1% move in the stock to balance their books.
+
+## Positive vs. Negative Gamma Regimes
+The Rule: In Positive Gamma Zones, dealer hedging acts as a stabilizer—they buy drops and sell rallies, pinning the market in place. In Negative Gamma Zones, dealer hedging acts as an accelerant—they are forced to sell drops and chase rallies, causing rapid intraday market crashes.
+
+## At-The-Money Implied Volatility Straddle Matrix
+Covered in source module 44. See the surrounding sections for the full treatment.
+
+## Out-of-the-Money Implied Volatility Smile Wings
+Covered in source module 44. See the surrounding sections for the full treatment.
+
+## Intermarket Volatility Cross-Correlations (VIX vs. VVIX)
+Covered in source module 44. See the surrounding sections for the full treatment.
+
+## Volatility Skew Term Structure Contango vs. Backwardation
+Covered in source module 44. See the surrounding sections for the full treatment.
+
+## Estimated Net Dealer Gamma Exposure Thresholds (GEX)
+Covered in source module 45. See the surrounding sections for the full treatment.
+
+## Intraday Volatility Buffering via Positive Gamma Anchors
+Covered in source module 45. See the surrounding sections for the full treatment.
+
+## Intraday Volatility Acceleration via Negative Gamma Cascades
+Covered in source module 45. See the surrounding sections for the full treatment.
+
+## Option Strike Pinning and Expiration Gamma Clustered Volume
+Covered in source module 45. See the surrounding sections for the full treatment.
+
+## Pin Risk Optimization: Hedging At-The-Money Contracts at Friday 3:59 PM EST
+Covered in source module 112. See the surrounding sections for the full treatment.
+
+## Bid-Ask Inventory Management: Skewing Pricing Sheets to Force Retail Order Flow
+Covered in source module 112. See the surrounding sections for the full treatment.
+
+## Adverse Selection Risks: How Toxic Institutional Order Flow Burns Option Dealers
+Covered in source module 112. See the surrounding sections for the full treatment.
+
+## Inter-Exchange Arbitrage: High-Frequency Sweep Models Aligning Fragmented Options Order Books
+Covered in source module 112. See the surrounding sections for the full treatment.
+
+<!-- END:32-dealer-gamma-and-hedging -->
+
+<!-- CHANNEL:33-fair-value-and-mean-reversion -->
+# 33 · Fair-Value Anchors & Mean Reversion
+
+## Fair-Value Anchors & Mean Reversion — expanded reference
+The reference prices institutions actually trade around - VWAP, prior-day levels, settlement anchors - and the conditions under which price reverts to them rather than trending away. Consolidated from source modules 35, 49; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Volume-Weighted Average Price (VWAP)
+What it means: The single most important baseline anchor line used by institutional block-execution servers to define "fair value" across a single trading session.
+
+## Price to VWAP Distance (Price_to_VWAP_Distance_Pct)
+What it means: Measures the percentage deviation between the current price and the daily VWAP line. * The Math: (Current Price - VWAP) / VWAP * The Rule: Stocks act like rubber bands around VWAP. If the price stretches too far out (≥ ±0.25%) during low-volume hours, the momentum runs out of breath, creating a highly predictable mean-reversion scalp back to the center line.
+
+## Volume-Weighted Average Price Baseline Proxies (VWAP)
+Covered in source module 49. See the surrounding sections for the full treatment.
+
+## Intraday Deviation From Institutional Mean (Price_to_VWAP_Distance_Pct)
+Covered in source module 49. See the surrounding sections for the full treatment.
+
+## Mid-Day Overextended Premium Exhaustion Extremes (RSI_14 > 75 / < 25)
+Covered in source module 49. See the surrounding sections for the full treatment.
+
+## Overextended Reversion Rubber-Band Envelopes (BB_Upper / BB_Lower)
+Covered in source module 49. See the surrounding sections for the full treatment.
+
+<!-- END:33-fair-value-and-mean-reversion -->
+
+<!-- CHANNEL:34-the-market-clock -->
+# 34 · The Institutional Market Clock
+
+## The Institutional Market Clock — expanded reference
+The trading day as a sequence of distinct regimes: the opening auction, the mid-morning trend window, the lunch lull, the afternoon repositioning, and the closing imbalance. Consolidated from source modules 36, 48, 124; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## The 9:45 AM Retail Clearing Window
+What it is: The first 15 minutes of the day are dominated by retail emotional panic and overnight order liquidations. Algorithms stand down until 9:45 AM to let bid/ask spreads settle.
+
+## The 10:30 AM EST European Close Pivot
+What it is: European stock markets wrap up their trading day at exactly 10:30 AM EST. Institutional global desks violently rebalance multi-currency portfolios here, frequently causing morning trends in New York to reverse.
+
+## The 11:30 AM Mid-Day Lunch Lull
+What it is: Institutional algorithms and floor traders go to lunch from 11:30 AM to 1:30 PM EST. Volume dries up, breakouts fail, and the market anchors tightly into a flat sideways chop.
+
+## The 3:30 PM OpEx Gamma Flush
+What it is: The final 30 minutes before option expiration. Dealers are forced to execute massive stock blocks to clear out vanishing delta/gamma risks, creating explosive price velocity runs right into the 4:00 PM closing bell.
+
+## The 9:30 AM Opening Retail Order Clearing Block
+Covered in source module 48. See the surrounding sections for the full treatment.
+
+## The 10:30 AM EST European Equity Settlement Pivot
+Covered in source module 48. See the surrounding sections for the full treatment.
+
+## The 11:30 AM Mid-Day New York Institutional Lunch Lull
+Covered in source module 48. See the surrounding sections for the full treatment.
+
+## The 1:30 PM Post-Lunch Portfolio Execution Resumption
+Covered in source module 48. See the surrounding sections for the full treatment.
+
+## The 3:30 PM OpEx Expiration Options Gamma Flush
+Covered in source module 48. See the surrounding sections for the full treatment.
+
+## The 9:30 AM Opening Retail Order Clearing Window
+Covered in source module 124. See the surrounding sections for the full treatment.
+
+<!-- END:34-the-market-clock -->
+
+<!-- CHANNEL:35-algorithmic-glossary -->
+# 35 · Algorithmic Trading, HFT & Bot Logic
+
+## Algorithmic Trading, HFT & Bot Logic — expanded reference
+The vocabulary and mechanics of automated trading: execution algorithms, latency, HFT microstructure, and how a bot's logic is specified and audited. Consolidated from source modules 38, 89, 111; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## The Bid-Ask Matrix (Bid / Ask)
+What it means: The core mechanism of the double-sided market auction. The Bid is the absolute highest price a buyer is currently willing to pay to enter a position. The Ask (or Offer) is the absolute lowest price a seller is currently willing to accept to exit a position. * Trading Ingestion Key: Every transaction requires a market participant to cross this spread. When buying a contract, you fill at the Ask; when selling a contract, you liquidate at the Bid [context].
+
+## Bid-Ask Spread (Spread)
+What it means: The exact mathematical dollar distance between the current Bid price and the Ask price (Ask - Bid). * Trading Ingestion Key: The spread represents the immediate transactional cost of entering a trade. In highly liquid environments like the SPY ETF, the spread is usually a tight $0.01. During sudden macroeconomic news shocks, market makers widen this spread to protect themselves, causing heavy entry friction.
+
+## Options Premium (Premium)
+What it means: The total market price cash value that an options buyer pays upfront to an options seller to control an options contract. * Trading Ingestion Key: Premium is entirely dynamic and changes every second. It is mathematically calculated by combining Intrinsic Value (how deep in-the-money the contract currently sits) and Extrinsic Value (the remaining time value and implied volatility pricing).
+
+## Options Strike Price (Strike)
+What it means: The fixed, predetermined dollar price boundary at which an options contract holder has the legal right to buy or sell the underlying asset before the expiration deadline. * Trading Ingestion Key: For a Long Call, the strike is the price you have the right to buy the asset at. For a Long Put, the strike is the price you have the right to sell the asset at.
+
+## High-Frequency Trading (HFT): Internalizers and Latency Arbitrage
+Covered in source module 89. See the surrounding sections for the full treatment.
+
+## Algorithmic Execution Styles: TWAP, VWAP, and Implementation Shortfall
+Covered in source module 89. See the surrounding sections for the full treatment.
+
+## Quantitative Market Making: Managing Inventory Risk and Adverse Selection
+Covered in source module 89. See the surrounding sections for the full treatment.
+
+## Machine Learning Features: Transforming Technicals into Predictive Arrays
+Covered in source module 89. See the surrounding sections for the full treatment.
+
+## Stationarity Conversions: Transforming Raw Asset Pricing into Fractional Differences
+Covered in source module 111. See the surrounding sections for the full treatment.
+
+## Labeling Financial Arrays: Triple-Barrier Methods vs. Standard Price Diffs
+Covered in source module 111. See the surrounding sections for the full treatment.
+
+## Feature Importance Shuffling: Identifying Alpha Degradation across Model Elements
+Covered in source module 111. See the surrounding sections for the full treatment.
+
+## Cross-Validation Schemas: Purging and Embargoing Time Series to Prevent Leakage
+Covered in source module 111. See the surrounding sections for the full treatment.
+
+<!-- END:35-algorithmic-glossary -->
+
+<!-- CHANNEL:36-commodities-and-fixed-income -->
+# 36 · Fixed Income, Commodities & Term Structure
+
+## Fixed Income, Commodities & Term Structure — expanded reference
+Bonds, the yield curve, commodity term structures and contango - the signals that lead equity regimes. Consolidated from source modules 80, 81, 108; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
+
+## Bond Pricing Foundations: Inverse Pricing-to-Yield Vector Rules
+Covered in source module 80. See the surrounding sections for the full treatment.
+
+## The Treasury Yield Curve: Fed Funds Rate, 2-Year, and 10-Year Notes
+Covered in source module 80. See the surrounding sections for the full treatment.
+
+## Yield Curve Inversions and Macro Recessionary Filtering Signals
+Covered in source module 80. See the surrounding sections for the full treatment.
+
+## Currency Cross-Rates: The US Dollar Index (DXY) vs. Equity Assets
+Covered in source module 80. See the surrounding sections for the full treatment.
+
+## Crude Oil, Natural Gas, and Energy Sector Capital Dependencies
+Covered in source module 81. See the surrounding sections for the full treatment.
+
+## Gold and Silver: Safe-Haven Precious Metal Inflows vs. Risk Assets
+Covered in source module 81. See the surrounding sections for the full treatment.
+
+## Copper and Agricultural Futures: Real Economy Demand Radar Systems
+Covered in source module 81. See the surrounding sections for the full treatment.
+
+## The Commodity Research Bureau (CRB) Continuous Index Tracker
+Covered in source module 81. See the surrounding sections for the full treatment.
+
+## Physical Storage Arbitrage: Cost of Carry and Financial Futures Convergence
+Covered in source module 108. See the surrounding sections for the full treatment.
+
+## Super-Contango Regimes: Exploiting Floating Storage Maritime Arbitrage Plays
+Covered in source module 108. See the surrounding sections for the full treatment.
+
+## Backwardation Injections: Evaluating Physical Inventory Shortfalls on Ticker Spikes
+Covered in source module 108. See the surrounding sections for the full treatment.
+
+## The Crack Spread and Crush Spread: Processing Raw Materials into Final Deliverables
+Covered in source module 108. See the surrounding sections for the full treatment.
+
+<!-- END:36-commodities-and-fixed-income -->

@@ -48,6 +48,34 @@ LESSONS: tuple[LessonSpec, ...] = (
     LessonSpec(27, "27-scams-security-myths", "Scams, Security, and Trading Myths", "Fraud red flags, fake gurus, signal rooms, impersonation, account security, credential protection, misleading statistics, and common market myths.", ("scam", "guru", "signal room", "fraud", "security", "phishing", "guaranteed returns", "myth", "fake trader")),
 )
 
+# Modules 28-128 from the source material, consolidated into 24 themed
+# channels (see learning_center_expansion). Appended here rather than merged
+# into LESSONS above because they are generated from the source file, while
+# the 27 originals are hand-authored specs - keeping them separate means a
+# source change regenerates cleanly without touching curated text.
+#
+# They must be in ORDERED_CHANNELS or library_sections() will not index them,
+# and the bot could not cite them from /ask or /explain.
+try:
+    import learning_center_expansion as _expansion
+    # Only the themes with no existing home. The other 19 are folded into the
+    # channel that already owns that subject, so they need no LessonSpec -
+    # adding one would create a duplicate channel for the same material.
+    EXPANSION_LESSONS = tuple(
+        LessonSpec(
+            32 + offset,
+            f"{32 + offset:02d}-{channel.slug}",
+            channel.title,
+            channel.summary,
+            tuple(topic.title.casefold() for topic in channel.topics[:12]),
+        )
+        for offset, channel in enumerate(_expansion.new_channel_themes())
+    )
+except Exception as _exc:   # pragma: no cover - import/parse guard only
+    EXPANSION_LESSONS = ()
+
+LESSONS = LESSONS + EXPANSION_LESSONS
+
 LESSON_BY_CHANNEL = {item.channel: item for item in LESSONS}
 ORDERED_CHANNELS = tuple(item.channel for item in LESSONS)
 AUXILIARY_CHANNELS = ("learning-index", "ask-tradebot", "examples-and-reviews")
