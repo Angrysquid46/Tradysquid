@@ -374,3 +374,38 @@ def test_capture_survives_a_skipped_cycle():
             assert worst <= limit + 1, (
                 f"{play} can miss a signal with {skipped} cycle(s) skipped"
             )
+
+
+def test_the_full_scan_will_not_retrade_a_bar_the_fast_scan_took(monkeypatch):
+    """The two entry paths share one dedupe record.
+
+    has_open_position only blocks a SECOND position while one is open. It
+    does not stop the 15-minute full scan from re-entering a signal bar
+    the 1-minute scan already traded and closed.
+    """
+    import tempfile, pathlib as _pl
+    rows = _real_signal_rows()
+    if rows is None:
+        pytest.skip("no signal-bearing session in the sampled window")
+    signal = lns.signals_on_latest_bar(rows)[0]
+
+    with tempfile.TemporaryDirectory() as d:
+        path = _pl.Path(d) / "entry-scan-state.json"
+        monkeypatch.setattr(spy_scanner, "ENTRY_SCAN_STATE_PATH", path)
+
+        state = spy_scanner.read_entry_scan_state()
+        assert state["last_signal_bar"] == {}
+
+        state["last_signal_bar"][signal["play_type"]] = signal["bar_time"]
+        spy_scanner.write_entry_scan_state(state)
+
+        reloaded = spy_scanner.read_entry_scan_state()
+        assert reloaded["last_signal_bar"][signal["play_type"]] == signal["bar_time"]
+
+    # A corrupt or missing file must degrade to "nothing traded yet", never
+    # raise inside the scan.
+    with tempfile.TemporaryDirectory() as d:
+        bad = _pl.Path(d) / "entry-scan-state.json"
+        bad.write_text("{not json", encoding="utf-8")
+        monkeypatch.setattr(spy_scanner, "ENTRY_SCAN_STATE_PATH", bad)
+        assert spy_scanner.read_entry_scan_state() == {"last_signal_bar": {}}
