@@ -1674,52 +1674,52 @@ Calling covered calls risk-free, selling puts solely for high IV, chasing annual
 Portfolio protection, synthetic positions, put-call parity, and the arbitrage relationships that keep option prices honest. Consolidated from source modules 63, 64, 95, 105, 106; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Covered Calls: Liquidating Short Upside Premium Against Core Underlying Stock
-*Not yet written.* This topic comes from source module 63, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Own 100 shares, sell a call against them. You collect premium and keep gains up to the strike; above it your shares are called away. It is often sold as 'income', which understates the trade. You have exchanged an unlimited upside for a fixed payment while keeping the entire downside - the risk profile of a short put. It works in flat-to-mildly-up markets and costs you exactly the move you were waiting for when the stock finally runs.
 
 ## Protective Puts: Establishing Institutional Tail-Risk Capital Insurance Policies
-*Not yet written.* This topic comes from source module 63, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Own the stock, buy a put. Downside is capped below the strike, upside is intact, and the premium is the cost of the insurance. Like all insurance it is a persistent drag: buy protection continuously and premium costs will exceed payouts across most periods, because that is how the seller makes money. Protection is worth buying around identifiable risk, not as a permanent subscription.
 
 ## The Collar Strategy: Financing Downside Puts via Short Out-of-the-Money Calls
-*Not yet written.* This topic comes from source module 63, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Own stock, buy a protective put, sell a call above to pay for it - sometimes for zero net cost. Downside is floored, upside is capped. The favourite structure of anyone holding a large concentrated position they cannot sell for tax reasons. The honest description is that you have converted a stock position into a range, and you should want the stock to finish inside it.
 
 ## Stock Repair Strategies: Using Spreads to Recover Trapped Capital without Adding Risk
-*Not yet written.* This topic comes from source module 63, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Holding a loser, add a ratio call spread - buy one at-the-money call, sell two further out - usually for near-zero cost. It roughly doubles gains up to the short strike, letting you break even on a smaller bounce. It does not reduce your existing loss and it caps the recovery. The real question it dodges is whether you would open this position today at this price; 'repairing' is often anchoring wearing a strategy's clothes.
 
 ## Put-Call Parity: The Core Mathematical Rule of Derivatives Pricing
-*Not yet written.* This topic comes from source module 64, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+For European options: C - P = S - K x e^(-rt). A call minus a put at the same strike and expiry equals the stock minus the discounted strike. This is the equation that makes options a coherent system rather than independent bets. It means any position can be built several ways, and if prices drift apart arbitrageurs close the gap. When you see a put far richer than its call, you are usually looking at skew and dividends, not free money.
 
 ## Synthetic Long Stock: Combining Long Calls and Short Puts to Mimic Shares
-*Not yet written.* This topic comes from source module 64, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Buy a call and sell a put at the same strike and expiry, and you have replicated 100 shares: the same payoff in both directions, for far less capital. The leverage is the point and the danger. Downside is identical to owning the stock, but the capital committed is a fraction, so the loss relative to money posted is much larger. It is stock exposure without the feeling of owning stock.
 
 ## Synthetic Short Stock: Combining Long Puts and Short Calls to Mimic Short Selling
-*Not yet written.* This topic comes from source module 64, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Buy a put, sell a call at the same strike. Replicates a short position without borrowing shares, which matters when a stock is hard to borrow or the borrow fee is punitive. The short call carries unlimited risk and assignment exposure, exactly as a real short does. Nothing about the synthetic form makes the risk smaller - it only changes where the risk is booked.
 
 ## Conversion and Reversal Arbitrage: Risk-Free Exploitations of Mispriced Spreads
-*Not yet written.* This topic comes from source module 64, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+A conversion is long stock plus a synthetic short; a reversal is the inverse. When put-call parity is violated these lock a small riskless profit. In practice they are market-maker trades: the edges are pennies, they require minimal transaction costs and instant execution, and for retail the spread consumes the profit before the position is complete. Their real value here is conceptual - they are why parity holds.
 
 ## Dynamic Delta Hedging: Calculating Real-Time Portfolio Share Rebalancing
-*Not yet written.* This topic comes from source module 95, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Holding a position delta-neutral by trading shares against the option's changing delta. Sell shares as delta rises, buy as it falls. This is what market makers do continuously, and it is the mechanism behind dealer gamma effects: their hedging is forced, mechanical flow that either damps or amplifies price depending on whether they are long or short gamma.
 
 ## Gamma Scalping: Trading Stock Around Short-Term Options Positions
-*Not yet written.* This topic comes from source module 95, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Long an option and therefore long gamma, you re-hedge repeatedly - buying low and selling high mechanically as delta shifts. The profits from those hedges are meant to exceed the theta you pay. It is a bet that realised volatility will exceed implied. It requires frequent, cheap execution, and it is precisely the trade that dies from transaction costs at retail size.
 
 ## Vanna and Volga Risk Multipliers: Implied Volatility and Spot Price Intersects
-*Not yet written.* This topic comes from source module 95, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Second-order Greeks. Vanna is how delta changes when volatility changes; volga is how vega changes when volatility changes. They explain why hedges that look right at one volatility level fail at another - the sensitivities themselves move. Relevant to anyone running a book; largely academic for a single long 0DTE contract, where gamma dominates everything.
 
 ## Tail-Risk Hedging: Executing Low-Probability Out-of-the-Money Option Insurances
-*Not yet written.* This topic comes from source module 95, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Buying far out-of-the-money puts as protection against a crash. Most expire worthless; the rare payoff is enormous. The difficulty is that the strategy bleeds continuously and the drag is felt every month while the benefit arrives once a decade - so it tends to be abandoned shortly before it would have paid. Sizing it as a small permanent cost rather than a trade is the only way it survives contact with impatience.
 
 ## Variance Swaps vs. Volatility Swaps: Exploiting Pure Implied Variance Returns
-*Not yet written.* This topic comes from source module 105, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Instruments paying the difference between realised and implied volatility directly, without the delta and path-dependence of an options position. Variance swaps pay on variance (volatility squared), which makes them convex - large moves pay disproportionately. Volatility swaps are linear. Institutional instruments, but the concept matters: they are the clean expression of the bet that options only express approximately.
 
 ## VIX Options Pricing: Navigating Volatility of Volatility Surges Natively
-*Not yet written.* This topic comes from source module 105, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+VIX options are priced off VIX FUTURES, not the spot index - which is why a VIX spike does not move them the way traders expect. The futures curve moves far less than spot. They also settle in cash, European-style, on an unusual Wednesday cycle. More retail money has been lost to these mechanics than to being wrong about volatility direction.
 
 ## Vanna-Volga Pricing Modifiers: Formulating Advanced Exotic Strike Corrections
-*Not yet written.* This topic comes from source module 105, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+A practical method for pricing exotics by adjusting a Black-Scholes value using the market cost of hedging vega, vanna and volga - widely used in FX options where the smile is pronounced. It is a correction technique rather than a model, and it exists because Black-Scholes assumes one volatility while the market quotes a different one at every strike.
 
 ## Log-Contract Replications: The Mathematical Foundation of the VIX Index Engine
-*Not yet written.* This topic comes from source module 105, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The VIX is not a forecast in the usual sense; it is computed from a strip of SPX option prices that replicates a log contract, giving the market-implied expected variance over the next 30 days. Knowing it is a derived calculation rather than an opinion explains its behaviour: it rises mechanically when option prices rise, and its level is constrained by the same put-call relationships everything else obeys.
 
 ## Treasury Futures Contracts: Cheaper-to-Deliver (CTD) Bond Matching Models
 *Not yet written.* This topic comes from source module 106, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
@@ -2792,39 +2792,39 @@ What it means: The fixed, predetermined dollar price boundary at which an option
 Bonds, the yield curve, commodity term structures and contango - the signals that lead equity regimes. Consolidated from source modules 80, 81, 108; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Bond Pricing Foundations: Inverse Pricing-to-Yield Vector Rules
-*Not yet written.* This topic comes from source module 80, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Bond prices and yields move in opposite directions by definition: a fixed coupon becomes worth less when prevailing rates rise. Duration measures how much - a 7-year duration bond loses roughly 7% per 1% rate rise. For an equity trader this is the transmission mechanism. Rate moves reprice bonds instantly, and equity valuations follow because the discount rate on future earnings has changed.
 
 ## The Treasury Yield Curve: Fed Funds Rate, 2-Year, and 10-Year Notes
-*Not yet written.* This topic comes from source module 80, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Yields plotted across maturities. The Fed sets the very short end directly; the 2-year reflects rate expectations over the policy horizon; the 10-year reflects longer-run growth and inflation expectations. The curve is the market's aggregated forecast of policy. Watching the 2-year is usually more informative about what the Fed will do than listening to what the Fed says.
 
 ## Yield Curve Inversions and Macro Recessionary Filtering Signals
-*Not yet written.* This topic comes from source module 80, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Inversion - short yields above long - has preceded every US recession in recent decades, and is a genuine signal that the market expects rates to fall because growth is weakening. Its practical weakness is timing: the lag from inversion to recession has run from 6 to 24 months, and equities have often risen substantially during that window. A real signal on a horizon no day trader can act on.
 
 ## Currency Cross-Rates: The US Dollar Index (DXY) vs. Equity Assets
-*Not yet written.* This topic comes from source module 80, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+DXY measures the dollar against a basket of major currencies. A strong dollar pressures US multinationals (foreign earnings translate to fewer dollars), commodities priced in dollars, and emerging markets holding dollar debt. The relationship is real but unstable - it inverts across regimes, which makes it context rather than a signal.
 
 ## Crude Oil, Natural Gas, and Energy Sector Capital Dependencies
-*Not yet written.* This topic comes from source module 81, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Energy prices feed directly into inflation and into corporate margins as an input cost. Oil shocks have historically preceded recessions. Natural gas is more regional and weather-driven than oil, and is far more volatile as a result - it is not a substitute for crude as a macro read.
 
 ## Gold and Silver: Safe-Haven Precious Metal Inflows vs. Risk Assets
-*Not yet written.* This topic comes from source module 81, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Gold usually strengthens when real interest rates fall or confidence in currencies weakens - it pays no yield, so its opportunity cost is the real rate. Silver behaves partly as an industrial metal and is more volatile. The 'safe haven' label holds in some crises and fails in others: in an acute liquidity event gold is often sold precisely because it CAN be sold.
 
 ## Copper and Agricultural Futures: Real Economy Demand Radar Systems
-*Not yet written.* This topic comes from source module 81, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Copper is used across construction, electronics and grid infrastructure, which is why it is nicknamed a leading indicator of industrial demand. Agricultural futures respond to weather and geopolitics more than to the business cycle. Neither is a trading signal for SPY intraday, but copper's trend is a useful check on whether a growth narrative is supported by physical demand.
 
 ## The Commodity Research Bureau (CRB) Continuous Index Tracker
-*Not yet written.* This topic comes from source module 81, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+A broad basket index of commodity prices, used as a single read on commodity inflation rather than any one market's idiosyncrasies. Useful as a regime marker: sustained CRB strength alongside rising yields is a different environment for equities than commodity weakness with falling yields, regardless of where the index level sits.
 
 ## Physical Storage Arbitrage: Cost of Carry and Financial Futures Convergence
-*Not yet written.* This topic comes from source module 108, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+A futures price should equal spot plus the cost of carrying the commodity - storage, insurance and financing. If it exceeds that, buy physical, store it, and sell the future for a locked profit. This arbitrage is what forces futures to converge to spot at expiry, and it is why term structure carries real information about physical supply rather than just sentiment.
 
 ## Super-Contango Regimes: Exploiting Floating Storage Maritime Arbitrage Plays
-*Not yet written.* This topic comes from source module 108, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Contango is futures above spot. When the gap exceeds storage costs - super-contango - traders buy physical oil, charter tankers as floating storage, and sell forward. This happened dramatically in 2020, when land storage filled and front-month crude briefly traded negative. It is the clearest example that a futures price is a claim on a physical thing that must be somewhere.
 
 ## Backwardation Injections: Evaluating Physical Inventory Shortfalls on Ticker Spikes
-*Not yet written.* This topic comes from source module 108, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Backwardation is futures BELOW spot - buyers paying a premium for immediate delivery, which signals genuine physical scarcity. For anyone holding a commodity ETF this determines roll yield: backwardation pays you to roll forward, contango charges you. It is why long-dated holdings in contangoed commodity ETFs decay regardless of the commodity's direction.
 
 ## The Crack Spread and Crush Spread: Processing Raw Materials into Final Deliverables
-*Not yet written.* This topic comes from source module 108, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The crack spread is the margin between crude oil and the refined products made from it; the crush spread is soybeans versus meal and oil. Both are traded directly as a bet on processing margins. They are pure examples of a spread trade: the directional price risk is netted out and what remains is the economics of the transformation itself.
 
 <!-- END:36-commodities-and-fixed-income -->
