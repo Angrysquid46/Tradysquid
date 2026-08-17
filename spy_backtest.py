@@ -339,18 +339,30 @@ def breakdown(trades: Sequence[Trade], key: Callable[[Trade], str]) -> dict[str,
 # Data access
 # ---------------------------------------------------------------------------
 
-# Only what the strategies and trade records actually read. `SELECT *`
-# pulls all 69 columns and roughly doubles the cost of the scan.
-BACKTEST_COLUMNS: tuple[str, ...] = (
-    "bar_time", "session_date", "minutes_since_open", "time_bucket",
-    "open", "high", "low", "close", "volume",
-    "vwap", "vwap_slope", "above_vwap", "vwap_crosses", "vwap_distance_atr",
-    "atr_14", "relative_volume", "gap_pct",
-    "or5_high", "or5_low", "or5_state", "or5_break_minute",
-    "or15_high", "or15_low", "or15_state", "or15_break_minute",
-    "or30_high", "or30_low", "or30_state", "or30_break_minute",
-    "regime", "day_type", "alignment",
-)
+# Every feature column, derived from the schema rather than hand-listed.
+#
+# This was previously a curated subset, chosen to make the scan cheaper.
+# It silently broke every strategy that read a column the list happened
+# to omit: `prev_day_high`, `premarket_low`, `structure`, `adx_14` and 23
+# others came back as None. Strategies gated on those produced no
+# signals at all, and - worse - ones written as
+# `if row.get("above_ema_5_10") ... elif not row.get("above_ema_5_10")`
+# took the `elif` branch every time, quietly becoming short-only.
+#
+# Nothing raised. A missing key in a feature dict just reads as None, so
+# the failure surfaced as plausible-looking results rather than an error.
+# Deriving the list from the schema means adding a feature column cannot
+# leave the backtester blind to it, and `test_backtest_loads_every_column
+# _any_strategy_reads` fails if a strategy ever reaches for something not
+# loaded.
+def _backtest_columns() -> tuple[str, ...]:
+    identity = ("bar_time", "session_date")
+    declared = [name for name, _ in sif._declared_columns()]
+    ordered = list(identity) + [c for c in declared if c not in identity and c != "ticker"]
+    return tuple(ordered)
+
+
+BACKTEST_COLUMNS: tuple[str, ...] = _backtest_columns()
 
 
 def load_sessions(

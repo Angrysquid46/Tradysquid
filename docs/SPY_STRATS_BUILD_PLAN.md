@@ -156,6 +156,20 @@ in [`BACKTEST_RESULTS.md`](BACKTEST_RESULTS.md).
   playbooks), 47 variants total, run through the same 12 exit policies →
   **336 combinations with n≥30**.
 
+> 🛑 **Correction (2026-08-17): the first Phase 4 run was invalid.**
+> `BACKTEST_COLUMNS` was a hand-curated subset of the feature table and
+> omitted 27 columns the new strategies read — `prev_day_high`,
+> `premarket_low`, `structure`, `adx_14` and others. A missing key in a
+> feature dict reads as `None`, so nothing raised: S5-S19, PB1 and PB2
+> produced **zero signals**, and strategies shaped like
+> `if row.get(x) … elif not row.get(x)` took the `elif` branch every time
+> and quietly became **short-only**. The sweep still emitted a complete,
+> plausible-looking report. The column list is now derived from the schema,
+> and a test runs every strategy over rows that record which keys they touch,
+> failing if anything read isn't loaded. Results below are from the re-run.
+> The gap-continuation finding is unaffected — `gap_pct` and `above_vwap`
+> were both in the old subset — but it was re-verified rather than assumed.
+
 > **Headline: gap continuation is the first real edge found.**
 > `S21 gap>=0.5%` returns **+0.0620 ATR/trade over 1,058 trades (t=+3.33),
 > positive in 4/4 eras** — the only thing in the build to clear both bars, and
@@ -193,6 +207,43 @@ entry to measure and belongs to Phase 5.
   applies: a strategy is reported as it was specified.
 - **Exit criteria:** full library measured, with the weak results written down
   as plainly as the strong ones.
+
+### ✅ Shortlist — live Discord strategies measured against the new ideas
+Requested 2026-08-16: rank everything currently on Discord (excluding `evolve_bot`)
+alongside every new idea, to pick a **top 15** and stop the channel sprawl. Full
+table in [`BACKTEST_RESULTS.md`](BACKTEST_RESULTS.md).
+
+`spy_backtest_live_strategies.py` adapts the live strategies by calling the
+deployed `spy_scanner` functions **directly**, so the backtest cannot drift from
+what is running.
+
+> **The live library is 4 entry signals, not 14 strategies.**
+>
+> | Entry signal | Live strategies sharing it | Expectancy | t | Eras + |
+> |---|---|---|---|---|
+> | ORB, 1-min bars | **11** (`SPY_0DTE_1M` + all 10 ratchets) | +0.0004 | +0.39 | 3/4 |
+> | ORB, 5-min bars | 1 (`SPY_0DTE_5M`) | −0.0004 | −0.64 | 0/4 |
+> | Key-levels | 1 (`SPY_KEY_LEVELS`) | **+0.0188** | **+2.01** | 3/4 |
+> | Expansion | 1 (`SPY_EXPANSION_LEVEL`) | −0.0044 | −0.34 | 2/4 |
+>
+> **`SPY_KEY_LEVELS` is the only live strategy with a statistically real entry
+> edge.** The ORB signal that **12 of the 14** live strategies run on measures at
+> essentially zero. That is not an artefact of the adapters' entry window —
+> relaxing it from minute 360 to 380 moves the 1-min variant to t=+0.95 and the
+> 5-min to t=+0.27, both still noise.
+>
+> **Only 1 of the top 15 is a strategy already on Discord.** The other 14 slots
+> are research strategies, led by gap continuation (+0.0620, t=+3.33, 4/4 eras)
+> and failed-breakout (+0.0322, t=+2.94, 4/4 eras).
+
+**What this cannot decide yet.** Every live *exit* is defined in option-premium
+percent — `SPY_0DTE`'s ±50% with a floor raise at +30%, and each ratchet's
+`step_pct`/`stop_pct`. None of that is measurable from underlying bars, so the
+10 ratchet variants are indistinguishable here: one entry, ten exit shapes.
+Phase 5 is what separates them. And every significant winner exits at the
+session close 89-97% of the time, which is the worst holding pattern for a 0DTE
+option — so **no Discord restructure should be built on this ranking until
+Phase 5 confirms the edges survive theta.**
 
 ### ⬜ Phase 5 — Option layer (explicitly modelled)
 - Ingest EOD option chains into a compact table (0DTE + near-ATM band rather

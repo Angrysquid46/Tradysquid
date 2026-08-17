@@ -291,6 +291,68 @@ def test_no_strategy_signals_outside_its_permitted_entry_window():
 # Metrics
 # ---------------------------------------------------------------------------
 
+class _TrackingRow(dict):
+    """A feature row that records every key looked up on it."""
+
+    def __init__(self, *args, seen: set, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._seen = seen
+
+    def get(self, key, default=None):
+        self._seen.add(key)
+        return super().get(key, default)
+
+    def __getitem__(self, key):
+        self._seen.add(key)
+        return super().__getitem__(key)
+
+
+def test_backtest_loads_every_column_any_strategy_reads():
+    """The bug this exists to prevent produced no error at all.
+
+    BACKTEST_COLUMNS was a hand-curated subset, and a missing key in a
+    feature dict just reads as None. Strategies gated on an absent column
+    silently produced zero signals; ones written as
+    `if row.get(x) ... elif not row.get(x)` took the elif branch every
+    time and quietly became short-only. The sweep still produced a full
+    report of plausible-looking numbers.
+
+    So: run every registered strategy over rows that record what they
+    touch, and require BACKTEST_COLUMNS to cover all of it."""
+    import spy_backtest_report as report
+
+    seen: set[str] = set()
+    rows = []
+    for minute in range(60):
+        base = dict(_row(minute, 100.0, 100.5, 99.5, 100.0))
+        base.update({name: None for name, _ in __import__("spy_intraday_features")._declared_columns()
+                     if name not in base})
+        base.update(_row(minute, 100.0, 100.5, 99.5, 100.0))
+        rows.append(_TrackingRow(base, seen=seen))
+
+    for family, members in report.all_variants().items():
+        for variant, fn in members.items():
+            fn(rows)
+
+    loaded = set(bt.BACKTEST_COLUMNS)
+    schema = {name for name, _ in __import__("spy_intraday_features")._declared_columns()}
+    # Only care about real feature columns - strategies also probe a few
+    # keys that are not columns at all, and those are not this test's job.
+    missing = (seen & schema) - loaded
+    assert not missing, (
+        f"strategies read these feature columns but the backtester never loads "
+        f"them, so they silently arrive as None: {sorted(missing)}"
+    )
+
+
+def test_backtest_columns_track_the_schema_automatically():
+    """Derived, not hand-listed, so a new feature column cannot leave the
+    backtester blind to it."""
+    schema = {name for name, _ in __import__("spy_intraday_features")._declared_columns()}
+    loaded = set(bt.BACKTEST_COLUMNS)
+    assert schema - {"ticker"} <= loaded
+
+
 def test_expectancy_and_profit_factor_match_hand_computed_values():
     trades = [
         bt.Trade("s", "v", "LONG", "2020-06-15", "t", 100.0, 10, "OPENING", "t", 102.0,
