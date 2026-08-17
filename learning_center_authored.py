@@ -739,6 +739,214 @@ AUTHORED_BODIES: dict[str, str] = {
         "The discipline is changing rules on evidence rather than on the last few "
         "trades. A strategy that is positive in 4 of 4 eras and negative this month is "
         "probably fine; one positive in 1 of 4 was never fine.",
+
+    # ---------------------------------------------------------------
+    # Accounts, margin and day-trading rules
+    # ---------------------------------------------------------------
+    "Pattern Day Trader (PDT) Classification Boundaries and Capital Limits":
+        "In a US margin account, four or more day trades within five business days "
+        "makes you a Pattern Day Trader, which requires maintaining $25,000 in equity. "
+        "Fall below it and day trading is restricted until the balance is restored. "
+        "This is the single rule that shapes how most retail traders can operate. A "
+        "0DTE strategy is by definition day trading, so a sub-$25k margin account "
+        "cannot run one. A cash account avoids the PDT rule entirely but introduces "
+        "settlement: proceeds are unavailable until the trade settles, so the same "
+        "capital cannot be reused the next day. Verify current rules with your broker - "
+        "these change and brokers apply them differently.",
+
+    "Reg T Margin Accounts vs. Cash Accounts for Options Execution":
+        "A Reg T margin account allows borrowing and immediate reuse of proceeds, and "
+        "is required for most spread strategies - but it carries the PDT rule. A cash "
+        "account has no PDT restriction and no borrowing, but each sale must settle "
+        "before those funds are usable again. "
+        "For long options specifically, a cash account is workable: buying premium "
+        "needs no margin. The constraint is capital velocity, not permission.",
+
+    "Navigating Assignment Risk, Early Assignment, and Cash Settlement":
+        "Assignment risk exists only for short positions. American-style contracts "
+        "(SPY, equities) can be assigned any time, most commonly on in-the-money calls "
+        "the day before an ex-dividend. European-style index contracts (SPX) cannot be "
+        "assigned early and settle in cash, removing the risk entirely. "
+        "That distinction is a real reason some traders prefer SPX over SPY for "
+        "short-premium structures. For a long-only system it is moot - you cannot be "
+        "assigned on something you bought.",
+
+    "Managing Trades across Accounts to Ensure Compliant Reporting":
+        "Wash sale rules apply across ALL of your accounts, including an IRA. Selling "
+        "at a loss in a taxable account and repurchasing in an IRA within 30 days "
+        "permanently disallows the loss - it is not merely deferred. "
+        "Brokers report per account, so reconciliation across accounts is the trader's "
+        "responsibility. Frequent traders in similar instruments accumulate these "
+        "quickly. Educational information only; confirm treatment with a tax "
+        "professional.",
+
+    # ---------------------------------------------------------------
+    # Tax structures
+    # ---------------------------------------------------------------
+    "Internal Revenue Code Section 1256 Contracts: 60/40 Tax Multipliers":
+        "Section 1256 contracts - broad-based index options such as SPX, plus futures - "
+        "receive 60/40 treatment in the US: 60% of gains taxed as long-term and 40% as "
+        "short-term, regardless of holding period. They are also marked to market at "
+        "year end. "
+        "For an active trader this can be a materially lower effective rate than "
+        "ordinary short-term treatment on ETF options like SPY, which do not qualify. "
+        "It is one of the few reasons an SPX-based version of a SPY strategy might be "
+        "worth the wider spreads. Educational only - verify with a tax professional.",
+
+    "The Wash Sale Rule: Identifying and Preventing Disallowed Capital Losses":
+        "Selling at a loss and buying a 'substantially identical' security within 30 "
+        "days before or after disallows the loss for that year; the amount is added to "
+        "the new position's cost basis instead. "
+        "For active options traders this is a constant hazard - repeatedly trading the "
+        "same underlying can generate large disallowed amounts, and in an extreme case "
+        "a trader can owe tax on gains while holding real net losses. Section 1256 "
+        "contracts are exempt, which is part of their appeal.",
+
+    "Trader Tax Status (TTS) Requirements and Business Expense Deductions":
+        "TTS is a facts-and-circumstances determination, not an election: substantial, "
+        "frequent, continuous activity carried on as a business. Qualifying allows "
+        "deducting trading expenses - data, software, home office - as business "
+        "expenses. "
+        "It does not by itself change how gains are taxed; that requires the separate "
+        "475(f) election. The bar is higher than most part-time traders assume.",
+
+    "Section 475(f) Mark-to-Market Election: Eliminating Wash Sale Rules":
+        "An election available to traders with TTS. Positions are marked to market at "
+        "year end, gains and losses become ordinary, wash sale rules no longer apply, "
+        "and the $3,000 capital loss limitation is removed. "
+        "The trade-off is losing long-term capital gains treatment entirely, and the "
+        "election must generally be made before the tax year begins - it cannot be "
+        "applied retroactively after a bad year.",
+
+    "LLC Entity Creation: Operating Trading Operations as a Business Structure":
+        "An LLC provides liability separation and a formal structure for expenses, but "
+        "trading through one does not by itself change tax treatment - a single-member "
+        "LLC is disregarded by default. "
+        "It is administrative structure, not a tax strategy. The costs (formation, "
+        "filings, separate books) are real and should be weighed against benefits that "
+        "are often smaller than advertised.",
+
+    "S-Corporation Election: Optimizing Self-Employment and Salary Tax Dividends":
+        "An S-corp election can reduce self-employment tax by splitting income between "
+        "a reasonable salary and distributions. It is a genuine strategy for trading "
+        "businesses with substantial income. "
+        "But trading gains are generally not self-employment income to begin with, so "
+        "the benefit is narrower than for a typical operating business - it usually "
+        "applies to management or advisory income rather than to the trading profits "
+        "themselves.",
+
+    "Offshore and Trust Asset Protections: Safeguarding Compounding Trading Wealth":
+        "Offshore structures and trusts are asset-protection and estate-planning tools. "
+        "For US persons they generally do NOT reduce tax liability - worldwide income "
+        "is taxable and foreign accounts carry heavy reporting obligations (FBAR, "
+        "FATCA) with severe penalties for non-compliance. "
+        "Anything marketed primarily as offshore tax avoidance for a US trader should "
+        "be treated as a warning sign rather than an opportunity.",
+
+    # ---------------------------------------------------------------
+    # Prop firms
+    # ---------------------------------------------------------------
+    "Proprietary Trading Models: Evaluation Stages and Profit-Split Milestones":
+        "Modern retail prop firms sell an evaluation: pay a fee, hit a profit target "
+        "without breaching drawdown rules, and receive a funded account with a profit "
+        "split, commonly 70-90% to the trader. "
+        "The economics deserve scrutiny. Many firms earn primarily from evaluation fees "
+        "rather than trader profits, which means the rules are calibrated so most "
+        "participants fail. It is a real route to capital, but the pass rate - not the "
+        "advertised split - is the number that matters.",
+
+    "Trailing Drawdown Rules: Navigating Relative vs. Absolute Capital Loss Caps":
+        "An absolute drawdown is measured from the starting balance; a trailing "
+        "drawdown follows your high-water mark upward. Under a trailing rule, profit "
+        "raises the level at which you are disqualified. "
+        "This is where most funded accounts are lost. Up 4% then back to break-even can "
+        "breach a 3% trailing limit despite the account never being down. Read whether "
+        "the trail is on closed balance or intraday equity - the difference decides "
+        "whether an open drawdown can end your account before you close it.",
+
+    "Scaling Plans: Automatically Expanding Position Sizing via Profit Accrual":
+        "A schedule granting larger size as the account grows - for example, size "
+        "increases at each 10% profit milestone. "
+        "Sound in principle, since risk stays proportional to capital. The hazard is "
+        "psychological: size increases arrive after winning streaks, which is exactly "
+        "when overconfidence peaks and when variance is most likely to mean-revert.",
+
+    "Institutional Risk Auditing: Tracking Consistency Scores and Sharpe Thresholds":
+        "Funded programmes and institutions evaluate HOW returns were earned, not just "
+        "how much. Consistency rules cap the share of profit from any single day, so "
+        "one lucky trade cannot pass an evaluation. "
+        "The intent is to distinguish process from variance - the same reason this "
+        "system reports per-era results rather than one blended number.",
+
+    # ---------------------------------------------------------------
+    # Calendar anomalies
+    # ---------------------------------------------------------------
+    "The Turn-of-the-Month Effect: Tracking Institutional Capital Inflows":
+        "A documented tendency for equity returns to concentrate around the last day "
+        "and first few days of a month, attributed to salary flows, retirement "
+        "contributions and fund rebalancing. "
+        "Treat with the same scepticism as any calendar effect: it is a small edge, "
+        "widely known, and measured against SPY's unconditional 20-day win rate of "
+        "64.5% it may be no edge at all. A raw win rate that ignores the base rate is "
+        "the most common way calendar anomalies are oversold.",
+
+    "Options Expiration (OpEx) Week Anomalies: Max Pain Strike Reversion":
+        "Max pain is the strike where the largest total value of options expires "
+        "worthless. Price sometimes gravitates toward it into expiry, plausibly through "
+        "dealer hedging rather than manipulation - see the dealer gamma channel. "
+        "The effect is weak, inconsistent, and easy to see in hindsight. It is better "
+        "used as context for why price may stall near a heavily-traded strike than as "
+        "a signal to trade.",
+
+    "Quarter-End Window Dressing: Institutional Portfolio Rebalancing Loops":
+        "The tendency for funds to buy recent winners and sell losers before quarterly "
+        "reporting, so holdings look better than the decisions that produced them. "
+        "It concentrates flow into the last days of a quarter and can extend momentum "
+        "in already-strong names, then reverse in the first days of the new quarter.",
+
+    "The Santa Claus Rally and January Effect: Tax-Loss Harvesting Cycles":
+        "The Santa Claus Rally covers the last five sessions of December plus the first "
+        "two of January; the January Effect is the historical tendency for small caps "
+        "to outperform early in the year, linked to December tax-loss selling reversing. "
+        "Both have weakened substantially since being widely publicised - a recurring "
+        "pattern with calendar anomalies, and a reason to test rather than assume.",
+
+    # ---------------------------------------------------------------
+    # Portfolio construction
+    # ---------------------------------------------------------------
+    "Modern Portfolio Theory (MPT): Efficient Frontier Optimization Models":
+        "Markowitz's framework: for any target return there is a portfolio with minimum "
+        "variance, and the set of those portfolios forms the efficient frontier. "
+        "Diversification works because assets are imperfectly correlated. "
+        "Its weakness is that it needs expected returns, volatilities and correlations "
+        "as inputs, and all three are estimated from history. Correlations in "
+        "particular converge toward 1 during crises - exactly when diversification is "
+        "supposed to help.",
+
+    "The Black-Litterman Model: Blending Market Equilibrium with Trader Views":
+        "Starts from the returns implied by current market weights - the market's own "
+        "consensus - and adjusts only where you hold an explicit view, weighted by your "
+        "confidence in it. "
+        "It fixes MPT's tendency to produce extreme allocations from noisy return "
+        "estimates: with no views you get the market portfolio, and deviations are "
+        "deliberate rather than artefacts of estimation error.",
+
+    "Risk Parity Allocation Frameworks: Equalizing Volatility Contributions":
+        "Allocate so each asset contributes equally to portfolio RISK rather than "
+        "equally to capital. Low-volatility assets get larger weights, often with "
+        "leverage applied to the whole portfolio. "
+        "It performed well through a decades-long bond bull market and struggles when "
+        "stocks and bonds fall together, since the approach assumes a diversification "
+        "benefit that a correlated selloff removes.",
+
+    "Factor Investing Matrix Overlays: Value, Momentum, Quality, and Size Tilts":
+        "Systematic tilts toward characteristics with documented long-run premia: cheap "
+        "valuations, recent relative strength, profitability and stability, smaller "
+        "capitalisation. "
+        "Factors go through long periods of underperformance - value lagged for over a "
+        "decade - so they demand a horizon most traders do not have. Momentum is the "
+        "one that most closely resembles what intraday systems exploit, on a far "
+        "shorter timescale.",
 }
 
 
