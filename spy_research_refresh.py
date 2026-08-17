@@ -55,6 +55,68 @@ def fetch_recent_bars(calendar_days: int = 20) -> list[tuple]:
     return _rows_from_timesales(bars or [])
 
 
+
+DAILY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS daily_bars (
+    ticker TEXT NOT NULL,
+    session_date TEXT NOT NULL,
+    open REAL, high REAL, low REAL, close REAL, volume REAL,
+    source TEXT,
+    PRIMARY KEY (ticker, session_date)
+);
+"""
+
+
+def fetch_daily_history(ticker: str = "SPY", period: str = "max") -> list[tuple]:
+    """Daily OHLCV from Yahoo.
+
+    This is what closes the 2021-2026 hole. The intraday store stops at
+    2021-05-06 and no provider here sells 1-minute history that far back
+    (Tradier ~20 days, Yahoo hard-caps 1-minute at 30), so those sessions
+    can never have minute bars. But the features that were CORRUPTED by
+    the gap - gap_pct, atr_14, prior-day and prior-week levels - are all
+    derived from session-level OHLC, and daily bars supply that perfectly
+    back to 1993.
+    """
+    import warnings
+
+    warnings.filterwarnings("ignore")
+    import yfinance as yf
+
+    frame = yf.Ticker(ticker).history(period=period, interval="1d",
+                                      auto_adjust=False)
+    rows: list[tuple] = []
+    for stamp, row in frame.iterrows():
+        try:
+            rows.append((
+                ticker, stamp.date().isoformat(),
+                float(row["Open"]), float(row["High"]),
+                float(row["Low"]), float(row["Close"]),
+                float(row.get("Volume") or 0.0), "yfinance",
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return rows
+
+
+def refresh_daily(conn, rows: list[tuple]) -> dict[str, Any]:
+    conn.executescript(DAILY_SCHEMA)
+    if not rows:
+        return {"daily_seen": 0, "daily_new": 0}
+    before = conn.total_changes
+    conn.executemany(
+        "INSERT OR REPLACE INTO daily_bars (ticker, session_date, open, high, "
+        "low, close, volume, source) VALUES (?,?,?,?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+    span = conn.execute(
+        "SELECT MIN(session_date), MAX(session_date), COUNT(*) FROM daily_bars"
+    ).fetchone()
+    return {"daily_seen": len(rows), "daily_written": conn.total_changes - before,
+            "daily_first": span[0], "daily_last": span[1], "daily_rows": span[2]}
+
+
 def refresh(conn, rows: list[tuple], *, rebuild_features: bool = True) -> dict[str, Any]:
     if not rows:
         return {"bars_seen": 0, "bars_new": 0, "sessions": [], "feature_rows": 0}
@@ -103,12 +165,22 @@ def main() -> None:
                         help="calendar days of 1-minute history to request")
     parser.add_argument("--no-features", action="store_true",
                         help="ingest bars only, skip the feature rebuild")
+    parser.add_argument("--daily", action="store_true",
+                        help="also refresh daily bars (fills the 2021-2026 "
+                             "context hole; needs yfinance)")
+    parser.add_argument("--daily-only", action="store_true",
+                        help="refresh daily bars and nothing else")
     args = parser.parse_args()
 
     conn = sif.connect()
     try:
-        rows = fetch_recent_bars(args.days)
-        result = refresh(conn, rows, rebuild_features=not args.no_features)
+        result: dict[str, Any] = {}
+        if args.daily or args.daily_only:
+            result.update(refresh_daily(conn, fetch_daily_history()))
+        if not args.daily_only:
+            rows = fetch_recent_bars(args.days)
+            result.update(refresh(conn, rows,
+                                  rebuild_features=not args.no_features))
         result["coverage"] = coverage(conn)
         print(json.dumps(result, indent=2, default=str))
     finally:

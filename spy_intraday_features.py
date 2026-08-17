@@ -52,6 +52,8 @@ SESSION_CLOSE_MINUTES = 15 * 60 + 59
 OPENING_RANGE_WINDOWS = (5, 15, 30)
 ATR_PERIOD = 14
 RVOL_BASELINE_SESSIONS = 20
+# Intraday coverage breaks make an older volume profile meaningless.
+RVOL_STALE_AFTER_DAYS = 10
 VWAP_SLOPE_LOOKBACK = 5
 
 SCHEMA = """
@@ -865,7 +867,19 @@ def all_session_ohlc(conn: sqlite3.Connection, ticker: str = "SPY") -> list[tupl
     Python, which meant a partial rebuild still dragged all 1.43M rows
     across the wire just to reconstruct prior-day levels. One grouped
     query with window functions gives the same answer in a fraction of a
-    second."""
+    second.
+
+    Sessions with no minute bars fall back to the daily_bars table. The
+    intraday store stops at 2021-05-06 and no provider sells 1-minute
+    history that far back, so the 2021-2026 sessions can never have minute
+    bars - but every feature the gap CORRUPTED (gap_pct, atr_14,
+    prior-day and prior-week levels) is derived from session-level OHLC,
+    which daily bars supply exactly. Without this, the first session after
+    the hole reported a 76% gap against a five-year-old prior close.
+
+    Minute-derived OHLC always wins where it exists; daily only fills
+    sessions that would otherwise be absent entirely.
+    """
     rows = conn.execute(
         """
         SELECT d, open, high, low, close FROM (
@@ -885,7 +899,30 @@ def all_session_ohlc(conn: sqlite3.Connection, ticker: str = "SPY") -> list[tupl
         """,
         (ticker,),
     ).fetchall()
-    return [(r["d"], {"open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"]}) for r in rows]
+    merged = {
+        r["d"]: {"open": r["open"], "high": r["high"],
+                 "low": r["low"], "close": r["close"]}
+        for r in rows
+    }
+
+    has_daily = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='daily_bars'"
+    ).fetchone()
+    if has_daily:
+        for row in conn.execute(
+            "SELECT session_date, open, high, low, close FROM daily_bars "
+            "WHERE ticker=? ORDER BY session_date", (ticker,)
+        ):
+            if row["session_date"] in merged:
+                continue
+            if None in (row["open"], row["high"], row["low"], row["close"]):
+                continue
+            merged[row["session_date"]] = {
+                "open": row["open"], "high": row["high"],
+                "low": row["low"], "close": row["close"],
+            }
+
+    return sorted(merged.items())
 
 
 class ContextBuilder:
@@ -966,6 +1003,20 @@ class ContextBuilder:
         self._prior = dict(ohlc)
 
         if bars is not None:
+            # A volume profile from before a break in intraday coverage is
+            # not a baseline. Merging daily OHLC fixes prior-day levels and
+            # ATR across the 2021-2026 hole, but nothing can supply an
+            # intraday volume profile for sessions with no minute bars - so
+            # without this the 2021 profiles were still in the deque when
+            # 2026 started, and relative_volume came out around 90x.
+            last = getattr(self, "_last_rvol_session", None)
+            if last is not None:
+                span = (date.fromisoformat(session) - date.fromisoformat(last)).days
+                if span > RVOL_STALE_AFTER_DAYS:
+                    self._rvol.clear()
+                    self._baseline_cache = None
+            self._last_rvol_session = session
+
             cumulative = 0.0
             profile: dict[int, float] = {}
             for bar in bars:
