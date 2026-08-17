@@ -10,6 +10,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ OWNER_ONLY_COMMANDS = {
     "close-profitable",
     "force-trade",
     "force-sell",
+    "force-all-strategies",
     "evolve-audit-duplicates",
 }
 TRADINGVIEW_WEBHOOK_SECRET = os.environ.get("TRADINGVIEW_WEBHOOK_SECRET", "").strip()
@@ -611,6 +613,147 @@ def evolve_audit_duplicates_reply(interaction: dict[str, Any]) -> str:
     return "\n".join(lines)[:1900]
 
 
+
+def force_all_strategies_reply(interaction: dict[str, Any]) -> str:
+    """Owner-forced entry for EVERY enabled new strategy at once.
+
+    Opens one real paper position per strategy so all 14 can be seen
+    working - their cards, their per-strategy channels, and their own exit
+    rules - without waiting for each one's setup to occur naturally. Some
+    of these fire only a handful of times a year, so waiting is not a
+    practical way to confirm the plumbing.
+
+    Each position is opened through the same real functions a scan-driven
+    entry uses (scan_new_strategy_candidates/candidate_to_row/
+    post_new_trade/sync_open_trade_cards) and is then managed by that
+    strategy's OWN exit rules via evaluate_open_row, so what this
+    demonstrates is the real lifecycle rather than a mock of it.
+
+    Direction comes from each strategy's current signal where it has one;
+    otherwise the owner-supplied side is used, defaulting to call. That
+    matters for honesty: a forced entry is NOT evidence the strategy's
+    entry rule fired, and the trade is tagged so it can be told apart from
+    a genuine signal later.
+
+    Respects the exposure cap and same-contract cooldown, like
+    /force-trade - those are hard risk limits, not timing preferences.
+    evolve_bot is untouched.
+    """
+    require_ticker_admin(interaction)
+    import spy_live_new_strategies as lns
+
+    side_option = str(option_value(interaction, "direction", "") or "").strip().lower()
+    default_side = side_option if side_option in ("call", "put") else "call"
+
+    timestamp = spy_scanner.now_ct()
+    rows = spy_scanner.read_log()
+    spot = spy_scanner.get_quote(spy_scanner.TICKER)
+    spot_price = spy_scanner.as_float(spot.get("last")) if spot else None
+    if spot_price is None:
+        return "Could not get a current SPY quote - nothing forced."
+
+    today_str = timestamp.date().isoformat()
+    expirations = spy_scanner.get_expirations(spy_scanner.TICKER) or []
+    expiration = today_str if today_str in expirations else (expirations[0] if expirations else None)
+    if expiration is None:
+        return "No SPY expirations listed right now - nothing forced."
+
+    allowed = set(spy_scanner.filter_strikes(
+        spy_scanner.get_strikes(spy_scanner.TICKER, expiration), spot_price))
+    chain = [o for o in spy_scanner.get_chain(spy_scanner.TICKER, expiration)
+             if float(o.get("strike", -1)) in allowed]
+    if not chain:
+        return "Could not load a usable SPY chain right now - nothing forced."
+
+    # Real signals where they exist, so a strategy that genuinely fired is
+    # recorded as such rather than as a forced guess.
+    live_signals: dict[str, dict[str, Any]] = {}
+    try:
+        intraday = spy_scanner.get_intraday_history(spy_scanner.TICKER, interval="1min")
+        daily = spy_scanner.get_daily_history(spy_scanner.TICKER)
+        feature_rows = lns.live_feature_rows(intraday or [], daily or [])
+        enabled_flags = {lns.config_flag(p): True for p in lns.NEW_STRATEGY_PLAY_TYPES}
+        live_signals = {s["play_type"]: s
+                        for s in lns.signals_on_latest_bar(feature_rows, enabled_flags)}
+    except Exception as exc:
+        print(f"force-all: live signal read failed ({exc}); using forced side", file=sys.stderr)
+
+    enabled = spy_scanner.trade_types_enabled()
+    tracker = spy_scanner.initialize_discord()
+    report_state = spy_scanner.read_report_state()
+
+    opened: list[str] = []
+    skipped: list[str] = []
+
+    for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+        spec = lns.NEW_STRATEGY_BY_PLAY_TYPE[play_type]
+        if not enabled.get(lns.config_flag(play_type)):
+            skipped.append(f"{spec['label']} (disabled)")
+            continue
+
+        real = live_signals.get(play_type)
+        side = real["side"] if real else default_side
+        signal = {
+            "play_type": play_type,
+            "side": side,
+            "regime": (real or {}).get("regime") or "MANUAL FORCE",
+            "reason": (real["reason"] if real
+                       else f"Manually forced via /force-all-strategies (no live signal)."),
+        }
+        candidates = lns.scan_new_strategy_candidates(chain, signal, expiration, spot_price)
+        if not candidates:
+            skipped.append(f"{spec['label']} (no contract cleared filters)")
+            continue
+
+        eligible = [c for c in candidates if not spy_scanner.recently_tracked(rows, c, timestamp)]
+        selected = spy_scanner.apply_ticker_exposure_cap(eligible, rows, spy_scanner.TICKER)
+        if not selected:
+            skipped.append(f"{spec['label']} (exposure cap or cooldown)")
+            continue
+
+        row = spy_scanner.candidate_to_row(
+            selected[0], rows, timestamp,
+            market_condition="MANUAL FORCE" if not real else "LIVE SIGNAL",
+        )
+        rows.append(row)
+        spy_scanner.safe_discord_call(
+            f"forced {play_type} post",
+            lambda r=row: spy_scanner.post_new_trade(r, tracker, report_state),
+        )
+        target, stop, time_stop = lns.exit_rules_for(play_type)
+        opened.append(
+            f"`{spec['label']}` {side.upper()} {row['strike']} @ ${row['entry_price']} "
+            f"(+{target:.0f}%/{stop:.0f}%{f', {time_stop}m' if time_stop else ''})"
+            f"{' — real signal' if real else ''}"
+        )
+
+    if opened:
+        spy_scanner.write_log(rows)
+        quotes = spy_scanner.get_quotes(
+            spy_scanner.symbols_for_rows(spy_scanner.open_rows(rows)), include_greeks=True)
+        for row in spy_scanner.open_rows(rows):
+            if lns.is_new_strategy_play_type(row.get("play_type")):
+                evaluation = spy_scanner.evaluate_open_row(
+                    row, quotes, timestamp, underlying_spot_price=spot_price)
+                spy_scanner.safe_discord_call(
+                    "forced board sync",
+                    lambda r=row, e=evaluation: spy_scanner.sync_open_trade_cards(
+                        r, tracker, report_state, e),
+                )
+        spy_scanner.write_report_state(report_state)
+
+    lines = [f"✅ **Forced {len(opened)} of {len(lns.NEW_STRATEGY_PLAY_TYPES)} strategies into live paper trades**"]
+    lines.extend(f"• {entry}" for entry in opened)
+    if skipped:
+        lines.append(f"\n⚠️ Skipped {len(skipped)}: " + "; ".join(skipped))
+    lines.append(
+        "\nEach is now managed by its OWN exit rules and posts to its own channel. "
+        "Forced entries are tagged `MANUAL FORCE` - they are not evidence the "
+        "strategy's entry rule fired."
+    )
+    return "\n".join(lines)
+
+
 def force_trade_reply(interaction: dict[str, Any]) -> str:
     """Owner-forced manual entry - finds the best real SPY 0DTE contract
     matching the requested direction using the exact same contract-
@@ -1088,6 +1231,11 @@ def process_command(interaction: dict[str, Any]) -> None:
             patch_original(
                 application_id, token, content=force_trade_reply(interaction)
             )
+        elif name == "force-all-strategies":
+            respond(
+                application_id, token, content=force_all_strategies_reply(interaction)
+            )
+
         elif name == "force-sell":
             patch_original(
                 application_id, token, content=force_sell_reply(interaction)

@@ -18,6 +18,7 @@ OWNER_ONLY_COMMANDS = {
     "close-profitable",
     "force-trade",
     "force-sell",
+    "force-all-strategies",
     "evolve-audit-duplicates",
 }
 
@@ -109,6 +110,22 @@ COMMANDS = [
             "description": "call or put",
             "type": 3,
             "required": True,
+            "choices": [
+                {"name": "Call", "value": "call"},
+                {"name": "Put", "value": "put"},
+            ],
+        }],
+    },
+    {
+        "name": "force-all-strategies",
+        "type": 1,
+        "default_member_permissions": "0",
+        "description": "Owner: force every enabled strategy into one paper trade so all of them can be seen working",
+        "options": [{
+            "name": "direction",
+            "description": "Side to use where a strategy has no live signal (default call)",
+            "type": 3,
+            "required": False,
             "choices": [
                 {"name": "Call", "value": "call"},
                 {"name": "Put", "value": "put"},
