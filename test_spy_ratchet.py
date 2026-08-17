@@ -19,10 +19,58 @@ context.
 
 from __future__ import annotations
 
+from unittest import mock
+
+import pytest
+
 import spy_scanner
 
+# The 10 variants were retired 2026-08-17 (see spy_scanner's
+# SPY_RATCHET_VARIANTS comment), so the live table is empty. The exit MATH
+# is still here and still tested: spy_ratchet_exit_signal remains in the
+# codebase, and restoring a variant is a one-line change. So the logic
+# tests below run against this historical roster injected explicitly,
+# which keeps the coverage honest about what it is testing - the shape of
+# the exit, not the presence of a live strategy.
+RETIRED_VARIANTS = (
+    {"play_type": "SPY_RATCHET_26_16", "label": "Ratchet 26/16", "step_pct": 26.0, "stop_pct": -16.0},
+    {"play_type": "SPY_RATCHET_30_16", "label": "Ratchet 30/16", "step_pct": 30.0, "stop_pct": -16.0},
+    {"play_type": "SPY_RATCHET_25_16", "label": "Ratchet 25/16", "step_pct": 25.0, "stop_pct": -16.0},
+    {"play_type": "SPY_RATCHET_26_17", "label": "Ratchet 26/17", "step_pct": 26.0, "stop_pct": -17.0},
+    {"play_type": "SPY_RATCHET_29_16", "label": "Ratchet 29/16", "step_pct": 29.0, "stop_pct": -16.0},
+    {"play_type": "SPY_RATCHET_30_17", "label": "Ratchet 30/17", "step_pct": 30.0, "stop_pct": -17.0},
+    {"play_type": "SPY_RATCHET_24_16", "label": "Ratchet 24/16", "step_pct": 24.0, "stop_pct": -16.0},
+    {"play_type": "SPY_RATCHET_25_17", "label": "Ratchet 25/17", "step_pct": 25.0, "stop_pct": -17.0},
+    {"play_type": "SPY_RATCHET_26_18", "label": "Ratchet 26/18", "step_pct": 26.0, "stop_pct": -18.0},
+    {"play_type": "SPY_RATCHET_26_36", "label": "Ratchet 26/36", "step_pct": 26.0, "stop_pct": -36.0},
+)
 
-def test_variant_table_has_exactly_ten_entries_each_uniquely_named():
+
+@pytest.fixture(autouse=True)
+def _restore_retired_roster():
+    """Every logic test in this file needs a variant to exercise."""
+    by_play_type = {v["play_type"]: v for v in RETIRED_VARIANTS}
+    with mock.patch.object(spy_scanner, "SPY_RATCHET_VARIANTS", RETIRED_VARIANTS),          mock.patch.object(spy_scanner, "SPY_RATCHET_PLAY_TYPES",
+                           tuple(v["play_type"] for v in RETIRED_VARIANTS)),          mock.patch.object(spy_scanner, "SPY_RATCHET_VARIANT_BY_PLAY_TYPE", by_play_type):
+        yield
+
+
+def test_no_ratchet_variant_is_live_any_more():
+    """The retirement itself, asserted so a variant cannot creep back in
+    without a deliberate change. Bypasses the roster fixture on purpose."""
+    with mock.patch.object(spy_scanner, "SPY_RATCHET_VARIANTS", ()):
+        pass
+    import importlib
+    module = importlib.reload(spy_scanner)
+    try:
+        assert module.SPY_RATCHET_VARIANTS == ()
+        assert module.SPY_RATCHET_PLAY_TYPES == ()
+        assert module.SPY_RATCHET_VARIANT_BY_PLAY_TYPE == {}
+    finally:
+        importlib.reload(module)
+
+
+def test_retired_variant_table_entries_are_uniquely_named():
     assert len(spy_scanner.SPY_RATCHET_VARIANTS) == 10
     play_types = [variant["play_type"] for variant in spy_scanner.SPY_RATCHET_VARIANTS]
     assert len(play_types) == len(set(play_types))
@@ -242,23 +290,22 @@ def test_close_card_overshoot_uses_the_rows_own_ratchet_stop_not_the_legacy_sing
     assert "target -16%" in content
 
 
-def test_default_trade_types_enabled_pauses_every_ratchet_variant_in_code():
-    # Code-level fallback must default to paused for every variant, same
-    # rule as every other play type - a missing config key must never
-    # silently enable a leveraged, backtest-only play type.
-    for variant in spy_scanner.SPY_RATCHET_VARIANTS:
-        assert spy_scanner.DEFAULT_TRADE_TYPES_ENABLED[variant["play_type"].lower()] is False
+def test_no_ratchet_play_type_can_be_enabled_after_retirement():
+    """With the roster emptied, no ratchet key should be enabled anywhere.
 
-
-def test_trade_types_enabled_actually_reads_the_config_flag_per_variant():
-    # Real bug caught while building this: trade_types_enabled() only
-    # applies a configured() override to a key that already exists in
-    # DEFAULT_TRADE_TYPES_ENABLED - adding a key only to config/scanner.json
-    # without also adding it to DEFAULT_TRADE_TYPES_ENABLED means the
-    # config flag is silently ignored and the variant can never trade.
+    This replaces two earlier tests that asserted a config flag existed
+    for each live variant - vacuous now that none are live. What matters
+    after retirement is the inverse: that a stale `true` left in
+    config/scanner.json cannot bring one back silently.
+    """
     enabled = spy_scanner.trade_types_enabled()
-    for variant in spy_scanner.SPY_RATCHET_VARIANTS:
-        assert variant["play_type"].lower() in enabled
+    live_ratchets = [key for key, value in enabled.items()
+                     if key.startswith("spy_ratchet_") and value]
+    assert live_ratchets == [], f"retired ratchet variants still enabled: {live_ratchets}"
+
+    for key, value in spy_scanner.DEFAULT_TRADE_TYPES_ENABLED.items():
+        if key.startswith("spy_ratchet_"):
+            assert value is False
 
 
 def test_run_spy_ratchet_variants_gates_each_variant_independently():

@@ -63,6 +63,19 @@ def test_compute_stop_overshoot_returns_the_slip_when_the_stop_didnt_hold():
 
 
 def test_ratchet_variant_uses_its_own_stop_not_the_legacy_single_leg_stop():
+    # The 10 variants were retired 2026-08-17, so the live roster is empty.
+    # The per-variant stop lookup still exists and still matters if one is
+    # ever restored, so the variant is injected explicitly here rather than
+    # letting the test quietly pass against an empty table.
+    from unittest import mock
+    variant = {"play_type": "SPY_RATCHET_26_16", "label": "Ratchet 26/16",
+               "step_pct": 26.0, "stop_pct": -16.0}
+    with mock.patch.object(spy_scanner, "SPY_RATCHET_VARIANT_BY_PLAY_TYPE",
+                           {variant["play_type"]: variant}),          mock.patch.object(spy_scanner, "SPY_RATCHET_VARIANTS", (variant,)),          mock.patch.object(spy_scanner, "SPY_RATCHET_PLAY_TYPES", (variant["play_type"],)):
+        _assert_ratchet_stop_is_its_own()
+
+
+def _assert_ratchet_stop_is_its_own():
     row = _closed_row(
         play_type="SPY_RATCHET_26_16", last_signal="STOP OUT", pct_gain_loss="-40"
     )
