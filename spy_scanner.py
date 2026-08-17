@@ -516,6 +516,9 @@ CLOSING_SIGNALS = {
     "EOD CLOSE",
 }
 
+# SPY_0DTE_1M/5M and SPY_EXPANSION_LEVEL were retired 2026-08-17, so their
+# performance_/results_ keys are gone from this list too - a key here with no
+# CHANNEL_NAMES route is dead weight even now that discover() tolerates it.
 AUTOMATED_CHANNEL_KEYS = [
     "scanner_feed",
     "premarket",
@@ -541,10 +544,6 @@ AUTOMATED_CHANNEL_KEYS = [
     "weekly_report",
     "monthly_recap",
     "spy_technicals",
-    "performance_1m",
-    "results_1m",
-    "performance_5m",
-    "results_5m",
     "ticker_results",
     "learning_results",
     "examples_reviews",
@@ -578,7 +577,7 @@ for _ratchet_variant in SPY_RATCHET_VARIANTS:
 # to a live channel; the per-variant routes above go empty on their own,
 # since they are generated from the now-empty SPY_RATCHET_VARIANTS.)
 CHANNEL_NAMES.pop("ratchet_leaderboard", None)
-AUTOMATED_CHANNEL_KEYS.append("ratchet_leaderboard")
+# ratchet_leaderboard retired with the 10 variants - no route left to check.
 # Same idea for the other 4 live strategies (1-Minute, 5-Minute,
 # Key-Levels, Expansion-Level) - a leaderboard ranking them against each
 # other in the shared strategies-dashboard channel. See
@@ -4878,10 +4877,16 @@ class DiscordTracker:
         missing_tags = sorted(key for key in ("OPEN", "HOLDING", "WIN", "LOSS", "SCRATCH") if key not in self.tag_ids)
         if missing_tags:
             raise DiscordError(f"Missing required trade-journal forum tags: {', '.join(missing_tags)}")
+        # CHANNEL_NAMES.get, not CHANNEL_NAMES[key]. Retiring a strategy
+        # removes its routing entry, and a stale key left in
+        # AUTOMATED_CHANNEL_KEYS then raised KeyError here - taking down
+        # initialize_discord() entirely, so every Discord-touching job failed
+        # rather than just skipping one dead channel. A key with no route has
+        # nothing to check, which is not an error.
         self.missing_channels = [
-            CHANNEL_NAMES[key]
+            name
             for key in AUTOMATED_CHANNEL_KEYS
-            if key not in self.channels
+            if (name := CHANNEL_NAMES.get(key)) and key not in self.channels
         ]
         self.ready = True
 
