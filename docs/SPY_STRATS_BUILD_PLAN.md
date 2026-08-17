@@ -69,7 +69,7 @@ option edge that the data cannot support.
 
 Ordered per the source material's own pipeline. Each phase ends in a merged PR.
 
-### ⬜ Phase 1 — Ingest the historical datasets
+### ✅ Phase 1 — Ingest the historical datasets
 Load everything into a queryable store, alongside the existing `market_memory`
 database, without touching live trading.
 - Resolve the 1-minute timezone question against a known session (definitively,
@@ -80,14 +80,35 @@ database, without touching live trading.
   used — parsing 8 GB of JSON now would delay Phases 2-3 for no benefit.
 - **Exit criteria:** every dataset queryable and reconciled against its source.
 
-### ⬜ Phase 2 — Intraday feature engine
-Per-minute market state with **no lookahead**, which the specs demand twice.
+### ✅ Phase 2 — Intraday feature engine
+`spy_intraday_features.py` → `minute_features`, **1,300,717 rows across 3,347
+sessions** (2008-01-22 → 2021-05-06), 69 columns, built in 70s.
+
 - Global market map: prev-day H/L/C/mid/range, prev-week levels, premarket
-  H/L/mid/range, gap %, opening range (5/15/30 min), session H/L, VWAP + slope +
-  distance, ATR, relative volume (time-of-day normalised).
-- Multi-timeframe alignment (daily/60m/15m/5m/2m) → 5-state classification.
-- 10-state regime engine; day-type classifier that updates through the session.
-- **Exit criteria:** feature parity tests + an explicit no-lookahead test per feature.
+  H/L/mid/range, gap %/$/ATR, opening ranges (5/15/30 min), session H/L/range,
+  VWAP + slope + distance (raw/%/ATR) + cross count, ATR, relative volume
+  (time-of-day normalised), plus the bar's own OHLCV so the store is
+  self-contained.
+- Multi-timeframe alignment (5m/15m/60m/daily) → 5-state classification, read
+  from the last **closed** higher-timeframe bucket only.
+- 10-state regime engine; day-type classifier that evolves through the session.
+- **No-lookahead is enforced by truncation test**: every feature at bar *i* must
+  be byte-identical whether computed over the full session or a session ending
+  at *i*. 17 tests pass.
+
+**Observed distributions** (sanity, not edge): RANGE 58%, COMPRESSION 14%,
+strong trends 2.0% combined; day types at the close skew CHOPPY_DAY 51%.
+Nulls are warm-up only — first session (prev-day), first 14 (ATR), first week
+(prev-week) — plus 2 sessions whose source data starts late (2009-07-27 at
+11:15, 2013-12-23 at 10:08), left NULL rather than fabricated.
+
+> ⚠️ **Second data constraint found here.** Premarket bars are present in only
+> **226 of 3,347 sessions (6.8%)** — 2020 (78%), early 2021 (29%), 4 days in
+> 2008, and **zero across 2009-2019**. So `premarket_*` and any strategy keyed
+> to premarket range are testable only on a COVID-era sample, which is the least
+> representative window available. Gap % itself is unaffected (it uses the prior
+> close), so gap strategies remain fully testable — but premarket-*range*
+> strategies must be reported with this caveat attached, or dropped.
 
 ### ⬜ Phase 3 — Backtest engine + first strategy tranche
 - Event-driven 1-minute backtester, underlying-only (per the spec's instruction
