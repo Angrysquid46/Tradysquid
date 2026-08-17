@@ -595,40 +595,40 @@ What it means: The thin lines stretching above the solid candle body. It calcula
 What it means: The thin lines stretching beneath the solid candle body. This mathematically identifies the exact structural floors where big money algorithms stepped in to buy up a rapid market drop and push the price back up. * The Math: (Min(Close, Open) - Low) / Close
 
 ## Conviction Measurement Ratios (Body_Size)
-*Not yet written.* This topic comes from source module 47, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Body size normalised by price, so bars are comparable across time and price levels: |Close - Open| / Close. Normalisation is the point. A $2 body on a $770 SPY is a different event from a $2 body on a $90 SPY in 2009, and unnormalised comparisons across a long history are meaningless.
 
 ## Failed Breakout Upper Rejection Wicks (Upper_Shadow)
-*Not yet written.* This topic comes from source module 47, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The systematised version of the upper wick: (High - max(Close, Open)) / Close, computed per bar so it can be tested rather than eyeballed. Turning a visual impression into a number is what allows a claim like 'failed breakouts are tradeable' to be checked against 3,347 sessions instead of remembered selectively.
 
 ## Institutional Floor Absorption Lower Wicks (Lower_Shadow)
-*Not yet written.* This topic comes from source module 47, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+(min(Close, Open) - Low) / Close per bar. Large values mark bars where downside was rejected. Most useful when clustered at a level rather than in isolation - a single long wick is one trader's opinion, five at the same price is a floor.
 
 ## True Intraday Trend Cleanliness Metrics (Intraday_Efficiency_Ratio)
-*Not yet written.* This topic comes from source module 47, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+|Close - Open| / (High - Low). Near 1.0 the bar travelled in a straight line; near 0 it covered the same range while going nowhere. It separates a trend from chop with one number, which is why it appears in this system's feature set and gates the momentum-squeeze playbook at 0.75.
 
 ## Support and Resistance Horizontal Floors and Ceilings
-*Not yet written.* This topic comes from source module 73, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Price levels where buying or selling has previously overwhelmed the other side. Prior highs and lows, session extremes, and round numbers. Their power comes from memory: traders place orders where price previously turned, which is partly self-fulfilling. This system tracks ten such levels explicitly and measures proximity to them via `confluence_count`.
 
 ## Trendlines, Parallel Channels, and Fan Line Matrix Overlays
-*Not yet written.* This topic comes from source module 73, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Lines connecting successive highs or lows to define a trend's slope, with parallel copies forming a channel. The weakness is subjectivity - two traders draw different lines on the same chart and both find confirmation. Linear regression channels solve this by computing the line rather than drawing it.
 
 ## Classical Reversal Structures (Head and Shoulders, Double Tops/Bottoms)
-*Not yet written.* This topic comes from source module 73, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Patterns marking a failed trend: a head and shoulders is a high, a higher high, then a lower high; double tops are two failures at one level. They describe something real - a trend that stopped making progress - but they are identified reliably only in hindsight, and the pattern-recognition literature on them is far weaker than their popularity suggests.
 
 ## Classical Continuation Patterns (Bull/Bear Flags, Pennants, Wedges)
-*Not yet written.* This topic comes from source module 73, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Consolidations within a trend: a sharp move, a shallow pullback against it, then continuation. The underlying logic is sound - a pause without a reversal means the move was absorbed rather than rejected - and it is the same structure this system's first-pullback-after-drive strategy tests systematically.
 
 ## Reading the Candlestick Shape: Deconstructing Open, High, Low, and Close Actions
-*Not yet written.* This topic comes from source module 121, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Four numbers per bar. The body spans open to close; the wicks reach to high and low. Everything a candle tells you comes from the relationship between them - where price went versus where it settled. A long upper wick with a small body means buyers pushed and failed. Same range, same close, different story from a full green body. This is the whole basis of price-action reading, and it is why this system stores each bar's OHLC and a `range_position` feature rather than the close alone.
 
 ## Candle Body Sizes: Spotting Clean Buyer or Seller Conviction instantly
-*Not yet written.* This topic comes from source module 121, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Body size divided by price measures conviction. A large body means one side controlled the entire period; a small body means the two sides fought to a draw regardless of how far price travelled. Doji-like bars at the extreme of a move are indecision after a trend - informative. The same bar in the middle of a range is noise. Context decides whether a candle means anything.
 
 ## Upper Shadow Wicks: Spotting Failed Bullish Breakouts and Rejections
-*Not yet written.* This topic comes from source module 121, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The upper shadow is (High - max(Close, Open)) / Close: how far buyers pushed before being rejected. A long upper wick at resistance is a failed breakout printed in a single bar. This is the raw material of the failed-breakout strategy, which measured +0.0322 ATR/trade at t=+2.94 and was positive in all four eras - the second strongest result in this system's testing.
 
 ## Lower Absorption Wicks: Identifying Key Structural Floors Where Institutional Support Steps In
-*Not yet written.* This topic comes from source module 121, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The mirror: (min(Close, Open) - Low) / Close. A long lower wick means sellers pushed and buyers absorbed the supply. Repeated lower wicks at the same level mark a defended price. It does not mean the defence holds - it means someone is spending money there, which is more than can be said for most lines drawn on charts.
 
 <!-- /EXPANDED:candlestick-and-chart-anatomy -->
 <!-- END:06-charts-price-action -->
@@ -702,16 +702,16 @@ What it means: A technical indicator that scores the absolute strength of a mark
 What it means: An Exponential Moving Average (EMA) tracks a stock's average price while placing heavier weight on the most recent data. The slope calculates the moving rate of change (the steepness of the angle) of that line. * The Rule: Standard line crosses are often false whipsaw traps. Tracking a steep, accelerating slope angle guarantees true price speed is entering the market.
 
 ## Defining Market States: Separating Clean Vertical Trends from Messy Sideways Chop
-*Not yet written.* This topic comes from source module 122, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Markets alternate between trending and ranging, and strategies that work in one lose in the other. Identifying the state is more valuable than any single signal. Measured across 3,347 sessions, this system's regime classifier found RANGE 58% of the time, COMPRESSION 14%, and strong trends only 2.0% combined. Most of the time, in other words, breakout strategies are trading into conditions that do not support them.
 
 ## The Average Directional Index (ADX): Knowing When to Buy and When to Stand Down
-*Not yet written.* This topic comes from source module 122, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+ADX measures trend STRENGTH regardless of direction, 0-100. Below 20 is typically no trend; above 25 is a trending market; +DI and -DI indicate which way. Its value is as a filter rather than a signal - it tells you whether to deploy a trend strategy at all. This system's momentum-continuation strategy gates on ADX above 25 for that reason, and the playbook that requires it switches itself off below that level.
 
 ## Moving Average ribbon Slopes: Verifying True Price Speed entries
-*Not yet written.* This topic comes from source module 122, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Several moving averages of different lengths plotted together. Their spacing shows trend strength; their slope shows direction; compression signals a transition. It is a visual restatement of what ADX measures numerically, and it suffers the same lag - every average is a function of prices that have already happened.
 
 ## Support and Resistance Levels: Mapping Out Historical Supply and Demand Zones
-*Not yet written.* This topic comes from source module 122, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Zones, not lines. Price rarely turns at an exact number; it turns in a neighbourhood where orders cluster. This system's proximity band is 0.1% for key levels, which is the difference between a level being useful and being missed by two cents.
 
 <!-- /EXPANDED:trend-strength-and-regimes -->
 <!-- EXPANDED:gaps-and-oscillators -->
@@ -844,40 +844,40 @@ What it means: A statistical tracking tool that measures exactly how many standa
 What it means: Measures the standard deviation of daily log volume changes over 20 days. It tracks how erratic or stable the asset's share turnover is, warning the system when trading volume is completely drying up.
 
 ## Volume-at-Price Distributions (Volume Profile / Market Profile)
-*Not yet written.* This topic comes from source module 77, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Instead of volume per time bar, volume per PRICE level. It shows where trading actually concentrated rather than when. High-volume nodes are prices both sides accepted and tend to attract price back; low-volume nodes are prices rejected quickly, and price often moves through them fast.
 
 ## Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL)
-*Not yet written.* This topic comes from source module 77, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+POC is the single price with the most traded volume. The value area is the range containing roughly 70% of volume, bounded by VAH and VAL. They function as fair-value references much as VWAP does: price outside the value area is at an extreme and tends to be pulled back, unless the market is genuinely repricing.
 
 ## On-Balance Volume (OBV) and Accumulation/Distribution Accumulators
-*Not yet written.* This topic comes from source module 77, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+OBV adds the day's volume on up days and subtracts it on down days, producing a running total. Accumulation/Distribution weights by where the close sits within the range. Both aim to detect accumulation that price has not yet reflected. Divergence - price flat while OBV rises - is the intended signal, and it is noisy enough that it belongs as context rather than a trigger.
 
 ## Chaikin Money Flow (CMF) and Volume-Weighted Moving Averages (VWMA)
-*Not yet written.* This topic comes from source module 77, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+CMF combines close position within the range with volume over a lookback, oscillating around zero. VWMA weights a moving average by volume, so high-participation prices count more. VWMA diverging from a simple moving average tells you the move happened on unusual volume - which is exactly the distinction that separates a real break from a drift.
 
 ## The Advance-Decline Line (A/D) and Volume Breadth Multipliers
-*Not yet written.* This topic comes from source module 78, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+A running total of advancing minus declining issues. It measures how many stocks participate rather than what the index did. The classic warning is a new index high with a falling A/D line: the index is being carried by a few large names while the median stock declines. Because the S&P is cap-weighted, this can persist for a long time before it matters.
 
 ## New Highs vs. New Lows Intermarket Expansion Metrics
-*Not yet written.* This topic comes from source module 78, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Counts of stocks making 52-week highs versus lows. Expanding new highs confirms a healthy advance; expanding new lows during an index rally is a warning. Cleaner than the A/D line at extremes, and most useful at turning points rather than day to day.
 
 ## S&P 500 Stocks Above the 50-day and 200-day Moving Averages
-*Not yet written.* This topic comes from source module 78, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The percentage of constituents above key averages - a direct measure of how broad a trend is. Above 80% is a strong but often overheated market; below 20% is washed out. As with all breadth measures it identifies extremes far better than it times them.
 
 ## Cumulative Tick Index and Arms Index (TRIN) Intraday Ratios
-*Not yet written.* This topic comes from source module 78, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+TICK counts stocks trading on an uptick minus those on a downtick right now - extremes above +1000 or below -1000 mark buying or selling climaxes. TRIN compares advancing/declining issues to advancing/declining volume. Both are genuinely intraday and mean-reverting, which makes them among the more useful breadth tools for a day trader rather than a position trader.
 
 ## The Role of Volume: Validating Real Price Breaks vs. Low-Volume Retail Fakes
-*Not yet written.* This topic comes from source module 123, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Volume measures participation. A breakout on heavy volume means real capital moved; the same breakout on thin volume often reverses because nobody defended it. The measurable version is relative volume - today's volume against the typical amount for this time of day. Raw volume is useless without that normalisation, since 10:00 always trades more than 13:00.
 
 ## Capital Velocity: Understanding How Cash Flows Move Markets
-*Not yet written.* This topic comes from source module 123, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Prices move when money must be deployed or raised, not when opinions change. Index inclusion, fund flows, rebalancing and margin calls all force trades regardless of view. It is why 'the fundamentals did not change' is a poor explanation for a move. Forced flow does not care about fundamentals.
 
 ## Volume Extremes and Shocks: Recognizing the Footprints of Big Institutional Buyers
-*Not yet written.* This topic comes from source module 123, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Sudden volume far above the norm for that time of day marks institutional activity - the only participants who can move that much size. Direction is not implied. A volume shock says something significant happened; the price reaction over the following bars says what.
 
 ## Opening Range Boxes: Drawing the Boundaries of the First 30 Minutes of the Day
-*Not yet written.* This topic comes from source module 123, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The high and low of the session's first N minutes, used as the day's initial reference. This system computes 5, 15 and 30-minute versions per bar. The critical mechanic is that the level FREEZES once the window closes - before that it is still forming, and trading a range that has not finished forming is trading a level that will move. Every opening-range feature here carries a state flag for exactly that reason.
 
 <!-- /EXPANDED:volume-and-flow -->
 <!-- END:08-volume-breadth-internals -->
@@ -2684,16 +2684,16 @@ What it means: The single most important baseline anchor line used by institutio
 What it means: Measures the percentage deviation between the current price and the daily VWAP line. * The Math: (Current Price - VWAP) / VWAP * The Rule: Stocks act like rubber bands around VWAP. If the price stretches too far out (≥ ±0.25%) during low-volume hours, the momentum runs out of breath, creating a highly predictable mean-reversion scalp back to the center line.
 
 ## Volume-Weighted Average Price Baseline Proxies (VWAP)
-*Not yet written.* This topic comes from source module 49, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Cumulative typical price times volume, divided by cumulative volume, anchored to the session open. It is the average price paid by everyone trading today, weighted by size. Its importance is institutional: large orders are benchmarked against VWAP, so buying below it and selling above it is literally how execution desks are graded. That makes it a level with real flow behind it rather than a self-fulfilling line. It resets each session - a VWAP that carried over would drift permanently away from price.
 
 ## Intraday Deviation From Institutional Mean (Price_to_VWAP_Distance_Pct)
-*Not yet written.* This topic comes from source module 49, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+How far price sits from VWAP, in percent or ATR multiples. Large deviations mark statistical extension. This system measures it in ATR specifically so 'extended' means the same thing in a calm session and a volatile one - a 1% deviation is unremarkable on a wild day and extreme on a quiet one.
 
 ## Mid-Day Overextended Premium Exhaustion Extremes (RSI_14 > 75 / < 25)
-*Not yet written.* This topic comes from source module 49, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Tighter RSI thresholds than the conventional 70/30, intended to flag genuine exhaustion rather than ordinary strength. Even at 75/25 these are not standalone reversal signals. This system's exhaustion strategy requires extension AND a structure break, because the spec's own warning applies: do not short a rally merely because it looks too high.
 
 ## Overextended Reversion Rubber-Band Envelopes (BB_Upper / BB_Lower)
-*Not yet written.* This topic comes from source module 49, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Bollinger bands used as extension markers rather than as signals. Price outside them is statistically unusual relative to its own recent behaviour. In a trend price rides the band, so 'outside the band' means reversion only when the regime is range-like - which is precisely the filter this system's VWAP-reversion strategy applies before acting.
 
 <!-- END:33-fair-value-and-mean-reversion -->
 
@@ -2718,22 +2718,22 @@ What it is: Institutional algorithms and floor traders go to lunch from 11:30 AM
 What it is: The final 30 minutes before option expiration. Dealers are forced to execute massive stock blocks to clear out vanishing delta/gamma risks, creating explosive price velocity runs right into the 4:00 PM closing bell.
 
 ## The 9:30 AM Opening Retail Order Clearing Block
-*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The opening auction clears every order accumulated overnight at a single price, then continuous trading begins. The first minutes carry the day's highest volume and widest spreads. It is the most information-rich and most dangerous window: the moves are real but so is the slippage. This system's strategies wait at least 5 minutes and most opening-range logic requires 15-30 before acting.
 
 ## The 10:30 AM EST European Equity Settlement Pivot
-*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+European markets approach their close around 11:30 ET, and repositioning begins before that. The 10:00-10:30 window frequently marks a reversal or the start of the day's real trend. The mechanism is flow, not magic - one large pool of participants finishing for the day changes who is left in the book.
 
 ## The 11:30 AM Mid-Day New York Institutional Lunch Lull
-*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Volume falls sharply between roughly 11:30 and 13:30. Ranges narrow, spreads widen slightly, and breakouts fail more often because there is insufficient participation to sustain them. Measured here: MIDDAY is the largest single time bucket by bar count, and the time-of-day strategy scoped to it behaved differently enough from other windows to be tracked as its own strategy.
 
 ## The 1:30 PM Post-Lunch Portfolio Execution Resumption
-*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Institutional desks return, volume rebuilds, and the afternoon's real trend often establishes here. Moves originating after 13:30 tend to persist into the close more reliably than mid-day moves. For 0DTE this window matters most: enough time remains for a move to pay, but decay is accelerating.
 
 ## The 3:30 PM OpEx Expiration Options Gamma Flush
-*Not yet written.* This topic comes from source module 48, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The final 30 minutes bring closing auction imbalances, index rebalancing, and on expiration days a concentrated unwind of expiring positions. Volatility rises sharply. This is why every position in this system is forced flat by 15:45 rather than held into the bell - the last 15 minutes offer the worst combination of maximum theta, maximum gamma and unpredictable auction flow.
 
 ## The 9:30 AM Opening Retail Order Clearing Window
-*Not yet written.* This topic comes from source module 124, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The same window viewed as flow rather than mechanism. Overnight retail orders execute at the open, often at the worst price of the morning, because market orders queued overnight cross a spread that is at its widest. The practical rule: never leave a market order to execute at the open unless the fill price genuinely does not matter.
 
 <!-- END:34-the-market-clock -->
 
