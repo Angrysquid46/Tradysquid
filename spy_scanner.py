@@ -7309,8 +7309,17 @@ def _run_new_strategy_variants(
         context = _unavailable_context("no intraday bars yet for the current session")
         return {play_type: context for play_type in lns.NEW_STRATEGY_PLAY_TYPES}
 
-    fired = {signal["play_type"]: signal
-             for signal in lns.signals_on_latest_bar(rows, enabled)}
+    # Both entry paths share one dedupe record. The 15-minute full scan and
+    # the 1-minute entry scan can both act, and has_open_position only stops
+    # a SECOND position while one is open - it does not stop the full scan
+    # re-entering a signal bar the fast scan already traded and closed.
+    _scan_state = read_entry_scan_state()
+    _last_bar = _scan_state.setdefault("last_signal_bar", {})
+    fired = {
+        signal["play_type"]: signal
+        for signal in lns.signals_on_latest_bar(rows, enabled)
+        if _last_bar.get(signal["play_type"]) != signal["bar_time"]
+    }
 
     chain: list[dict[str, Any]] = []
     if fired:
