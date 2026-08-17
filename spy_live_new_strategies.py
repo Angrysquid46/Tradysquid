@@ -85,8 +85,17 @@ NEW_STRATEGY_SPECS: tuple[dict[str, Any], ...] = (
      "signal": ext.time_of_day_momentum("FINAL_30")},
     {"play_type": "SPY_MTF_4OF4", "rank": 10, "label": "MTF Breakout 4/4",
      "signal": ext.multi_timeframe_breakout(4)},
-    {"play_type": "SPY_EXHAUSTION_1ATR", "rank": 11, "label": "Momentum Exhaustion 1 ATR",
-     "signal": ext.momentum_exhaustion(1.0)},
+    # 0.40, not 1.0. Extension is measured in ATR multiples and 1.0 sits
+    # past the observed maximum: over 20 clean 2026 sessions the furthest
+    # price ever gets from VWAP is 0.861 ATR, so this strategy fired ZERO
+    # times and its channel had never posted. Swept against 250
+    # uncontaminated sessions, 1.0 shows +0.1358 ATR on 7 trades (noise),
+    # and the band from 0.70 to 0.50 is NEGATIVE. 0.40 is the first
+    # threshold that both fires in the current regime (0.95/session) and
+    # holds a positive edge on real sample: +0.0153 ATR, 55.6% over 81
+    # trades.
+    {"play_type": "SPY_EXHAUSTION_1ATR", "rank": 11, "label": "Momentum Exhaustion 0.4 ATR",
+     "signal": ext.momentum_exhaustion(0.40)},
     # 0.22, not the original 0.5. The drive threshold is measured in ATR
     # multiples, and it was set when SPY's intraday ranges were far wider:
     # over the 11 clean 2026 sessions the largest opening drive reaching

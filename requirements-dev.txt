@@ -1,3 +1,8 @@
 -r requirements.txt
 pytest==8.3.4
 pytest-cov==6.0.0
+
+# Daily SPY history for the research store. Fills the 2021-2026 context
+# hole that no 1-minute provider can reach (Tradier ~20 days, Yahoo 30).
+# Research/backtest only - the live trading path never imports it.
+yfinance==1.6.0
