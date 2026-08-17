@@ -1,0 +1,195 @@
+"""Tests for the 14 promoted live strategies.
+
+The point of this module is that the traded rule is the *measured* rule, so
+the tests that matter are the ones proving no drift crept in between the
+backtest and live:
+
+- the registry matches the locked top 15
+- features built from live bars come from the same engine the backtest used
+- a signal counts only on the newest closed bar (the stale-signal bug that
+  once had the old ORB reporting a reversed breakout all morning)
+- every strategy defaults to paused
+"""
+
+from __future__ import annotations
+
+import pytest
+
+import spy_backtest_strategies_extended as ext
+import spy_intraday_features as sif
+import spy_live_new_strategies as lns
+
+
+def _bars(count: int, start: float = 400.0, step: float = 0.0, day: str = "2026-08-17"):
+    out = []
+    for i in range(count):
+        hh, mm = divmod(9 * 60 + 30 + i, 60)
+        price = start + i * step
+        out.append({"time": f"{day} {hh:02d}:{mm:02d}:00", "open": price,
+                    "high": price + 0.10, "low": price - 0.10,
+                    "close": price, "volume": 1000})
+    return out
+
+
+def _daily(count: int = 30, close: float = 398.0):
+    return [{"date": f"2026-07-{(i % 28) + 1:02d}", "open": close - 3, "high": close + 1,
+             "low": close - 5, "close": close} for i in range(count)]
+
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+def test_all_fourteen_promoted_strategies_are_registered():
+    assert len(lns.NEW_STRATEGY_SPECS) == 14
+    assert len(set(lns.NEW_STRATEGY_PLAY_TYPES)) == 14
+    for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+        assert play_type.startswith("SPY_")
+        assert lns.is_new_strategy_play_type(play_type)
+    assert not lns.is_new_strategy_play_type("SPY_KEY_LEVELS")
+    assert not lns.is_new_strategy_play_type(None)
+
+
+def test_registry_covers_the_locked_shortlist_ranks():
+    """Rank 11 is SPY_KEY_LEVELS, which already runs in spy_scanner and is
+    deliberately not duplicated here. Every other rank 1-15 must be
+    present, or a strategy the owner locked in silently never trades."""
+    ranks = sorted(spec["rank"] for spec in lns.NEW_STRATEGY_SPECS)
+    assert ranks == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15]
+
+
+def test_every_new_strategy_defaults_to_paused():
+    """A brand-new strategy must be switched on deliberately - a missing
+    config key can never silently start trading."""
+    flags = lns.default_flags()
+    assert len(flags) == 14
+    assert all(value is False for value in flags.values())
+    for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+        assert lns.config_flag(play_type) in flags
+
+
+def test_config_flags_are_lowercase_play_types():
+    for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+        assert lns.config_flag(play_type) == play_type.lower()
+
+
+# ---------------------------------------------------------------------------
+# Features from live bars
+# ---------------------------------------------------------------------------
+
+def test_live_features_use_the_same_engine_as_the_backtest():
+    """If live features were computed differently the traded rule would not
+    be the measured rule, however identical the signal function looked."""
+    rows = lns.live_feature_rows(_bars(120, step=0.02), _daily())
+    assert len(rows) == 120
+    for column in ("vwap", "atr_14", "regime", "structure", "or15_state",
+                   "prev_day_high", "alignment", "adx_14"):
+        assert column in rows[-1], f"{column} missing - not the backtest feature set"
+    assert len(rows[-1]) == len(sif.FEATURE_COLUMNS) + 2   # + bar_time, session_date
+
+
+def test_session_context_uses_only_prior_days():
+    context = lns.build_session_context(_daily(30, close=398.0))
+    assert context.prev_day_close == 398.0
+    assert context.atr_14 is not None and context.atr_14 > 0
+
+
+def test_session_context_survives_too_little_history():
+    context = lns.build_session_context([])
+    assert context.prev_day_close is None
+    assert context.atr_14 is None
+    assert lns.live_feature_rows(_bars(30), []) != []      # still computes
+
+
+def test_malformed_bars_are_skipped_not_fatal():
+    bars = _bars(10) + [{"time": None, "close": 1}, {"close": None}]
+    assert len(lns.live_feature_rows(bars, _daily())) == 10
+
+
+# ---------------------------------------------------------------------------
+# Signals fire only on the newest bar
+# ---------------------------------------------------------------------------
+
+def _fire_scene():
+    """A confluence setup on the final bar: price at four tracked levels,
+    then a break of the prior bar's high."""
+    rows = []
+    for minute in range(40):
+        hh, mm = divmod(9 * 60 + 30 + minute, 60)
+        rows.append({
+            "bar_time": f"2026-08-17T{hh:02d}:{mm:02d}:00",
+            "session_date": "2026-08-17", "minutes_since_open": minute,
+            "time_bucket": "OPEN", "open": 400.0, "high": 400.1, "low": 399.9,
+            "close": 400.0, "volume": 1000.0, "atr_14": 2.0, "vwap": 400.0,
+            "confluence_count": 4, "close": 400.0,
+        })
+    rows[-2].update(high=400.2, low=399.9, close=400.0)
+    rows[-1].update(open=400.0, high=400.8, low=400.0, close=400.7)
+    return rows
+
+
+def test_a_signal_fires_when_its_setup_is_on_the_latest_bar():
+    """Non-vacuity guard: if nothing can ever fire, every test below
+    passes while checking nothing."""
+    rows = _fire_scene()
+    enabled = {lns.config_flag(p): True for p in lns.NEW_STRATEGY_PLAY_TYPES}
+    fired = lns.signals_on_latest_bar(rows, enabled)
+    assert any(f["play_type"] == "SPY_CONFLUENCE_4" for f in fired), fired
+
+
+def test_a_setup_earlier_in_the_session_does_not_fire_now():
+    """The stale-signal rule. A setup that completed twenty minutes ago is
+    no longer live, and acting on it would repeat the bug that had the old
+    ORB reporting a long-since-reversed breakout all morning."""
+    rows = _fire_scene()
+    # Push the trigger back and leave the final bars quiet.
+    rows[-1].update(open=400.7, high=400.75, low=400.65, close=400.70)
+    rows.append({**rows[-1], "bar_time": "2026-08-17T10:11:00",
+                 "minutes_since_open": 41, "open": 400.70, "high": 400.72,
+                 "low": 400.68, "close": 400.70})
+    enabled = {lns.config_flag(p): True for p in lns.NEW_STRATEGY_PLAY_TYPES}
+    for signal in lns.signals_on_latest_bar(rows, enabled):
+        assert signal["bar_time"] == rows[-1]["bar_time"]
+
+
+def test_a_disabled_strategy_never_fires():
+    rows = _fire_scene()
+    assert lns.signals_on_latest_bar(rows, {}) == []
+    only_one = {lns.config_flag(p): False for p in lns.NEW_STRATEGY_PLAY_TYPES}
+    only_one[lns.config_flag("SPY_CONFLUENCE_4")] = True
+    fired = lns.signals_on_latest_bar(rows, only_one)
+    assert {f["play_type"] for f in fired} <= {"SPY_CONFLUENCE_4"}
+
+
+def test_one_strategy_raising_does_not_break_the_scan():
+    """A broken strategy must not take down the others, or a single bad
+    signal function silently stops every live trade."""
+    def explode(rows):
+        raise RuntimeError("boom")
+
+    original = lns.NEW_STRATEGY_SPECS[0]["signal"]
+    lns.NEW_STRATEGY_SPECS[0]["signal"] = explode
+    try:
+        rows = _fire_scene()
+        enabled = {lns.config_flag(p): True for p in lns.NEW_STRATEGY_PLAY_TYPES}
+        fired = lns.signals_on_latest_bar(rows, enabled)
+        assert any(f["play_type"] == "SPY_CONFLUENCE_4" for f in fired)
+    finally:
+        lns.NEW_STRATEGY_SPECS[0]["signal"] = original
+
+
+def test_signal_payload_carries_what_a_candidate_needs():
+    rows = _fire_scene()
+    enabled = {lns.config_flag(p): True for p in lns.NEW_STRATEGY_PLAY_TYPES}
+    fired = lns.signals_on_latest_bar(rows, enabled)
+    assert fired
+    for signal in fired:
+        assert signal["side"] in ("call", "put")
+        assert signal["direction"] in ("LONG", "SHORT")
+        assert signal["spot_at_signal"] > 0
+        assert signal["play_type"] in lns.NEW_STRATEGY_BY_PLAY_TYPE
+        assert signal["reason"]
+
+
+def test_no_signals_from_an_empty_session():
+    assert lns.signals_on_latest_bar([], None) == []
