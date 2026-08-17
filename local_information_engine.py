@@ -2078,11 +2078,18 @@ JOBS = [
     ),
     Job(
         "new-strategy-entry-scan",
-        timedelta(minutes=2),
+        timedelta(minutes=1),
         new_strategy_entry_scan_job,
         market_hours_only=True,
         background=True,
-        provider_heavy=True,
+        # Deliberately NOT provider_heavy. That lock serialises the heavy
+        # jobs so they cannot stampede the provider, and full-options-scan
+        # holds it for a median 38s, p90 128s and up to 369s. Queueing a
+        # 3-call job behind a 6-minute one skips ~6 cycles, which overruns
+        # the 2-bar lookback and loses exactly the signals this job exists
+        # to catch. A normal cycle is three requests (quote, intraday,
+        # daily) and only spends more when a signal actually fires; 429s
+        # already retry with backoff.
         retry_interval=timedelta(minutes=1),
     ),
     Job(

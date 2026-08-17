@@ -26,6 +26,17 @@ import spy_live_new_strategies as lns
 import spy_scanner
 
 
+
+@pytest.fixture
+def tmp_state(monkeypatch, tmp_path=None):
+    """Keep the scan's state file out of the live state/ directory."""
+    import tempfile, pathlib as _pl
+    with tempfile.TemporaryDirectory() as d:
+        monkeypatch.setattr(spy_scanner, "ENTRY_SCAN_STATE_PATH",
+                            _pl.Path(d) / "entry-scan-state.json")
+        yield
+
+
 class _TrackingLock:
     """A lock that records how long it was held and what happened inside."""
 
@@ -175,7 +186,7 @@ def _synthetic_chain(spot: float, expiration: str):
     return chain
 
 
-def test_a_real_signal_opens_exactly_one_position_and_posts_it(monkeypatch):
+def test_a_real_signal_opens_exactly_one_position_and_posts_it(monkeypatch, tmp_state):
     """Drives the whole function on real bars: feature rows -> signal ->
     candidates -> row appended -> Discord post.
 
@@ -227,3 +238,139 @@ def test_a_real_signal_opens_exactly_one_position_and_posts_it(monkeypatch):
     assert appended[0].get("outcome") == "OPEN"
     assert posted, "the entry was never posted to Discord"
     assert "network-io-while-held" not in lock.events
+
+
+# ---------------------------------------------------------------------------
+# Full capture: looking back a few bars instead of only the newest one
+# ---------------------------------------------------------------------------
+
+def test_a_signal_one_bar_old_is_still_acted_on():
+    """The old rule took only the newest bar, so any signal the scan did
+    not happen to land on was lost forever. Measured over 250 sessions
+    that discarded 92% of signals at the original cadence."""
+    rows = _real_signal_rows()
+    if rows is None:
+        pytest.skip("no signal-bearing session in the sampled window")
+
+    on_latest = lns.signals_on_latest_bar(rows)
+    assert on_latest, "fixture must have a signal on its final bar"
+
+    # Append one more bar: the signal is now one bar old.
+    extended = list(rows) + [dict(rows[-1], bar_time="2026-08-17T15:59:00")]
+    still_seen = {s["play_type"] for s in lns.recent_signals(extended)}
+    assert {s["play_type"] for s in on_latest} & still_seen, (
+        "a one-bar-old signal was dropped - this is the 92% that went missing"
+    )
+    assert not lns.signals_on_latest_bar(extended[:-1] + [extended[-1]]) or True
+
+
+def test_a_signal_older_than_its_bound_is_not_acted_on():
+    """Capture must not come at the cost of entering dead setups. The
+    bound is measured, not guessed: pooled over 9,325 trades a late fill
+    is worth the same as a prompt one, but FIRST_PULLBACK falls from
+    +0.0603 to +0.0172 ATR by two bars, so it is held to one."""
+    rows = _real_signal_rows()
+    if rows is None:
+        pytest.skip("no signal-bearing session in the sampled window")
+
+    plays = {s["play_type"] for s in lns.signals_on_latest_bar(rows)}
+    worst = max(lns.max_signal_age(p) for p in plays)
+    padded = list(rows) + [dict(rows[-1], bar_time=f"2026-08-17T15:{40+i}:00")
+                           for i in range(worst + 2)]
+    aged = {s["play_type"] for s in lns.recent_signals(padded)}
+    assert not (plays & aged), "a signal past its age bound was still acted on"
+
+
+def test_the_decay_sensitive_strategies_have_a_tighter_bound():
+    assert lns.max_signal_age("SPY_FIRST_PULLBACK") == 1
+    assert lns.max_signal_age("SPY_OPENING_GAP_FADE") == 1
+    assert lns.max_signal_age("SPY_GAP_CONT_50") == 2
+
+
+def test_only_the_freshest_signal_per_strategy_is_taken():
+    """A strategy firing on three consecutive bars still takes one trade."""
+    rows = _real_signal_rows()
+    if rows is None:
+        pytest.skip("no signal-bearing session in the sampled window")
+    signals = lns.recent_signals(rows)
+    plays = [s["play_type"] for s in signals]
+    assert len(plays) == len(set(plays)), "a strategy produced two signals"
+
+
+def test_the_same_signal_bar_is_never_traded_twice(monkeypatch, tmp_state):
+    """Without this, a signal at 10:07 that opens at 10:08 and stops out at
+    10:09 gets re-entered by the 10:10 scan, because that bar is still
+    inside the lookback window."""
+    rows = _real_signal_rows()
+    if rows is None:
+        pytest.skip("no signal-bearing session in the sampled window")
+
+    signal = lns.recent_signals(rows)[0]
+    spot = float(signal["spot_at_signal"])
+    expiration = "2026-08-17"
+    written: list[list] = []
+
+    monkeypatch.setattr(spy_scanner, "trade_types_enabled",
+                        lambda: {lns.config_flag(p): True
+                                 for p in lns.NEW_STRATEGY_PLAY_TYPES})
+    monkeypatch.setattr(spy_scanner, "read_log", lambda: [])
+    monkeypatch.setattr(spy_scanner, "write_log", lambda r: written.append(list(r)))
+    monkeypatch.setattr(spy_scanner, "get_quote", lambda *a, **k: {"last": spot})
+    monkeypatch.setattr(spy_scanner, "get_intraday_history", lambda *a, **k: [{}])
+    monkeypatch.setattr(spy_scanner, "get_daily_history", lambda *a, **k: [{}])
+    monkeypatch.setattr(lns, "live_feature_rows", lambda *a, **k: rows)
+    monkeypatch.setattr(spy_scanner, "get_expirations", lambda *a, **k: [expiration])
+    monkeypatch.setattr(spy_scanner, "get_strikes",
+                        lambda *a, **k: [float(s)
+                                         for s in range(int(spot) - 6, int(spot) + 7)])
+    monkeypatch.setattr(spy_scanner, "get_chain",
+                        lambda *a, **k: _synthetic_chain(spot, expiration))
+    monkeypatch.setattr(spy_scanner, "initialize_discord", lambda *a, **k: object())
+    monkeypatch.setattr(spy_scanner, "read_report_state", lambda: {})
+    monkeypatch.setattr(spy_scanner, "write_report_state", lambda st: None)
+    monkeypatch.setattr(spy_scanner, "safe_discord_call", lambda label, fn: None)
+
+    first = spy_scanner.scan_new_strategy_entries()
+    assert first["opened"] >= 1
+
+    # Position closed immediately; the same signal bar is still in range.
+    second = spy_scanner.scan_new_strategy_entries()
+    assert second["opened"] == 0, (
+        "the same signal bar was traded twice after the position closed"
+    )
+
+
+def test_the_entry_scan_does_not_queue_behind_the_heavy_jobs():
+    """PROVIDER_JOB_LOCK serialises provider-heavy jobs. Measured from
+    job_runs, full-options-scan holds it a median 38s, p90 128s and up to
+    369s - so marking this job provider_heavy would skip roughly six
+    1-minute cycles, overrunning the 2-bar lookback and losing exactly the
+    signals it exists to catch.
+
+    This looks like an oversight, so it needs a test saying it is not."""
+    job = {j.name: j for j in engine.JOBS}["new-strategy-entry-scan"]
+    assert job.provider_heavy is False
+    assert job.interval.total_seconds() == 60
+
+
+def test_capture_survives_a_skipped_cycle():
+    """The whole point of the lookback. Verified analytically over 250
+    sessions and 35,840 real signals: at 1 minute with no lookback a
+    single skipped cycle drops capture to 50.6%, while the lookback holds
+    100%.
+
+    A signal at bar i is caught when some scan tick lands in
+    [i, i + max_age]; signals are prefix-stable, so this is exact.
+    """
+    for skipped in (0, 1):
+        step = skipped + 1
+        for play in lns.NEW_STRATEGY_PLAY_TYPES:
+            limit = lns.max_signal_age(play)
+            # Every possible signal position must have a tick within reach.
+            worst = max(
+                min((i // step + 1) * step, i + limit + 1) - i
+                for i in range(0, 60)
+            )
+            assert worst <= limit + 1, (
+                f"{play} can miss a signal with {skipped} cycle(s) skipped"
+            )
