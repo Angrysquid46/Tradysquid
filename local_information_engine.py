@@ -1140,6 +1140,36 @@ def system_digest_job(connection: sqlite3.Connection) -> str:
     return f"{stop_closes} stop closes · {overshoot_count} overshoots · {len(open_issues)} open infra issue(s)"
 
 
+
+def new_strategy_entry_scan_job(connection: sqlite3.Connection) -> str:
+    """Fast entry-only scan for the 13 promoted strategies.
+
+    The full scan runs every 15 minutes, but these strategies read their
+    signal off the newest closed bar - so a setup at 10:07 is gone by 10:15.
+    Measured over 250 real sessions, a 15-minute cadence sees just 7.6% of
+    signals and ORB Immediate never fires at all.
+
+    Deliberately NOT a second spy_scanner.main() call: main() holds
+    POSITION_FILE_LOCK for its whole run including chain fetches, which is
+    fine every 15 minutes and would starve the exit path every 2.
+    scan_new_strategy_entries takes the lock only to read the log and to
+    append a row, never across network I/O, and skips any strategy already
+    holding a position. Exits keep priority - owner: "we don't want to
+    interfere with held positions ability to close out."
+    """
+    if not FULL_SCAN_ENABLED:
+        return "disabled until LOCAL_FULL_SCAN_ENABLED=true"
+    if not spy_scanner.DISCORD_BOT_TOKEN:
+        return "waiting for local DISCORD_BOT_TOKEN"
+    result = spy_scanner.scan_new_strategy_entries(position_lock=POSITION_FILE_LOCK)
+    store_observation(connection, "new-strategy-entry-scan",
+                      {**result, "completed_at": iso_now()})
+    if result.get("opened"):
+        return f"opened {result['opened']}: {', '.join(result.get('play_types', []))}"
+    return (f"{result.get('scanned', 0)} scanned · "
+            f"{result.get('reason', 'no entry')}")
+
+
 def full_scanner_job(connection: sqlite3.Connection) -> str:
     """This system trades SPY exclusively - a direct spy_scanner.main() call,
     not a loop over a ticker universe. See multi_ticker_scan.py's removal:
@@ -2045,6 +2075,15 @@ JOBS = [
         background=True,
         provider_heavy=True,
         retry_interval=timedelta(minutes=5),
+    ),
+    Job(
+        "new-strategy-entry-scan",
+        timedelta(minutes=2),
+        new_strategy_entry_scan_job,
+        market_hours_only=True,
+        background=True,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=1),
     ),
     Job(
         "full-options-scan",

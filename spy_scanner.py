@@ -7264,6 +7264,32 @@ def _run_new_strategy_variants(
 
     results: dict[str, dict[str, Any]] = {}
     active = [p for p in lns.NEW_STRATEGY_PLAY_TYPES if enabled.get(lns.config_flag(p))]
+
+    # A strategy holding a position stops looking for a new one. Owner: "we
+    # only need them to scan until they pick up a play then we focus on its
+    # held positions until they are closed."
+    #
+    # has_open_position/dedupe_by_play_type already prevent a second entry,
+    # but they do so at the END of the pipeline - after the signal was
+    # computed and a chain fetched. Skipping here means an occupied strategy
+    # costs nothing per cycle, which is what makes a 2-minute entry scan
+    # affordable, and it keeps entry work away from the position it is
+    # already managing.
+    try:
+        open_rows_now = read_log()
+        occupied = [p for p in active if has_open_position(open_rows_now, p)]
+    except Exception as exc:      # pragma: no cover - log read guard
+        print(f"new-strategy open-position check failed: {exc}", file=sys.stderr)
+        occupied = []
+    for play_type in occupied:
+        results[play_type] = {
+            "qualified": False,
+            "regime": "HOLDING",
+            "reason": "already holding a position - managing it until it closes",
+            "failures": [],
+        }
+    active = [p for p in active if p not in occupied]
+
     if not active:
         for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
             results[play_type] = _unavailable_context(
@@ -8038,3 +8064,106 @@ def main(*, publish_shared: bool = True, position_lock: Any = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
+    """Entry-only scan for the promoted strategies, safe to run frequently.
+
+    Exists because the full scan runs every 15 minutes while these
+    strategies read their signal off the NEWEST CLOSED BAR - so a setup
+    appearing at 10:07 is already gone when the 10:15 scan looks. Measured
+    over 250 sessions, a 15-minute cadence sees only 7.6% of signals, and
+    ORB Immediate never fires at all because its trigger bar never lands on
+    a 15-minute boundary.
+
+    Two rules make a fast cadence safe:
+
+    1. **A strategy holding a position is skipped entirely.** Owner: "we only
+       need them to scan until they pick up a play then we focus on its held
+       positions until they are closed." Occupied strategies cost nothing per
+       cycle.
+    2. **POSITION_FILE_LOCK is never held during network I/O.** main() holds
+       it for its whole run, which is fine every 15 minutes and would starve
+       the exit path every 2. Here the lock is taken only to read the log and
+       again to append a row - never across a chain fetch. Exits keep
+       priority, which is the point.
+    """
+    import spy_live_new_strategies as lns
+    from contextlib import nullcontext
+
+    lock = position_lock or nullcontext()
+    enabled = trade_types_enabled()
+    active = [p for p in lns.NEW_STRATEGY_PLAY_TYPES if enabled.get(lns.config_flag(p))]
+    if not active:
+        return {"scanned": 0, "opened": 0, "skipped": 0, "reason": "none enabled"}
+
+    with lock:
+        rows = read_log()
+    active = [p for p in active if not has_open_position(rows, p)]
+    if not active:
+        return {"scanned": 0, "opened": 0, "holding": True,
+                "reason": "every enabled strategy is already holding"}
+
+    # --- no lock held from here until the append ---
+    spot_quote = get_quote(TICKER)
+    spot_price = as_float((spot_quote or {}).get("last"))
+    if spot_price is None:
+        return {"scanned": 0, "opened": 0, "reason": "no spot quote"}
+
+    intraday = get_intraday_history(TICKER, interval="1min")
+    daily = get_daily_history(TICKER)
+    feature_rows = lns.live_feature_rows(intraday or [], daily or [])
+    if not feature_rows:
+        return {"scanned": len(active), "opened": 0, "reason": "no intraday bars yet"}
+
+    fired = {
+        signal["play_type"]: signal
+        for signal in lns.signals_on_latest_bar(feature_rows, enabled)
+        if signal["play_type"] in active
+    }
+    if not fired:
+        return {"scanned": len(active), "opened": 0, "reason": "no setup on the latest bar"}
+
+    today_str = now_ct().date().isoformat()
+    expirations = get_expirations(TICKER) or []
+    expiration = today_str if today_str in expirations else (
+        expirations[0] if expirations else None)
+    if expiration is None:
+        return {"scanned": len(active), "opened": 0, "reason": "no expirations listed"}
+
+    allowed = set(filter_strikes(get_strikes(TICKER, expiration), spot_price))
+    chain = [o for o in get_chain(TICKER, expiration)
+             if float(o.get("strike", -1)) in allowed]
+
+    opened: list[str] = []
+    tracker = initialize_discord()
+    report_state = read_report_state()
+    timestamp = now_ct()
+
+    for play_type, signal in fired.items():
+        candidates = lns.scan_new_strategy_candidates(
+            chain, signal, expiration, spot_price)
+        if not candidates:
+            continue
+        with lock:
+            rows = read_log()
+            if has_open_position(rows, play_type):
+                continue          # opened by another path since the first read
+            eligible = [c for c in candidates if not recently_tracked(rows, c, timestamp)]
+            selected = apply_ticker_exposure_cap(eligible, rows, TICKER)
+            if not selected:
+                continue
+            row = candidate_to_row(selected[0], rows, timestamp,
+                                   market_condition=signal.get("regime") or "LIVE SIGNAL")
+            rows.append(row)
+            write_log(rows)
+        safe_discord_call(
+            f"{play_type} entry post",
+            lambda r=row: post_new_trade(r, tracker, report_state),
+        )
+        opened.append(play_type)
+
+    if opened:
+        write_report_state(report_state)
+    return {"scanned": len(active), "opened": len(opened), "play_types": opened}
+
