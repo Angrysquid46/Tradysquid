@@ -13,6 +13,8 @@ backtest and live:
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 import spy_backtest_strategies_extended as ext
@@ -331,3 +333,19 @@ def test_live_feature_rows_pass_the_session_through():
     rows = lns.live_feature_rows(bars, daily)
     assert rows
     assert rows[-1]["prev_day_high"] == 778.8
+
+
+def test_every_command_handler_calls_a_function_that_exists():
+    """/force-all-strategies shipped calling `respond(...)`, which does not
+    exist in this module - the command failed with a NameError the first
+    time it was used in Discord. Nothing at import time caught it because
+    the name is only resolved when that branch runs.
+    """
+    import re
+    import discord_command_bot as bot
+    source = pathlib.Path("discord_command_bot.py").read_text(encoding="utf-8")
+    called = set(re.findall(r"^\s+([a-z_]+)\(\s*$", source, re.M))
+    dispatchers = {name for name in called
+                   if name.endswith(("original", "respond", "followup"))}
+    for name in dispatchers:
+        assert hasattr(bot, name), f"handler calls {name}() which does not exist"

@@ -1232,7 +1232,7 @@ def process_command(interaction: dict[str, Any]) -> None:
                 application_id, token, content=force_trade_reply(interaction)
             )
         elif name == "force-all-strategies":
-            respond(
+            patch_original(
                 application_id, token, content=force_all_strategies_reply(interaction)
             )
 
