@@ -295,7 +295,37 @@ strategies did not survive the option layer.
   assumptions — labelled as modelled everywhere it surfaces.
 - **Exit criteria:** underlying edge and option edge reported separately, always.
 
-### ⬜ Phase 6 — ML and meta-model
+### ✅ Phase 6 — ML and meta-model
+`spy_meta_model.py` + `spy_meta_report.py` → [`META_MODEL_RESULTS.md`](META_MODEL_RESULTS.md).
+
+Pure Python by choice - no numpy/scipy/sklearn added to a venv running live
+paper trading. 317,910 labelled bars, triple-barrier labels, purged and
+embargoed session-level splits, 22 tests.
+
+> **Directional prediction: no edge.** Baseline Brier 0.2478; three of four
+> folds scored worse. This independently reproduces the Phase 3-5 conclusion
+> by a different method - and explains it: gap continuation is a conditional
+> setup in a small fraction of sessions, so a model averaging all bars finds
+> nothing.
+>
+> **The model is confidently wrong where it is confident.** Calibrated at
+> 0.450 predicted / 0.454 observed (n=47,776); collapses to 0.740 predicted /
+> 0.489 observed and 0.949 / 0.000. The flattering 0.0235 ECE is an artefact
+> of 87% of predictions sitting in the uncertain bucket. **Never size on this
+> model's confidence.**
+>
+> **One genuine finding:** predicting whether a bar is an opportunity at all
+> scored Brier 0.1366 vs a 0.1553 baseline - a real 12% improvement, and the
+> only target that beats its baseline. Just 19.2% of bars resolve either
+> barrier within 30 minutes. Use the model as a NO-TRADE filter on the 14
+> existing rules, not as a direction predictor.
+>
+> **Drift warning:** `atr_pct` PSI 3.761, an order of magnitude past the
+> drifted threshold - volatility as a percent of price is not the same
+> quantity in 2008 as 2019. This retroactively justifies reporting every
+> backtest result in ATR multiples.
+
+### ⬜ Phase 6 — original scope
 - Extend `evolve_bot`'s feature set with the Phase 2 features.
 - Multi-target models: direction, magnitude, MFE, MAE, time-to-move.
 - **NO-TRADE as a first-class class**, not an absence of signal.
