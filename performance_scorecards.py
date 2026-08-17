@@ -164,6 +164,16 @@ def _require_upsert(
     content: str,
     search_token: str,
 ) -> str:
+    # A logical channel the code no longer declares at all has been
+    # deliberately retired - posting to it is not a Discord failure, it is a
+    # card with nowhere left to go. Raising here took the whole reporting job
+    # down after the 10 ratchet variants were retired: their leaderboard was
+    # still posted, spy_scanner had already popped the channel, and every
+    # discord-reporting run died on it. A channel that IS still declared but
+    # will not acknowledge is a real failure and still raises.
+    import spy_scanner as _routes
+    if logical_name not in _routes.CHANNEL_NAMES:
+        return ""
     message_id = discord.upsert_channel_message(
         logical_name,
         state,
