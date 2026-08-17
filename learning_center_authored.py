@@ -1992,6 +1992,792 @@ AUTHORED_BODIES: dict[str, str] = {
         "This is why every position in this system is forced flat by 15:45 rather than "
         "held into the bell - the last 15 minutes offer the worst combination of "
         "maximum theta, maximum gamma and unpredictable auction flow.",
+
+    # ---------------------------------------------------------------
+    # Financial statements and valuation
+    # ---------------------------------------------------------------
+    "Revenue, Cost of Goods Sold, and Gross Profit Margins":
+        "Revenue is what customers paid. COGS is the direct cost of producing what they "
+        "bought. Gross profit is the difference, and gross margin expresses it as a "
+        "percentage of revenue. "
+        "Margin is the more informative number, because it says whether the company has "
+        "pricing power. Rising revenue with falling margin means growth bought by "
+        "discounting - a very different business from the same revenue at a stable "
+        "margin.",
+
+    "EBITDA, Operating Income, and Net Profit Margin Allocations":
+        "Operating income is profit from the core business after operating costs. "
+        "EBITDA adds back interest, tax, depreciation and amortisation. Net profit is "
+        "what remains after everything. "
+        "EBITDA is popular because it flatters leveraged and capital-intensive "
+        "companies by ignoring the cost of the assets they depend on. Treat a company "
+        "that reports EBITDA prominently and net income quietly as making a choice "
+        "about which number it wants you to see.",
+
+    "Free Cash Flow (FCF) Generation vs. Net Accounting Earnings":
+        "FCF is operating cash flow minus capital expenditure - actual cash generated "
+        "after maintaining the business. Net earnings is an accounting figure shaped by "
+        "non-cash charges and timing choices. "
+        "Earnings can be managed within the rules; cash is harder to fake. Persistent "
+        "divergence between rising earnings and flat or negative FCF is one of the more "
+        "reliable warning signs in fundamental analysis.",
+
+    "Deconstructing Earnings Per Share (EPS) and Dilution Risk":
+        "EPS is net income divided by shares outstanding. Diluted EPS assumes all "
+        "convertibles, options and RSUs become shares. "
+        "EPS can rise on buybacks alone, with no improvement in the business - the "
+        "denominator shrank. Heavy stock-based compensation quietly does the reverse, "
+        "which is why diluted EPS is the honest figure and why the gap between basic "
+        "and diluted is worth checking.",
+
+    "Price-to-Earnings Ratio (P/E): Trailing vs. Forward Multiples":
+        "Price divided by earnings per share. Trailing uses the last 12 months of "
+        "actual results; forward uses analyst estimates for the next 12. "
+        "Forward P/E is always more attractive and always less reliable, because "
+        "estimates are systematically optimistic. A low P/E is not automatically cheap "
+        "- it often reflects earnings the market expects to fall.",
+
+    "Price-to-Sales (P/S) and Enterprise Value-to-EBITDA (EV/EBITDA)":
+        "P/S compares price to revenue, useful when a company has no earnings. "
+        "EV/EBITDA uses enterprise value (market cap plus debt minus cash), so it "
+        "compares businesses independently of how they are financed. "
+        "EV/EBITDA is the fairer cross-company comparison for exactly that reason: two "
+        "identical businesses with different debt loads have very different P/E ratios "
+        "and similar EV/EBITDA.",
+
+    "Return on Equity (ROE) and Return on Invested Capital (ROIC)":
+        "ROE is net income over shareholders' equity; ROIC is operating profit over all "
+        "invested capital including debt. "
+        "ROE can be inflated simply by borrowing - leverage shrinks the denominator. "
+        "ROIC cannot be gamed that way, which makes it the better measure of whether "
+        "the business actually earns more than its capital costs.",
+
+    "Price-to-Book (P/B) and the Debt-to-Equity Balance Sheet Filter":
+        "P/B compares price to net asset value. Debt-to-equity measures leverage. "
+        "P/B is meaningful for banks and asset-heavy businesses and close to useless "
+        "for software companies whose value is not on the balance sheet. High leverage "
+        "amplifies both returns and volatility, which is why heavily indebted companies "
+        "carry higher implied volatility in their options.",
+
+    "The Balance Sheet Matrix: Assets, Liabilities, and Shareholders' Equity":
+        "A snapshot at a point in time: assets equal liabilities plus equity, always. "
+        "What the company owns, what it owes, and the residual belonging to "
+        "shareholders. "
+        "The useful reads are current assets versus current liabilities (can it pay "
+        "near-term bills), debt maturity schedule, and cash on hand relative to burn "
+        "rate.",
+
+    "The Income Statement Layer: Tracking Revenue down to Net Profit":
+        "A flow over a period: revenue at the top, costs subtracted in tiers, net "
+        "income at the bottom. Each tier answers a different question about where money "
+        "goes. "
+        "Reading it as a sequence rather than a single number is the point - a company "
+        "can have strong gross margins and no net profit because of overhead, interest "
+        "or tax.",
+
+    "The Cash Flow Statement: Operating, Investing, and Financing Flows":
+        "Cash generated by the business, spent on assets, and raised or returned "
+        "through debt and equity. "
+        "The pattern is diagnostic: healthy companies fund investment from operations. "
+        "A company with negative operating cash flow funding itself through financing "
+        "is spending someone else's money to stay alive, however good the income "
+        "statement looks.",
+
+    "Reading the 10-K Annual Report and 10-Q Quarterly Disclosures":
+        "Mandatory SEC filings. The 10-K is the audited annual report; the 10-Q is the "
+        "unaudited quarterly. "
+        "The valuable sections are rarely the financials themselves: Risk Factors, "
+        "Management's Discussion, and the footnotes carry the disclosures that matter. "
+        "Changes in language between filings are often more informative than the "
+        "numbers, because the numbers were already released.",
+
+    # ---------------------------------------------------------------
+    # Credit and funding
+    # ---------------------------------------------------------------
+    "Corporate Credit Spreads: High-Yield (Junk) vs. Investment Grade Bonds":
+        "The extra yield corporate bonds pay over Treasuries, compensating for default "
+        "risk. High-yield spreads widen when the market fears defaults. "
+        "Credit usually moves before equity. Widening high-yield spreads during an "
+        "equity rally is one of the more reliable divergence warnings available, "
+        "because bond investors are structurally more focused on downside.",
+
+    "Commercial Paper and Interbank Funding: Libor/SOFR Spread Anchors":
+        "Commercial paper is short-term unsecured corporate borrowing. LIBOR was the "
+        "old interbank benchmark, now replaced by SOFR, which is secured and based on "
+        "actual transactions. "
+        "Stress shows up here first: when short-term funding costs spike, companies "
+        "that depend on rolling debt face a real problem long before it appears in "
+        "earnings.",
+
+    "Debt Maturity Walls: Evaluating Corporate Refinancing and Insolvency Risks":
+        "A concentration of debt coming due in a short window. Manageable when credit "
+        "is cheap and available; existential when rates have risen or markets have "
+        "closed. "
+        "Companies rarely fail from unprofitability alone - they fail when they cannot "
+        "refinance. The maturity schedule is where that risk is visible in advance.",
+
+    "Credit Default Swaps (CDS): Measuring Systemic Corporate Default Stress":
+        "Insurance against a borrower defaulting. The CDS spread is the market's direct "
+        "price of that risk. "
+        "As a signal it is cleaner than the bond price, which is contaminated by "
+        "interest-rate moves. Sharply rising CDS on a large financial institution is "
+        "among the earliest available warnings of systemic stress.",
+
+    "Treasury Futures Contracts: Cheaper-to-Deliver (CTD) Bond Matching Models":
+        "Treasury futures allow delivery of any bond within a defined basket, so the "
+        "seller delivers whichever is cheapest after conversion factors. The contract "
+        "effectively tracks that bond. "
+        "It matters because the CTD can change as yields move, subtly altering what the "
+        "future is actually tracking - a hedge that was accurate can drift without "
+        "anyone changing position.",
+
+    "Interest Rate Swaps: OIS Spreads and Structural Corporate Fixed Funding Rates":
+        "An agreement to exchange fixed for floating interest payments, used to convert "
+        "borrowing costs. The OIS spread compares interbank rates to overnight index "
+        "rates. "
+        "That spread is a clean measure of perceived bank credit risk - it widened "
+        "dramatically in 2008 well before the equity market fully repriced.",
+
+    "Eurodollar Futures: Hedging Multi-Year Institutional Borrowing Cost Trajectories":
+        "Contracts on dollar deposits held outside the US, historically the primary "
+        "instrument for hedging short-term rate expectations, now largely transitioned "
+        "to SOFR futures. "
+        "The strip of contracts across maturities is a direct read on what the market "
+        "expects rates to do - often a better forecast than commentary about what the "
+        "Fed might do.",
+
+    "Mortgage-Backed Securities (MBS): Pricing Prepayment Volatility Tail Shocks":
+        "Pools of mortgages sold as securities. Their complication is prepayment: when "
+        "rates fall, homeowners refinance, returning capital exactly when it can only "
+        "be reinvested at lower yields. "
+        "This creates negative convexity - MBS gain less when rates fall than they lose "
+        "when rates rise. Hedging that convexity forces large, mechanical Treasury "
+        "trading that can amplify rate moves.",
+
+    "Eurodollar Markets: The Offshore Funding Matrix Shaping Broad US Equities":
+        "Dollar deposits held outside US jurisdiction, forming an enormous offshore "
+        "dollar funding market beyond direct Fed control. "
+        "It matters because a global dollar shortage transmits into every asset priced "
+        "in dollars, which is why dollar funding stress shows up as simultaneous "
+        "selling across otherwise unrelated markets.",
+
+    "Cross-Asset Liquidations: Why Bonds, Gold, and Equities Collapse Simultaneously in Shocks":
+        "In an acute crisis, correlations converge toward 1. Leveraged holders facing "
+        "margin calls sell what they CAN sell, not what they want to sell - which means "
+        "the most liquid assets are hit hardest regardless of fundamentals. "
+        "This is why diversification fails exactly when it is needed, and why 'safe "
+        "haven' assets sometimes fall in the first days of a crash.",
+
+    "Counterparty Risk: Clearinghouse Defalcation Frameworks and Default Waterfalls":
+        "Clearinghouses stand between buyer and seller so neither carries the other's "
+        "credit risk. A default waterfall defines who absorbs losses if a member fails: "
+        "their margin, their contribution, then the mutualised fund. "
+        "For an options trader this is why an OCC-cleared contract is safe in a way an "
+        "over-the-counter agreement is not - the guarantee is structural, not "
+        "reputational.",
+
+    "The Interbank Lending Freeze: Ted Spreads and Credit Funding Gridlocks":
+        "The TED spread measures the gap between interbank lending rates and Treasury "
+        "bills - effectively the price banks charge each other for trust. "
+        "When it spikes, banks have stopped lending to one another, and everything "
+        "downstream of bank credit seizes with it. One of the clearest single "
+        "indicators of genuine systemic stress rather than an ordinary selloff.",
+
+    "Haircut and Repo Haircut Adjustments: The Fuel Behind Sudden Liquidity Drops":
+        "A haircut is the discount applied to collateral in a repo: post $100 of bonds, "
+        "borrow $98. When lenders raise haircuts, every borrower must post more "
+        "collateral or shrink positions. "
+        "Rising haircuts force deleveraging across the system simultaneously, which is "
+        "how a funding decision becomes a market-wide selloff.",
+
+    "Central Bank Liquidity Swaps: Cross-Border Dollar Funding Shock Mitigators":
+        "Standing arrangements letting foreign central banks obtain dollars from the "
+        "Fed and lend them to their own banks. "
+        "They exist because a global dollar shortage is a systemic event. Heavy usage "
+        "is a reliable indicator that offshore dollar funding is genuinely broken "
+        "rather than merely expensive.",
+
+    "Commercial Paper Funding Facility Mechanics: Monitoring Corporate Credit Stress":
+        "An emergency facility under which the central bank buys commercial paper "
+        "directly, used when companies cannot roll short-term debt through normal "
+        "markets. "
+        "Its activation is an explicit signal that ordinary corporate funding has "
+        "failed - the announcement itself is usually a market-moving event.",
+
+    # ---------------------------------------------------------------
+    # Sizing math
+    # ---------------------------------------------------------------
+    "Risk-per-Trade Scaling Rules (The R-Multiple Framework)":
+        "Define R as the amount risked per trade, then measure every outcome in "
+        "multiples of it. A system averaging +0.3R over many trades is described "
+        "completely by that one number. "
+        "The benefit is that results become comparable across account sizes and "
+        "position sizes, which is what allows a strategy to be evaluated separately "
+        "from how aggressively it was traded.",
+
+    "Position Sizing Models: Fixed Fractional vs. Kelly Criterion Formulas":
+        "Fixed fractional risks a constant percentage of equity per trade. Kelly "
+        "computes the mathematically growth-optimal fraction from edge and odds: "
+        "f = (bp - q) / b. "
+        "Full Kelly is far too aggressive in practice - it assumes your edge estimate "
+        "is exact, and overestimating edge leads directly to ruin. Half-Kelly or less "
+        "is the usual compromise, and a flat 1-2% is what most traders should actually "
+        "use.",
+
+    "The Math of Drawdown Recovery: Exponential Curves of Capital Recovery":
+        "Recovery requirements grow non-linearly: -10% needs +11%, -25% needs +33%, "
+        "-50% needs +100%, -75% needs +300%. "
+        "This asymmetry is the entire mathematical argument for risk limits. Two "
+        "traders with identical average returns end up in completely different places "
+        "if one experienced a 50% drawdown along the way.",
+
+    "Win Rate vs. Risk-Reward Ratio Profit Factor Intersect Matrices":
+        "Break-even win rate is 1 / (1 + R:R). At 3:1 you need 25%; at 1:1, above 50%; "
+        "at 1:3, above 75%. Profit factor combines both into one figure. "
+        "This is why 'high win rate' is not a virtue by itself, and why this system's "
+        "56.8% win rate at PF 1.30 beats several 60%+ variants that lose money.",
+
+    # ---------------------------------------------------------------
+    # Accounts and clearing
+    # ---------------------------------------------------------------
+    "Reg T Margin Accounts vs. Portfolio Margin Allocation Architectures":
+        "Reg T applies fixed percentage requirements per position. Portfolio margin "
+        "calculates requirements from the risk of the whole portfolio, typically "
+        "allowing far more leverage for hedged books. "
+        "Portfolio margin generally requires $100k+ and approval. It is genuinely "
+        "better for hedged positions and genuinely dangerous otherwise, because the "
+        "leverage it permits assumes the hedges behave as modelled.",
+
+    "Maintenance Margin Requirements, House Surpluses, and Margin Calls":
+        "Maintenance margin is the minimum equity that must be held. Fall below it and "
+        "a call is issued; fail to meet it and positions are liquidated - at the "
+        "broker's discretion, at whatever price is available. "
+        "Broker house requirements are frequently stricter than the regulatory minimum "
+        "and can be raised without notice, typically during volatility, which is "
+        "exactly when a trader can least afford it.",
+
+    "Options Clearing Corporation (OCC) Clearing House Assignment Processes":
+        "The OCC guarantees every listed US options contract and handles assignment. "
+        "When a holder exercises, the OCC assigns to a short position at random through "
+        "the broker. "
+        "This means assignment is not personal and cannot be predicted from your own "
+        "position - which is why short in-the-money positions carry unavoidable "
+        "assignment uncertainty.",
+
+    "Short-Term vs. Long-Term Capital Gains Tax Rate Thresholds":
+        "In the US, positions held over a year receive long-term treatment at lower "
+        "rates; under a year is taxed as ordinary income. "
+        "Every 0DTE trade is short-term by definition, so the entire strategy is taxed "
+        "at ordinary rates - which is precisely why Section 1256 treatment on index "
+        "options is worth understanding. Educational only; verify with a professional.",
+
+    "Section 1256 Contracts: Understanding Tax Advantages on Broader Index Instruments":
+        "Broad-based index options such as SPX receive 60/40 treatment regardless of "
+        "holding period, and are exempt from wash sale rules. SPY, as an ETF option, "
+        "does not qualify. "
+        "For a high-frequency 0DTE trader the combination - lower blended rate plus no "
+        "wash sale accounting - can outweigh SPX's wider spreads. It is one of the few "
+        "genuine structural edges available to a retail trader.",
+
+    # ---------------------------------------------------------------
+    # Sentiment
+    # ---------------------------------------------------------------
+    "VIX Futures Term Structure: Contango vs. Backwardation Roll Yields":
+        "VIX futures normally sit above spot VIX (contango), so a long volatility ETP "
+        "loses value rolling from a cheaper expiring contract into a more expensive "
+        "one. In stress the curve inverts. "
+        "This roll cost is why products like VXX decay relentlessly over time - the "
+        "decay is structural, not a fee, and holding them long-term is a losing "
+        "position by construction.",
+
+    "Put-Call Volume Ratios vs. Open Interest Long-Term Sentiment Skews":
+        "Put/call volume measures today's positioning; open interest measures "
+        "accumulated positioning. High put/call is conventionally read as bearish "
+        "sentiment and therefore contrarian bullish. "
+        "The complication is that much put volume is hedging rather than speculation, "
+        "so a high ratio can mean caution rather than bearishness. Volume and OI "
+        "ratios frequently disagree, and the disagreement is the interesting part.",
+
+    "The Fear and Greed Index: Aggregating Multi-Variable Market Panics":
+        "A composite of momentum, breadth, put/call, volatility, junk-bond demand and "
+        "safe-haven flows, scaled 0-100. "
+        "Useful only at extremes, and even then as context rather than a trigger: "
+        "markets can stay in 'extreme fear' for weeks while continuing to fall.",
+
+    "High-Frequency Option Sentiment: Tracking Sweeps and Block Purchases":
+        "A sweep executes across multiple exchanges simultaneously to fill fast, "
+        "implying urgency. Blocks are large negotiated trades. Both are read as "
+        "informed positioning. "
+        "The caveat is that you see one leg of what may be a spread or a hedge. A "
+        "'bullish call sweep' can be the long leg of a structure that is net bearish - "
+        "which is why sweep alerts are less informative than they are marketed to be.",
+
+    "Overreaction and Underreaction Anomalies: The Core of Swing Trading Alpha":
+        "Markets overreact to dramatic news and underreact to gradual information. The "
+        "first produces mean reversion, the second momentum - which is why both effects "
+        "coexist at different horizons. "
+        "Short-horizon reversal and medium-horizon momentum are among the "
+        "best-documented anomalies in finance, and both are consistent with this "
+        "framing.",
+
+    "Herding Behavior: Tracking Retail Crowd Waves and Momentum Extinction Points":
+        "Traders infer information from others' actions, which amplifies moves beyond "
+        "what information justifies and creates the conditions for sharp reversal. "
+        "The practical marker is participation broadening into the least-informed "
+        "cohort - when a move is being discussed by people who do not normally trade "
+        "it, the marginal buyer is running out.",
+
+    "Overcoming FOMO (Fear of Missing Out) and Chasing Overextended Runs":
+        "FOMO entries happen after the move, at the worst available price, with the "
+        "stop necessarily far away - which forces either an oversized risk or a stop "
+        "too tight to survive noise. "
+        "The reframe that works: a missed trade costs nothing. Only taken trades can "
+        "lose money.",
+
+    "The Disposition Effect: Overcoming the Urge to Sell Winners Early and Hold Losers Long":
+        "The tendency to realise gains quickly and defer losses, because closing a "
+        "loser makes it real. "
+        "It inverts the payoff distribution every positive-expectancy system depends "
+        "on: small wins, large losses. The fix is not willpower but pre-committed "
+        "exits, which is why this system's exits are rules rather than judgements.",
+
+    "Anchoring Pitfalls: Letting Past Prices Distort Current Market Analysis":
+        "Fixating on an irrelevant reference - your entry price, a recent high, a round "
+        "number - and judging the present against it. "
+        "The market has no memory of your entry. 'I will sell when it gets back to "
+        "break-even' is anchoring stated as a plan, and it is how small losses become "
+        "large ones.",
+
+    "The Trading Journal Matrix: Categorizing and Scoring Execution Errors":
+        "A structured journal scores each trade on process rather than outcome: was the "
+        "setup valid, the size correct, the entry per plan, the exit per plan. "
+        "Scoring process separately from P/L is what makes review useful. A winning "
+        "trade taken against your rules is a process failure that happened to pay, and "
+        "recording it as a win teaches exactly the wrong lesson.",
+
+    # ---------------------------------------------------------------
+    # Microstructure metrics and participants
+    # ---------------------------------------------------------------
+    "Real-Time Bid-Ask Spread Spread-Widening Risk Shocks":
+        "Spreads are not constant. They widen at the open, before scheduled news, "
+        "during volatility spikes, and whenever market makers cannot price risk "
+        "confidently - which is exactly when you most want to trade. "
+        "The cost is invisible on a chart and real in your fills. A strategy backtested "
+        "on mid-prices will look profitable and lose money live for this reason alone.",
+
+    "Intraday Liquidity Depletion Vacuums (High_Low_Spread_Pct)":
+        "(High - Low) / Close per bar: how far price travelled relative to its level. "
+        "Sudden expansion marks a liquidity vacuum - resting orders were consumed and "
+        "price jumped through empty book. "
+        "These are where slippage happens. A stop placed inside a vacuum does not fill "
+        "at your price; it fills wherever liquidity resumes.",
+
+    "Volume Velocity Shock Standard Deviations (Volume_ZScore_20)":
+        "(current volume - 20-period mean) / standard deviation. It converts 'volume "
+        "looks high' into a number comparable across sessions. "
+        "Above 1.5 flags genuine institutional participation rather than ordinary "
+        "activity. This system's opening-gap-fade playbook requires exactly that "
+        "threshold before acting, because a gap without volume is a gap nobody "
+        "defended.",
+
+    "True Capital Flow Tracking Matrices (Dollar_Volume_Traded)":
+        "Close x Volume - the actual cash that changed hands, rather than a share "
+        "count. "
+        "Share counts mislead across price levels: a million shares of a $500 stock is "
+        "$500M, while a million shares of a $5 stock is $5M. Dollar volume is the "
+        "comparable measure of whether real money is involved.",
+
+    "Bid-Ask Spread Dynamics, Order Flow, and Transactional Friction":
+        "The spread is the market maker's compensation for providing liquidity and "
+        "bearing adverse selection. It widens with volatility, with uncertainty, and "
+        "with the risk that whoever is trading knows more than they do. "
+        "Every round trip pays it. On a 0DTE contract priced at $1.50 with a $0.03 "
+        "spread, that is 2% of the position surrendered before the trade has done "
+        "anything.",
+
+    "The Role of the Options Exchange Specialist and Liquid Market Makers":
+        "Designated market makers are obliged to quote continuous two-sided markets, "
+        "which is what makes an options chain tradeable at all. They profit from the "
+        "spread and hedge their resulting delta immediately. "
+        "They are not taking a view against you. Understanding that removes most "
+        "conspiracy thinking about fills: the counterparty to your trade is usually an "
+        "algorithm with no opinion about direction.",
+
+    "Tracking Options Daily Trading Volume vs. Active Overnight Open Interest (OI)":
+        "Volume counts contracts traded today; open interest counts contracts "
+        "outstanding. Volume above open interest at a strike means new positioning "
+        "rather than closing. "
+        "The distinction matters: rising OI with rising price means new longs are being "
+        "opened; falling OI on the same move means shorts are covering, which is a "
+        "weaker foundation.",
+
+    "Institutional Asset Managers, Pension Funds, and Sovereign Wealth":
+        "The largest pools of capital, operating on mandates and horizons measured in "
+        "years. They rebalance mechanically, often at month and quarter end. "
+        "They do not trade the way a day trader imagines. Their flow is slow, "
+        "predictable and enormous - which is why calendar effects around rebalancing "
+        "dates exist at all.",
+
+    "Hedge Fund Mandates (Long/Short, Global Macro, Quantitative Multi-Strat)":
+        "Long/short equity holds both sides to isolate stock selection. Global macro "
+        "trades rates, currencies and commodities on economic views. Quant multi-strat "
+        "runs many systematic models at once. "
+        "Each has characteristic behaviour under stress: quant funds deleverage "
+        "simultaneously because they use similar signals, which is how a 'quant quake' "
+        "happens with no fundamental news.",
+
+    "Volume At Price (Horizontal Volume Profile / Market Profile Matrices)":
+        "Volume distributed by price level rather than by time, forming a histogram "
+        "beside the chart. "
+        "Peaks are prices the market agreed on and returns to; valleys are prices it "
+        "rejected and moves through quickly. It answers 'where was business actually "
+        "done' rather than 'when'.",
+
+    # ---------------------------------------------------------------
+    # Algorithmic and machine learning
+    # ---------------------------------------------------------------
+    "High-Frequency Trading (HFT): Internalizers and Latency Arbitrage":
+        "Firms competing on microseconds, profiting from tiny, extremely frequent "
+        "edges - often the spread itself, or price discrepancies between venues before "
+        "anyone else can act. "
+        "It is not a strategy retail can compete with, and it is largely irrelevant to "
+        "a strategy holding for 20 minutes. What matters is the consequence: obvious "
+        "short-lived inefficiencies are already gone.",
+
+    "Algorithmic Execution Styles: TWAP, VWAP, and Implementation Shortfall":
+        "TWAP spreads an order evenly over time; VWAP tracks the volume curve; "
+        "implementation shortfall trades more aggressively early to minimise the gap "
+        "from the price when the decision was made. "
+        "The choice encodes a view about urgency versus impact - and it is the reason "
+        "large orders leave recognisable footprints on the tape.",
+
+    "Quantitative Market Making: Managing Inventory Risk and Adverse Selection":
+        "A market maker's problem is not direction but inventory: hold too much of one "
+        "side and a move against it wipes out many spreads of profit. Quotes are skewed "
+        "continuously to attract offsetting flow. "
+        "Adverse selection is the other half - the risk that whoever trades with you "
+        "knows more. Both together explain almost all observable quoting behaviour.",
+
+    "Machine Learning Features: Transforming Technicals into Predictive Arrays":
+        "A feature is a number computed from raw data that a model can learn from - "
+        "gap size, relative volume, distance from VWAP in ATR units. "
+        "The engineering matters more than the model. This system computes 95 feature "
+        "columns per minute bar, and the reason ATR-normalisation appears throughout is "
+        "that a raw dollar distance means different things in different regimes, which "
+        "a model cannot learn around.",
+
+    "Stationarity Conversions: Transforming Raw Asset Pricing into Fractional Differences":
+        "Price series are non-stationary - their mean and variance drift - which breaks "
+        "most statistical methods. Differencing makes them stationary but destroys "
+        "memory. Fractional differencing removes just enough drift to achieve "
+        "stationarity while retaining some memory. "
+        "It is the standard fix for the fact that a model trained on $90 SPY cannot "
+        "generalise to $770 SPY without it.",
+
+    "Labeling Financial Arrays: Triple-Barrier Methods vs. Standard Price Diffs":
+        "Naive labelling asks 'did price rise over the next N bars'. The triple-barrier "
+        "method sets a profit target, a stop, and a time limit, and labels by whichever "
+        "is hit first. "
+        "It is far more honest because it matches how a trade is actually managed. A "
+        "model trained on fixed-horizon returns learns to predict something nobody "
+        "trades.",
+
+    "Feature Importance Shuffling: Identifying Alpha Degradation across Model Elements":
+        "Randomly shuffle one feature and measure how much performance falls. A large "
+        "drop means the model genuinely relied on it; no drop means it was decorative. "
+        "It is more trustworthy than built-in importance scores, which are biased "
+        "toward high-cardinality features, and it directly exposes features whose edge "
+        "has decayed.",
+
+    "Cross-Validation Schemas: Purging and Embargoing Time Series to Prevent Leakage":
+        "Standard k-fold cross-validation is invalid on time series: shuffled folds let "
+        "the model train on the future. Purging removes overlapping samples; embargoing "
+        "adds a gap after each test set. "
+        "Without both, a model looks excellent in validation and fails live. It is the "
+        "same class of error this system guards against with fill-at-next-bar-open and "
+        "truncation tests - leakage is leakage whether the tool is a model or a "
+        "backtest.",
+
+    # ---------------------------------------------------------------
+    # Moneyness and positioning
+    # ---------------------------------------------------------------
+    "Capital Leverage Selection Matrix (ITM vs. ATM vs. OTM)":
+        "The same directional view expressed three ways. ITM costs most, moves most "
+        "closely with the stock, and loses least to decay. ATM is the balance point. "
+        "OTM is cheap, mostly time value, and needs a real move to be worth anything. "
+        "The choice IS the trade. This system's 0.40-0.60 delta band sits deliberately "
+        "around the middle: responsive enough to pay on a genuine move, not so cheap "
+        "that decay wins by default.",
+
+    "Lifespan Time Horizon Risk Profiles (DTE Continuous Lifelines)":
+        "Days to expiry determines everything about a contract's behaviour. Longer DTE "
+        "means more vega, less gamma, slower decay. Zero DTE means almost no vega, "
+        "enormous gamma, and decay measured in minutes. "
+        "Choosing DTE is choosing which Greek dominates your outcome. A 0DTE trade is a "
+        "bet on movement in the next few hours; a 45-day trade is largely a bet on "
+        "volatility.",
+
+    "Speculative Volume vs. Overnight Institutional Positioning (OI)":
+        "Intraday volume is dominated by speculation and market making, most of which "
+        "closes before the bell. Open interest is what survives overnight - positions "
+        "someone was willing to carry. "
+        "Large OI at a strike marks a level with real money committed. Large volume "
+        "with no OI change marks a level people traded around and left.",
+
+    "Sentiment Outlier Scanners (SPY_OI_PC_Ratio / SPY_Volume_PC_Ratio)":
+        "Put/call ratios computed on open interest and on volume. The OI version is "
+        "slow-moving positioning; the volume version is today's activity. "
+        "Extreme readings are contrarian signals in principle. In practice much of the "
+        "put side is hedging rather than bearish speculation, so extremes identify "
+        "caution as often as they identify fear.",
+
+    # ---------------------------------------------------------------
+    # Macro regimes
+    # ---------------------------------------------------------------
+    "Gross Domestic Product (GDP) Waves and Economic Growth Cycles":
+        "Total output, reported quarterly and revised repeatedly. Two consecutive "
+        "negative quarters is the informal recession definition. "
+        "Markets price expectations months ahead, so by the time GDP confirms a "
+        "recession equities have usually already fallen and often already bottomed. It "
+        "is confirmation, not a signal.",
+
+    "Inflation Metrics: Consumer Price Index (CPI) vs. Core PCE Allocations":
+        "CPI is the headline consumer inflation measure; core PCE excludes food and "
+        "energy and is the Fed's preferred gauge because it is broader and less "
+        "volatile. "
+        "CPI moves markets more on release day; PCE moves policy. For a 0DTE trader the "
+        "relevant fact is simply that CPI release mornings carry outsized volatility "
+        "and inflated premium.",
+
+    "Employment Metrics: Non-Farm Payrolls (NFP) and Unemployment Shifts":
+        "Released the first Friday of each month, NFP is among the highest-impact "
+        "scheduled events. Revisions to prior months are frequently larger than the "
+        "surprise in the current one. "
+        "For options traders the pattern is predictable: elevated implied volatility "
+        "beforehand, a sharp move at 08:30, then IV collapse - a textbook setting for "
+        "losing money while being directionally right.",
+
+    "Central Bank Policies: Federal Open Market Committee (FOMC) Interest Decisions":
+        "Eight meetings a year setting the federal funds rate, with a statement, "
+        "projections, and a press conference. The 14:00 ET decision and the 14:30 press "
+        "conference frequently move price in opposite directions. "
+        "FOMC afternoons are the most reliably violent scheduled window in the US "
+        "session, and this system's key-levels strategy carries a catalyst check "
+        "precisely so it can account for them.",
+
+    "Sovereign Credit Imbalance Spreads (Yield_Curve_Spread)":
+        "The gap between long and short government yields, usually 10-year minus "
+        "2-year. Positive is a normal curve; negative is inversion. "
+        "It compresses the market's entire growth and policy expectation into one "
+        "number, which is why it is tracked as a daily regime feature rather than as a "
+        "trading signal.",
+
+    "Institutional Risk-On vs. Risk-Off Pendulums (SPY_vs_TLT_Ratio)":
+        "Equities against long Treasuries. Rising ratio means capital favouring risk; "
+        "falling means flight to safety. "
+        "Its usefulness is as a regime read rather than a trigger - and it breaks "
+        "exactly when it would be most useful, since in a genuine liquidity crisis both "
+        "fall together.",
+
+    "Corporate Debt Liquidity Credit Stress Markers (VTI_vs_HYG_Ratio)":
+        "Broad equities against high-yield bonds. Divergence - equities rising while "
+        "junk debt weakens - signals that credit investors are pricing risk equity "
+        "investors are ignoring. "
+        "Credit markets are generally earlier and more sober than equity markets, which "
+        "is why this divergence is worth watching.",
+
+    "Multi-Session Intraday Morning Opening Gap Actions (Opening_Gap_Pct":
+        "The overnight gap as a percentage of the prior close, tracked across sessions "
+        "so its distribution is known rather than guessed. "
+        "This is the single most productive feature in this system's entire research: "
+        "gap continuation above 0.5% produced the only edge that was both "
+        "statistically significant and positive in all four eras.",
+
+    "Multi-Session Intraday Morning Opening Gap Actions (Opening_Gap_Pct)":
+        "The overnight gap as a percentage of the prior close, tracked across sessions "
+        "so its distribution is known rather than guessed. "
+        "This is the single most productive feature in this system's research: gap "
+        "continuation above 0.5% produced the only edge that was both statistically "
+        "significant (t=+3.33) and positive in all four eras, and it beat a matched "
+        "random control on the same days by +0.066 ATR/trade.",
+
+    "Intermarket Real Estate Gauges: NAHB Housing Market Index Registries":
+        "A survey of homebuilder sentiment, released monthly. Housing is "
+        "rate-sensitive and labour-intensive, so builder sentiment turns before the "
+        "broader economy does. "
+        "A leading indicator on a horizon of quarters - useful for regime context, "
+        "irrelevant to any intraday decision.",
+
+    "Global Supply Chain Metrics: The Baltic Dry Index Cargo Tracker":
+        "The cost of shipping dry bulk commodities by sea. It reflects real physical "
+        "demand for raw materials. "
+        "Extremely volatile because shipping supply is fixed in the short run, so large "
+        "moves can reflect vessel availability rather than demand. Directionally "
+        "informative, precisely unreliable.",
+
+    "Intermarket Currency Correlates: Emerging Market Risk vs. Strong Dollar":
+        "Many emerging market borrowers owe dollars while earning local currency. A "
+        "rising dollar raises their real debt burden, tightening conditions without any "
+        "central bank acting. "
+        "This is why dollar strength is a global risk-off signal rather than merely a "
+        "currency move.",
+
+    "Global Central Bank Networks: ECB, BOJ, and BOE Liquidity Injections":
+        "Policy is global. Bank of Japan yield curve control and ECB asset purchases "
+        "affect global liquidity and cross-border flows regardless of Fed policy. "
+        "Japanese policy in particular matters through the carry trade: borrowing "
+        "cheaply in yen to buy assets elsewhere, which unwinds violently when yen "
+        "policy shifts.",
+
+    "Federal Reserve Reverse Repo (RRP) Facilities: Tracking Systemic Cash Excess":
+        "A facility where money market funds park cash overnight with the Fed. High "
+        "usage means excess cash with nowhere better to go. "
+        "It is a direct read on system liquidity: draining RRP balances mean that cash "
+        "is being deployed elsewhere, which has implications for asset prices "
+        "independent of any policy announcement.",
+
+    # ---------------------------------------------------------------
+    # Remaining chart metrics
+    # ---------------------------------------------------------------
+    "Intraday Range Spreads and Liquidity Exhaustion Price Vacuums":
+        "The bar's range relative to its recent norm. Sudden expansion means price "
+        "moved through a region with few resting orders. "
+        "These vacuums are where stops slip and where fast moves originate - liquidity "
+        "gaps are the mechanism, not the consequence, of a spike.",
+
+    "Candlestick Close Placement Metrics Relative to Daily Range Bars":
+        "(Close - Low) / (High - Low): where in its own range the bar settled. Near 1.0 "
+        "buyers held control into the close; near 0 sellers did. "
+        "This system computes it per bar as `range_position`, and the opening-gap-fade "
+        "playbook triggers on values below 0.20 or above 0.80 - closing at the extreme "
+        "of the range is the confirmation that momentum has actually flipped.",
+
+    # ---------------------------------------------------------------
+    # Alternative data
+    # ---------------------------------------------------------------
+    "Satellite Imagery Analytics: Tracking Retail Foot-Traffic and Supply Chains":
+        "Commercial satellites count cars in parking lots, monitor oil storage tank "
+        "float levels, and track construction - producing estimates before official "
+        "reporting. "
+        "Genuinely predictive and genuinely expensive. By the time such data is "
+        "affordable to retail, the edge has usually been arbitraged by whoever paid for "
+        "it first.",
+
+    "Natural Language Processing (NLP): Scraping Central Bank Speech Transcripts":
+        "Machine reading of Fed statements, minutes and speeches to score hawkish versus "
+        "dovish tone, often measuring word-level changes between consecutive statements. "
+        "Algorithms trade the statement within milliseconds of release. The lesson for a "
+        "human is not to compete on speed - the first move is already priced before you "
+        "have read the headline.",
+
+    "Consumer Spending Tracking: Anonymous Credit Card Transaction Aggregations":
+        "Aggregated, anonymised card data giving near-real-time revenue estimates for "
+        "retailers, weeks before earnings. "
+        "Legal and widely used institutionally. Its existence is part of why earnings "
+        "surprises have shrunk: the information reaches large holders before the "
+        "official release.",
+
+    "Freight and Logistics Tracking: Marine Vessel and Fleet Telemetry Logs":
+        "AIS transponder data tracking ships in real time - where oil tankers are "
+        "heading, whether ports are congested, how much cargo is idling offshore. "
+        "Genuinely useful for commodities, and it is how floating-storage arbitrage "
+        "during super-contango was observed as it happened rather than afterwards.",
+
+    "Corporate Insider Transaction Filings: Tracking Form 4 C-Suite Accumulations":
+        "Executives must report their own trades on Form 4 within two business days. "
+        "Insider BUYING is the more informative signal - there are many reasons to sell "
+        "and essentially one reason to buy. "
+        "Much selling is scheduled in advance under 10b5-1 plans and carries no "
+        "information at all, which is why raw insider-selling headlines are usually "
+        "noise.",
+
+    "Congressional Stock Transaction Registers: Monitoring Government Policy Vectors":
+        "US legislators must disclose trades within 45 days under the STOCK Act. "
+        "Several services aggregate and publish these. "
+        "The disclosure lag makes direct copying unworkable, and the studies claiming "
+        "outperformance are mixed. The interesting signal is concentration - many "
+        "members trading one sector before legislation affecting it.",
+
+    "IP Address and Web Traffic Intelligence: Tracking Enterprise Software Subscriptions Real-Time":
+        "Web traffic, app downloads and job postings as proxies for a company's growth "
+        "before it reports. "
+        "Noisy and easy to misread - a traffic spike can be a marketing campaign rather "
+        "than demand - but valuable in aggregate for fast-moving software businesses.",
+
+    "Patent Office Scraping Matrix: Identifying Hidden Research and Development Breakthroughs":
+        "Patent filings are public and disclose R&D direction long before products "
+        "ship. Filing volume and citation patterns are used as innovation proxies. "
+        "The horizon is years, which makes it an investment input rather than a trading "
+        "one - but it is one of the few genuinely public datasets that is still "
+        "under-exploited.",
+
+    # ---------------------------------------------------------------
+    # Statistical arbitrage and portfolio risk
+    # ---------------------------------------------------------------
+    "Cointegration vs. Correlation: Building Reliable Mathematical Spreads":
+        "Correlation measures whether two series move together; cointegration measures "
+        "whether they share a long-run equilibrium they revert to. "
+        "Pairs trading requires cointegration, not correlation. Two assets can be highly "
+        "correlated while drifting apart permanently, which is how a 'converging' spread "
+        "trade never converges.",
+
+    "Mean-Reversion Half-Life: Formulating Optimal Exit Windows on Asset Pairs":
+        "The time it takes a divergence to close halfway, estimated from an "
+        "Ornstein-Uhlenbeck fit. It tells you how long a mean-reversion trade should "
+        "reasonably take. "
+        "It is the discipline that converts 'it will come back' into a testable claim "
+        "with a deadline - and a position held far past its half-life is evidence the "
+        "relationship has broken.",
+
+    "Synthetic Asset Matching: Balancing Capital Allocation across Cross-Sector Equities":
+        "Constructing a basket that replicates one asset's exposure using others, so "
+        "the spread isolates the specific difference you want to trade. "
+        "The risk is that the replication is fitted to history and drifts, leaving you "
+        "with unintended net exposure exactly when markets move.",
+
+    "Statistical Z-Score Modeling: Triggering Mean-Reversion Reversals on Dynamic Spreads":
+        "Express a spread as standard deviations from its mean; enter at extremes, exit "
+        "near zero. Typically ±2 to enter. "
+        "Its failure mode is a regime change: when the mean itself has shifted, the "
+        "z-score keeps signalling a larger and larger opportunity right up until the "
+        "position is unrecoverable.",
+
+    "Marginal Value-at-Risk (MVaR) vs. Component Value-at-Risk (CVaR) Frameworks":
+        "VaR estimates the loss not expected to be exceeded at a confidence level. "
+        "Marginal VaR is how much total risk changes if you add a unit of a position; "
+        "component VaR decomposes existing risk by holding. "
+        "Component VaR answers the question that matters: which position is actually "
+        "responsible for your risk, which is often not the largest one.",
+
+    "Contribution to Portfolio Variance: Identifying Undesired Concentrated Risk Fields":
+        "Decomposing total variance by position, accounting for correlations. Positions "
+        "that look independent frequently contribute the same risk. "
+        "A portfolio of fourteen strategies that all trade SPY intraday is far less "
+        "diversified than it appears - which is exactly why this system measures signal "
+        "overlap between strategies rather than assuming different code means different "
+        "risk.",
+
+    "Ex-Ante vs. Ex-Post Risk Profiles: Evaluating Systemic Performance vs. Expected Math":
+        "Ex-ante risk is what your model predicted; ex-post is what actually happened. "
+        "Persistent divergence means the model is wrong, not that the market is. "
+        "Comparing them is the discipline that catches a risk model quietly "
+        "underestimating tails - usually discovered too late, during the event it "
+        "failed to anticipate.",
+
+    "Liquidity-Adjusted VaR (LVaR): Factor-Weighting Capital Drops During Panic Regimes":
+        "Standard VaR assumes you can exit at market prices. LVaR adds the cost of "
+        "actually liquidating - spread widening and market impact at size. "
+        "In a crisis both worsen exactly when you need to sell, which is why "
+        "conventional VaR systematically understates risk in the only scenario anyone "
+        "cares about.",
+
+    "Pattern Day Trader (PDT) Classification Boundaries and Routing Limits":
+        "Four or more day trades in five business days in a margin account triggers PDT "
+        "status, requiring $25,000 in equity. Below it, day trading is restricted. "
+        "For a 0DTE strategy this is decisive - every trade is a day trade by "
+        "definition. A cash account escapes the rule but introduces settlement delays, "
+        "so the same capital cannot be redeployed immediately. Confirm current rules "
+        "with your broker; they vary and change.",
 }
 
 
