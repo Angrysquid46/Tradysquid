@@ -245,7 +245,48 @@ session close 89-97% of the time, which is the worst holding pattern for a 0DTE
 option — so **no Discord restructure should be built on this ranking until
 Phase 5 confirms the edges survive theta.**
 
-### ⬜ Phase 5 — Option layer (explicitly modelled)
+### ⬜ Phase 5 — Option layer — **SCOPE SET 2026-08-17, DO THIS NEXT**
+
+**Owner decision:** run Phase 5, then **re-run the top 15 through the option
+model** and produce a side-by-side comparison so it is visible which ones are
+actually better *as 0DTE options* rather than as underlying moves.
+**Confirmed: 0DTE, always closed before EOD — never held overnight.** The
+backtest already forces flat at 15:59, so the exit timing is right; what is
+unknown is what theta does to the P/L on the way there.
+
+**Deliverable that closes this out — a table with both columns:**
+
+| Strategy | Underlying exp (ATR) | **Option exp (%)** | Survives? |
+|---|---|---|---|
+
+Any strategy whose underlying edge does not survive the option layer gets
+labelled as such and does not go live, per the risk already recorded in Phase 7.
+
+**Build order:**
+1. Ingest EOD chains (the 8 GB JSON + 1.3 GB CSV) into a compact table —
+   0DTE + near-ATM band only, keyed date/expiration/strike/type. Not all 8 GB.
+2. Fit the entry-time option price. **This is the crux:** the archive is
+   EOD-only, so a 0DTE contract quoted at 16:00 is worth ~intrinsic. Entry
+   prices must be **modelled** (Black-Scholes from the real EOD IV of the
+   nearest comparable strike, back-solved to entry time), never read directly.
+   Label every option number as modelled, everywhere it surfaces.
+3. Apply the live delta band (0.40-0.60 for key-levels/expansion; check
+   `SPY_0DTE_DELTA_MIN/MAX`), the `$5.00` max ask and `$500` risk cap, and the
+   liquidity filters `option_has_liquidity` already enforces.
+4. Model theta decay minute-by-minute to the 15:59 close. **The 89-97%
+   close-exit rate is the whole question** — that is where a 0DTE bleeds most.
+5. Re-run all 15 shortlist strategies plus the retired ORB entry as a control.
+6. Now the ratchet exit shapes become separable: replay `step_pct`/`stop_pct`
+   from `SPY_RATCHET_VARIANTS` against modelled premium, which is the only way
+   to rank the 10 variants against each other.
+7. Include commission and bid-ask slippage explicitly. At profit factors of
+   1.05-1.30 on the underlying, costs plausibly decide most of these.
+
+**Exit criteria:** underlying edge and option edge reported separately and
+never blended; the top-15 comparison table produced; a written list of which
+strategies did not survive the option layer.
+
+### ⬜ Phase 5 — original scope notes
 - Ingest EOD option chains into a compact table (0DTE + near-ATM band rather
   than all 8 GB verbatim), keyed by date/expiration/strike/type.
 - Delta-band selection (0.50-0.70 tested individually), liquidity rejection
