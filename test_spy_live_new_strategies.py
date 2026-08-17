@@ -349,3 +349,48 @@ def test_every_command_handler_calls_a_function_that_exists():
                    if name.endswith(("original", "respond", "followup"))}
     for name in dispatchers:
         assert hasattr(bot, name), f"handler calls {name}() which does not exist"
+
+
+# ---------------------------------------------------------------------------
+# Roster consistency
+# ---------------------------------------------------------------------------
+
+def test_all_fifteen_locked_strategies_get_a_channel():
+    """Key-Levels is rank 11 of the locked 15 and was the only survivor
+    without its own channel - it routed to the shared dashboard while the
+    other 14 each had one. That was an inconsistency, not a design."""
+    ranks = sorted(spec["rank"] for spec in lns.CHANNEL_ROSTER)
+    assert ranks == list(range(1, 16))
+    slugs = {lns.channel_slug(s["play_type"]) for s in lns.CHANNEL_ROSTER}
+    assert len(slugs) == 15
+    assert "s11-key-levels" in slugs
+
+
+def test_key_levels_is_in_the_channel_roster_but_not_the_scan_roster():
+    """Its entry lives in spy_scanner. Scanning it here too would run the
+    strategy twice per cycle."""
+    assert "SPY_KEY_LEVELS" in {s["play_type"] for s in lns.CHANNEL_ROSTER}
+    assert "SPY_KEY_LEVELS" not in lns.NEW_STRATEGY_PLAY_TYPES
+    assert not lns.is_new_strategy_play_type("SPY_KEY_LEVELS")
+
+
+def test_key_levels_is_not_given_a_second_ledger():
+    """performance_reconciliation already registers it under these keys, so
+    re-registering would leave one strategy with two competing ledgers."""
+    play_types = {variant[0] for variant in lns.report_variants()}
+    assert "SPY_KEY_LEVELS" not in play_types
+
+
+def test_key_levels_channel_does_not_advertise_an_exit_it_does_not_use():
+    """It manages itself under its own R-multiple rule; quoting this
+    module's default percentages would state the wrong rules in Discord."""
+    described = {name: desc for _cat, name, desc in lns.channel_specs()}
+    assert "% of premium" not in described["s11-key-levels"]
+    assert "% of premium" in described["s01-gap-cont-50"]
+
+
+def test_every_routing_key_points_at_a_channel_the_sync_creates():
+    """An orphaned route silently drops a strategy's cards."""
+    created = {name for _cat, name, _desc in lns.channel_specs()}
+    for key, channel in lns.channel_names().items():
+        assert channel in created, f"{key} routes to #{channel}, which is never created"

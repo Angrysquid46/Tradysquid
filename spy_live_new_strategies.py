@@ -70,8 +70,24 @@ NEW_STRATEGY_SPECS: tuple[dict[str, Any], ...] = (
      "signal": ext.playbook_opening_gap_fade()},
 )
 
+# SPY_KEY_LEVELS is rank 11 of the locked 15. Its ENTRY lives in
+# spy_scanner (it predates this module and is not re-implemented here), but
+# it gets a channel and card routing on the same footing as the other 14 -
+# otherwise the one surviving original strategy is the only one without its
+# own channel, which is an inconsistency rather than a design.
+KEY_LEVELS_SPEC: dict[str, Any] = {
+    "play_type": "SPY_KEY_LEVELS", "rank": 11, "label": "Key-Levels Strategy",
+    "signal": None,          # entry handled by spy_scanner, not this module
+}
+
+# Channel/reporting roster: the 14 promoted strategies plus Key-Levels.
+# Kept separate from NEW_STRATEGY_SPECS, which is the SCANNING roster - only
+# the 14 are scanned here, and adding Key-Levels to that would double-run it.
+CHANNEL_ROSTER: tuple[dict[str, Any], ...] = NEW_STRATEGY_SPECS + (KEY_LEVELS_SPEC,)
+
 NEW_STRATEGY_PLAY_TYPES = tuple(spec["play_type"] for spec in NEW_STRATEGY_SPECS)
 NEW_STRATEGY_BY_PLAY_TYPE = {spec["play_type"]: spec for spec in NEW_STRATEGY_SPECS}
+CHANNEL_ROSTER_BY_PLAY_TYPE = {spec["play_type"]: spec for spec in CHANNEL_ROSTER}
 
 
 def is_new_strategy_play_type(play_type: str | None) -> bool:
@@ -412,7 +428,7 @@ def channel_slug(play_type: str) -> str:
     within a category, so `s01-`...`s15-` makes the category read in
     shortlist order - best performer first - without any manual ordering.
     """
-    spec = NEW_STRATEGY_BY_PLAY_TYPE[play_type]
+    spec = CHANNEL_ROSTER_BY_PLAY_TYPE[play_type]
     body = play_type.removeprefix("SPY_").lower().replace("_", "-")
     return f"s{spec['rank']:02d}-{body}"
 
@@ -433,7 +449,7 @@ def channel_names() -> dict[str, str]:
     so a strategy's card and its trade history sit together instead of
     being scattered across two shared feeds."""
     mapping: dict[str, str] = {}
-    for play_type in NEW_STRATEGY_PLAY_TYPES:
+    for play_type in (spec["play_type"] for spec in CHANNEL_ROSTER):
         channel = channel_slug(play_type)
         mapping[performance_key(play_type)] = channel
         mapping[results_key(play_type)] = channel
@@ -443,6 +459,9 @@ def channel_names() -> dict[str, str]:
 def report_variants() -> tuple[tuple[str, str, str, str], ...]:
     """(play_type, performance_key, results_key, label) for each strategy,
     in the shape performance_reconciliation.STRATEGY_VARIANTS expects."""
+    # Key-Levels is deliberately excluded here: performance_reconciliation
+    # already registers it under its own legacy keys, and adding it again
+    # would give one strategy two competing ledgers.
     return tuple(
         (spec["play_type"], performance_key(spec["play_type"]),
          results_key(spec["play_type"]), spec["label"])
@@ -474,14 +493,21 @@ def report_markers() -> dict[str, tuple[str, ...]]:
 def channel_specs() -> list[tuple[str, str, str]]:
     """(category, channel, description) for sync_discord_structure."""
     specs = []
-    for spec in NEW_STRATEGY_SPECS:
+    for spec in CHANNEL_ROSTER:
         play_type = spec["play_type"]
-        target, stop, time_stop = exit_rules_for(play_type)
-        timing = f", {time_stop}-minute time stop" if time_stop else ""
+        if play_type in NEW_STRATEGY_EXITS:
+            target, stop, time_stop = exit_rules_for(play_type)
+            timing = f", {time_stop}-minute time stop" if time_stop else ""
+            exit_text = f"own exit (+{target:.0f}%/{stop:.0f}% of premium{timing})"
+        else:
+            # Key-Levels manages itself in spy_scanner under its own R-multiple
+            # rule. Quoting this module's default here would state an exit it
+            # does not use.
+            exit_text = "own exit rules (managed by its original evaluator)"
         specs.append((
             "STRATEGIES", channel_slug(play_type),
             f"#{spec['rank']} of the tested set - {spec['label']}. "
-            f"Own entry signal, own exit (+{target:.0f}%/{stop:.0f}% of premium{timing}). "
+            f"Own entry signal, {exit_text}. "
             f"Live P/L card plus this strategy's own trade history.",
         ))
     return specs
