@@ -1322,16 +1322,16 @@ What it means: A structural state where an options contract contains zero intrin
 *Not yet written.* This topic comes from source module 51, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
 
 ## Deconstructing In-The-Money (ITM) vs. Out-of-The-Money (OTM) Contracts
-*Not yet written.* This topic comes from source module 118, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+In the money means the contract already has intrinsic value - a call whose strike is below spot. Out of the money has none: all premium is time value, and it expires worthless unless price crosses the strike. ITM contracts cost more, move more closely with the stock (higher delta), and lose a smaller PERCENTAGE to decay because much of their value is intrinsic. OTM contracts are cheap, mostly decay, and need a real move to be worth anything. Neither is better; they are different trades.
 
 ## The Lottery-Ticket Fallacy: Why Buying Cheap Options Feels Good but Loses Money
-*Not yet written.* This topic comes from source module 118, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+A $0.05 far-out-of-the-money contract looks like limited risk with huge upside. In practice it is nearly all decay with a very low probability of paying, and the bid/ask spread alone can be 20-50% of the price - you are down badly the instant you fill. The psychology is the problem: cheap contracts let you take many positions without feeling exposed, so total risk grows while each individual bet feels trivial. The system's $5.00 ask cap and 0.40-0.60 delta band exist specifically to keep contract selection out of this zone.
 
 ## At-The-Money (ATM) Options: Balancing Risk, Premium Price, and Directional Speed
-*Not yet written.* This topic comes from source module 118, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+At the money means strike near spot - roughly 0.50 delta, the most extrinsic value, and the highest gamma. It responds fastest to movement in both directions. It is the standard choice for a short-dated directional trade because it balances responsiveness against cost. It also carries the most decay in absolute terms, which is why holding an ATM 0DTE through a quiet afternoon is the most reliable way to lose money in this entire system.
 
 ## Understanding Option Premiums: Separating True Cash Worth from Extrinsic Time Value
-*Not yet written.* This topic comes from source module 118, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Every premium answers two questions: what is this worth right now if exercised (intrinsic), and what am I paying for what might still happen (extrinsic). Only the extrinsic part decays. That makes the ratio the single most useful number when choosing a contract: a deep ITM call is mostly intrinsic and behaves like leveraged stock, while an ATM 0DTE is nearly all extrinsic and is a bet that must resolve within hours.
 
 <!-- /EXPANDED:moneyness-and-leverage -->
 <!-- END:14-option-chain-liquidity -->
@@ -1594,28 +1594,28 @@ Buying far OTM lottery contracts, choosing DTE shorter than the thesis, using op
 Long calls and puts, debit structures, and the conditions under which paying premium is the right expression of a view. Consolidated from source modules 59, 60; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Straight Outright Call Buying: Capitalizing on Aggressive Bullish Velocity
-*Not yet written.* This topic comes from source module 59, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Buy a call, pay the premium, keep unlimited upside with loss capped at what you paid. The simplest bullish expression and the one this system uses. The catch is that you need direction AND speed AND enough size of move to clear the extrinsic value you paid. Being right slowly is a loss. On a 0DTE the bar is highest: an at-the-money contract needs roughly a 0.3-0.5% move just to cover decay and the spread. That is why entry timing matters more here than in any other structure - the clock is the counterparty.
 
 ## Straight Outright Put Buying: Capitalizing on Catastrophic Bearish Cascades
-*Not yet written.* This topic comes from source module 59, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The mirror: buy a put to profit from a fall, loss capped at premium. Puts usually cost more than equivalent calls because of skew - the market pays up for downside protection, so implied volatility is higher on the put side. Downside moves are also faster than upside ones, which helps a long put fight decay. But that same skew means you are buying at a structurally worse price, and if the drop does not come quickly the inflated premium works against you twice: theta plus IV normalisation.
 
 ## Long Straddles: Profiting from Mass Volatility Explosions in Either Direction
-*Not yet written.* This topic comes from source module 59, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Buy a call and a put at the same strike and expiry. You profit from a large move in EITHER direction, and lose if price sits still. Cost is roughly double a single leg, so the breakeven is wide: the move must exceed the combined premium. The classic mistake is buying one before earnings. IV is already inflated to price the expected move, so a merely large move is not enough - you need one larger than the market already paid for, and the post-event IV crush hits both legs at once.
 
 ## Long Strangles: Budget-Conscious Volatility Plays with Out-of-the-Money Wings
-*Not yet written.* This topic comes from source module 59, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Same idea as a straddle but with out-of-the-money strikes on both sides. Cheaper to open, and therefore needs an even bigger move to pay. The trade-off is explicit: you save premium up front in exchange for a wider dead zone where both legs expire worthless. On short-dated contracts a strangle usually ends up as two lottery tickets that both lose - the discount is not free, it is a reduced probability.
 
 ## Bull Call Spreads: Capping Upside Profits to Drastically Reduce Contract Costs
-*Not yet written.* This topic comes from source module 60, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Buy a call, sell a higher-strike call in the same expiry. The sold leg pays for part of the bought leg, cutting cost and breakeven, at the price of a fixed maximum profit. The reason this works is that you are also selling vega and theta: the short leg decays in your favour, offsetting some of the bleed on the long leg. It is a more forgiving structure than an outright call when your view is 'higher, but not dramatically' - which is most of the time.
 
 ## Bear Put Spreads: Capping Downside Gains to Mitigate Implied Volatility Crushes
-*Not yet written.* This topic comes from source module 60, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Buy a put, sell a lower-strike put. Bearish, defined risk, defined reward. Particularly useful when puts are expensive from skew: the short leg recovers some of that inflated premium, so you are not paying full price for fear. You give up the tail - a genuine crash pays the same as a moderate decline once price passes the short strike.
 
 ## Bull Put Credit Spreads: High-Probability Income Generation on Structural Floors
-*Not yet written.* This topic comes from source module 60, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Sell a put, buy a lower-strike put for protection. You are paid up front and keep the credit if price stays above the short strike. Maximum loss is the strike width minus the credit. The seduction is the win rate: these are right most of the time. The danger is the payoff shape - many small wins and occasional losses several times larger, so a single bad week erases months. **This system does not sell premium**; everything it trades is long-only with risk capped at the debit paid.
 
 ## Bear Call Credit Spreads: Systematically Selling Premium Beneath Ceilings
-*Not yet written.* This topic comes from source module 60, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+The bearish mirror: sell a call, buy a higher-strike call. Collect credit, profit if price stays below the short strike. Same asymmetry as the bull put spread, with the added hazard that upside gaps in an index can be violent and the short call carries assignment risk if it goes in the money near a dividend date. Defined-risk on paper still means losing the full width in one session.
 
 <!-- /EXPANDED:directional-strategies -->
 <!-- END:17-directional-options -->
@@ -1796,28 +1796,28 @@ Using expiration diagrams as current value, ignoring one illiquid leg, assuming 
 Iron condors, butterflies, calendars and volatility structures - trades that profit from time or from volatility rather than direction. Consolidated from source modules 61, 62; those modules covered overlapping ground, so the material is kept in full with the repetition removed.
 
 ## Classic Iron Condors: Exploiting Double-Sided Horizontal Sideways Chop
-*Not yet written.* This topic comes from source module 61, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Sell a call spread above the market and a put spread below it. You are paid to bet price stays between them. Profit is the credit; loss is capped at one wing's width minus the credit. It profits from time and from falling volatility, not direction. Its weakness is that the market only has to break one side to hurt you, and the losing side moves faster than the winning side decays. Phase 5 could not test this structure at all - its entire P/L is premium decay with no underlying entry to measure.
 
 ## Iron Butterflies: Pinning At-The-Money Premium to Maximize Intraday Theta Melt
-*Not yet written.* This topic comes from source module 61, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+An iron condor with both short strikes at the same at-the-money price. Collects far more premium than a condor because at-the-money options are the richest, but the profitable zone is correspondingly narrow. Maximum profit requires price to finish almost exactly at the strike. It is a pure theta harvest and it is at its most dangerous into expiry, when gamma on the short strikes turns a small move into a large loss within minutes.
 
 ## Long & Short Calendar Spreads: Exploiting Differing Time Horizon Decay Horizons
-*Not yet written.* This topic comes from source module 61, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Sell a near-dated option and buy a longer-dated one at the same strike. The near leg decays faster than the far leg, and that difference is the profit. This is a bet on the TERM STRUCTURE of volatility, not on direction. It works when near-dated IV is elevated relative to longer-dated, and it fails when the underlying moves sharply away from the strike - both legs lose their at-the-money richness together.
 
 ## Long & Short Diagonal Spreads: Blending Structural Time and Strike Variations
-*Not yet written.* This topic comes from source module 61, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+A calendar spread with different strikes as well as different expiries, so it carries both a time view and a directional lean. More flexible and correspondingly harder to reason about: you are simultaneously exposed to direction, term structure and skew. Position sizing should reflect that you have three ways to be wrong rather than one.
 
 ## Ratio Spreads: Unbalanced Contract Counts for Delta-Neutral Volatility Exploitations
-*Not yet written.* This topic comes from source module 62, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Buy one option and sell two or more further out, so the sold legs finance the bought one - sometimes for a net credit. The extra short contract is naked. Beyond the short strike, losses grow without limit on the call side. A structure that can be opened for a credit and still bankrupt the account is exactly the kind that reads as free money and is not.
 
 ## Broken Wing Butterflies: Structuring Zero-Downside Risk Profiles on Premium Spreads
-*Not yet written.* This topic comes from source module 62, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+A butterfly with unequal wing widths, skewed so one side carries no risk - often opened for a credit, so one direction cannot lose. The risk is displaced, not removed: the wider wing carries a larger maximum loss than a standard butterfly. It is a way of choosing WHERE your risk sits, which is useful when you have a strong view about which side is safe.
 
 ## Box Spreads: Multi-Leg Arbitrage Matrix for Capturing Pure Synthetic Financing Rates
-*Not yet written.* This topic comes from source module 62, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+A bull call spread plus a bear put spread on the same strikes creates a position worth exactly the strike width at expiry regardless of price - a synthetic loan. Traders use it to borrow or lend at the options market's implied rate. It is only riskless with EUROPEAN-style options. Doing it with American-style contracts exposes you to early assignment, which is how one retail account famously lost far more than it had - a 'riskless' trade that was not.
 
 ## Christmas Tree Spreads: Non-Standard Strike Configurations for Precision Targets
-*Not yet written.* This topic comes from source module 62, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Multi-leg structures using uneven strike spacing and contract counts to shape a payoff around a specific expected outcome. Precision costs complexity: more legs mean more commission, more spread paid on entry and exit, and more ways for a partial fill to leave you with a position you did not intend. Rarely worth it below institutional size.
 
 <!-- /EXPANDED:neutral-and-multileg -->
 <!-- END:19-spreads-multi-leg -->
@@ -1936,19 +1936,19 @@ What it means: The total cumulative number of target options contracts that have
 What it means: A structural index calculated by dividing the total active open interest of put options by the total active open interest of call options for a specific asset. * The Math: Total Put Open Interest / Total Call Open Interest * Trading Ingestion Key: This indicator filters out short-term noise to map out institutional sentiment. Because institutions constantly buy protective puts to shield multi-billion dollar portfolios, a permanent structural baseline skew exists. When this ratio spikes to historic extremes, it signals peak defensive panic, frequently tracking major macro market bottoms.
 
 ## Long Call/Put Positions: The Rights of the Premium Buyer
-*Not yet written.* This topic comes from source module 54, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+As the buyer you hold a right and no obligation. You can exercise, sell the contract, or let it expire. Maximum loss is the premium, known at entry and unchangeable. That certainty is why this system only buys. Position sizing becomes simple arithmetic - the $500 per-trade cap is genuinely the worst case, with no gap risk or margin call able to exceed it.
 
 ## Short Call/Put Positions: The Obligations of the Premium Seller (Writing Options)
-*Not yet written.* This topic comes from source module 54, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+As the seller you receive premium and take on an obligation: deliver shares if a call is assigned, buy them if a put is. Gains are capped at the credit; losses are not. A naked short call is theoretically unlimited. Even 'defined risk' spreads can lose their full width overnight on a gap. Selling premium wins most of the time and loses large when it loses, which is the opposite payoff shape to everything this system trades.
 
 ## Understanding Options Exercise, Delivery, and Settlement Processes
-*Not yet written.* This topic comes from source module 54, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Exercise converts the contract into its underlying obligation. Equity and ETF options like SPY deliver 100 actual shares per contract; index options like SPX settle in cash. In-the-money contracts are AUTOMATICALLY exercised at expiry by the clearing house - by as little as a cent. That is why an unclosed 0DTE call can leave you holding $77,500 of SPY on Monday morning, and why every position in this system is forced flat before the close rather than left to expire.
 
 ## Navigating Assignment Risk, Early Assignment, and Margin Calls
-*Not yet written.* This topic comes from source module 54, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+American-style options can be exercised by the holder at any time, so a short position can be assigned early - most commonly on in-the-money calls the day before an ex-dividend date, when exercising captures the dividend. Assignment arrives as shares plus a cash obligation you did not plan for, which is how a defined-risk spread becomes a margin call. Long-only positions are immune: you can be assigned only if you are short.
 
 ## The Mechanics of Pin Risk: Navigating 3:59 PM Expiration Imbalances
-*Not yet written.* This topic comes from source module 65, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
+Pin risk is the uncertainty when price finishes almost exactly at a strike. You do not know whether you will be assigned, so you do not know your Monday position or your overnight exposure. Large open interest at a strike also tends to ATTRACT price into expiry, because dealer hedging concentrates there - see the dealer gamma channel. The practical rule is simple: close near-the-money positions before the bell rather than gambling on which side of the strike the last print lands.
 
 ## Cash Settlement vs. Physical Delivery: Index Options (SPX/NDX) vs. Equity Options (SPY/QQQ)
 *Not yet written.* This topic comes from source module 65, which supplied the title without an explanation. It is queued for authoring - ask TradeBot directly in the meantime, or check a related section in this channel.
