@@ -4405,6 +4405,60 @@ def evaluate_open_spy_ratchet_row(
     return result
 
 
+def evaluate_open_new_strategy_row(
+    row: dict[str, str], quotes: dict[str, dict[str, Any]], timestamp: datetime
+) -> dict[str, Any]:
+    """Exit evaluator for the 14 strategies promoted from the locked top 15.
+
+    Same %-of-premium shape every live strategy uses, but calls
+    spy_live_new_strategies.new_strategy_exit_signal - a wider target and
+    deeper stop than the retired 0DTE +50/-50, which Phase 5 measured
+    losing money on every strategy tested."""
+    import spy_live_new_strategies as lns
+
+    entry = parse_entry_price(row)
+    quote = quotes.get(row.get("option_symbol", ""))
+    if not quote or not quote_is_reliable_for_exit(quote):
+        return {
+            "signal": "HOLD",
+            "note": "Live option quote unavailable; showing last tracked values.",
+            "mark": as_float(row.get("last_mark"), entry),
+            "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
+            "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
+        }
+    mark = conservative_option_exit(quote)
+    pnl_pct = ((mark - entry) / entry * 100) if entry else 0.0
+    previous_peak = as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct
+    peak_pct = max(previous_peak, pnl_pct)
+    close_time = timestamp.replace(hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1],
+                                   second=0, microsecond=0)
+    minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
+    try:
+        signal, exit_note = lns.new_strategy_exit_signal(
+            entry, mark, minutes_remaining, peak_pct
+        )
+    except Exception as exc:
+        print(f"new_strategy_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
+        signal, exit_note = "EOD CLOSE", "fallback: forced close (smart exit errored)"
+    row["max_favorable_pct"] = round_or_blank(peak_pct, 0)
+    rounded_mark = round(mark, 2)
+    rounded_pnl = rounded_mark - entry
+    rounded_pnl_pct = (rounded_pnl / entry * 100) if entry else 0.0
+    result = {
+        "signal": signal,
+        "mark": rounded_mark,
+        "pl_dollars": round(rounded_pnl * 100),
+        "pl_pct": round(rounded_pnl_pct),
+        "delta": greek(quote, "delta"),
+        "theta": greek(quote, "theta"),
+        "iv": iv_value(quote),
+        "minutes_remaining": round(minutes_remaining),
+        "exit_note": exit_note,
+    }
+    apply_evaluation_to_row(row, result, timestamp)
+    return result
+
+
 def evaluate_open_row(
     row: dict[str, str],
     quotes: dict[str, dict[str, Any]],
@@ -4423,6 +4477,10 @@ def evaluate_open_row(
 
     if is_spy_ratchet_play_type(play_type):
         return evaluate_open_spy_ratchet_row(row, quotes, timestamp)
+
+    import spy_live_new_strategies as _lns
+    if _lns.is_new_strategy_play_type(play_type):
+        return evaluate_open_new_strategy_row(row, quotes, timestamp)
 
     if not is_spy_0dte_play_type(play_type):
         # Every play type this system opens is one of the two independently
@@ -7111,6 +7169,100 @@ def resample_bars(bars: list[dict[str, Any]], group_size: int) -> list[dict[str,
     return resampled
 
 
+def _run_new_strategy_variants(
+    *,
+    today_str: str,
+    spot_price: float,
+    candidates: list[dict[str, Any]],
+    quote_map: dict[str, dict[str, Any]],
+    add_candidates,
+    enabled: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Run the 14 strategies promoted from the locked top 15.
+
+    All 14 share ONE feature computation - the same
+    spy_intraday_features.compute_session_features the backtest used - and
+    one chain fetch, since recomputing 94 feature columns fourteen times
+    per cycle would be pure waste for an identical result. Each still gets
+    its own play_type-tagged candidates and its own independent config
+    gate, so any one can be paused without touching the others.
+
+    Signals are read off the newest closed bar only. A setup that completed
+    earlier in the session has already passed, and acting on it is the
+    stale-signal bug that once had the old ORB reporting a long-since-
+    reversed breakout all morning."""
+    import spy_live_new_strategies as lns
+
+    results: dict[str, dict[str, Any]] = {}
+    active = [p for p in lns.NEW_STRATEGY_PLAY_TYPES if enabled.get(lns.config_flag(p))]
+    if not active:
+        for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+            results[play_type] = _unavailable_context(
+                f"{lns.config_flag(play_type)} disabled in trade_types_enabled"
+            )
+        return results
+
+    try:
+        intraday = get_intraday_history(TICKER, interval="1min")
+        daily = get_daily_history(TICKER)
+        rows = lns.live_feature_rows(intraday or [], daily or [])
+    except Exception as exc:
+        context = _unavailable_context(f"new-strategy feature build failed: {exc}")
+        return {play_type: context for play_type in lns.NEW_STRATEGY_PLAY_TYPES}
+
+    if not rows:
+        context = _unavailable_context("no intraday bars yet for the current session")
+        return {play_type: context for play_type in lns.NEW_STRATEGY_PLAY_TYPES}
+
+    fired = {signal["play_type"]: signal
+             for signal in lns.signals_on_latest_bar(rows, enabled)}
+
+    chain: list[dict[str, Any]] = []
+    if fired:
+        try:
+            expirations = get_expirations(TICKER)
+            expiration = today_str if today_str in (expirations or []) else (
+                (expirations or [today_str])[0]
+            )
+            allowed = set(filter_strikes(get_strikes(TICKER, expiration), spot_price))
+            chain = [o for o in get_chain(TICKER, expiration)
+                     if float(o.get("strike", -1)) in allowed]
+            for option in chain:
+                if option.get("symbol"):
+                    quote_map[option["symbol"]] = option
+        except Exception as exc:
+            print(f"new-strategy chain fetch failed: {exc}", file=sys.stderr)
+            chain, expiration = [], today_str
+
+    for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+        if play_type not in active:
+            results[play_type] = _unavailable_context(
+                f"{lns.config_flag(play_type)} disabled in trade_types_enabled"
+            )
+            continue
+        signal = fired.get(play_type)
+        if signal is None:
+            results[play_type] = {
+                "qualified": False,
+                "regime": "NO TRADE",
+                "reason": "no setup on the latest bar",
+                "failures": ["entry conditions not met on the newest closed bar"],
+            }
+            continue
+        results[play_type] = {
+            "qualified": True,
+            "regime": signal.get("regime") or "CONTROLLED",
+            "reason": signal["reason"],
+            "failures": [],
+        }
+        if chain:
+            add_candidates(
+                f"{play_type} {signal['side']}s",
+                lns.scan_new_strategy_candidates(chain, signal, expiration, spot_price),
+            )
+    return results
+
+
 def _run_spy_key_levels_variant(
     *,
     spot_price: float,
@@ -7388,6 +7540,18 @@ def scan_candidates(
             stats["spy_key_levels_context"] = _unavailable_context(
                 "spy_key_levels disabled in trade_types_enabled"
             )
+
+        # The 14 strategies promoted from the locked top 15. Independent of
+        # anything above: own feature build, own signal read, own chain
+        # fetch, own per-strategy config gates.
+        stats["new_strategy_context"] = _run_new_strategy_variants(
+            today_str=today_str,
+            spot_price=spot_price,
+            candidates=candidates,
+            quote_map=quote_map,
+            add_candidates=add_candidates,
+            enabled=enabled,
+        )
 
     # SPY 0-1 DTE Expansion-Level - a third, fully independent SPY strategy.
     # Runs its own data fetch and signal read regardless of what SPY_0DTE or

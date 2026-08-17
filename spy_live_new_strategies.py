@@ -220,3 +220,117 @@ def default_flags() -> dict[str, bool]:
     deliberately - the same rule every other play type follows, so a
     missing config key can never silently start trading real size."""
     return {config_flag(play_type): False for play_type in NEW_STRATEGY_PLAY_TYPES}
+
+
+# ---------------------------------------------------------------------------
+# Contract selection and exits
+# ---------------------------------------------------------------------------
+#
+# Delta band, ask ceiling and risk cap mirror the surviving live strategies
+# so these 14 take the same size and liquidity risk as SPY_KEY_LEVELS, not
+# a looser version of it.
+NEW_STRATEGY_DELTA_MIN = 0.40
+NEW_STRATEGY_DELTA_MAX = 0.60
+NEW_STRATEGY_MAX_CONTRACT_ASK = 5.00
+NEW_STRATEGY_MAX_RISK_PER_TRADE = 500.0
+
+# Exit shape, in option-premium percent.
+#
+# NOT the +50/-50 the retired 0DTE strategies used. Phase 5 measured that
+# shape losing money on every strategy tested: it forces an ~8-minute hold
+# on contracts that need ~40 minutes to work, and a symmetric target/stop
+# needs a win rate above 50% just to break even, which theta and the spread
+# take away. A wider target with a deeper stop was the only shape that
+# turned a positive underlying edge into positive option P/L (+$211,726 at
+# PF 1.56 on gap continuation, against -$156,222 for +50/-50).
+#
+# Honest limit: that was validated on gap continuation specifically. For the
+# other strategies it is the best-supported shape available rather than an
+# individually measured one, which is a reason to watch the early live
+# results rather than trust these numbers.
+NEW_STRATEGY_TARGET_PCT = 200.0
+NEW_STRATEGY_STOP_PCT = -80.0
+NEW_STRATEGY_LAST_EXIT_MINUTE = 375        # 15:45 - flat before expiry
+
+
+def scan_new_strategy_candidates(
+    chain: Sequence[dict[str, Any]],
+    signal: dict[str, Any],
+    expiration: str,
+    spot_price: float,
+) -> list[dict[str, Any]]:
+    """Candidate builder shared by all 14. `signal` is one entry from
+    signals_on_latest_bar.
+
+    candidate_to_row reads cost_or_credit/pop/max_profit/max_risk/breakeven/
+    option_symbol straight off every candidate, so a missing one KeyErrors
+    the moment a real trade opens rather than merely looking incomplete."""
+    import spy_scanner as ss
+
+    kind = signal["side"]
+    candidates: list[dict[str, Any]] = []
+    for option in chain:
+        if option.get("option_type") != kind:
+            continue
+        if not ss.option_has_liquidity(option):
+            continue
+        delta = abs(ss.greek(option, "delta") or 0.0)
+        if not NEW_STRATEGY_DELTA_MIN <= delta <= NEW_STRATEGY_DELTA_MAX:
+            continue
+        ask = ss.as_float(option.get("ask"), 0.0) or 0.0
+        bid = ss.as_float(option.get("bid"), 0.0) or 0.0
+        if ask <= 0 or ask > NEW_STRATEGY_MAX_CONTRACT_ASK:
+            continue
+        if ask * 100 > NEW_STRATEGY_MAX_RISK_PER_TRADE:
+            continue
+        strike = float(option["strike"])
+        max_profit = "UNLIMITED" if kind == "call" else round(max((strike - ask) * 100, 0), 2)
+        candidates.append({
+            "play_type": signal["play_type"],
+            "call_or_put": kind,
+            "strike": ss.fmt_strike(strike),
+            "expiration": expiration,
+            "entry_price": round(ask, 2),
+            "cost_or_credit": str(round(ask, 2)),
+            "delta": round(delta, 4),
+            "theta": round(ss.greek(option, "theta") or 0.0, 4),
+            "iv": round(ss.iv_value(option), 4) if ss.iv_value(option) is not None else "",
+            "pop": round(delta * 100, 1),
+            "max_profit": max_profit,
+            "max_risk": round(ask * 100, 2),
+            "breakeven": round(strike + ask if kind == "call" else strike - ask, 2),
+            "open_interest": ss.open_interest_value(option),
+            "option_volume": ss.option_volume_value(option),
+            "bid_ask_width": round(max(ask - bid, 0), 2),
+            "option_symbol": option.get("symbol") or ss.option_symbol(
+                "SPY", expiration, kind, strike),
+            "spot_at_entry": spot_price,
+            "score": round(delta * 100, 1),
+            "setup_reason": signal["reason"],
+            "market_regime": signal.get("regime") or "UNKNOWN",
+        })
+    # Cheapest real contract that still clears the delta band.
+    candidates.sort(key=lambda c: c["entry_price"])
+    return candidates
+
+
+def new_strategy_exit_signal(
+    entry_price: float, mark: float, minutes_remaining: float, peak_pct: float = 0.0,
+) -> tuple[str, str]:
+    """Exit for all 14, in option-premium percent - the same units the rest
+    of the live system manages positions in."""
+    if entry_price <= 0:
+        return "HOLD", "no entry price to evaluate against"
+    pnl_pct = (mark - entry_price) / entry_price * 100.0
+
+    if pnl_pct <= NEW_STRATEGY_STOP_PCT:
+        return "STOP OUT", (
+            f"down {pnl_pct:.0f}%, past the {NEW_STRATEGY_STOP_PCT:.0f}% stop"
+        )
+    if pnl_pct >= NEW_STRATEGY_TARGET_PCT:
+        return "TAKE PROFIT", (
+            f"up {pnl_pct:.0f}%, past the {NEW_STRATEGY_TARGET_PCT:.0f}% target"
+        )
+    if minutes_remaining <= 15:
+        return "EOD CLOSE", "closing ahead of same-day expiration - never holds overnight"
+    return "HOLD", "no exit condition met"
