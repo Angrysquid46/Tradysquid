@@ -23,10 +23,11 @@ _INSTALLED = False
 
 _ORIGINAL_CLOSED_ROWS = spy_scanner.closed_rows
 
-SPY_0DTE_VARIANTS = (
-    ("SPY_0DTE_1M", "performance_1m", "results_1m", "1-Minute Strategy"),
-    ("SPY_0DTE_5M", "performance_5m", "results_5m", "5-Minute Strategy"),
-)
+# SPY_0DTE_1M and SPY_0DTE_5M were retired 2026-08-17. Left in place they
+# stayed in STRATEGY_VARIANTS with no REPORT_ROUTES entry, so the reconciler
+# would build a card for a strategy that no longer exists and have nowhere
+# to send it.
+SPY_0DTE_VARIANTS: tuple[tuple[str, str, str, str], ...] = ()
 
 # 10 more independently-tracked strategies - one per ratchet-floor variant.
 # Built from spy_scanner.SPY_RATCHET_VARIANTS (single source of truth for
@@ -47,9 +48,11 @@ RATCHET_VARIANTS = tuple(
 # tradebot makes ... tabs can stay meaningful and not scattered
 # craziness"). Named separately from RATCHET_VARIANTS since the two groups
 # get their own independent leaderboard and their own shared channel pair.
+# SPY_EXPANSION_LEVEL retired alongside the 0DTE pair; Key-Levels is the one
+# original strategy that survived into the locked top set.
 OTHER_STRATEGY_VARIANTS = SPY_0DTE_VARIANTS + (
-    (spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels", "results_key_levels", "Key-Levels Strategy"),
-    (spy_scanner.SPY_EXPANSION_PLAY_TYPE, "performance_expansion", "results_expansion", "Expansion-Level Strategy"),
+    (spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels",
+     "results_key_levels", "Key-Levels Strategy"),
 )
 
 # Every independently-tracked live strategy that gets its own paginated
@@ -102,6 +105,19 @@ STRATEGY_LEADERBOARD_LOGICAL = "strategy_leaderboard"
 # (those are per-period totals, not a ranking of strategies against each
 # other), so it moves to #monthly-dashboard rather than being dropped.
 REPORT_ROUTES[STRATEGY_LEADERBOARD_LOGICAL] = "monthly-dashboard"
+
+# The 13 promoted strategies need ROUTES, not just variants. Adding them to
+# STRATEGY_VARIANTS alone told the reconciler to build a card for each while
+# leaving it no channel to send it to - thirteen cards with nowhere to go.
+# Nothing failed loudly; it was caught by auditing route coverage against
+# the roster.
+for _play_type, _perf_logical, _results_logical, _label in NEW_STRATEGY_VARIANTS:
+    _own = spy_scanner.CHANNEL_NAMES.get(_perf_logical)
+    if _own:
+        REPORT_ROUTES[_perf_logical] = _own
+        REPORT_ROUTES[_results_logical] = spy_scanner.CHANNEL_NAMES.get(
+            _results_logical, _own
+        )
 # All 10 ratchet variants now share one dashboard channel and one results
 # channel (owner: "all the ratchet stratagies in a single catagory instead
 # of 11 different channels") - same pattern as above, its own separate

@@ -529,3 +529,30 @@ def test_force_all_strategies_survives_a_roster_change():
     finally:
         bot.require_ticker_admin = original
     assert "Forced" in reply
+
+
+def test_every_strategy_variant_has_a_route_and_markers():
+    """Adding a strategy to STRATEGY_VARIANTS without a REPORT_ROUTES entry
+    tells the reconciler to build a card and gives it nowhere to send it.
+
+    That happened: all 13 promoted strategies were registered as variants
+    with no routes at all. Nothing raised - the cards simply had no
+    destination. Markers are checked too, since a variant without unique
+    markers cannot locate its own card to edit and would overwrite
+    another's.
+    """
+    import performance_reconciliation as pr
+    for play_type, perf_logical, results_logical, _label in pr.STRATEGY_VARIANTS:
+        assert perf_logical in pr.REPORT_ROUTES, f"{play_type}: no performance route"
+        assert results_logical in pr.REPORT_ROUTES, f"{play_type}: no results route"
+        assert perf_logical in pr.REPORT_MARKERS, f"{play_type}: no performance markers"
+        assert results_logical in pr.REPORT_MARKERS, f"{play_type}: no results markers"
+
+
+def test_retired_strategies_are_not_still_registered_as_variants():
+    """A retired strategy left in STRATEGY_VARIANTS produces a card for a
+    strategy that no longer trades."""
+    import performance_reconciliation as pr
+    live_play_types = {v[0] for v in pr.STRATEGY_VARIANTS}
+    for retired in ("SPY_0DTE_1M", "SPY_0DTE_5M", "SPY_EXPANSION_LEVEL"):
+        assert retired not in live_play_types

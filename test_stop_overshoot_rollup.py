@@ -17,7 +17,11 @@ def _closed_row(**overrides) -> dict[str, str]:
     row.update(
         {
             "ticker": "SPY",
-            "play_type": "SPY_0DTE_1M",
+            # SPY_0DTE_1M was retired 2026-08-17, so it no longer resolves
+            # through is_spy_0dte_play_type and these assertions silently
+            # exercised a different branch. SPY_MANUAL is live and shares the
+            # same stop model.
+            "play_type": spy_scanner.SPY_MANUAL_PLAY_TYPE,
             "pct_gain_loss": "-40",
             "last_signal": "STOP OUT",
         }

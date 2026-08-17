@@ -13,31 +13,26 @@ import sync_discord_structure as structure
 class FakeDiscord:
     def __init__(self, *, include_old_cards: bool = False) -> None:
         self.ready = True
-        self.channels = {
-            "daily_recap": "daily",
-            "weekly_report": "weekly",
-            "monthly_recap": "monthly-dashboard",
-            "performance_1m": "strategies-dashboard",
-            "results_1m": "strategies-results",
-            "performance_5m": "strategies-dashboard",
-            "results_5m": "strategies-results",
-            "performance_key_levels": "strategies-dashboard",
-            "results_key_levels": "strategies-results",
-            "performance_expansion": "strategies-dashboard",
-            "results_expansion": "strategies-results",
-            "strategy_leaderboard": "strategies-dashboard",
-        }
+        # Derived from the REAL routing table, not hand-listed.
+        #
+        # This was a hardcoded map, and it went stale twice: first when the
+        # 13 promoted strategies KeyError'd because the fake knew nothing
+        # about their channels, then again when it kept routing
+        # performance_key_levels at the deleted #strategies-dashboard while
+        # production had moved it to its own channel. A test double that
+        # disagrees with production tests nothing.
+        #
+        # The short aliases below only exist because other assertions in this
+        # file refer to them by those names.
+        self.channels = dict(spy_scanner.CHANNEL_NAMES)
+        self.channels["daily_recap"] = "daily"
+        self.channels["weekly_report"] = "weekly"
         for variant in spy_scanner.SPY_RATCHET_VARIANTS:
             suffix = variant["play_type"].removeprefix("SPY_RATCHET_").lower()
-            self.channels[f"performance_ratchet_{suffix}"] = f"monthly-ratchet-{suffix.replace('_', '-')}"
-            self.channels[f"results_ratchet_{suffix}"] = f"strategy-ratchet-{suffix.replace('_', '-')}"
+            slug = suffix.replace("_", "-")
+            self.channels[f"performance_ratchet_{suffix}"] = f"monthly-ratchet-{slug}"
+            self.channels[f"results_ratchet_{suffix}"] = f"strategy-ratchet-{slug}"
         self.channels["ratchet_leaderboard"] = "ratchet-dashboard"
-        # Derived from the real routing table rather than hand-listed, so
-        # adding a strategy cannot leave this double stale. It already did:
-        # the 14 promoted strategies KeyError'd here because the fake knew
-        # nothing about their channels while the real code routed to them.
-        for _key, _channel in spy_scanner.CHANNEL_NAMES.items():
-            self.channels.setdefault(_key, _channel)
         self.cards: dict[str, str] = {}
         self.channel_cards: dict[str, list[str]] = {
             channel_id: [] for channel_id in self.channels.values()
@@ -97,11 +92,15 @@ class PerformanceScorecardTests(unittest.TestCase):
     def make_rows(self, count: int = 100) -> list[dict[str, str]]:
         rows = []
         monday = datetime(2026, 7, 27, 14, 30, tzinfo=spy_scanner.MARKET_TZ)
+        # Two LIVE play types. The fixture used SPY_0DTE_1M/5M, which were
+        # retired - leaving these assertions passing against a ledger of
+        # strategies that no longer exist, and the group count silently
+        # dropping to zero.
         strategies = (
-            ("SPY_0DTE_1M", "call"),
-            ("SPY_0DTE_1M", "put"),
-            ("SPY_0DTE_5M", "call"),
-            ("SPY_0DTE_5M", "put"),
+            ("SPY_KEY_LEVELS", "call"),
+            ("SPY_KEY_LEVELS", "put"),
+            ("SPY_GAP_CONT_50", "call"),
+            ("SPY_GAP_CONT_50", "put"),
         )
         for index in range(count):
             closed_at = monday + timedelta(days=index % 5, minutes=index)
@@ -199,10 +198,22 @@ class PerformanceScorecardTests(unittest.TestCase):
         # rather than hard-coded: the roster changed once already (three
         # threshold-variant strategies were removed as duplicates) and a
         # literal here goes stale silently every time it changes again.
-        import spy_live_new_strategies as _lns
+        import performance_reconciliation as _reconciliation
+        # Derived from the live roster, not a literal. This count has gone
+        # 16 -> 6 -> 20 -> 14 as strategies were retired and promoted, and a
+        # hardcoded number went stale silently every time. period_months()
+        # always emits one placeholder month per trade-less variant, so the
+        # expected total is simply one per registered variant.
+        # period_months() emits one placeholder "current month" per variant,
+        # plus one more for each month a variant actually traded in. The
+        # fixture trades two variants inside a single month, so the total is
+        # one per variant plus one extra for each of those two.
+        traded = {row["play_type"] for row in rows}
+        registered = {v[0] for v in _reconciliation.STRATEGY_VARIANTS}
+        traded_variants = traded & registered
         self.assertEqual(
             state["performance_reconciliation_monthly_reports"],
-            6 + len(_lns.NEW_STRATEGY_PLAY_TYPES),
+            len(_reconciliation.STRATEGY_VARIANTS) + len(traded_variants),
         )
         # One combined results card per variant that actually has trades
         # (1m, 5m) - SPY_KEY_LEVELS/SPY_EXPANSION_LEVEL/ratchets have none
@@ -217,17 +228,31 @@ class PerformanceScorecardTests(unittest.TestCase):
 
         self.assertEqual(len(discord.channel_cards["daily"]), 5)
         self.assertEqual(len(discord.channel_cards["weekly"]), 1)
-        self.assertEqual(len(discord.channel_cards["monthly-dashboard"]), 2)
-        # 1-Minute/5-Minute/Key-Levels/Expansion-Level now share one
-        # dashboard channel: 1m(2 months) + 5m(2 months) + key-levels(1
-        # empty "current month" placeholder) + expansion(1 empty
-        # placeholder) + 1 leaderboard card = 7.
-        self.assertEqual(len(discord.channel_cards["strategies-dashboard"]), 7)
-        # And one shared results channel: one combined card per strategy
-        # (even a trade-less one still posts an empty scorecard) - owner
-        # ask: the split-by-side cards read as duplicates sitting in the
-        # same channel even though they were technically different groups.
-        self.assertEqual(len(discord.channel_cards["strategies-results"]), 4)
+        # 2 monthly recap cards + the cross-strategy leaderboard, which moved
+        # here when #strategies-dashboard was deleted (period recaps are
+        # per-period totals; the leaderboard ranks strategies against each
+        # other, so it was not duplicated by them).
+        self.assertEqual(len(discord.channel_cards["monthly-dashboard"]), 3)
+        # The shared #strategies-dashboard / #strategies-results pair was
+        # deleted 2026-08-17 - every strategy now owns a channel. So each
+        # traded variant's cards land in ITS channel: a monthly card per
+        # month it traded, a current-month placeholder, and its combined
+        # results card.
+        for logical, channel in (
+            ("key_levels", "s14-key-levels"),
+            ("gap_cont_50", "s01-gap-cont-50"),
+        ):
+            cards = discord.channel_cards.get(channel, [])
+            self.assertTrue(
+                cards,
+                f"#{channel} received no cards; channels with cards: "
+                f"{sorted(k for k, v in discord.channel_cards.items() if v)}",
+            )
+            joined = "\n".join(cards)
+            self.assertIn("Strategy Scorecard", joined)
+        # Nothing may still be routed at the deleted pair.
+        self.assertNotIn("strategies-dashboard", discord.channel_cards)
+        self.assertNotIn("strategies-results", discord.channel_cards)
 
         rendered = "\n".join(discord.cards.values())
         self.assertNotIn("Trade History", rendered)
@@ -238,16 +263,16 @@ class PerformanceScorecardTests(unittest.TestCase):
         # even though they now share a channel - checked by state_key
         # (each variant's own tracked card), not by channel, since the
         # channel itself no longer distinguishes them.
-        strategy_1m_text = discord.cards["report-v5:results:results_1m:combined"]
-        strategy_5m_text = discord.cards["report-v5:results:results_5m:combined"]
-        self.assertIn("Strategy Scorecard · 1-Minute Strategy", strategy_1m_text)
+        strategy_1m_text = discord.cards["report-v5:results:results_key_levels:combined"]
+        strategy_5m_text = discord.cards["report-v5:results:results_gap_cont_50:combined"]
+        self.assertIn("Strategy Scorecard · Key-Levels Strategy", strategy_1m_text)
         # Combined across both call and put trades for this variant (25 of
         # each in the synthetic ledger).
         self.assertIn("**Closed trades:** **50**", strategy_1m_text)
-        self.assertNotIn("SPY_0DTE_5M", strategy_1m_text)
-        self.assertIn("Strategy Scorecard · 5-Minute Strategy", strategy_5m_text)
+        self.assertNotIn("SPY_GAP_CONT_50", strategy_1m_text)
+        self.assertIn("Strategy Scorecard · Gap Continuation 0.5%", strategy_5m_text)
         self.assertIn("**Closed trades:** **50**", strategy_5m_text)
-        self.assertNotIn("SPY_0DTE_1M", strategy_5m_text)
+        self.assertNotIn("SPY_KEY_LEVELS", strategy_5m_text)
 
     def test_new_trading_week_starts_a_new_weekly_scorecard(self) -> None:
         rows = self.make_rows()
@@ -297,7 +322,7 @@ class PerformanceScorecardTests(unittest.TestCase):
             make("T2", "SPY_KEY_LEVELS", "call", 104, 25),
             make("T2b", "SPY_KEY_LEVELS", "put", -60, -19),
             make("T3", "SPY_RATCHET_26_16", "put", 32, 4),
-            make("T4", "SPY_0DTE_5M", "call", 5, 1),
+            make("T4", "SPY_GAP_CONT_50", "call", 5, 1),
         ]
         lines = base.top_strategies_lines(rows)
         self.assertEqual(lines[0], "### Top Strategies")

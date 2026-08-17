@@ -7,6 +7,7 @@ import socket
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from unittest import mock
 from unittest.mock import patch
 
 import discord_command_bot
@@ -21,6 +22,28 @@ import run_with_env
 import sync_discord_structure
 import ensure_tradingview_secret
 import tradier_stream
+
+
+# The 10 ratchet variants were retired 2026-08-17, so SPY_RATCHET_VARIANTS is
+# empty and evaluate_open_row no longer dispatches those play types. The
+# ratchet exit logic itself is still in the codebase and still matters if a
+# variant is ever restored, so the two streaming tests that exercise it
+# inject the historical variant rather than being deleted - which keeps the
+# coverage while being honest that nothing trades it today.
+_RETIRED_RATCHET = {
+    "play_type": "SPY_RATCHET_26_16", "label": "Ratchet 26/16",
+    "step_pct": 26.0, "stop_pct": -16.0,
+}
+
+
+def _with_retired_ratchet():
+    from unittest import mock
+    return mock.patch.multiple(
+        spy_scanner,
+        SPY_RATCHET_VARIANTS=(_RETIRED_RATCHET,),
+        SPY_RATCHET_PLAY_TYPES=(_RETIRED_RATCHET["play_type"],),
+        SPY_RATCHET_VARIANT_BY_PLAY_TYPE={_RETIRED_RATCHET["play_type"]: _RETIRED_RATCHET},
+    )
 
 
 class InformationEngineTests(unittest.TestCase):
@@ -904,7 +927,12 @@ class InformationEngineTests(unittest.TestCase):
                 calls.append((method, path))
                 return {}
 
-            def upsert_singleton_message(self, channel_id, content, token):
+            def upsert_singleton_message(self, channel_id, content, token,
+                                         components=None):
+                # `components` was added to the real DiscordTracker for the
+                # archive-button feature and never mirrored here, so this
+                # double raised TypeError while the production code was
+                # correct - the long-standing baseline failure in this file.
                 calls.append(("singleton", channel_id, token))
                 return "review-1", 0
 
@@ -1082,7 +1110,7 @@ class InformationEngineTests(unittest.TestCase):
         row = {
             "trade_id": "SPY-20260810-002",
             "ticker": "SPY",
-            "play_type": "SPY_0DTE_1M",
+            "play_type": spy_scanner.SPY_MANUAL_PLAY_TYPE,
             "call_or_put": "call",
             "strike": "775",
             "entry_price": "4.28",
@@ -1215,7 +1243,7 @@ class InformationEngineTests(unittest.TestCase):
                 {
                     "trade_id": "SPY-STREAM-001",
                     "ticker": "SPY",
-                    "play_type": "SPY_0DTE_1M",
+                    "play_type": spy_scanner.SPY_MANUAL_PLAY_TYPE,
                     "option_symbol": "SPY260821C00500000",
                     "expiration": spy_scanner.now_ct().date().isoformat(),
                     "entry_price": "0.50",
@@ -1252,6 +1280,7 @@ class InformationEngineTests(unittest.TestCase):
             route_close.assert_called_once()
         spy_scanner.LOG_PATH = original_log
 
+    @_with_retired_ratchet()
     def test_streamed_quote_closes_a_ratchet_floor_stop_immediately(self) -> None:
         # Real bug caught while reviewing this: the real-time stream path
         # and position_tracker_job's REST fallback each had their own
@@ -1270,7 +1299,7 @@ class InformationEngineTests(unittest.TestCase):
                 {
                     "trade_id": "SPY-RATCHET-STREAM-001",
                     "ticker": "SPY",
-                    "play_type": "SPY_RATCHET_26_16",
+                    "play_type": "SPY_RATCHET_26_16",  # roster injected below
                     "option_symbol": "SPY260821C00500000",
                     "expiration": spy_scanner.now_ct().date().isoformat(),
                     "entry_price": "2.00",
@@ -1307,6 +1336,7 @@ class InformationEngineTests(unittest.TestCase):
             route_close.assert_called_once()
         spy_scanner.LOG_PATH = original_log
 
+    @_with_retired_ratchet()
     def test_underlying_tick_refetches_a_stale_option_quote_and_catches_the_exit(self) -> None:
         # Real bug caught live: a ratchet-floor trade peaked at +29%, but
         # its option quote hadn't ticked again by the time price
@@ -1327,7 +1357,7 @@ class InformationEngineTests(unittest.TestCase):
                 {
                     "trade_id": "SPY-RATCHET-STALE-001",
                     "ticker": "SPY",
-                    "play_type": "SPY_RATCHET_26_16",
+                    "play_type": "SPY_RATCHET_26_16",  # roster injected below
                     "option_symbol": "SPY260821C00500002",
                     "expiration": spy_scanner.now_ct().date().isoformat(),
                     "entry_price": "2.00",
@@ -1382,7 +1412,43 @@ class InformationEngineTests(unittest.TestCase):
         calls: list[tuple] = []
 
         class FakeTracker:
+            """Mirrors the real DiscordTracker surface this path touches.
+
+            It was a bare `ready = True` stub, which meant the test failed on
+            AttributeError the moment the code posted a card - a stale double
+            rather than a real defect, and one of the two long-standing
+            baseline failures in this file."""
             ready = True
+
+            def __init__(self):
+                self.posted = []
+
+            def upsert_channel_message(self, logical_name, state, state_key,
+                                       content, search_token=""):
+                self.posted.append((logical_name, state_key, content))
+                return "msg-1", 0
+
+            def upsert_trade_message(self, logical_name, state, kind, trade_id,
+                                     content, **kwargs):
+                self.posted.append((logical_name, f"{kind}:{trade_id}", content))
+                return "msg-1", 0
+
+            def upsert_trade_result(self, logical_name, state, trade_id, content):
+                return self.upsert_trade_message(
+                    logical_name, state, "result", trade_id, content)
+
+            def upsert_singleton_message(self, channel_id, content, search_token,
+                                         components=None):
+                self.posted.append((channel_id, search_token, content))
+                return "msg-1", 0
+
+            def delete_trade_message(self, logical_name, state, kind, trade_id):
+                self.posted.append((logical_name, f"delete:{kind}:{trade_id}", ""))
+                return True
+
+            def post_message(self, logical_name, content, **kwargs):
+                self.posted.append((logical_name, "post", content))
+                return "msg-1"
 
         with tempfile.TemporaryDirectory() as temp:
             spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
@@ -1391,7 +1457,7 @@ class InformationEngineTests(unittest.TestCase):
                 {
                     "trade_id": "SPY-STREAM-002",
                     "ticker": "SPY",
-                    "play_type": "SPY_0DTE_1M",
+                    "play_type": spy_scanner.SPY_MANUAL_PLAY_TYPE,
                     "option_symbol": "SPY260821C00500001",
                     "expiration": spy_scanner.now_ct().date().isoformat(),
                     "entry_price": "0.50",
@@ -1418,6 +1484,11 @@ class InformationEngineTests(unittest.TestCase):
                     "sync_open_trade_cards",
                     side_effect=lambda r, t, s, e: calls.append((r["trade_id"], e["pl_pct"])),
                 ),
+                mock.patch.object(
+                    spy_scanner, "now_ct",
+                    return_value=spy_scanner.now_ct().replace(
+                        hour=11, minute=0, second=0, microsecond=0),
+                ),
             ):
                 engine._stream_quote_event(
                     {
@@ -1428,6 +1499,8 @@ class InformationEngineTests(unittest.TestCase):
                     }
                 )
             updated = spy_scanner.read_log()[0]
+            # +4% on the bid - a HOLD, so the position must stay open and the
+            # held card must be pushed on this tick.
             self.assertEqual(updated["outcome"], "OPEN")
         spy_scanner.LOG_PATH = original_log
         self.assertEqual(len(calls), 1)
@@ -1463,7 +1536,39 @@ class InformationEngineTests(unittest.TestCase):
         calls: list[tuple] = []
 
         class FakeTracker:
+            """Mirrors the real DiscordTracker surface this path touches.
+
+            It was a bare `ready = True` stub, which meant the test failed on
+            AttributeError the moment the code posted a card - a stale double
+            rather than a real defect, and one of the two long-standing
+            baseline failures in this file."""
             ready = True
+
+            def __init__(self):
+                self.posted = []
+
+            def upsert_channel_message(self, logical_name, state, state_key,
+                                       content, search_token=""):
+                self.posted.append((logical_name, state_key, content))
+                return "msg-1", 0
+
+            def upsert_trade_message(self, logical_name, state, kind, trade_id,
+                                     content, **kwargs):
+                self.posted.append((logical_name, f"{kind}:{trade_id}", content))
+                return "msg-1", 0
+
+            def upsert_trade_result(self, logical_name, state, trade_id, content):
+                return self.upsert_trade_message(
+                    logical_name, state, "result", trade_id, content)
+
+            def upsert_singleton_message(self, channel_id, content, search_token,
+                                         components=None):
+                self.posted.append((channel_id, search_token, content))
+                return "msg-1", 0
+
+            def post_message(self, logical_name, content, **kwargs):
+                self.posted.append((logical_name, "post", content))
+                return "msg-1"
 
         with tempfile.TemporaryDirectory() as temp:
             spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
@@ -1473,7 +1578,7 @@ class InformationEngineTests(unittest.TestCase):
                 {
                     "trade_id": "SPY-LIVE-001",
                     "ticker": "SPY",
-                    "play_type": "SPY_0DTE_1M",
+                    "play_type": spy_scanner.SPY_MANUAL_PLAY_TYPE,
                     "option_symbol": "SPY260821C00500000",
                     "expiration": spy_scanner.now_ct().date().isoformat(),
                     "entry_price": "0.50",
@@ -1552,7 +1657,7 @@ class InformationEngineTests(unittest.TestCase):
                     **base_row,
                     "trade_id": "SPY-CLOSE-001",
                     "ticker": "SPY",
-                    "play_type": "SPY_0DTE_1M",
+                    "play_type": spy_scanner.SPY_MANUAL_PLAY_TYPE,
                     "option_symbol": "SPY260821C00500000",
                     "expiration": spy_scanner.now_ct().date().isoformat(),
                     "entry_price": "0.50",
@@ -1562,7 +1667,7 @@ class InformationEngineTests(unittest.TestCase):
                     **base_row,
                     "trade_id": "SPY-OPEN-001",
                     "ticker": "SPY",
-                    "play_type": "SPY_0DTE_1M",
+                    "play_type": spy_scanner.SPY_MANUAL_PLAY_TYPE,
                     "option_symbol": "SPY260821C00600000",
                     "expiration": spy_scanner.now_ct().date().isoformat(),
                     "entry_price": "0.50",
@@ -1616,7 +1721,39 @@ class InformationEngineTests(unittest.TestCase):
         received: dict = {}
 
         class FakeTracker:
+            """Mirrors the real DiscordTracker surface this path touches.
+
+            It was a bare `ready = True` stub, which meant the test failed on
+            AttributeError the moment the code posted a card - a stale double
+            rather than a real defect, and one of the two long-standing
+            baseline failures in this file."""
             ready = True
+
+            def __init__(self):
+                self.posted = []
+
+            def upsert_channel_message(self, logical_name, state, state_key,
+                                       content, search_token=""):
+                self.posted.append((logical_name, state_key, content))
+                return "msg-1", 0
+
+            def upsert_trade_message(self, logical_name, state, kind, trade_id,
+                                     content, **kwargs):
+                self.posted.append((logical_name, f"{kind}:{trade_id}", content))
+                return "msg-1", 0
+
+            def upsert_trade_result(self, logical_name, state, trade_id, content):
+                return self.upsert_trade_message(
+                    logical_name, state, "result", trade_id, content)
+
+            def upsert_singleton_message(self, channel_id, content, search_token,
+                                         components=None):
+                self.posted.append((channel_id, search_token, content))
+                return "msg-1", 0
+
+            def post_message(self, logical_name, content, **kwargs):
+                self.posted.append((logical_name, "post", content))
+                return "msg-1"
 
         with tempfile.TemporaryDirectory() as temp:
             spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
