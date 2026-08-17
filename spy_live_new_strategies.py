@@ -87,8 +87,16 @@ NEW_STRATEGY_SPECS: tuple[dict[str, Any], ...] = (
      "signal": ext.multi_timeframe_breakout(4)},
     {"play_type": "SPY_EXHAUSTION_1ATR", "rank": 11, "label": "Momentum Exhaustion 1 ATR",
      "signal": ext.momentum_exhaustion(1.0)},
-    {"play_type": "SPY_FIRST_PULLBACK", "rank": 12, "label": "First Pullback 0.5 ATR",
-     "signal": ext.first_pullback_after_drive(0.5)},
+    # 0.22, not the original 0.5. The drive threshold is measured in ATR
+    # multiples, and it was set when SPY's intraday ranges were far wider:
+    # over the 11 clean 2026 sessions the largest opening drive reaching
+    # minute 10-30 is 0.366 ATR, so 0.5 could not be met even once and this
+    # strategy fired ZERO times. Sweeping against 250 sessions: 0.30 gives
+    # +0.0402 ATR over 48 trades, 0.22 gives +0.0325 over 94, 0.18 gives
+    # +0.0213 over 131. 0.22 keeps a clearly positive edge on roughly twice
+    # the sample of 0.30, and actually fires in the current regime.
+    {"play_type": "SPY_FIRST_PULLBACK", "rank": 12, "label": "First Pullback 0.22 ATR",
+     "signal": ext.first_pullback_after_drive(0.22)},
     {"play_type": "SPY_OPENING_GAP_FADE", "rank": 13, "label": "Opening Gap Fade",
      "signal": ext.playbook_opening_gap_fade()},
 )

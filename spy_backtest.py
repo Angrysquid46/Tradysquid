@@ -365,40 +365,89 @@ def _backtest_columns() -> tuple[str, ...]:
 BACKTEST_COLUMNS: tuple[str, ...] = _backtest_columns()
 
 
-def load_sessions(
-    conn: sqlite3.Connection, ticker: str = "SPY", *, limit: int | None = None
-) -> Iterator[tuple[str, list[dict[str, Any]]]]:
-    """Yield one session of feature rows at a time.
+def session_range(
+    conn: sqlite3.Connection, ticker: str = "SPY", *, limit: int | None = None,
+    newest: bool = False, since: str | None = None, until: str | None = None,
+) -> tuple[str | None, str | None, list[str]]:
+    """Resolve a session window to (first, last, exact session dates).
 
-    Reads the whole table as ONE sequential scan of the (ticker,
+    Cheap: reads only the session_date index, never the 1.3M-row table.
+    """
+    clauses, params = ["ticker=?"], [ticker]
+    if since:
+        clauses.append("session_date >= ?")
+        params.append(since)
+    if until:
+        clauses.append("session_date <= ?")
+        params.append(until)
+    order = "DESC" if newest else "ASC"
+    sql = (f"SELECT DISTINCT session_date FROM minute_features "
+           f"WHERE {' AND '.join(clauses)} ORDER BY session_date {order}")
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+    dates = [r[0] for r in conn.execute(sql, params)]
+    if not dates:
+        return None, None, []
+    return min(dates), max(dates), sorted(dates)
+
+
+def load_sessions(
+    conn: sqlite3.Connection, ticker: str = "SPY", *, limit: int | None = None,
+    newest: bool = False, since: str | None = None, until: str | None = None,
+) -> Iterator[tuple[str, list[dict[str, Any]]]]:
+    """Yield one session of feature rows at a time, oldest first.
+
+    Reads the requested window as ONE sequential scan of the (ticker,
     bar_time) primary key and splits it into sessions while streaming,
     rather than issuing a query per session. Per-session queries meant
     3,347 index seeks scattered across a 1.1 GB table - about 1.08s each,
-    an hour of pure I/O before any strategy logic ran. A single ordered
-    scan reads the same data in the order it is physically stored.
+    an hour of pure I/O before any strategy logic ran.
 
-    Still streamed, so memory holds one session at a time."""
+    `newest=True` takes the most RECENT `limit` sessions instead of the
+    oldest. Without it, `limit=250` silently sampled 2008-2009: the scan
+    is ordered by bar_time ascending, so a limit truncates at the far end
+    of the history rather than the near one. Every measurement taken that
+    way described a market nearly two decades gone.
+
+    `since`/`until` bound the window by session date. All three options
+    resolve to a bar_time range first, so a 20-session request scans 20
+    sessions of the primary key - not the whole table with an early exit.
+
+    Still streamed, so memory holds one session at a time.
+    """
+    first, last, wanted = session_range(
+        conn, ticker, limit=limit, newest=newest, since=since, until=until
+    )
+    if first is None:
+        return
+    # The range scan spans first..last, which is only the requested set when
+    # those dates are contiguous in the data. They are, by construction - but
+    # the store has a five-year hole in it, and a window that silently
+    # returned extra sessions would corrupt every number measured from it.
+    selected = set(wanted)
+
     columns = ", ".join(BACKTEST_COLUMNS)
+    # Half-open range on the PK. An expression index on substr() is ignored
+    # by the planner, so the date bounds are expressed as bar_time prefixes:
+    # "T" sorts below every hour and "U" above every hour.
     cursor = conn.execute(
-        f"SELECT {columns} FROM minute_features WHERE ticker=? ORDER BY bar_time", (ticker,)
+        f"SELECT {columns} FROM minute_features "
+        f"WHERE ticker=? AND bar_time >= ? AND bar_time < ? ORDER BY bar_time",
+        (ticker, f"{first}T", f"{last}U"),
     )
     current: str | None = None
     batch: list[dict[str, Any]] = []
-    yielded = 0
 
     for row in cursor:
         record = dict(row)
         session = record["session_date"]
         if session != current:
-            if batch:
+            if batch and current in selected:
                 yield current, batch
-                yielded += 1
-                if limit and yielded >= limit:
-                    return
             current, batch = session, []
         batch.append(record)
 
-    if batch and (not limit or yielded < limit):
+    if batch and current in selected:
         yield current, batch
 
 
