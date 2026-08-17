@@ -18,10 +18,29 @@ explicit owner decision, not an incidental default.
 """
 
 from __future__ import annotations
+
+from unittest import mock
+
+import pytest
 from unittest import mock
 
 import dynamic_universe
 import spy_scanner
+
+# SPY_0DTE_1M and SPY_0DTE_5M were retired 2026-08-17 (see
+# spy_scanner.SPY_0DTE_PLAY_TYPES), so the live tuple holds only
+# SPY_MANUAL. spy_0dte_exit_signal and its evaluate_open_row dispatch are
+# still in the codebase and still matter - restoring a variant is a
+# one-line change - so the exit-logic tests below inject the retired play
+# types explicitly rather than silently passing against a tuple that no
+# longer contains them.
+RETIRED_0DTE_PLAY_TYPES = ("SPY_0DTE_1M", "SPY_0DTE_5M", spy_scanner.SPY_MANUAL_PLAY_TYPE)
+
+
+@pytest.fixture(autouse=True)
+def _restore_retired_0dte_play_types():
+    with mock.patch.object(spy_scanner, "SPY_0DTE_PLAY_TYPES", RETIRED_0DTE_PLAY_TYPES):
+        yield
 
 
 def _bar(price: float, high: float | None = None, low: float | None = None, volume: float = 100_000) -> dict:
@@ -298,6 +317,21 @@ def test_spy_0dte_defaults_paused_when_config_is_silent():
     # backtested play type, for EITHER variant.
     assert spy_scanner.DEFAULT_TRADE_TYPES_ENABLED["spy_0dte_1m"] is False
     assert spy_scanner.DEFAULT_TRADE_TYPES_ENABLED["spy_0dte_5m"] is False
+
+
+def test_no_scanner_driven_0dte_variant_is_live_any_more():
+    """The retirement itself. SPY_MANUAL must stay - it is the play type an
+    owner-opened position carries, not a scanner strategy, so dropping it
+    would strand a manual trade with no exit evaluator."""
+    import importlib
+    module = importlib.reload(spy_scanner)
+    try:
+        assert module.SPY_0DTE_PLAY_TYPES == (module.SPY_MANUAL_PLAY_TYPE,)
+        assert module.is_spy_0dte_play_type("SPY_0DTE_1M") is False
+        assert module.is_spy_0dte_play_type("SPY_0DTE_5M") is False
+        assert module.is_spy_0dte_play_type(module.SPY_MANUAL_PLAY_TYPE) is True
+    finally:
+        importlib.reload(module)
 
 
 def test_is_spy_0dte_play_type_recognizes_both_variants_and_nothing_else():
