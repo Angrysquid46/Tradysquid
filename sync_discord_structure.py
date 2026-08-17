@@ -252,6 +252,23 @@ CHANNEL_STARTERS = {
     "ratchet-results": "Updated from every ratchet-floor variant's recorded paper-trade outcomes, each tagged with its own variant.",
 }
 
+
+# One channel per promoted strategy, generated from the registry so the
+# Discord structure cannot drift from the live strategy list. Rank-prefixed
+# (s01-...s15-) because Discord sorts alphabetically within a category, so
+# the category reads best-performer-first with no manual ordering.
+try:
+    import spy_live_new_strategies as _new_strategies
+    for _category, _channel, _description in _new_strategies.channel_specs():
+        CHANNELS.append(ChannelSpec(_category, _channel, _description))
+        CHANNEL_STARTERS[_channel] = (
+            "Updated as this strategy's paper trades open and close - its own "
+            "entry signal and its own exit rules, tracked independently."
+        )
+except Exception as _exc:   # pragma: no cover - import guard only
+    print(f"new-strategy channels unavailable: {_exc}")
+
+
 GUIDES = {
     "welcome": """# Tradysquids
 Tradysquids is a local-first, paper-trading research system for learning how

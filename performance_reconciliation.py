@@ -56,7 +56,17 @@ OTHER_STRATEGY_VARIANTS = SPY_0DTE_VARIANTS + (
 # performance/results ledger - the two SPY_0DTE variants, SPY Key-Levels/
 # ORB/VWAP, SPY Expansion-Level, and the 10 ratchet-floor variants, none of
 # which read each other's rows.
-STRATEGY_VARIANTS = OTHER_STRATEGY_VARIANTS + RATCHET_VARIANTS
+# The 14 strategies promoted from the locked top 15, each with its own
+# channel, its own ledger and its own search markers. Generated from the
+# registry so a new strategy cannot be added to trading without also being
+# added to reporting.
+try:
+    import spy_live_new_strategies as _new_strategies
+    NEW_STRATEGY_VARIANTS = _new_strategies.report_variants()
+except Exception:   # pragma: no cover - import guard only
+    NEW_STRATEGY_VARIANTS = ()
+
+STRATEGY_VARIANTS = OTHER_STRATEGY_VARIANTS + RATCHET_VARIANTS + NEW_STRATEGY_VARIANTS
 
 REPORT_ROUTES = {
     "daily_recap": "daily-recap",
@@ -137,6 +147,16 @@ REPORT_MARKERS = {
         "Expansion-Level Strategy Trade History ·",
     ),
 }
+
+# Markers for the 14 promoted strategies, generated from the registry.
+# These must stay unique per strategy: markers are how an existing card is
+# located to edit in place, so a collision would have one strategy
+# overwrite another's card.
+try:
+    import spy_live_new_strategies as _new_strategy_markers
+    REPORT_MARKERS.update(_new_strategy_markers.report_markers())
+except Exception:   # pragma: no cover - import guard only
+    pass
 for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
     REPORT_MARKERS[_perf_logical] = (
         f"{_label} Monthly Performance Index",

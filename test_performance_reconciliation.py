@@ -32,6 +32,12 @@ class FakeDiscord:
             self.channels[f"performance_ratchet_{suffix}"] = f"monthly-ratchet-{suffix.replace('_', '-')}"
             self.channels[f"results_ratchet_{suffix}"] = f"strategy-ratchet-{suffix.replace('_', '-')}"
         self.channels["ratchet_leaderboard"] = "ratchet-dashboard"
+        # Derived from the real routing table rather than hand-listed, so
+        # adding a strategy cannot leave this double stale. It already did:
+        # the 14 promoted strategies KeyError'd here because the fake knew
+        # nothing about their channels while the real code routed to them.
+        for _key, _channel in spy_scanner.CHANNEL_NAMES.items():
+            self.channels.setdefault(_key, _channel)
         self.cards: dict[str, str] = {}
         self.channel_cards: dict[str, list[str]] = {
             channel_id: [] for channel_id in self.channels.values()
@@ -174,9 +180,10 @@ class PerformanceScorecardTests(unittest.TestCase):
         # variant still contributes exactly one empty "current month"
         # scorecard: 2 + 2 + 1 + 1 = 6, plus 1 each for the 10 trade-less
         # ratchet-floor variants used to add 1 each here, but all 10 were
-        # retired 2026-08-17 (see spy_scanner.SPY_RATCHET_VARIANTS), so the
-        # count is back to the four non-ratchet strategies: 2 + 2 + 1 + 1 = 6.
-        self.assertEqual(state["performance_reconciliation_monthly_reports"], 6)
+        # retired 2026-08-17 (see spy_scanner.SPY_RATCHET_VARIANTS). The four
+        # legacy strategies give 2 + 2 + 1 + 1 = 6, plus 1 each for the 14
+        # strategies promoted from the locked top 15 = 20.
+        self.assertEqual(state["performance_reconciliation_monthly_reports"], 20)
         # One combined results card per variant that actually has trades
         # (1m, 5m) - SPY_KEY_LEVELS/SPY_EXPANSION_LEVEL/ratchets have none
         # in this synthetic ledger, contributing 0 each.

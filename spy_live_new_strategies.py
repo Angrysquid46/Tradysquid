@@ -386,3 +386,89 @@ def new_strategy_exit_signal(
     if minutes_remaining <= 15:
         return "EOD CLOSE", "closing ahead of same-day expiration - never holds overnight"
     return "HOLD", "no exit condition met"
+
+
+# ---------------------------------------------------------------------------
+# Discord wiring
+# ---------------------------------------------------------------------------
+
+def channel_slug(play_type: str) -> str:
+    """Discord channel name for a strategy, rank-prefixed.
+
+    The prefix is not decoration: Discord sorts channels alphabetically
+    within a category, so `s01-`...`s15-` makes the category read in
+    shortlist order - best performer first - without any manual ordering.
+    """
+    spec = NEW_STRATEGY_BY_PLAY_TYPE[play_type]
+    body = play_type.removeprefix("SPY_").lower().replace("_", "-")
+    return f"s{spec['rank']:02d}-{body}"
+
+
+def performance_key(play_type: str) -> str:
+    return f"performance_{play_type.removeprefix('SPY_').lower()}"
+
+
+def results_key(play_type: str) -> str:
+    return f"results_{play_type.removeprefix('SPY_').lower()}"
+
+
+def channel_names() -> dict[str, str]:
+    """CHANNEL_NAMES entries for all 14.
+
+    Both the performance card and the results feed route to the strategy's
+    OWN channel - one channel per strategy, per the locked Phase 7 scope,
+    so a strategy's card and its trade history sit together instead of
+    being scattered across two shared feeds."""
+    mapping: dict[str, str] = {}
+    for play_type in NEW_STRATEGY_PLAY_TYPES:
+        channel = channel_slug(play_type)
+        mapping[performance_key(play_type)] = channel
+        mapping[results_key(play_type)] = channel
+    return mapping
+
+
+def report_variants() -> tuple[tuple[str, str, str, str], ...]:
+    """(play_type, performance_key, results_key, label) for each strategy,
+    in the shape performance_reconciliation.STRATEGY_VARIANTS expects."""
+    return tuple(
+        (spec["play_type"], performance_key(spec["play_type"]),
+         results_key(spec["play_type"]), spec["label"])
+        for spec in NEW_STRATEGY_SPECS
+    )
+
+
+def report_markers() -> dict[str, tuple[str, ...]]:
+    """Search markers keeping each strategy's cards distinct.
+
+    These must be unique per strategy or one strategy's card would be found
+    and overwritten by another's update - the markers are how an existing
+    card is located to edit in place."""
+    markers: dict[str, tuple[str, ...]] = {}
+    for spec in NEW_STRATEGY_SPECS:
+        label = spec["label"]
+        markers[performance_key(spec["play_type"])] = (
+            f"{label} Monthly Performance Index",
+            f"{label} Monthly Performance ·",
+            f"{label} Monthly Trade History ·",
+        )
+        markers[results_key(spec["play_type"])] = (
+            f"{label} Results",
+            f"{label} Trade History ·",
+        )
+    return markers
+
+
+def channel_specs() -> list[tuple[str, str, str]]:
+    """(category, channel, description) for sync_discord_structure."""
+    specs = []
+    for spec in NEW_STRATEGY_SPECS:
+        play_type = spec["play_type"]
+        target, stop, time_stop = exit_rules_for(play_type)
+        timing = f", {time_stop}-minute time stop" if time_stop else ""
+        specs.append((
+            "STRATEGIES", channel_slug(play_type),
+            f"#{spec['rank']} of the tested set - {spec['label']}. "
+            f"Own entry signal, own exit (+{target:.0f}%/{stop:.0f}% of premium{timing}). "
+            f"Live P/L card plus this strategy's own trade history.",
+        ))
+    return specs

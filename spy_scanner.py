@@ -464,6 +464,17 @@ CHANNEL_NAMES = {
     "server_guide": "how-to-use-tradebot",
 }
 
+
+# One channel per promoted strategy, generated from the registry so the
+# routing cannot drift from the strategy list. Both its performance card
+# and its results feed go to that strategy's own channel, per the locked
+# Phase 7 scope.
+try:
+    import spy_live_new_strategies as _new_strategy_channels
+    CHANNEL_NAMES.update(_new_strategy_channels.channel_names())
+except Exception as _exc:   # pragma: no cover - import guard only
+    print(f"new-strategy channel names unavailable: {_exc}", file=sys.stderr)
+
 TAG_KEYS = {
     "WATCHING",
     "QUALIFIED",
