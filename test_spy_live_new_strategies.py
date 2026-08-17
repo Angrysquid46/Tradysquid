@@ -296,3 +296,38 @@ def test_each_strategy_uses_its_own_stop_not_a_shared_one():
         1.0, 0.55, 120, play_type="SPY_EXHAUSTION_1ATR")[0] == "STOP OUT"
     assert lns.new_strategy_exit_signal(
         1.0, 0.55, 120, play_type="SPY_GAP_CONT_50")[0] == "HOLD"
+
+
+def test_todays_partial_daily_bar_is_never_used_as_prior_day():
+    """A real lookahead bug, caught by checking live output.
+
+    The provider's daily history includes a PARTIAL bar for the current
+    session. Using the last bar blindly made today's own high/low/close the
+    "previous day" levels, so a level-based strategy would trade against a
+    level derived from the very move it was trying to predict - corrupting
+    failed-breakout, liquidity-sweep, confluence and gap.
+    """
+    daily = [
+        {"date": "2026-08-14", "open": 770, "high": 775, "low": 768, "close": 772},
+        {"date": "2026-08-16", "open": 772, "high": 778.8, "low": 771, "close": 777},
+        {"date": "2026-08-17", "open": 777, "high": 999.0, "low": 700.0, "close": 780},
+    ]
+    context = lns.build_session_context(daily, session="2026-08-17")
+    assert context.prev_day_high == 778.8, "used today's partial bar"
+    assert context.prev_day_low == 771
+    assert context.prev_day_close == 777
+
+    # Without the session filter the bug reappears - proving the filter is
+    # what prevents it, not incidental ordering.
+    assert lns.build_session_context(daily).prev_day_high == 999.0
+
+
+def test_live_feature_rows_pass_the_session_through():
+    bars = _bars(30, day="2026-08-17")
+    daily = [
+        {"date": "2026-08-16", "open": 772, "high": 778.8, "low": 771, "close": 777},
+        {"date": "2026-08-17", "open": 777, "high": 999.0, "low": 700.0, "close": 780},
+    ]
+    rows = lns.live_feature_rows(bars, daily)
+    assert rows
+    assert rows[-1]["prev_day_high"] == 778.8

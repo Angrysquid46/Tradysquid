@@ -106,11 +106,21 @@ def _bar(row: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def build_session_context(daily_history: Sequence[dict[str, Any]]) -> sif.SessionContext:
+def build_session_context(
+    daily_history: Sequence[dict[str, Any]], *, session: str | None = None
+) -> sif.SessionContext:
     """Prior-session context from daily bars - everything knowable before
-    the open. Strictly prior: the current session is never included."""
+    the open.
+
+    `session` is today's date, and dropping it matters: the provider's daily
+    history INCLUDES a partial bar for the current session, so using the
+    last bar blindly would make today's own high/low/close the "previous
+    day" levels. That is lookahead - a strategy would be trading against a
+    level derived from the very move it is trying to predict."""
     context = sif.SessionContext()
     bars = [b for b in daily_history if b.get("close") is not None]
+    if session:
+        bars = [b for b in bars if str(b.get("date") or b.get("bar_time") or "")[:10] < session]
     if not bars:
         return context
 
@@ -168,7 +178,10 @@ def live_feature_rows(
     bars = [b for b in (_bar(row) for row in intraday_bars) if b]
     if not bars:
         return []
-    return sif.compute_session_features(bars, build_session_context(daily_history))
+    session = bars[-1]["bar_time"][:10]
+    return sif.compute_session_features(
+        bars, build_session_context(daily_history, session=session)
+    )
 
 
 # ---------------------------------------------------------------------------
