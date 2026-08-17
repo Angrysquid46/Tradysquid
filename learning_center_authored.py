@@ -1169,6 +1169,297 @@ AUTHORED_BODIES: dict[str, str] = {
         "directly as a bet on processing margins. "
         "They are pure examples of a spread trade: the directional price risk is netted "
         "out and what remains is the economics of the transformation itself.",
+
+    # ---------------------------------------------------------------
+    # Orders and execution
+    # ---------------------------------------------------------------
+    "Defining Market Orders vs. Limit Orders and Avoiding Entry Slippage":
+        "A market order guarantees execution but not price; a limit order guarantees "
+        "price but not execution. That single trade-off governs every fill you will "
+        "ever get. "
+        "On a liquid SPY option a market order is usually fine. On anything with a wide "
+        "spread it is how you hand away 5-10% of the position instantly. The working "
+        "rule: limit orders by default, market orders only when getting out matters "
+        "more than the price you get out at - which on a 0DTE approaching the close is "
+        "genuinely sometimes true.",
+
+    "Inside Bid-Ask Spreads, Market Orders, and Limit Order Ingestion":
+        "The inside spread is the best bid and best ask currently displayed. Buying at "
+        "the ask and selling at the bid means you pay the spread on every round trip, "
+        "before commission. "
+        "That cost is the reason this system's option model always fills entries at the "
+        "ask and exits at the bid rather than at the mid. Mid-price fills in a backtest "
+        "are how a strategy invents money it never earned.",
+
+    "Conditional Order Routing (Stop-Market, Stop-Limit, Trailing Stops)":
+        "A stop-market becomes a market order when triggered - it will fill, possibly "
+        "far from your stop price in a fast move. A stop-limit becomes a limit order - "
+        "it protects your price and may not fill at all, leaving you in the position "
+        "you were trying to exit. A trailing stop follows price by a set distance. "
+        "Neither is safe in every case, and choosing wrongly is worse in a crash than "
+        "having no stop: stop-limits are the ones that fail to fill exactly when you "
+        "need them.",
+
+    "Immediate-or-Cancel (IOC), Fill-or-Kill (FOK), and Good-Til-Canceled (GTC)":
+        "IOC fills whatever is available immediately and cancels the rest. FOK requires "
+        "the entire order to fill at once or nothing. GTC persists across sessions "
+        "until filled or cancelled. "
+        "GTC is the one that catches people: an order you forgot about can fill days "
+        "later on a spike into a position you no longer want. Most brokers expire them "
+        "after 30-90 days, which is a limit, not a safety feature.",
+
+    "Scaling Into and Out of Positions without Impacting the Active Price":
+        "Splitting a large order into smaller pieces so you do not exhaust the "
+        "available liquidity and move the price against yourself. "
+        "At retail size in SPY this is rarely necessary; in a thin option chain it is "
+        "essential. The tell you needed it is a fill that is materially worse than the "
+        "quote you clicked.",
+
+    "How Illiquid Order Books and Wide Spreads Quietly Steal Pennies from Beginners":
+        "On an illiquid contract the spread can be 20-50% of the price. Buy and "
+        "immediately sell and you have lost that much with no price movement at all. "
+        "This is the mechanical reason cheap far-out-of-the-money options are worse "
+        "than they look, and why this system enforces a liquidity check plus a "
+        "0.40-0.60 delta band rather than simply capping the dollar cost.",
+
+    "The Bid-Ask Matrix: Knowing Who Is Buying the Floor and Who Is Selling the Ceiling":
+        "The bid is what buyers will pay; the ask is what sellers will accept. Sizes at "
+        "each show how much conviction sits at those prices. "
+        "Displayed size is only part of the truth - hidden and iceberg orders mean the "
+        "book shows less than exists. Reading the book as a complete picture of supply "
+        "and demand is a reliable way to be faded.",
+
+    "Level 1 Data (Top of Book) vs. Level 2 Data (Order Book Depth)":
+        "Level 1 is the best bid, best ask and last trade. Level 2 shows resting orders "
+        "at multiple price levels. "
+        "Level 2 is genuinely useful in slow markets and genuinely misleading in fast "
+        "ones, where displayed orders are pulled faster than a human can react. The "
+        "depth you are watching may not exist by the time your order arrives.",
+
+    "Time and Sales (The Tape): Decoding Real-Time Transaction Logs":
+        "Every actual execution, with price, size and time. Unlike the order book it "
+        "shows what happened rather than what was advertised. "
+        "The useful read is trades printing at the ask (buyers lifting offers) versus "
+        "at the bid (sellers hitting bids), and unusual size. This system's relative "
+        "volume feature is a systematised version of the same question.",
+
+    "Order Book Imbalances: Bid-Ask Net Order Flow Analytics":
+        "Measuring whether resting size and executed volume lean to the buy or sell "
+        "side. Sustained imbalance often precedes short-term direction. "
+        "It decays fast, is easily spoofed by orders never intended to fill, and works "
+        "best as confirmation of a level rather than as a standalone trigger.",
+
+    "Identifying Block Trades, Iceberg Orders, and Hidden Algo Footprints":
+        "Blocks are large negotiated trades, often printed away from the lit market. "
+        "Icebergs display a small quantity while holding much more behind it. "
+        "The recognisable footprint is repeated identical-size prints at one price - a "
+        "large order being worked. It tells you a level is defended; it does not tell "
+        "you the defender is right.",
+
+    "Retail Brokers, Clearing Firms, and Payment for Order Flow (PFOF)":
+        "Most zero-commission brokers sell retail orders to wholesalers, who execute "
+        "them internally and pay the broker for the flow. Retail orders are attractive "
+        "because they are uninformed relative to institutional flow. "
+        "Execution is often at or slightly better than the displayed quote, so 'free' "
+        "is not simply a lie - but the cost is invisible and unmeasurable to you, which "
+        "is a different thing from being zero.",
+
+    "Dark Pools, Internalizers, and Lit Public Exchange Order Routing":
+        "Lit exchanges display orders publicly. Dark pools match large orders without "
+        "pre-trade transparency, so institutions can trade size without showing their "
+        "hand. Internalizers fill retail orders in-house. "
+        "The consequence for a chart reader is that a meaningful share of volume never "
+        "appears on the tape until after it executes - so 'no volume at this level' is "
+        "not proof that nothing happened there.",
+
+    "Lit Exchanges (NYSE/NASDAQ) vs. Dark Pools (Alternative Trading Systems)":
+        "The same distinction from the venue side. ATSs are regulated but not required "
+        "to display quotes, and typically execute at the midpoint of the public spread. "
+        "Roughly 40%+ of US equity volume trades off-exchange. Any analysis assuming "
+        "the lit book represents the whole market is working from a partial picture.",
+
+    "Reg NMS Rule 611 (Order Protection Rule): The Mandated Public Market Intersection":
+        "Trade-through protection: an order may not execute at a worse price than the "
+        "best displayed quote on another exchange. It is what makes the fragmented US "
+        "market behave as one. "
+        "It also created the need for smart order routing and much of modern HFT - the "
+        "rule requires checking every venue, and the fastest checker wins.",
+
+    "Direct Market Access (DMA) vs. Retail Payment for Order Flow (PFOF)":
+        "DMA sends your order straight to an exchange of your choosing, with visible "
+        "fees and rebates. PFOF routes it to a wholesaler. "
+        "DMA gives control and measurability; PFOF gives zero commission and price "
+        "improvement you cannot audit. For a strategy sensitive to a penny per share, "
+        "control is worth paying for.",
+
+    "Maker-Taker Fee Models: Rebate Optimization across Execution Venues":
+        "Venues pay a rebate for adding liquidity (resting limit orders) and charge a "
+        "fee for taking it (marketable orders). Fractions of a cent per share. "
+        "Irrelevant at retail size, decisive for high-frequency strategies - and it "
+        "shapes routing decisions that ultimately determine where your order goes.",
+
+    "Smart Order Routers (SOR): How Algos Shred and Distribute Order Blocks":
+        "Software that splits an order across venues to get the best aggregate fill, "
+        "accounting for displayed size, fees and expected impact. "
+        "It is why a single large order appears on the tape as many small prints across "
+        "several exchanges within milliseconds.",
+
+    "Volume-Weighted Average Price Execution Loops (Algorithmic Ingestion)":
+        "A VWAP algorithm works an order through the day in proportion to expected "
+        "volume, aiming to finish near the day's volume-weighted average price. "
+        "This is why VWAP is a meaningful level rather than an arbitrary line: large "
+        "institutional orders are explicitly benchmarked against it, so it attracts "
+        "real flow. That is the basis for this system's VWAP-anchored strategies.",
+
+    "Time-Weighted Average Price Block Distribution Engines":
+        "TWAP spreads an order evenly across time rather than across volume - simpler, "
+        "and preferable when volume forecasts are unreliable. "
+        "It leaves a recognisable footprint: regular same-size prints at fixed "
+        "intervals regardless of activity.",
+
+    "Percentage-of-Volume (POV) Slicers: Hiding Institutional Transactions Natively":
+        "Participates at a fixed share of market volume - trade more when the market is "
+        "active, less when it is quiet - so the order hides inside natural flow. "
+        "The trade-off is that completion time is unknown: in a quiet session the order "
+        "may not finish at all.",
+
+    "Minimum-Quantity, Discretionary, and Pegged Order Microstructure Codes":
+        "Conditional instructions attached to orders. Minimum-quantity refuses partial "
+        "fills below a size; discretionary orders show one price while willing to "
+        "execute at another; pegged orders float with the bid, ask or midpoint. "
+        "Mostly institutional plumbing, but pegged orders in particular explain "
+        "liquidity that appears to move with price rather than sitting still.",
+
+    "Alternative Trading Systems (ATS): Tracking Institutional Tier Block Crosses":
+        "Registered venues matching orders outside the exchanges. FINRA publishes "
+        "weekly ATS volume, so off-exchange activity can be tracked, just with a lag. "
+        "A sustained rise in off-exchange share is a signal about institutional "
+        "positioning that the lit tape does not show.",
+
+    "Wholesaler Internalization: Payment for Order Flow (PFOF) Order Ingestion Routing":
+        "A handful of wholesalers execute a large share of US retail orders against "
+        "their own inventory, capturing the spread and offering slight price "
+        "improvement. "
+        "It concentrates enormous flow information in very few firms - the structural "
+        "criticism of PFOF, distinct from whether any individual fill was fair.",
+
+    "Continuous Crossing vs. Midpoint Match Execution Venue Frictions":
+        "Continuous markets match orders as they arrive; crossing networks match "
+        "periodically at a reference price, usually the midpoint. "
+        "Midpoint execution splits the spread between both sides, which is why "
+        "institutions favour it for size - and why some liquidity is only available if "
+        "you are willing to wait for a cross.",
+
+    # ---------------------------------------------------------------
+    # Gaps and oscillators
+    # ---------------------------------------------------------------
+    "Common Gaps, Breakaway Gaps, Runaway Gaps, and Exhaustion Gaps":
+        "Common gaps occur in quiet ranges and usually fill. Breakaway gaps start a new "
+        "trend out of a base and often do not. Runaway gaps appear mid-trend and "
+        "confirm it. Exhaustion gaps come at the end of an extended move and reverse "
+        "sharply. "
+        "The classification is only reliable after the fact, which limits its use as a "
+        "signal. What survives testing is the measurable version: gap SIZE and "
+        "direction, which is what this system's gap-continuation strategy uses.",
+
+    "The Mechanics of Opening Gaps and Overnight Order Re-Matching":
+        "A gap is the difference between today's open and yesterday's close, created by "
+        "overnight news and orders accumulating against a closed book. The opening "
+        "auction resolves them all at one clearing price. "
+        "This system measures gap in dollars, percent and ATR multiples, because the "
+        "same half-point gap means something different in a calm market than in a "
+        "volatile one. Gap continuation at 0.5% was the strongest edge found across "
+        "3,347 sessions - t=+3.33, positive in all four eras.",
+
+    "Relative Strength Index (RSI): Evaluating Overbought/Oversold Overextensions":
+        "RSI compares average gains to average losses over 14 periods, scaled 0-100. "
+        "Above 70 is conventionally overbought, below 30 oversold. "
+        "The standard mistake is treating those as reversal signals. In a strong trend "
+        "RSI stays above 70 for extended periods, and every short taken on that basis "
+        "loses. It is far more reliable as a divergence tool - price making a new high "
+        "while RSI does not - than as a level.",
+
+    "Moving Average Convergence Divergence (MACD): Signal Line Cross-Overs":
+        "MACD is the 12-period EMA minus the 26-period EMA; the signal line is a "
+        "9-period EMA of that; the histogram is the difference. Crossovers indicate "
+        "momentum shifts. "
+        "It lags by construction - it is built from moving averages of moving averages "
+        "- so it confirms rather than predicts. This system's expansion strategy used "
+        "MACD histogram colour across three timeframes, and measured at -0.0044 "
+        "ATR/trade, which is a fair illustration of the limits of crossover logic.",
+
+    "Stochastic Oscillator: Tracking Fast and Slow Closing Placements":
+        "Measures where the close sits within the recent high-low range: 80+ means "
+        "closing near the top of the range, 20- near the bottom. %K is the raw line, "
+        "%D its smoothed average. "
+        "More sensitive than RSI, which means more signals and more false ones. Its "
+        "genuine use is spotting where closes cluster within a range, which is the same "
+        "question this system's `range_position` feature answers per bar.",
+
+    "Commodity Channel Index (CCI) and Williams %R Oscillator Ingestion":
+        "CCI measures deviation from a moving average scaled by mean deviation, "
+        "unbounded, with ±100 as conventional thresholds. Williams %R is stochastics "
+        "inverted onto a -100 to 0 scale. "
+        "Both measure essentially the same thing as RSI and stochastics with different "
+        "arithmetic. Stacking several is not confirmation - they are correlated by "
+        "construction and will agree with each other while all being wrong together.",
+
+    "Bollinger Bands: Standard Deviation Volatility Envelope Widths":
+        "A 20-period moving average with bands at ±2 standard deviations. Bands widen "
+        "as volatility rises and contract as it falls. "
+        "Touching a band is not a signal - in a trend price rides the upper band for a "
+        "long time. The informative part is WIDTH: a squeeze (unusually narrow bands) "
+        "precedes expansion, which is the basis of compression-breakout strategies.",
+
+    "Keltner Channels: Average True Range (ATR) Envelope Boundaries":
+        "Similar to Bollinger Bands but built from ATR rather than standard deviation, "
+        "which makes them smoother and less prone to whipsaw. "
+        "Because ATR includes gaps, Keltner channels handle overnight moves more "
+        "sensibly than standard deviation of closes.",
+
+    "Keltner Channels vs. Bollinger Bands: Measuring Volatility Squeezes":
+        "The classic squeeze indicator: when Bollinger Bands contract INSIDE the "
+        "Keltner channels, volatility is unusually low relative to its own recent "
+        "range, and expansion often follows. "
+        "It signals that a move is likely, not which direction - which is why it pairs "
+        "with a directional trigger rather than standing alone.",
+
+    "Donchian Channels: High-Low Range Breakout Tracking Matrices":
+        "The highest high and lowest low over N periods. A close outside them is a "
+        "breakout - the original Turtle Traders rule. "
+        "Its virtue is that it has no parameters beyond the lookback and no smoothing "
+        "to lag behind price. This system's opening-range logic is a session-scoped "
+        "Donchian channel.",
+
+    "Moving Average Envelopes and Percentage Band Filters":
+        "Bands drawn a fixed percentage above and below a moving average. Simpler than "
+        "Bollinger or Keltner, and unresponsive to volatility - the band is the same "
+        "width in a calm market as in a crisis. "
+        "That fixed width is the flaw: the same percentage is far too wide on one day "
+        "and far too tight on another.",
+
+    "Ichimoku Kinko Hyo: Tenkan-Sen, Kijun-Sen, and Cloud Equilibrium":
+        "A complete system in one overlay: two averages of range midpoints (Tenkan 9, "
+        "Kijun 26), a projected cloud showing future support and resistance, and a "
+        "lagging line. Price above the cloud is bullish, below bearish. "
+        "The cloud's genuine contribution is being projected forward, which gives "
+        "levels before price reaches them. The cost is visual complexity that "
+        "encourages seeing whatever you already believe.",
+
+    "Parabolic SAR: Systematic Stop-and-Reverse Directional Wave Gauges":
+        "Dots that trail price and accelerate toward it, flipping sides when touched. "
+        "Designed as an always-in-the-market stop-and-reverse system. "
+        "Excellent in a sustained trend and disastrous in a range, where it flips "
+        "repeatedly and loses on every flip. It is a trailing-stop mechanism more than "
+        "an entry signal.",
+
+    "Linear Regression Channels: Standard Deviation Trend Variance Channels":
+        "A best-fit line through price over a window, with parallel bands at standard "
+        "deviation intervals. It defines a trend's slope and how far price typically "
+        "strays from it. "
+        "More statistically grounded than a hand-drawn trendline, and it makes the "
+        "trend's slope explicit - which is the difference between 'uptrend' as an "
+        "opinion and as a measurement.",
 }
 
 
