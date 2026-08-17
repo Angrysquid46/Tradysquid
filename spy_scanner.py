@@ -6986,6 +6986,19 @@ DEFAULT_TRADE_TYPES_ENABLED = {
 for _default_variant in SPY_RATCHET_VARIANTS:
     DEFAULT_TRADE_TYPES_ENABLED[_default_variant["play_type"].lower()] = False
 
+# The 14 strategies promoted from the locked top 15. Registered here by name
+# for the same reason as the ratchets above, and it is a real trap rather
+# than a formality: trade_types_enabled() only applies a config override to
+# a key that ALREADY exists in this dict. Setting these in
+# config/scanner.json alone left all 14 silently disabled - the scan
+# reported them off while the config said on.
+try:
+    import spy_live_new_strategies as _new_strategies
+    for _flag, _default in _new_strategies.default_flags().items():
+        DEFAULT_TRADE_TYPES_ENABLED[_flag] = _default
+except Exception as _exc:   # pragma: no cover - import guard only
+    print(f"new-strategy flags unavailable: {_exc}", file=sys.stderr)
+
 
 def trade_types_enabled() -> dict[str, bool]:
     configured_value = configured("trade_types_enabled", {})

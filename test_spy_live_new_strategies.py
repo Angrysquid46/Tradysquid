@@ -193,3 +193,55 @@ def test_signal_payload_carries_what_a_candidate_needs():
 
 def test_no_signals_from_an_empty_session():
     assert lns.signals_on_latest_bar([], None) == []
+
+
+# ---------------------------------------------------------------------------
+# Config wiring - a real trap, not a formality
+# ---------------------------------------------------------------------------
+
+def test_every_new_strategy_flag_is_registered_in_the_scanner_defaults():
+    """`trade_types_enabled()` only applies a config override to a key that
+    ALREADY exists in DEFAULT_TRADE_TYPES_ENABLED.
+
+    This actually bit: all 14 flags were set to true in
+    config/scanner.json and every one was silently ignored - the scan
+    reported them disabled while the config said enabled. Nothing raised.
+    """
+    import spy_scanner as ss
+    for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+        flag = lns.config_flag(play_type)
+        assert flag in ss.DEFAULT_TRADE_TYPES_ENABLED, (
+            f"{flag} missing from DEFAULT_TRADE_TYPES_ENABLED - its config "
+            f"flag would be silently ignored"
+        )
+
+
+def test_new_strategy_flags_default_to_paused_in_the_scanner_too():
+    """Code-level fallback must be paused, so a missing config key can never
+    silently start trading."""
+    import importlib
+    import spy_scanner as ss
+    module = importlib.reload(ss)
+    try:
+        for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+            assert module.DEFAULT_TRADE_TYPES_ENABLED[lns.config_flag(play_type)] is False
+    finally:
+        importlib.reload(module)
+
+
+def test_a_config_flag_actually_turns_a_new_strategy_on():
+    """The inverse of the trap: proves the override path works end to end."""
+    import spy_scanner as ss
+    enabled = ss.trade_types_enabled()
+    for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
+        assert lns.config_flag(play_type) in enabled
+
+
+def test_the_scan_runner_and_exit_dispatch_are_wired():
+    import spy_scanner as ss
+    assert hasattr(ss, "_run_new_strategy_variants")
+    assert hasattr(ss, "evaluate_open_new_strategy_row")
+    row = {"play_type": "SPY_GAP_CONT_50", "option_symbol": "MISSING", "entry_price": "1.00"}
+    result = ss.evaluate_open_row(row, {}, ss.now_ct())
+    assert result["signal"] == "HOLD"
+    assert "unavailable" in result["note"].lower()
