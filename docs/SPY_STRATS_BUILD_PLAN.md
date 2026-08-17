@@ -110,20 +110,50 @@ Nulls are warm-up only — first session (prev-day), first 14 (ATR), first week
 > close), so gap strategies remain fully testable — but premarket-*range*
 > strategies must be reported with this caveat attached, or dropped.
 
-### ⬜ Phase 3 — Backtest engine + first strategy tranche
-- Event-driven 1-minute backtester, underlying-only (per the spec's instruction
-  to optimise the underlying entry *before* contract selection).
-- First tranche: the ORB family (1, 2), VWAP family (3, 4, 10).
-- Metrics: expectancy, profit factor, win rate, MFE/MAE, drawdown, streaks,
-  holding time, and breakdowns by hour/day/regime/volatility/gap.
-- Walk-forward splits by era, never a single train-on-everything fit.
-- **Exit criteria:** honest per-strategy stats, including strategies that fail.
+### ✅ Phase 3 — Backtest engine + first strategy tranche
+`spy_backtest.py` + `spy_backtest_strategies.py` → full results in
+[`PHASE3_BACKTEST_RESULTS.md`](PHASE3_BACKTEST_RESULTS.md).
 
-### ⬜ Phase 4 — Remaining strategies + ranking
+- Event-driven 1-minute backtester, underlying-only, over all 3,347 sessions.
+- 20 variants (ORB 1/2 × 5/15/30-min windows; VWAP 3 × zones A/B/C; 4 × chop
+  limits 2-5; 10 × 6 extension thresholds) × 12 exit policies = **228
+  combinations**, plus a random-entry control.
+- Metrics: expectancy, PF, win rate, MFE/MAE, drawdown, streaks, holding time,
+  **t-statistic vs zero**, and breakdowns by era/regime/time-of-day/direction/
+  exit reason.
+
+**Realism rules, each of which inflates results when skipped:** signals evaluate
+on a closed bar and fill at the *next* bar's open; a bar containing both stop and
+target resolves as the **stop** (1-min OHLC cannot order them); one position at a
+time; forced flat at 15:59.
+
+> **Headline result: 0 of 15 variants clear 95% significance, and 0 are
+> profitable in all four eras.** Best expectancy is +0.028 ATR/trade at t=+1.37;
+> the highest t anywhere is +1.78. The random control returns -0.0002 ATR/trade,
+> so the leaders beat noise by less than noise moves between eras. And each t is
+> already the best of 12 exit policies, so it is an upper bound.
+>
+> This is a measurement, not a failure. The ORB and VWAP families **as literally
+> specified, with light filtering** do not predict the SPY underlying over
+> 2008-2021. The spec anticipated this — it repeatedly says the filters matter as
+> much as the pattern. Establishing this baseline first is what makes it possible
+> to tell later whether a filter adds real edge or just looks like it does.
+>
+> Also consistent: **every leading variant loses money in 2020-2021**, the most
+> recent era. COVID distortion or edge decay cannot be separated here, and the
+> 2021-2026 intraday gap means it cannot be settled at all until that is filled.
+
+### ⬜ Phase 4 — Remaining strategies + measurement
 - Strategies 5-9, 11-22, the 3 quantified playbooks, and the time-of-day plays.
-- Tier A/B/C/FAILED ranking with the spec's stated bar. Failed strategies stay
-  failed — the spec explicitly forbids rescuing them by piling on filters.
-- **Exit criteria:** full library scored; a written list of what did not work.
+- Scored on the same basis as Phase 3, **including where they sit relative to
+  the random baseline**.
+- **Owner decision (2026-08-16): nothing gets eliminated.** The goal is to see
+  how effective each strategy is, not to prune the library. Tier labels are
+  descriptive only — a weak result is a measurement to keep, not a deletion.
+  The spec's ban on rescuing failed strategies by piling on filters still
+  applies: a strategy is reported as it was specified.
+- **Exit criteria:** full library measured, with the weak results written down
+  as plainly as the strong ones.
 
 ### ⬜ Phase 5 — Option layer (explicitly modelled)
 - Ingest EOD option chains into a compact table (0DTE + near-ATM band rather
