@@ -115,6 +115,7 @@ CHANNELS = [
     ChannelSpec("MARKET INTELLIGENCE", "market-regime", "Broad-market context, trend, and volatility conditions."),
     ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "SPY off-hours screen status and on-demand snapshot."),
     ChannelSpec("MARKET INTELLIGENCE", "spy-technicals", "SPY technical history from the standalone market-memory store: SMA/EMA/VWAP, MACD, RSI, ADX, Bollinger and ATR across intraday, short, medium and long horizons, plus what each tracked pattern is actually worth against the base rate."),
+    ChannelSpec("PERFORMANCE", "backtest-results", "One self-updating card per strategy: its own exit rules, its backtest record at those settings, and its live forward record tracked against it. Research surface only - daily, weekly and monthly performance cover the 15 live strategies and are unaffected by this channel."),
     ChannelSpec("PERFORMANCE", "ticker-results", "Results by underlying, combined across every live SPY strategy."),
     ChannelSpec("PERFORMANCE", "learning-results", "Evidence summaries that never change filters automatically."),
     ChannelSpec("LEARNING CENTER", "learning-index", "Complete organized curriculum and recommended learning path."),

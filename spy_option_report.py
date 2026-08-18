@@ -45,7 +45,17 @@ SHORTLIST = [
 ]
 
 
-def run(conn, option_conn, *, keys=None, exit_shape=None, limit=None) -> dict[str, Any]:
+def run(conn, option_conn, *, keys=None, exit_shape=None, exit_shapes=None,
+        limit=None) -> dict[str, Any]:
+    """`exit_shapes` maps a strategy key to its OWN exit.
+
+    Without it, measuring 14 strategies under 14 different exits meant 14
+    separate calls, each re-walking all 988 tradeable sessions - about 45
+    minutes for what one pass does. It also forced the alternative of
+    testing every strategy under a single shared exit, which is what
+    produced the false result that all 13 have an identical payoff ratio:
+    that was the imposed exit showing through, not a property of the
+    strategies."""
     variants = rep.all_variants(conn=conn)
     wanted = {}
     for key in (keys or SHORTLIST):
@@ -72,13 +82,15 @@ def run(conn, option_conn, *, keys=None, exit_shape=None, limit=None) -> dict[st
         for key, signal_fn in wanted.items():
             signals = signal_fn(rows)
             if signals:
+                key_rules = (exit_shapes or {}).get(key) or rules
                 trades[key].extend(
-                    ob.simulate_option_trades(rows, signals, vol, rules, strategy=key)
+                    ob.simulate_option_trades(rows, signals, vol, key_rules,
+                                              strategy=key)
                 )
 
     return {
         "sessions_scored": sessions_scored,
-        "exit_shape": rules.name,
+        "exit_shape": ("per-strategy" if exit_shapes else rules.name),
         "results": {k: ob.summarize_options(v) for k, v in trades.items()},
     }
 

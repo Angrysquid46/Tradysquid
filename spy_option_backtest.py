@@ -57,6 +57,13 @@ class OptionExit:
     floor_pct: float | None = -15.0
     step_pct: float | None = None            # ratchet: locks a floor each step
     ratchet_stop_pct: float | None = None
+    # SPY_KEY_LEVELS triggers on the UNDERLYING, not on option premium: a
+    # stop at the key level (0.15% buffer) and a target at 2R. P/L is still
+    # marked off the option, which is what realised money is - only the
+    # trigger differs. Without these it could not be measured under its own
+    # rules at all, and ran on a borrowed +50/-50 shape.
+    underlying_stop_pct: float | None = None   # e.g. 0.15 = 0.15% adverse
+    underlying_r_multiple: float | None = None # target = entry +/- R x this
     name: str = "spy_0dte"
 
 
@@ -78,6 +85,25 @@ class OptionTrade:
     contracts: int
     vol: float
     modelled: bool = True
+
+
+def _underlying_exit(entry_spot: float, spot: float, direction: str,
+                     rules: OptionExit) -> tuple[str, bool]:
+    """Stop/target measured on the underlying, as SPY_KEY_LEVELS does."""
+    if not rules.underlying_stop_pct or not entry_spot or not spot:
+        return "", False
+    risk = entry_spot * rules.underlying_stop_pct / 100.0
+    if direction == "LONG":
+        if spot <= entry_spot - risk:
+            return "underlying_stop", True
+        if rules.underlying_r_multiple and spot >= entry_spot + risk * rules.underlying_r_multiple:
+            return "underlying_target", True
+    else:
+        if spot >= entry_spot + risk:
+            return "underlying_stop", True
+        if rules.underlying_r_multiple and spot <= entry_spot - risk * rules.underlying_r_multiple:
+            return "underlying_target", True
+    return "", False
 
 
 def _exit_signal(pnl_pct: float, peak_pct: float, minutes_since_open: int,
@@ -150,7 +176,13 @@ def simulate_option_trades(
         if entry_price <= 0.05 or entry_price > MAX_CONTRACT_ASK:
             index += 1
             continue
-        contracts = max(int(MAX_RISK_PER_TRADE // (entry_price * 100)), 0)
+        # ONE contract, matching live. spy_live_new_strategies buys a single
+        # contract and reports max_risk as ask*100 ("One paper contract"),
+        # so real exposure is ~$115 on a typical $1.15 contract - not the
+        # ~$460 that sizing up to the $500 cap produces. Sizing to the cap
+        # inflated every dollar figure by the contract multiple, 4x on a
+        # typical contract and up to 16x on a cheap one.
+        contracts = 1 if entry_price * 100 <= MAX_RISK_PER_TRADE else 0
         if contracts < 1:
             index += 1
             continue
@@ -171,6 +203,9 @@ def simulate_option_trades(
             peak_pct = max(peak_pct, pnl_pct)
 
             reason_now, should_exit = _exit_signal(pnl_pct, peak_pct, minute, rules)
+            if not should_exit and rules.underlying_stop_pct:
+                reason_now, should_exit = _underlying_exit(
+                    entry_row["close"], close, direction, rules)
             if should_exit:
                 exit_index, exit_price, reason = offset, mark, reason_now
                 break
