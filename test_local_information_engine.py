@@ -1506,6 +1506,74 @@ class InformationEngineTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][0], "SPY-STREAM-002")
 
+    def test_one_cards_discord_failure_does_not_block_the_others(self) -> None:
+        # Real incident: two strategies (SPY_GAP_CONT_50, SPY_CONFLUENCE_4)
+        # both held the same option contract. Discord's rate limit
+        # exhausted its retries on the first card's edit and raised. That
+        # exception propagated out of the per-card loop, so the SECOND
+        # position's card silently never got attempted on that tick either
+        # - and (before the tradier_stream.py fix) tore the whole websocket
+        # down for a reconnect besides. A Discord failure on one trade must
+        # never block another trade's card in the same batch.
+        original_log = spy_scanner.LOG_PATH
+        attempted: list[str] = []
+
+        class FlakyTracker:
+            ready = True
+
+        with tempfile.TemporaryDirectory() as temp:
+            spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
+            base = {field: "" for field in spy_scanner.LOG_HEADER}
+            rows = []
+            for trade_id, play in (
+                ("SPY-A", "SPY_GAP_CONT_50"), ("SPY-B", "SPY_CONFLUENCE_4"),
+            ):
+                row = dict(base)
+                row.update({
+                    "trade_id": trade_id, "ticker": "SPY", "play_type": play,
+                    "option_symbol": "SPY260821C00500001",
+                    "expiration": spy_scanner.now_ct().date().isoformat(),
+                    "entry_price": "0.50", "outcome": "OPEN",
+                })
+                rows.append(row)
+            spy_scanner.write_log(rows)
+            engine.STREAM_QUOTES.clear()
+            engine.STREAM_LAST_WRITTEN.clear()
+            engine.STREAM_QUOTE_RECEIVED_AT.clear()
+            engine._SPY_SPOT_CACHE = (None, 0.0)
+
+            def _flaky_sync(row, tracker, state, evaluation):
+                attempted.append(row["trade_id"])
+                if row["trade_id"] == "SPY-A":
+                    raise Exception(
+                        "Discord rate limit retries exhausted for /channels/x"
+                    )
+
+            with (
+                patch.object(engine.spy_scanner, "market_is_open_now",
+                            return_value=(True, spy_scanner.now_ct())),
+                patch.object(spy_scanner, "get_quote", return_value={"last": "774.50"}),
+                patch.object(engine, "discord_tracker", return_value=FlakyTracker()),
+                patch.object(spy_scanner, "read_report_state", return_value={}),
+                patch.object(spy_scanner, "write_report_state") as write_state,
+                patch.object(spy_scanner, "sync_open_trade_cards", side_effect=_flaky_sync),
+                mock.patch.object(
+                    spy_scanner, "now_ct",
+                    return_value=spy_scanner.now_ct().replace(
+                        hour=11, minute=0, second=0, microsecond=0),
+                ),
+            ):
+                engine._stream_quote_event(
+                    {"type": "quote", "symbol": "SPY260821C00500001",
+                     "bid": 0.52, "ask": 0.54}
+                )
+            # Both cards were attempted - SPY-B was not skipped because
+            # SPY-A raised first.
+            self.assertEqual(sorted(attempted), ["SPY-A", "SPY-B"])
+            # The batch's state is still persisted despite the failure.
+            write_state.assert_called_once()
+        spy_scanner.LOG_PATH = original_log
+
     def test_trade_log_writes_atomically_and_rejects_zero_byte_history(self) -> None:
         original_log = spy_scanner.LOG_PATH
         original_state = spy_scanner.STATE_DIR
