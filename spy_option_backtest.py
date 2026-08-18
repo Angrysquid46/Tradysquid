@@ -205,7 +205,7 @@ def simulate_option_trades(
             reason_now, should_exit = _exit_signal(pnl_pct, peak_pct, minute, rules)
             if not should_exit and rules.underlying_stop_pct:
                 reason_now, should_exit = _underlying_exit(
-                    entry_row["close"], row.get("close"), direction, rules)
+                    entry_row["close"], close, direction, rules)
             if should_exit:
                 exit_index, exit_price, reason = offset, mark, reason_now
                 break

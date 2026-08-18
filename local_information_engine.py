@@ -1142,6 +1142,49 @@ def system_digest_job(connection: sqlite3.Connection) -> str:
 
 
 
+
+def backtest_cards_job(connection: sqlite3.Connection) -> str:
+    """One self-updating card per strategy in #backtest-results.
+
+    Separate from performance reporting on purpose: daily/weekly/monthly
+    cover the 15 live strategies and are untouched by this. These cards
+    exist so a backtest claim is checked against live results
+    continuously, instead of being quoted once and never revisited.
+
+    Cards upsert, so a strategy has exactly one card that rewrites itself
+    rather than a growing pile of snapshots.
+    """
+    import backtest_cards as bc
+
+    results = bc.load_results()
+    if not results:
+        return "no backtest results stored yet"
+    if not spy_scanner.DISCORD_BOT_TOKEN:
+        return "waiting for local DISCORD_BOT_TOKEN"
+
+    tracker = spy_scanner.initialize_discord()
+    state = spy_scanner.read_report_state()
+    with POSITION_FILE_LOCK:
+        rows = spy_scanner.read_log()
+
+    posted = 0
+    for play_type, stats in sorted(results.items()):
+        forward = bc.forward_record(rows, play_type)
+        body = bc.render_card(play_type, stats, forward)
+        try:
+            tracker.upsert_channel_message(
+                bc.CHANNEL_KEY, state, bc.card_key(play_type), body,
+                search_token=bc.card_key(play_type),
+            )
+            posted += 1
+        except Exception as exc:
+            print(f"backtest card {play_type} failed: {exc}", file=sys.stderr)
+    spy_scanner.write_report_state(state)
+    store_observation(connection, "backtest-cards",
+                      {"cards": posted, "completed_at": iso_now()})
+    return f"{posted} backtest card(s) refreshed"
+
+
 def research_store_refresh_job(connection: sqlite3.Connection) -> str:
     """Record each session into the research store so it stays current.
 
@@ -2142,6 +2185,13 @@ JOBS = [
         background=True,
         provider_heavy=True,
         retry_interval=timedelta(minutes=5),
+    ),
+    Job(
+        "backtest-cards",
+        timedelta(hours=6),
+        backtest_cards_job,
+        background=True,
+        retry_interval=timedelta(minutes=30),
     ),
     Job(
         "research-store-refresh",

@@ -587,6 +587,8 @@ CHANNEL_NAMES.pop("ratchet_leaderboard", None)
 # are per-period totals, not a comparison of strategies against each other -
 # so it moves rather than being dropped.
 CHANNEL_NAMES["strategy_leaderboard"] = "monthly-dashboard"
+CHANNEL_NAMES["backtest_results"] = "backtest-results"
+AUTOMATED_CHANNEL_KEYS.append("backtest_results")
 AUTOMATED_CHANNEL_KEYS.append("strategy_leaderboard")
 
 SYSTEM_CHANNEL_KEYS = {
