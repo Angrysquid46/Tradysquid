@@ -18,6 +18,7 @@ import pathlib
 import pytest
 
 import spy_backtest_strategies_extended as ext
+import spy_scanner
 import spy_intraday_features as sif
 import spy_live_new_strategies as lns
 
@@ -52,11 +53,29 @@ def test_all_fourteen_promoted_strategies_are_registered():
 
 
 def test_registry_covers_the_locked_shortlist_ranks():
-    """Rank 11 is SPY_KEY_LEVELS, which already runs in spy_scanner and is
-    deliberately not duplicated here. Every other rank 1-15 must be
-    present, or a strategy the owner locked in silently never trades."""
-    ranks = sorted(spec["rank"] for spec in lns.NEW_STRATEGY_SPECS)
-    assert ranks == list(range(1, len(lns.NEW_STRATEGY_SPECS) + 1))
+    """Every rank must be accounted for, or a strategy the owner locked in
+    silently never trades.
+
+    SPY_KEY_LEVELS holds a rank but runs in spy_scanner rather than here,
+    so the scan registry alone is deliberately NOT contiguous - it skips
+    exactly that one number. Checking only NEW_STRATEGY_SPECS assumed
+    Key-Levels was the highest rank, which stopped being true when a 15th
+    strategy was promoted above it. The real invariant is that the two
+    together cover 1..N with no gaps and no duplicates.
+    """
+    scan_ranks = [spec["rank"] for spec in lns.NEW_STRATEGY_SPECS]
+    channel_ranks = [spec["rank"] for spec in lns.CHANNEL_ROSTER]
+    assert len(set(channel_ranks)) == len(channel_ranks), "duplicate rank"
+    assert sorted(channel_ranks) == list(range(1, len(channel_ranks) + 1))
+
+    missing = set(channel_ranks) - set(scan_ranks)
+    key_levels_rank = next(
+        spec["rank"] for spec in lns.CHANNEL_ROSTER
+        if spec["play_type"] == spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE
+    )
+    assert missing == {key_levels_rank}, (
+        f"ranks {sorted(missing)} have a channel but nothing scans them"
+    )
 
 
 def test_every_new_strategy_defaults_to_paused():
@@ -431,7 +450,11 @@ def test_all_fifteen_locked_strategies_get_a_channel():
     assert ranks == list(range(1, count + 1)), "ranks must be contiguous from 1"
     slugs = {lns.channel_slug(s["play_type"]) for s in lns.CHANNEL_ROSTER}
     assert len(slugs) == count
-    assert f"s{count:02d}-key-levels" in slugs
+    # Key-Levels must HAVE a channel; it need not be the highest rank.
+    # Asserting it sits at s{count} broke the moment a 15th strategy was
+    # promoted after it, and would have silently passed against the wrong
+    # channel had another strategy taken that number.
+    assert lns.channel_slug(spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE) in slugs
 
 
 def test_key_levels_is_in_the_channel_roster_but_not_the_scan_roster():
@@ -453,7 +476,12 @@ def test_key_levels_channel_does_not_advertise_an_exit_it_does_not_use():
     """It manages itself under its own R-multiple rule; quoting this
     module's default percentages would state the wrong rules in Discord."""
     described = {name: desc for _cat, name, desc in lns.channel_specs()}
-    assert "% of premium" not in described[f"s{len(lns.CHANNEL_ROSTER):02d}-key-levels"]
+    # Key-Levels' slug comes from its RANK, not from its position in the
+    # roster list. Computing it from len() broke the moment a strategy was
+    # added after it, and would silently pass against the wrong channel if
+    # a later strategy happened to land on that number.
+    key_levels_slug = lns.channel_slug(spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE)
+    assert "% of premium" not in described[key_levels_slug]
     assert "% of premium" in described["s01-gap-cont-50"]
 
 

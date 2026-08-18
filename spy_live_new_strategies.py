@@ -108,6 +108,17 @@ NEW_STRATEGY_SPECS: tuple[dict[str, Any], ...] = (
      "signal": ext.first_pullback_after_drive(0.22)},
     {"play_type": "SPY_OPENING_GAP_FADE", "rank": 13, "label": "Opening Gap Fade",
      "signal": ext.playbook_opening_gap_fade()},
+    # The 15th, promoted on measurement rather than intuition: 155 trades,
+    # 50.3% win against a 37.2% break-even, +$6.62/trade at +115/-75. The
+    # 3-bar window specifically - the 5-bar variant's flashier +$16.28 is
+    # 21 trades of noise and the 10-bar fires once. Its features
+    # (compression_ratio, compression) were confirmed populated on the LIVE
+    # path before promotion, unlike the premarket-breakout candidate that
+    # scored better and can never fire because premarket levels are 0%
+    # populated on recent sessions.
+    {"play_type": "SPY_COMPRESSION_3BAR", "rank": 15,
+     "label": "Compression Break (3-bar)",
+     "signal": ext.compression_breakout(3)},
 )
 
 # SPY_KEY_LEVELS is rank 11 of the locked 15. Its ENTRY lives in
@@ -497,6 +508,9 @@ NEW_STRATEGY_EXITS: dict[str, tuple[float, float, int | None]] = {
     "SPY_EXHAUSTION_1ATR":  (40.0,  -40.0, 30),     # t0.5/s0.5/m30
     "SPY_FIRST_PULLBACK":   (75.0,  -58.0, None),   # t1.0/s0.75
     "SPY_OPENING_GAP_FADE": (40.0,  -40.0, 15),     # t0.5/s0.5/m15
+    # Measured at this shape before promotion: 155 trades, 50.3% win
+    # against a 37.2% break-even, +$6.62/trade.
+    "SPY_COMPRESSION_3BAR": (115.0, -75.0, None),
 }
 
 

@@ -91,6 +91,7 @@
     "regular_puts": false,
     "spy_0dte_1m": false,
     "spy_0dte_5m": false,
+    "spy_compression_3bar": true,
     "spy_confluence_4": true,
     "spy_exhaustion_1atr": true,
     "spy_expansion_level": false,
