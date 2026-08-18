@@ -120,3 +120,29 @@ def test_key_levels_never_uses_a_premium_exit():
     assert spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE not in lns.NEW_STRATEGY_EXITS
     assert spy_scanner.SPY_KEY_LEVELS_STOP_BUFFER_PCT > 0
     assert spy_scanner.SPY_KEY_LEVELS_TARGET_R_MULTIPLE > 0
+
+
+def test_every_strategy_has_a_plain_english_description():
+    """A numbers table does not say what a play IS.
+
+    Several of these sound alike - failed breakout vs liquidity sweep,
+    midday vs final-30 momentum - and confusing two is how a wrong exit
+    gets attached to the wrong idea. A new strategy must not reach the
+    roster without one.
+    """
+    for entry in lns.CHANNEL_ROSTER:
+        play = entry["play_type"]
+        assert play in doc.PLAY_STYLES, f"{play} has no play-style description"
+        assert len(doc.PLAY_STYLES[play]) > 60, f"{play} description is too thin"
+    body = doc.build()
+    assert "UNDOCUMENTED" not in body
+
+
+def test_the_descriptions_name_what_makes_similar_plays_different():
+    """The pairs that are easiest to confuse must state their distinction."""
+    styles = doc.PLAY_STYLES
+    assert "10 bars" in styles["SPY_SWEEP_10"]          # vs failed breakout
+    assert "final 30" in styles["SPY_TOD_FINAL30"]      # vs midday
+    assert "midday" in styles["SPY_TOD_MIDDAY"]
+    assert "UNDERLYING" in styles["SPY_KEY_LEVELS"]     # vs premium exits
+    assert "ITSELF" in styles["SPY_ORB_IMMEDIATE"]      # vs a retest entry
