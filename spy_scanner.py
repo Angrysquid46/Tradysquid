@@ -5916,29 +5916,47 @@ def sync_closed_result_channels(
         }.get(row.get("outcome", ""))
         if not trade_id or not result_channel:
             continue
-        if trade_id in routed:
-            # A completed destination card may predate held-card cleanup.  Do
-            # not repost the result, but keep enforcing the channel lifecycle.
+        try:
+            if trade_id in routed:
+                # A completed destination card may predate held-card cleanup.
+                # Do not repost the result, but keep enforcing the channel
+                # lifecycle.
+                discord.delete_trade_message("entry", report_state, "entry", trade_id)
+                discord.delete_trade_message(
+                    "updates", report_state, "position", trade_id
+                )
+                discord.delete_trade_message("exit", report_state, "exit", trade_id)
+                trade_intelligence.acknowledge(
+                    trade_id, "result-channel", trade_intelligence.trade_version(row)
+                )
+                continue
+            link = thread_link(row.get("discord_thread_id", ""))
+            content = close_alert_text(row, stored_close_evaluation(row), link, summary_only=True)
+            discord.upsert_trade_result(result_channel, report_state, trade_id, content)
             discord.delete_trade_message("entry", report_state, "entry", trade_id)
-            discord.delete_trade_message(
-                "updates", report_state, "position", trade_id
-            )
+            discord.delete_trade_message("updates", report_state, "position", trade_id)
             discord.delete_trade_message("exit", report_state, "exit", trade_id)
+            mark_closed_result_routed(row, report_state)
             trade_intelligence.acknowledge(
                 trade_id, "result-channel", trade_intelligence.trade_version(row)
             )
+            updated += 1
+        except DiscordError as exc:
+            # Real incident: a manual /close-profitable and /force-sell both
+            # closed several genuinely profitable positions in the CSV -
+            # that part worked - but their #held-positions cards stayed put
+            # ("still exist in held positions even though they are closed").
+            # This loop had no per-row isolation: the FIRST row whose
+            # Discord call hit an exhausted rate limit raised, which aborted
+            # the loop entirely, so every closed trade sorted AFTER it never
+            # got its held/entry/exit cards touched at all that cycle - not
+            # just the one row that failed. Same class of bug already fixed
+            # tonight for the live held-card push in
+            # local_information_engine._stream_quote_event; this is the
+            # cleanup-on-close path hitting it too. One trade's Discord
+            # failure must never block cleanup for every trade after it.
+            print(f"held-card cleanup failed for {trade_id}: {exc}", file=sys.stderr)
             continue
-        link = thread_link(row.get("discord_thread_id", ""))
-        content = close_alert_text(row, stored_close_evaluation(row), link, summary_only=True)
-        discord.upsert_trade_result(result_channel, report_state, trade_id, content)
-        discord.delete_trade_message("entry", report_state, "entry", trade_id)
-        discord.delete_trade_message("updates", report_state, "position", trade_id)
-        discord.delete_trade_message("exit", report_state, "exit", trade_id)
-        mark_closed_result_routed(row, report_state)
-        trade_intelligence.acknowledge(
-            trade_id, "result-channel", trade_intelligence.trade_version(row)
-        )
-        updated += 1
     return updated
 
 def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: DiscordTracker, report_state: dict[str, Any]) -> None:
