@@ -97,6 +97,7 @@ STREAM_STATS: dict[str, float] = {
     "closes": 0.0,          # exits fired from the stream path
     "card_pushes": 0.0,     # Discord updates (2s-debounced display branch)
     "eval_seconds": 0.0,    # cumulative time in evaluation
+    "projection_skips": 0.0,  # refetches avoided by the delta projection
 }
 
 POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
@@ -1693,6 +1694,80 @@ def _cached_spy_spot() -> float | None:
     return price
 
 
+# Delta-projection bounds. Tradier production allows 120 REST req/min (2/sec)
+# across EVERYTHING, and refetches are batched to one call per staleness
+# window - so a flat 0.5s bound has a ceiling of exactly 2/sec, which is the
+# entire budget on its own. Tightening it to 0.25s would be 240/min, double
+# the limit, and blowing the limit returns 429s precisely when the market is
+# moving fast enough to need a fresh quote.
+#
+# So instead of refreshing every position on one clock, spend the budget
+# where a decision is actually close. Between ticks the option's move is
+# projected from SPY's using delta - no REST call - and that projection only
+# decides WHEN TO LOOK. An exit is never taken on a projected price; the
+# real quote is always fetched and re-evaluated before closing.
+#
+# Near a threshold the bound is unchanged at 0.5s, so nothing gets less
+# fresh where it matters. Far from one it relaxes to 2s, which is where the
+# budget is recovered.
+STREAM_NEAR_EXIT_BAND_PCT = float(
+    os.environ.get("STREAM_NEAR_EXIT_BAND_PCT", "25")
+)
+STREAM_FAR_STALE_SECONDS = float(
+    os.environ.get("STREAM_FAR_STALE_SECONDS", "2.0")
+)
+# SPY spot at the moment each option quote was captured, so a later SPY tick
+# can be projected against it.
+STREAM_QUOTE_SPOT_AT: dict[str, float] = {}
+
+
+def _projected_pl_pct(row: dict[str, str], option_symbol: str,
+                      spot_now: float | None) -> float | None:
+    """Where this position's P/L probably is right now, from SPY's move.
+
+    Uses the last known option quote plus delta x (SPY move since that
+    quote). Deliberately an estimate: 0DTE gamma means delta itself shifts,
+    so this is only accurate enough to answer "is a decision close?", which
+    is all it is asked.
+    """
+    quote = STREAM_QUOTES.get(option_symbol) or {}
+    entry = spy_scanner.as_float(row.get("entry_price"))
+    if not entry or spot_now is None:
+        return None
+    last_bid = spy_scanner.as_float(quote.get("bid"))
+    if last_bid is None:
+        return None
+    spot_then = STREAM_QUOTE_SPOT_AT.get(option_symbol)
+    delta = spy_scanner.as_float((quote.get("greeks") or {}).get("delta"))
+    if delta is None:
+        delta = spy_scanner.as_float(row.get("delta"))
+    if spot_then is None or delta is None:
+        # No basis to project from - treat as near, so it refreshes.
+        return None
+    projected = last_bid + (spot_now - spot_then) * delta
+    return (projected - entry) / entry * 100.0
+
+
+def _near_exit_threshold(row: dict[str, str], projected_pct: float | None) -> bool:
+    """True when the projection is close enough to a threshold that the
+    quote must be fresh. Unknown counts as near - never skip a refresh
+    because something could not be computed."""
+    if projected_pct is None:
+        return True
+    play_type = row.get("play_type") or ""
+    try:
+        import spy_live_new_strategies as _lns
+
+        exits = _lns.NEW_STRATEGY_EXITS.get(play_type)
+    except Exception:
+        exits = None
+    if not exits:
+        return True          # key-levels and anything unmapped: always fresh
+    target, stop, _time_stop = exits
+    band = STREAM_NEAR_EXIT_BAND_PCT
+    return (projected_pct >= target - band) or (projected_pct <= stop + band)
+
+
 def _stream_quote_event(event: dict[str, Any]) -> None:
     """Evaluate exits immediately when a streamed quote changes (the
     row's own option OR its underlying), and push the held-positions
@@ -1719,6 +1794,9 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
     STREAM_QUOTES.setdefault(symbol, {}).update(event)
     now_monotonic = time.monotonic()
     STREAM_QUOTE_RECEIVED_AT[symbol] = now_monotonic
+    _tick_spot = _cached_spy_spot()
+    if _tick_spot is not None:
+        STREAM_QUOTE_SPOT_AT[symbol] = _tick_spot
     timestamp = spy_scanner.now_ct()
 
     with POSITION_FILE_LOCK:
@@ -1741,11 +1819,16 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
         if symbol not in option_symbols and symbol != underlying_symbol:
             continue
         relevant.append((row, option_symbols))
+        _spot_now = _cached_spy_spot()
         for option_symbol in option_symbols:
-            if (
-                now_monotonic - STREAM_QUOTE_RECEIVED_AT.get(option_symbol, 0.0)
-                > STREAM_QUOTE_STALE_SECONDS
-            ):
+            age = now_monotonic - STREAM_QUOTE_RECEIVED_AT.get(option_symbol, 0.0)
+            projected = _projected_pl_pct(row, option_symbol, _spot_now)
+            if _near_exit_threshold(row, projected):
+                bound = STREAM_QUOTE_STALE_SECONDS      # unchanged where it matters
+            else:
+                bound = STREAM_FAR_STALE_SECONDS
+                STREAM_STATS["projection_skips"] += 1
+            if age > bound:
                 stale_symbols.add(option_symbol)
 
     if not relevant:
@@ -1758,9 +1841,12 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
             fresh_quotes = spy_scanner.get_quotes(list(stale_symbols), include_greeks=True)
         except Exception:
             fresh_quotes = {}
+        _spot_at_fetch = _cached_spy_spot()
         for option_symbol, quote in fresh_quotes.items():
             STREAM_QUOTES.setdefault(option_symbol, {}).update(quote)
             STREAM_QUOTE_RECEIVED_AT[option_symbol] = now_monotonic
+            if _spot_at_fetch is not None:
+                STREAM_QUOTE_SPOT_AT[option_symbol] = _spot_at_fetch
 
     live_updates: list[tuple[dict[str, str], dict[str, Any]]] = []
     with POSITION_FILE_LOCK:
