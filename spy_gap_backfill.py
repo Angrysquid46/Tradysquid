@@ -61,6 +61,19 @@ class SuspectData(Exception):
     """The provider answered, but the answer does not look like real bars."""
 
 
+class NotEntitled(Exception):
+    """The endpoint exists but this account cannot reach it.
+
+    Distinct from RateLimited on purpose. A rate limit clears on its own,
+    so the right response is to stop and try later. An entitlement gap
+    never clears - waiting is pointless, and reporting it as a rate limit
+    would leave the backfill claiming it is nearly done forever. Verified
+    live: Alpha Vantage's free tier returns "This is a premium endpoint"
+    for EVERY intraday shape, including outputsize=compact, so a free key
+    cannot backfill at any cadence.
+    """
+
+
 def months_between(first: str, last: str) -> list[str]:
     out: list[str] = []
     year, month = int(first[:4]), int(first[5:7])
@@ -139,7 +152,9 @@ def fetch_month_alphavantage(month: str) -> list[dict[str, Any]]:
         if not text:
             continue
         lowered = str(text).lower()
-        if "limit" in lowered or "thank you" in lowered or "premium" in lowered:
+        if "premium" in lowered or "subscribe" in lowered:
+            raise NotEntitled(str(text)[:200])
+        if "limit" in lowered or "sparingly" in lowered or "thank you" in lowered:
             raise RateLimited(str(text)[:200])
         raise RuntimeError(str(text)[:200])
 
@@ -262,6 +277,12 @@ def backfill(
         for month in OVERLAP_MONTHS:
             try:
                 check = verify_against_store(conn, month, fetch_month(month))
+            except NotEntitled as exc:
+                result.stopped_because = (
+                    f"provider not entitled to historical intraday - a paid "
+                    f"tier or different provider is required: {exc}")
+                result.remaining = len(pending_months(state))
+                return result
             except RateLimited as exc:
                 result.stopped_because = f"rate limited during verification: {exc}"
                 result.remaining = len(pending_months(state))
@@ -285,6 +306,9 @@ def backfill(
     for month in pending_months(state)[:max_months]:
         try:
             bars = fetch_month(month)
+        except NotEntitled as exc:
+            result.stopped_because = f"provider not entitled: {exc}"
+            break
         except RateLimited as exc:
             result.stopped_because = f"rate limited: {exc}"
             break

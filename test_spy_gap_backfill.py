@@ -194,3 +194,54 @@ def test_nothing_is_written_when_verification_fails(conn, monkeypatch):
     after = conn.execute("SELECT COUNT(*) FROM minute_bars").fetchone()[0]
     assert after == before
     assert result.bars_written == 0
+
+
+def test_an_entitlement_gap_is_not_reported_as_a_rate_limit(conn, monkeypatch):
+    """Verified live: Alpha Vantage's free tier answers "This is a premium
+    endpoint" for every intraday shape, including outputsize=compact. A
+    rate limit clears on its own; an entitlement gap never does. Conflating
+    them would leave the backfill claiming forever that it is waiting for
+    quota that will never arrive."""
+    def _fetch(month):
+        raise gb.NotEntitled("This is a premium endpoint")
+
+    result = gb.backfill(conn, _fetch, max_months=5, build_features=False)
+    assert "not entitled" in result.stopped_because
+    assert "rate limited" not in result.stopped_because
+    assert result.bars_written == 0
+    assert result.remaining > 0
+
+
+def test_a_premium_response_is_classified_as_not_entitled(monkeypatch):
+    import spy_gap_backfill as g
+
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self):
+            return {"Information": "Thank you for using Alpha Vantage! "
+                                   "This is a premium endpoint. You may subscribe..."}
+
+    monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "x")
+    monkeypatch.setattr(g, "__name__", g.__name__)
+    import requests
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _R())
+    with pytest.raises(g.NotEntitled):
+        g.fetch_month_alphavantage("2021-03")
+
+
+def test_a_throttle_response_is_still_a_rate_limit(monkeypatch):
+    import spy_gap_backfill as g
+
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self):
+            return {"Note": "Please consider spreading out your free API "
+                            "requests more sparingly."}
+
+    monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "x")
+    import requests
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _R())
+    with pytest.raises(g.RateLimited):
+        g.fetch_month_alphavantage("2021-03")
