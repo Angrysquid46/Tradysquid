@@ -71,8 +71,15 @@ def forward_record(rows: list[dict[str, str]], play_type: str) -> dict[str, Any]
     wins = 0
     total = 0.0
     for row in closed:
+        # realized_pl_dollars is the field the trade log actually uses.
+        # Reading "pnl_dollars" found nothing and silently scored every
+        # live trade at $0.00 - a forward record that always reports zero
+        # looks like "no data yet" rather than a bug.
+        raw = (row.get("realized_pl_dollars")
+               or row.get("current_pl_dollars")
+               or row.get("pnl_dollars") or 0)
         try:
-            pnl = float(str(row.get("pnl_dollars") or row.get("pnl") or 0) or 0)
+            pnl = float(str(raw) or 0)
         except (TypeError, ValueError):
             pnl = 0.0
         total += pnl
