@@ -1178,6 +1178,27 @@ def research_store_refresh_job(connection: sqlite3.Connection) -> str:
     finally:
         conn.close()
 
+    # Backfill of the 2021-2026 hole rides along with the daily recording.
+    # It is metered by the provider - a free tier allows a handful of calls
+    # a day against 63 missing months - so it is resumable by design and a
+    # rate limit simply ends this run. Dormant without a key configured.
+    try:
+        import os
+
+        if os.environ.get("ALPHAVANTAGE_API_KEY", "").strip():
+            import spy_gap_backfill as gap
+
+            conn2 = srr.sif.connect()
+            try:
+                outcome = gap.backfill(conn2)
+            finally:
+                conn2.close()
+            result["gap_months_done"] = outcome.months_done
+            result["gap_months_remaining"] = outcome.remaining
+            result["gap_stopped_because"] = outcome.stopped_because
+    except Exception as exc:
+        result["gap_error"] = str(exc)[:160]
+
     store_observation(connection, "research-store-refresh",
                       {**result, "completed_at": iso_now()})
     cov = result["coverage"]
