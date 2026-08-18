@@ -1180,9 +1180,25 @@ def backtest_cards_job(connection: sqlite3.Connection) -> str:
         except Exception as exc:
             print(f"backtest card {play_type} failed: {exc}", file=sys.stderr)
     spy_scanner.write_report_state(state)
+
+    # Same information as the cards, in a form that is cheap to READ. A
+    # later session can learn how every strategy is actually doing from one
+    # file - no Discord fetch and, above all, no re-running a backtest,
+    # which costs about 40 minutes a pass.
+    try:
+        import backtest_record as br
+
+        forward = {play: bc.forward_record(rows, play) for play in results}
+        record_path = br.write(results, forward)
+    except Exception as exc:
+        record_path = None
+        print(f"strategy record file failed: {exc}", file=sys.stderr)
+
     store_observation(connection, "backtest-cards",
-                      {"cards": posted, "completed_at": iso_now()})
-    return f"{posted} backtest card(s) refreshed"
+                      {"cards": posted, "record": str(record_path or ""),
+                       "completed_at": iso_now()})
+    return (f"{posted} backtest card(s) refreshed"
+            + (f"; record -> {record_path}" if record_path else ""))
 
 
 def research_store_refresh_job(connection: sqlite3.Connection) -> str:
