@@ -62,6 +62,13 @@ class OptionExit:
     # marked off the option, which is what realised money is - only the
     # trigger differs. Without these it could not be measured under its own
     # rules at all, and ran on a borrowed +50/-50 shape.
+    # Minutes from ENTRY after which the trade is closed at market, which
+    # is a different clock from LAST_EXIT_MINUTE (the end-of-day flatten).
+    # Three strategies run one live - TOD_FINAL30 and EXHAUSTION at 30min,
+    # OPENING_GAP_FADE at 15min - and without this the backtest let those
+    # trades run on, so their measured numbers described a rule the live
+    # system does not follow.
+    time_stop_minutes: int | None = None
     underlying_stop_pct: float | None = None   # e.g. 0.15 = 0.15% adverse
     underlying_r_multiple: float | None = None # target = entry +/- R x this
     name: str = "spy_0dte"
@@ -131,6 +138,13 @@ def _exit_signal(pnl_pct: float, peak_pct: float, minutes_since_open: int,
     if minutes_since_open >= LAST_EXIT_MINUTE:
         return "eod_close", True
     return "", False
+
+
+def _time_stop(entry_minute: int, minute: int, rules: OptionExit) -> bool:
+    """Held longer than the strategy's own limit, measured from entry."""
+    if not rules.time_stop_minutes:
+        return False
+    return (minute - entry_minute) >= rules.time_stop_minutes
 
 
 def simulate_option_trades(
@@ -203,6 +217,8 @@ def simulate_option_trades(
             peak_pct = max(peak_pct, pnl_pct)
 
             reason_now, should_exit = _exit_signal(pnl_pct, peak_pct, minute, rules)
+            if not should_exit and _time_stop(entry_minute, minute, rules):
+                reason_now, should_exit = "time_stop", True
             if not should_exit and rules.underlying_stop_pct:
                 reason_now, should_exit = _underlying_exit(
                     entry_row["close"], close, direction, rules)

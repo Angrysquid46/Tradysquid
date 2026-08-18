@@ -147,3 +147,38 @@ def test_a_thin_live_record_is_not_called_drift():
                      "exit_label": "+115% / -75%"}}
     forward = {"X": {"trades": 2, "win_rate": 0.0, "avg_dollars": -9.0}}
     assert "none" in br.build(results, forward).split("## Watch")[1]
+
+
+def test_the_backtest_models_time_stops():
+    """Three strategies run a time stop live - TOD_FINAL30 and
+    EXHAUSTION at 30min, OPENING_GAP_FADE at 15min - measured from ENTRY,
+    which is a different clock from the end-of-day flatten.
+
+    OptionExit had no time field, so the backtest let those trades run on
+    and their reported numbers described a rule the live system does not
+    follow. It mattered: modelling it moved EXHAUSTION from +$2.87 to
+    +$4.06/trade, because closing dead trades early also frees the
+    one-position slot for more entries (307 trades vs 291).
+    """
+    import dataclasses
+    import spy_option_backtest as ob
+
+    fields = {f.name for f in dataclasses.fields(ob.OptionExit)}
+    assert "time_stop_minutes" in fields
+
+    rules = ob.OptionExit(115.0, -75.0, None, None, time_stop_minutes=30)
+    assert ob._time_stop(entry_minute=60, minute=91, rules=rules) is True
+    assert ob._time_stop(entry_minute=60, minute=89, rules=rules) is False
+
+    no_stop = ob.OptionExit(115.0, -75.0, None, None)
+    assert ob._time_stop(entry_minute=60, minute=400, rules=no_stop) is False
+
+
+def test_the_time_stop_is_measured_from_entry_not_from_the_open():
+    """A trade opened at 14:30 with a 30-minute stop must run until 15:00,
+    not close instantly because 30 minutes of the session have elapsed."""
+    import spy_option_backtest as ob
+
+    rules = ob.OptionExit(115.0, -75.0, None, None, time_stop_minutes=30)
+    assert ob._time_stop(entry_minute=300, minute=310, rules=rules) is False
+    assert ob._time_stop(entry_minute=300, minute=330, rules=rules) is True
