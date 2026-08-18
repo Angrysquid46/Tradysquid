@@ -65,3 +65,58 @@ def test_the_premarket_dead_end_is_recorded():
     body = doc.build()
     assert "premarket" in body.lower()
     assert "0%" in body
+
+
+# ---------------------------------------------------------------------------
+# The documented rules must match RUNTIME BEHAVIOUR, not just a config dict
+# ---------------------------------------------------------------------------
+
+def test_each_strategy_actually_behaves_as_documented():
+    """Drives the real exit function at each strategy's own thresholds.
+
+    Checking the config dict only proves the numbers are stored. This
+    proves they are USED: just past its own target must take profit, just
+    past its own stop must stop out, and just short of either must hold.
+    """
+    for play, (target, stop, _t) in lns.NEW_STRATEGY_EXITS.items():
+        past_target = 1.0 * (1 + (target + 1) / 100)
+        past_stop = 1.0 * (1 + (stop - 1) / 100)
+        short_of_target = 1.0 * (1 + (target - 5) / 100)
+        inside_stop = 1.0 * (1 + (stop + 5) / 100)
+
+        assert lns.new_strategy_exit_signal(
+            1.0, past_target, 120, play_type=play)[0] == "TAKE PROFIT", play
+        assert lns.new_strategy_exit_signal(
+            1.0, past_stop, 120, play_type=play)[0] == "STOP OUT", play
+        assert lns.new_strategy_exit_signal(
+            1.0, short_of_target, 120, play_type=play)[0] == "HOLD", play
+        assert lns.new_strategy_exit_signal(
+            1.0, inside_stop, 120, play_type=play)[0] == "HOLD", play
+
+
+def test_no_strategy_falls_back_to_a_fifty_fifty_default():
+    """+50/-50 is not any strategy's rule and must never be applied as one.
+
+    Measuring the whole roster under a shared +50/-50 exit produced an
+    entire evening of wrong conclusions - a false "every strategy has the
+    same payoff ratio", a portfolio that looked like -$1.25M when it is
+    +$112,729, and a proposal to delete the best strategy on the roster.
+    Nothing may quietly revert to it.
+    """
+    for play, (target, stop, _t) in lns.NEW_STRATEGY_EXITS.items():
+        assert (target, stop) != (50.0, -50.0), (
+            f"{play} is on the +50/-50 default that caused the bad results"
+        )
+        if target > 50.0:
+            assert lns.new_strategy_exit_signal(
+                1.0, 1.50, 120, play_type=play)[0] != "TAKE PROFIT", (
+                f"{play} took profit at +50% despite a {target:+.0f}% target"
+            )
+
+
+def test_key_levels_never_uses_a_premium_exit():
+    """It exits on the underlying. Giving it a premium exit is what made it
+    look like the worst strategy when it is the best."""
+    assert spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE not in lns.NEW_STRATEGY_EXITS
+    assert spy_scanner.SPY_KEY_LEVELS_STOP_BUFFER_PCT > 0
+    assert spy_scanner.SPY_KEY_LEVELS_TARGET_R_MULTIPLE > 0

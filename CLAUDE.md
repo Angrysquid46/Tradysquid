@@ -75,6 +75,32 @@ A Discord bot handles entry/exit alerts, dashboards, and slash commands.
   thing" just because `pytest`'s default config points at it — confirm
   with the user/owner what it's for before building on it further.
 
+## Strategy work: read the rules file first
+
+**Before editing, measuring, or reasoning about any strategy, open
+`docs/STRATEGY_RULES.md`.** It is generated from the live registry by
+`strategy_rules_doc.py` and lists all 15 strategies with their signal
+function, their OWN exit rules, max signal age, channel and enabled state,
+plus the measured record under those exact settings.
+
+Re-deriving these from scratch has repeatedly produced wrong answers:
+measuring every strategy under a shared +50/-50 exit that none of them
+use, measuring two at ATR thresholds they had been recalibrated away
+from, and measuring `SPY_KEY_LEVELS` with an option-premium exit when it
+exits on the *underlying*. That last error made the best strategy on the
+roster look like the worst.
+
+- **Never apply a default or shared exit.** Per-strategy exits live in
+  `NEW_STRATEGY_EXITS`. `SPY_KEY_LEVELS` is deliberately absent from it
+  because it exits on underlying price levels.
+- **After changing a strategy, run `python strategy_rules_doc.py`.**
+  `test_strategy_rules_doc.py` fails until the doc is regenerated, and it
+  also asserts runtime behaviour matches the doc and that nothing has
+  reverted to +50/-50.
+- **A full option backtest is ~40 minutes.** Don't re-run one to learn how
+  a strategy performs - the measured table is in the rules doc.
+
+
 ## Testing
 
 - Run tests with the project venv, not system Python:
