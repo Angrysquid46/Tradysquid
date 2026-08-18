@@ -37,7 +37,14 @@ import spy_option_model as om
 DEFAULT_TARGET_DELTA = 0.50
 MAX_CONTRACT_ASK = 5.00        # SPY_0DTE_MAX_CONTRACT_ASK
 MAX_RISK_PER_TRADE = 500.0     # SPY_0DTE_MAX_RISK_PER_TRADE
-COMMISSION_PER_CONTRACT = 0.65  # each way; typical retail 0DTE
+COMMISSION_PER_CONTRACT = 0.04  # each way
+# 0.04, not 0.65. The old figure was "typical retail" and is 16x what this
+# account actually pays - Robinhood charges no commission on options, only
+# the per-contract regulatory pass-through. On a $115 contract that is the
+# difference between 1.13% and 0.07% of position per round trip, charged
+# against strategies whose whole edge is a few percent. Set it to whatever
+# the broker really charges; do not leave a padded "typical" number in a
+# model that decides which strategies live.
 LAST_EXIT_MINUTE = 375         # 15:45 - the live system closes before expiry
 
 
