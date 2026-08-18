@@ -3691,7 +3691,60 @@ def read_log() -> list[dict[str, str]]:
     return rows
 
 
+def _preserve_closed_trades(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """A close is terminal - never let a stale writer reopen one.
+
+    Real incident: /close-profitable closed three genuinely profitable
+    positions and reported WIN $18/$18/$20, then all three reappeared as
+    OPEN and a fresh HOLD card was posted for one of them a minute later.
+    Realized profit was silently reverted and the positions re-exposed.
+
+    Cause: discord_command_bot.py (Flask) and local_information_engine.py
+    are SEPARATE OS PROCESSES, and both call this function to blind-
+    overwrite the whole CSV. POSITION_FILE_LOCK is a threading.RLock, so
+    it only serialises threads inside ONE process and gives no protection
+    across them. The engine had read every row into memory BEFORE the
+    command bot's close, then wrote its stale copy back over it.
+
+    A cross-process file lock is the textbook fix, but the engine holds
+    its rows across network I/O, so a lock held for that whole window
+    would stall the other process for seconds at a time. Instead this
+    enforces the one invariant that actually matters: a trade that is
+    CLOSED on disk can never be written back as OPEN. Any other field may
+    be overwritten normally.
+
+    A trade_id absent from `rows` entirely is left alone rather than
+    re-added, so a deliberate purge (reset_all_trade_data) still works.
+    """
+    try:
+        existing = read_log()
+    except Exception:
+        return rows          # first write, or unreadable - nothing to protect
+    closed_on_disk = {
+        row.get("trade_id"): row
+        for row in existing
+        if row.get("trade_id") and (row.get("outcome") or "").upper() not in ("", "OPEN")
+    }
+    if not closed_on_disk:
+        return rows
+    protected: list[dict[str, str]] = []
+    for row in rows:
+        trade_id = row.get("trade_id")
+        disk_row = closed_on_disk.get(trade_id)
+        if disk_row is not None and (row.get("outcome") or "").upper() in ("", "OPEN"):
+            print(
+                f"refusing to reopen closed trade {trade_id} "
+                f"(disk={disk_row.get('outcome')}) - stale writer overtaken",
+                file=sys.stderr,
+            )
+            protected.append(disk_row)
+            continue
+        protected.append(row)
+    return protected
+
+
 def write_log(rows: list[dict[str, str]]) -> None:
+    rows = _preserve_closed_trades(rows)
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: Path | None = None
     try:
