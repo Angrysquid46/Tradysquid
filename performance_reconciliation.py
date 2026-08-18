@@ -363,6 +363,13 @@ def top_strategies_lines(completed: list[dict[str, str]], limit: int = 3) -> lis
 
 
 def result_summary(title: str, completed: list[dict[str, str]], period_text: str) -> str:
+    # Daily, weekly and monthly count the LIVE strategies only. The trade
+    # log still holds closed rows from retired ones - SPY_GAP_CONT_25,
+    # SPY_SWEEP_5, SPY_GAP_CONT_100, SPY_0DTE_5M - and counting them put
+    # SPY_GAP_CONT_25 in the monthly card's "Top Strategies" list for a
+    # strategy that no longer exists. Filtered here rather than in each
+    # report, since daily/weekly/monthly all render through this.
+    completed = only_live_strategies(completed)
     metrics = spy_scanner.result_metrics(completed)
     lines = [
         f"## {title}",
@@ -465,6 +472,36 @@ def format_monthly_report(rows: list[dict[str, str]], month: date) -> str:
     )
 
 
+
+def live_play_types() -> set[str]:
+    """Every play type currently traded - the only ones reporting may count.
+
+    The trade log still holds rows from retired strategies
+    (SPY_GAP_CONT_25, SPY_SWEEP_5, SPY_GAP_CONT_100, SPY_0DTE_5M). Those
+    were real paper trades, but they belong to strategies that no longer
+    exist, and counting them puts a dead strategy in the monthly card and
+    in the "Top Strategies" list. Owner: daily, weekly and monthly count
+    the live strategies only.
+    """
+    live = {spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE}
+    for group in (OTHER_STRATEGY_VARIANTS, NEW_STRATEGY_VARIANTS):
+        for entry in group:
+            if entry and entry[0]:
+                live.add(entry[0])
+    try:
+        import spy_live_new_strategies as _lns
+        live.update(_lns.NEW_STRATEGY_PLAY_TYPES)
+    except Exception:
+        pass
+    return live
+
+
+def only_live_strategies(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Drop rows belonging to retired strategies before aggregating."""
+    live = live_play_types()
+    return [r for r in rows if (r.get("play_type") or "") in live]
+
+
 def format_variant_leaderboard(
     variants: tuple[tuple[str, str, str, str], ...], rows: list[dict[str, str]], title: str
 ) -> str:
@@ -509,7 +546,23 @@ def format_ratchet_leaderboard(rows: list[dict[str, str]]) -> str:
 
 
 def format_strategy_leaderboard(rows: list[dict[str, str]]) -> str:
-    return format_variant_leaderboard(OTHER_STRATEGY_VARIANTS, rows, "Strategy Leaderboard")
+    """Every live strategy, not just Key-Levels.
+
+    OTHER_STRATEGY_VARIANTS holds a single entry, so this board could only
+    ever show one strategy - it listed Key-Levels alone at 0W/1L while the
+    dashboard directly above it counted 14W/2L across the roster. The 13
+    promoted strategies live in NEW_STRATEGY_VARIANTS, generated from the
+    registry, and were simply never joined in.
+    """
+    variants = tuple(OTHER_STRATEGY_VARIANTS) + tuple(NEW_STRATEGY_VARIANTS)
+    seen: set[str] = set()
+    unique = []
+    for entry in variants:
+        if entry and entry[0] not in seen:
+            seen.add(entry[0])
+            unique.append(entry)
+    return format_variant_leaderboard(
+        tuple(unique), only_live_strategies(rows), "Strategy Leaderboard")
 
 
 def strategy_groups(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
