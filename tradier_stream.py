@@ -34,6 +34,25 @@ class TradierPositionStream:
         self.last_event_at = 0.0
         self.last_error = ""
         self.subscribed_symbols: list[str] = []
+        # Reconnect accounting. The socket was observed dropping with
+        # "WebSocketConnectionClosedException: socket is already closed" in
+        # 17 of 20 cycles, recovering each time - so tick flow showed real
+        # gaps (+4 and +14 ticks in cycles that otherwise ran +500) while
+        # the connected flag still read True, because it is set again as
+        # soon as the reconnect succeeds. Counting the drops is the only
+        # way to tell "reconnects occasionally" from "reconnects
+        # constantly", and to see whether they cluster around a resubscribe
+        # (the symbol list changing when a position opens or closes) rather
+        # than arriving at random.
+        self.reconnects = 0
+        self.resubscribes = 0
+        self.last_disconnect_at = 0.0
+        self.last_connect_at = 0.0
+        self.total_downtime_seconds = 0.0
+        self.longest_session_seconds = 0.0
+        self.disconnect_reasons: dict[str, int] = {}
+        self.drops_within_5s_of_resubscribe = 0
+        self._last_resubscribe_at = 0.0
 
     @property
     def available(self) -> bool:
@@ -85,11 +104,23 @@ class TradierPositionStream:
             connection.send(self._payload(session_id, symbols))
             self.subscribed_symbols = symbols
             self.connected = True
+            self.last_connect_at = time.time()
+            if self.last_disconnect_at:
+                self.total_downtime_seconds += (
+                    self.last_connect_at - self.last_disconnect_at
+                )
             while not self.stop_event.is_set():
                 latest_symbols = self.symbols_provider()
                 if latest_symbols != self.subscribed_symbols:
                     if not latest_symbols:
                         return
+                    # A resubscribe sends on a socket the server may already
+                    # have closed. If drops cluster here rather than
+                    # arriving at random, the trigger is the symbol list
+                    # changing (a position opening or closing), not session
+                    # expiry - which are different fixes.
+                    self.resubscribes += 1
+                    self._last_resubscribe_at = time.time()
                     connection.send(self._payload(session_id, latest_symbols))
                     self.subscribed_symbols = latest_symbols
                 try:
@@ -128,6 +159,16 @@ class TradierPositionStream:
                                 f"{type(exc).__name__}: {exc}"[:300]
                             )
         finally:
+            if self.connected:
+                now = time.time()
+                self.last_disconnect_at = now
+                if self.last_connect_at:
+                    session_length = now - self.last_connect_at
+                    self.longest_session_seconds = max(
+                        self.longest_session_seconds, session_length
+                    )
+                if now - self._last_resubscribe_at <= 5.0:
+                    self.drops_within_5s_of_resubscribe += 1
             self.connected = False
             self.subscribed_symbols = []
             connection.close()
@@ -150,7 +191,43 @@ class TradierPositionStream:
                 self.last_error = ""
                 delay = 2
             except Exception as exc:
+                # Every arrival here is a real transport failure and a
+                # reconnect - callback errors are caught inside _consume and
+                # never reach this handler. Counting by exception type
+                # separates "Tradier expired the session" from "the socket
+                # was already closed when we sent a resubscribe", which need
+                # different fixes.
+                self.reconnects += 1
+                reason = type(exc).__name__
+                self.disconnect_reasons[reason] = (
+                    self.disconnect_reasons.get(reason, 0) + 1
+                )
                 self.connected = False
-                self.last_error = f"{type(exc).__name__}: {exc}"[:300]
+                self.last_error = f"{reason}: {exc}"[:300]
                 self.stop_event.wait(delay)
                 delay = min(delay * 2, 60)
+
+    def health(self) -> dict[str, Any]:
+        """Reconnect behaviour, for the position-tracker observation.
+
+        connected alone is misleading: it reads True again the moment a
+        reconnect succeeds, so a socket dropping every 90 seconds still
+        reports connected on almost every poll. These fields are what
+        distinguish a stable stream from one that is silently churning.
+        """
+        now = time.time()
+        current_session = (
+            now - self.last_connect_at if self.connected and self.last_connect_at else 0.0
+        )
+        return {
+            "reconnects": self.reconnects,
+            "resubscribes": self.resubscribes,
+            "drops_near_resubscribe": self.drops_within_5s_of_resubscribe,
+            "downtime_seconds": round(self.total_downtime_seconds, 1),
+            "longest_session_seconds": round(self.longest_session_seconds, 1),
+            "current_session_seconds": round(current_session, 1),
+            "seconds_since_last_event": (
+                round(now - self.last_event_at, 1) if self.last_event_at else None
+            ),
+            "reasons": dict(self.disconnect_reasons),
+        }

@@ -2025,6 +2025,11 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
     stream_connected = bool(POSITION_STREAM and POSITION_STREAM.connected)
     stream_state = "connected" if stream_connected else "fallback"
     stream_error = (POSITION_STREAM.last_error if POSITION_STREAM else "") or ""
+    # "connected" alone hid a socket dropping every ~90s: it reads True
+    # again as soon as the reconnect lands, so 20/20 polls said connected
+    # while tick counts showed real gaps (+4 and +14 in cycles that
+    # otherwise ran +500). These fields make the churn visible.
+    stream_health = POSITION_STREAM.health() if POSITION_STREAM else {}
     store_observation(
         connection,
         "position-tracker",
@@ -2035,6 +2040,7 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
             "live_updated": live_updated,
             "stream": stream_state,
             "stream_error": stream_error,
+            **{f"stream_{k}": v for k, v in stream_health.items()},
         },
     )
     return f"{refreshed} refreshed · {closed} closed · {live_updated} live card update(s) · stream {stream_state}"

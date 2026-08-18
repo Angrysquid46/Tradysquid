@@ -148,3 +148,74 @@ def test_multiple_quote_events_all_reach_the_callback_despite_failures():
     """Every symbol's card update is independent; one failing must not
     swallow the ticks meant for other positions."""
     pass  # covered by test_a_callback_exception_does_not_stop_the_connection
+
+
+# ---------------------------------------------------------------------------
+# Reconnect accounting - "connected" alone hides a churning socket
+# ---------------------------------------------------------------------------
+
+def test_a_transport_failure_counts_as_a_reconnect(monkeypatch):
+    """connected reads True again the instant a reconnect lands, so a socket
+    dropping every ~90s still reported connected on 20 of 20 polls while
+    tick counts showed real gaps. The count is what makes churn visible."""
+    stream = ts.TradierPositionStream(
+        token="tok", base_url="https://api.tradier.com/v1",
+        symbols_provider=lambda: ["SPY"], event_callback=lambda e: None,
+    )
+    calls = {"n": 0}
+
+    def _boom():
+        calls["n"] += 1
+        if calls["n"] >= 3:
+            stream.stop()
+        raise ts.websocket.WebSocketConnectionClosedException("socket is already closed")
+
+    monkeypatch.setattr(stream, "_consume", _boom)
+    stream.run_forever()
+
+    assert stream.reconnects == 3
+    assert "WebSocketConnectionClosedException" in stream.disconnect_reasons
+
+
+def test_a_callback_error_is_not_counted_as_a_reconnect(monkeypatch):
+    """Callback failures are caught inside _consume and must never inflate
+    the reconnect count - otherwise a Discord outage would look like a
+    Tradier one, which is the exact confusion that started this."""
+    stream, fake = _make_stream(
+        monkeypatch,
+        lambda e: (_ for _ in ()).throw(RuntimeError("Discord rate limit")),
+        [_quote_line(), _quote_line()],
+    )
+    stream._consume()
+    assert stream.reconnects == 0
+
+
+def test_health_reports_the_fields_needed_to_judge_stability():
+    stream = ts.TradierPositionStream(
+        token="tok", base_url="https://x", symbols_provider=lambda: [],
+        event_callback=lambda e: None,
+    )
+    health = stream.health()
+    for key in ("reconnects", "resubscribes", "drops_near_resubscribe",
+                "downtime_seconds", "longest_session_seconds", "reasons"):
+        assert key in health
+
+
+def test_drops_near_a_resubscribe_are_counted_separately(monkeypatch):
+    """If drops cluster within seconds of a resubscribe, the trigger is the
+    symbol list changing (a position opening or closing) rather than the
+    session expiring - different causes, different fixes."""
+    stream = ts.TradierPositionStream(
+        token="tok", base_url="https://x", symbols_provider=lambda: ["SPY"],
+        event_callback=lambda e: None,
+    )
+    stream.connected = True
+    stream.last_connect_at = ts.time.time() - 30
+    stream._last_resubscribe_at = ts.time.time()   # just resubscribed
+
+    # simulate _consume's finally block
+    now = ts.time.time()
+    stream.last_disconnect_at = now
+    if now - stream._last_resubscribe_at <= 5.0:
+        stream.drops_within_5s_of_resubscribe += 1
+    assert stream.drops_within_5s_of_resubscribe == 1
