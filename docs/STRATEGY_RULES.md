@@ -40,9 +40,9 @@ Each strategy under **its own** exit rules, one contract, $0.04/contract commiss
 | SPY_CONFLUENCE_4 | 2,507 | 41.8% | 35.6% | +3.43 |
 | SPY_TOD_FINAL30 | 281 | 44.8% | 39.8% | +2.00 |
 | SPY_MTF_4OF4 | 1,457 | 38.0% | 32.4% | +3.32 |
-| SPY_EXHAUSTION_1ATR | 291 | 39.2% | 34.5% | +2.87 |
+| SPY_EXHAUSTION_1ATR | 307 | 43.0% | 34.5% | +4.06 |
 | SPY_FIRST_PULLBACK | 338 | 40.5% | 39.3% | +0.65 |
-| SPY_OPENING_GAP_FADE | 13 | 61.5% | 32.6% | +18.73 |
+| SPY_OPENING_GAP_FADE | 13 | 53.8% | 32.6% | +15.69 |
 | SPY_KEY_LEVELS | 1,591 | 42.4% | 21.8% | +26.86 |
 | SPY_COMPRESSION_3BAR | 155 | 50.3% | 37.2% | +6.62 |
 
