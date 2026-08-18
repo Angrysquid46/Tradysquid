@@ -104,3 +104,59 @@ def test_the_far_bound_actually_saves_calls():
     far_ceiling = 60.0 / engine.STREAM_FAR_STALE_SECONDS
     assert near_ceiling == 120.0
     assert far_ceiling <= 30.0
+
+
+# ---------------------------------------------------------------------------
+# Fast-moving 0DTE: the case the projection alone cannot handle
+# ---------------------------------------------------------------------------
+
+def test_a_large_spy_move_forces_a_refetch_regardless_of_the_projection():
+    """Gamma makes the projection error grow with the SQUARE of the move.
+
+    Measured on 2,799 real 0DTE contracts inside our own delta band, in
+    percentage points of P/L error:
+
+        SPY $0.10 -> p99  9.8pp
+        SPY $0.25 -> p99 61.0pp
+        SPY $0.50 -> p99 243.9pp
+
+    Past ~$0.15 the p99 error exceeds the 25-point near-threshold band,
+    so a violently moving contract could be projected as "far from its
+    target" while sitting on it. Time cannot bound this - two quiet
+    seconds and two seconds of a spike are not the same staleness.
+    """
+    assert engine.STREAM_MAX_SPOT_DRIFT <= 0.15
+
+
+def test_the_drift_cap_is_tight_enough_for_the_measured_gamma_error():
+    """At the cap, p99 error must stay inside the near-threshold band -
+    otherwise the projection can hide a position that is already at its
+    exit."""
+    # p99 error was 9.8pp at $0.10 and 61pp at $0.25; the cap must sit in
+    # the region where p99 is still under the band.
+    assert engine.STREAM_MAX_SPOT_DRIFT <= 0.15
+    assert engine.STREAM_NEAR_EXIT_BAND_PCT >= 25
+
+
+def test_drift_is_measured_from_the_quote_the_projection_uses():
+    """Not from an arbitrary reference - the error is relative to the spot
+    at which the last option quote was captured."""
+    import inspect
+
+    src = inspect.getsource(engine._stream_quote_event)
+    assert "STREAM_QUOTE_SPOT_AT.get(option_symbol)" in src
+    assert "STREAM_MAX_SPOT_DRIFT" in src
+
+
+def test_a_quiet_market_does_not_trigger_the_drift_refetch():
+    """The cap must not fire constantly in normal conditions, or it
+    reintroduces the cost the projection was meant to remove."""
+    _seed(bid=1.00, delta=0.50, spot=770.00)
+    drift = abs(770.03 - engine.STREAM_QUOTE_SPOT_AT["OPT"])
+    assert drift < engine.STREAM_MAX_SPOT_DRIFT
+
+
+def test_drift_refetches_are_counted_separately():
+    """So the fast-market cost is visible on its own rather than hidden in
+    the general refetch total."""
+    assert "drift_refetches" in engine.STREAM_STATS

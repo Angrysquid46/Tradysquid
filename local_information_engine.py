@@ -98,6 +98,7 @@ STREAM_STATS: dict[str, float] = {
     "card_pushes": 0.0,     # Discord updates (2s-debounced display branch)
     "eval_seconds": 0.0,    # cumulative time in evaluation
     "projection_skips": 0.0,  # refetches avoided by the delta projection
+    "drift_refetches": 0.0,   # forced because SPY outran the projection
 }
 
 POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
@@ -1716,6 +1717,29 @@ STREAM_NEAR_EXIT_BAND_PCT = float(
 STREAM_FAR_STALE_SECONDS = float(
     os.environ.get("STREAM_FAR_STALE_SECONDS", "2.0")
 )
+# How far SPY may drift from the quote the projection is based on before
+# that quote must be refetched, regardless of how recent it is or how far
+# the projection thinks the position is from a threshold.
+#
+# The projection is linear in delta, but a 0DTE option is not: gamma makes
+# the error grow with the SQUARE of the move, and the worst cases are the
+# near-ATM contracts that move fastest. Measured on 2,799 real 0DTE
+# contracts inside our own delta band, as percentage points of P/L error:
+#
+#   SPY move   median   p90     p99
+#   $0.10       0.1     0.9     9.8
+#   $0.25       0.4     5.5    61.0
+#   $0.50       1.5    21.9   243.9
+#   $1.00       6.1    87.4   975.5
+#
+# Past about $0.15 the p99 error exceeds the 25-point near-threshold band,
+# which means a violently moving contract could be projected as "far from
+# its target" while actually sitting on it. Time alone cannot bound this -
+# two quiet seconds and two seconds of a news spike are not the same
+# staleness. Capping the drift caps the error directly.
+STREAM_MAX_SPOT_DRIFT = float(
+    os.environ.get("STREAM_MAX_SPOT_DRIFT", "0.15")
+)
 # SPY spot at the moment each option quote was captured, so a later SPY tick
 # can be projected against it.
 STREAM_QUOTE_SPOT_AT: dict[str, float] = {}
@@ -1823,6 +1847,17 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
         for option_symbol in option_symbols:
             age = now_monotonic - STREAM_QUOTE_RECEIVED_AT.get(option_symbol, 0.0)
             projected = _projected_pl_pct(row, option_symbol, _spot_now)
+
+            # SPY has moved too far for a linear projection to be trusted -
+            # gamma error grows with the square of the move. Refetch on the
+            # spot, whatever the clock or the projection says.
+            spot_then = STREAM_QUOTE_SPOT_AT.get(option_symbol)
+            if (_spot_now is not None and spot_then is not None
+                    and abs(_spot_now - spot_then) > STREAM_MAX_SPOT_DRIFT):
+                STREAM_STATS["drift_refetches"] += 1
+                stale_symbols.add(option_symbol)
+                continue
+
             if _near_exit_threshold(row, projected):
                 bound = STREAM_QUOTE_STALE_SECONDS      # unchanged where it matters
             else:
