@@ -71,3 +71,38 @@ def test_period_reports_drop_retired_rows():
     body = pr.result_summary("Test", rows, "period")
     for play in RETIRED:
         assert play not in body
+
+
+# ---------------------------------------------------------------------------
+# SPY_KEY_LEVELS stop width
+# ---------------------------------------------------------------------------
+
+def test_key_levels_stop_is_the_widened_setting():
+    """0.45%, not the original 0.15%.
+
+    Key-Levels exits on the UNDERLYING hitting a level with a 2R target,
+    not on a percentage of premium. Measured under that real rule it is
+    profitable at every stop distance tested, and widening the stop trades
+    volume for edge:
+
+        0.15%  4,472 trades  +$6.13/trade  +$27,423
+        0.30%  2,209 trades  +$16.27/trade +$35,935
+        0.45%  1,591 trades  +$26.86/trade +$42,740
+
+    It had looked like the worst strategy in the set only because it was
+    being measured with a borrowed +50/-50 option-premium exit it does not
+    use, which is also what nearly got it deleted.
+    """
+    import spy_scanner
+
+    assert spy_scanner.SPY_KEY_LEVELS_STOP_BUFFER_PCT == 0.45
+    assert spy_scanner.SPY_KEY_LEVELS_TARGET_R_MULTIPLE == 2.0
+
+
+def test_key_levels_is_still_on_the_live_roster():
+    """It was proposed for removal on the strength of the broken
+    measurement. Guard against that being reintroduced quietly."""
+    import spy_scanner
+
+    assert spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE in pr.live_play_types()
+    assert spy_scanner.trade_types_enabled().get("spy_key_levels") is True
