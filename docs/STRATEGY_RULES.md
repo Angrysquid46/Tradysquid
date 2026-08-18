@@ -18,9 +18,9 @@ Why it exists: these rules were repeatedly re-derived from scratch, and several 
 | 8 | **SPY_CONFLUENCE_4** | `multi_level_confluence` | +115% / -75% | 2 bar(s) | `s08-confluence-4` | yes |
 | 9 | **SPY_TOD_FINAL30** | `time_of_day_momentum` | +115% / -75%, 30min | 2 bar(s) | `s09-tod-final30` | yes |
 | 10 | **SPY_MTF_4OF4** | `multi_timeframe_breakout` | +150% / -75% | 2 bar(s) | `s10-mtf-4of4` | yes |
-| 11 | **SPY_EXHAUSTION_1ATR** | `momentum_exhaustion` | +40% / -40%, 30min | 2 bar(s) | `s11-exhaustion-1atr` | yes |
+| 11 | **SPY_EXHAUSTION_1ATR** | `momentum_exhaustion` | +115% / -75%, 30min | 2 bar(s) | `s11-exhaustion-1atr` | yes |
 | 12 | **SPY_FIRST_PULLBACK** | `first_pullback_after_drive` | +75% / -58% | 1 bar(s) | `s12-first-pullback` | yes |
-| 13 | **SPY_OPENING_GAP_FADE** | `playbook_opening_gap_fade` | +40% / -40%, 15min | 1 bar(s) | `s13-opening-gap-fade` | yes |
+| 13 | **SPY_OPENING_GAP_FADE** | `playbook_opening_gap_fade` | +115% / -75%, 15min | 1 bar(s) | `s13-opening-gap-fade` | yes |
 | 14 | **SPY_KEY_LEVELS** | live level/VWAP/ORB read in `spy_scanner` | **underlying** stop 0.45% / target 2.0R | n/a (state, not a bar event) | `s14-key-levels` | yes |
 | 15 | **SPY_COMPRESSION_3BAR** | `compression_breakout` | +115% / -75% | 2 bar(s) | `s15-compression-3bar` | yes |
 
@@ -32,7 +32,7 @@ Each strategy under **its own** exit rules, one contract, $0.04/contract commiss
 |---|---|---|---|---|
 | SPY_GAP_CONT_50 | 1,743 | 42.5% | 31.3% | +8.47 |
 | SPY_FAILED_BREAK | 906 | 42.6% | 37.8% | +2.85 |
-| SPY_ORB_IMMEDIATE | 383 | 44.6% | 37.9% | +4.86 |
+| SPY_ORB_IMMEDIATE | 418 | 43.1% | 37.1% | +4.67 |
 | SPY_SWEEP_10 | 704 | 38.4% | 33.2% | +3.20 |
 | SPY_VWAP_RECLAIM | 557 | 37.5% | 32.1% | +4.54 |
 | SPY_MOMENTUM_ADX25 | 5,803 | 41.2% | 36.2% | +2.85 |
@@ -40,9 +40,9 @@ Each strategy under **its own** exit rules, one contract, $0.04/contract commiss
 | SPY_CONFLUENCE_4 | 2,507 | 41.8% | 35.6% | +3.43 |
 | SPY_TOD_FINAL30 | 281 | 44.8% | 39.8% | +2.00 |
 | SPY_MTF_4OF4 | 1,457 | 38.0% | 32.4% | +3.32 |
-| SPY_EXHAUSTION_1ATR | 335 | 43.0% | 44.5% | -0.50 |
+| SPY_EXHAUSTION_1ATR | 291 | 39.2% | 34.5% | +2.87 |
 | SPY_FIRST_PULLBACK | 338 | 40.5% | 39.3% | +0.65 |
-| SPY_OPENING_GAP_FADE | 13 | 61.5% | 29.4% | +10.62 |
+| SPY_OPENING_GAP_FADE | 13 | 61.5% | 32.6% | +18.73 |
 | SPY_KEY_LEVELS | 1,591 | 42.4% | 21.8% | +26.86 |
 | SPY_COMPRESSION_3BAR | 155 | 50.3% | 37.2% | +6.62 |
 

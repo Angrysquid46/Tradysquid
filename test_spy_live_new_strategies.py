@@ -303,19 +303,29 @@ def test_a_time_stop_only_applies_to_the_strategy_that_measured_one():
 
 
 def test_each_strategy_uses_its_own_target_not_a_shared_one():
-    """Exhaustion targets +40%, gap continuation +150%. A +45% mark must
-    take profit on one and hold on the other."""
+    """First pullback targets +75%, gap continuation +150%. A +80% mark
+    must take profit on one and hold on the other.
+
+    The pair used to be Exhaustion vs gap continuation, which stopped
+    contrasting when Exhaustion moved from +40/-40 to +115/-75. First
+    pullback (+75/-58) is now the uniquely-shaped exit on the roster - if
+    a future change makes IT match another, pick a different pair rather
+    than deleting the assertion. The invariant is that no strategy falls
+    back to a shared default.
+    """
     assert lns.new_strategy_exit_signal(
-        1.0, 1.45, 120, play_type="SPY_EXHAUSTION_1ATR")[0] == "TAKE PROFIT"
+        1.0, 1.80, 120, play_type="SPY_FIRST_PULLBACK")[0] == "TAKE PROFIT"
     assert lns.new_strategy_exit_signal(
-        1.0, 1.45, 120, play_type="SPY_GAP_CONT_50")[0] == "HOLD"
+        1.0, 1.80, 120, play_type="SPY_GAP_CONT_50")[0] == "HOLD"
 
 
 def test_each_strategy_uses_its_own_stop_not_a_shared_one():
+    """-60% stops out first pullback (-58%) and holds gap continuation
+    (-75%)."""
     assert lns.new_strategy_exit_signal(
-        1.0, 0.55, 120, play_type="SPY_EXHAUSTION_1ATR")[0] == "STOP OUT"
+        1.0, 0.40, 120, play_type="SPY_FIRST_PULLBACK")[0] == "STOP OUT"
     assert lns.new_strategy_exit_signal(
-        1.0, 0.55, 120, play_type="SPY_GAP_CONT_50")[0] == "HOLD"
+        1.0, 0.40, 120, play_type="SPY_GAP_CONT_50")[0] == "HOLD"
 
 
 def test_todays_partial_daily_bar_is_never_used_as_prior_day():

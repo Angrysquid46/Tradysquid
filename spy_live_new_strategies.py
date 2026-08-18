@@ -505,9 +505,16 @@ NEW_STRATEGY_EXITS: dict[str, tuple[float, float, int | None]] = {
     "SPY_CONFLUENCE_4":     (115.0, -75.0, None),   # t1.5/s1.0
     "SPY_TOD_FINAL30":      (115.0, -75.0, 30),     # t1.5/s1.0/m30
     "SPY_MTF_4OF4":         (150.0, -75.0, None),   # t2.0/s1.0
-    "SPY_EXHAUSTION_1ATR":  (40.0,  -40.0, 30),     # t0.5/s0.5/m30
+    # +115/-75, not +40/-40. The symmetric shape gave a 1.25 payoff and
+    # therefore demanded a 44.5% win rate against an actual 43.0% - it
+    # lost by that margin. Widening drops break-even to 34.5% and turns
+    # -$0.50/trade into +$2.87 over 291 trades. The entry never changed.
+    "SPY_EXHAUSTION_1ATR":  (115.0, -75.0, 30),     # t0.5/s0.5/m30
     "SPY_FIRST_PULLBACK":   (75.0,  -58.0, None),   # t1.0/s0.75
-    "SPY_OPENING_GAP_FADE": (40.0,  -40.0, 15),     # t0.5/s0.5/m15
+    # +115/-75 for the same reason: +$10.62 -> +$18.73/trade. Only 13
+    # trades either way, so this is the shape the rest of the roster
+    # uses rather than a result to lean on.
+    "SPY_OPENING_GAP_FADE": (115.0, -75.0, 15),     # t0.5/s0.5/m15
     # Measured at this shape before promotion: 155 trades, 50.3% win
     # against a 37.2% break-even, +$6.62/trade.
     "SPY_COMPRESSION_3BAR": (115.0, -75.0, None),
