@@ -83,6 +83,22 @@ STREAM_QUOTE_RECEIVED_AT: dict[str, float] = {}
 # sub-second window would still slip through), but it bounds the worst
 # case to a quarter of what it was, not eliminates the concept.
 STREAM_QUOTE_STALE_SECONDS = 0.5
+
+# Counters for the live exit path, so its cost and latency can be measured
+# instead of estimated. Flushed by position_tracker_job. Plain ints
+# incremented on the hot path - no locking, since an occasional lost
+# increment does not change what these are for, and contention here would
+# slow the very path being measured.
+STREAM_STATS: dict[str, float] = {
+    "ticks": 0.0,           # stream events received
+    "relevant_ticks": 0.0,  # events touching an open position
+    "evaluations": 0.0,     # exit checks actually run
+    "refetches": 0.0,       # REST calls forced by a stale option quote
+    "closes": 0.0,          # exits fired from the stream path
+    "card_pushes": 0.0,     # Discord updates (2s-debounced display branch)
+    "eval_seconds": 0.0,    # cumulative time in evaluation
+}
+
 POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
 # SPY's own spot price for Key-Levels' underlying-level stop/target check
 # (see _stream_quote_event) - cached rather than fetched on every option
@@ -1699,6 +1715,7 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
     symbol = str(event.get("symbol") or "")
     if not symbol or not spy_scanner.market_is_open_now()[0]:
         return
+    STREAM_STATS["ticks"] += 1
     STREAM_QUOTES.setdefault(symbol, {}).update(event)
     now_monotonic = time.monotonic()
     STREAM_QUOTE_RECEIVED_AT[symbol] = now_monotonic
@@ -1734,7 +1751,9 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
     if not relevant:
         return
 
+    STREAM_STATS["relevant_ticks"] += 1
     if stale_symbols:
+        STREAM_STATS["refetches"] += len(stale_symbols)
         try:
             fresh_quotes = spy_scanner.get_quotes(list(stale_symbols), include_greeks=True)
         except Exception:
@@ -1750,13 +1769,17 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
         for row, option_symbols in relevant:
             if not option_symbols.issubset(STREAM_QUOTES):
                 continue
+            _eval_started = time.monotonic()
             evaluation = spy_scanner.evaluate_open_row(
                 row, STREAM_QUOTES, timestamp, underlying_spot_price=_cached_spy_spot()
             )
+            STREAM_STATS["evaluations"] += 1
+            STREAM_STATS["eval_seconds"] += time.monotonic() - _eval_started
             if evaluation.get("pl_pct") is None:
                 continue
             signal = evaluation.get("signal")
             if signal in spy_scanner.CLOSING_SIGNALS:
+                STREAM_STATS["closes"] += 1
                 spy_scanner.close_row(row, evaluation, timestamp)
                 closed_events.append((row, evaluation))
                 changed = True
@@ -1764,6 +1787,7 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
                 trade_id = row.get("trade_id", "")
                 last_write = STREAM_LAST_WRITTEN.get(trade_id, 0.0)
                 if now_monotonic - last_write >= 2:
+                    STREAM_STATS["card_pushes"] += 1
                     STREAM_LAST_WRITTEN[trade_id] = now_monotonic
                     changed = True
                     row["current_pl_pct"] = spy_scanner.round_or_blank(
@@ -1852,6 +1876,19 @@ def position_tracker_job(connection: sqlite3.Connection) -> str:
             spy_scanner.write_log(rows)
     if tracker:
         spy_scanner.write_report_state(report_state)
+    # Flush the live-path counters so the exit path's real cost and latency
+    # can be read from history instead of estimated. Written every
+    # position-tracker cycle; cumulative since process start.
+    _stats = dict(STREAM_STATS)
+    _evals = _stats.get("evaluations") or 0
+    _rel = _stats.get("relevant_ticks") or 0
+    _stats["avg_eval_ms"] = round(
+        (_stats.get("eval_seconds", 0.0) / _evals * 1000) if _evals else 0.0, 2)
+    _stats["refetch_per_relevant_tick"] = round(
+        (_stats.get("refetches", 0.0) / _rel) if _rel else 0.0, 3)
+    store_observation(connection, "stream-stats",
+                      {**_stats, "captured_at": iso_now()})
+
     stream_connected = bool(POSITION_STREAM and POSITION_STREAM.connected)
     stream_state = "connected" if stream_connected else "fallback"
     stream_error = (POSITION_STREAM.last_error if POSITION_STREAM else "") or ""
