@@ -107,7 +107,26 @@ class TradierPositionStream:
                         raise RuntimeError(str(event["error"]))
                     if event.get("type") == "quote" and event.get("symbol"):
                         self.last_event_at = time.time()
-                        self.event_callback(event)
+                        try:
+                            self.event_callback(event)
+                        except Exception as exc:
+                            # Real incident: the callback posts Discord cards
+                            # as a side effect of evaluating exits. A Discord
+                            # rate limit exhausted its retries and raised,
+                            # which propagated out of this loop, was caught by
+                            # run_forever()'s outer handler as if the MARKET
+                            # DATA connection had failed, and tore the whole
+                            # websocket down for a reconnect - during which
+                            # every open position fell back to the 60s REST
+                            # poll instead of tick-by-tick pricing. Discord
+                            # being rate-limited is not a reason SPY quotes
+                            # should stop arriving. The callback's own
+                            # failures are recorded without ever closing this
+                            # connection over them.
+                            self.last_error = (
+                                f"event callback error (connection held): "
+                                f"{type(exc).__name__}: {exc}"[:300]
+                            )
         finally:
             self.connected = False
             self.subscribed_symbols = []

@@ -1926,8 +1926,20 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
         tracker = discord_tracker()
         if tracker:
             report_state = spy_scanner.read_report_state()
+            # Each card gets its own try/except. Real incident: one held
+            # position's card hit a Discord rate limit, raised after
+            # exhausting retries, and that exception propagated out of this
+            # loop - which meant the OTHER open positions' cards silently
+            # never got attempted that tick either, and (before the fix in
+            # tradier_stream.py) tore down the whole websocket besides. A
+            # Discord failure on one trade's card must never block another
+            # trade's card in the same batch.
             for row, evaluation in live_updates:
-                spy_scanner.sync_open_trade_cards(row, tracker, report_state, evaluation)
+                try:
+                    spy_scanner.sync_open_trade_cards(row, tracker, report_state, evaluation)
+                except Exception as exc:
+                    print(f"card update failed for {row.get('trade_id')}: {exc}",
+                         file=sys.stderr)
             spy_scanner.write_report_state(report_state)
 
 
