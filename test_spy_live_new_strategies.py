@@ -505,8 +505,6 @@ def test_every_routing_key_points_at_a_channel_the_sync_creates():
 def test_no_route_points_at_a_channel_that_does_not_exist():
     """A card sent to a deleted channel is silently dropped.
 
-    This caught two real orphans: #ratchet-dashboard survived as a route
-    after the 10 ratchet variants were retired and their channel deleted,
     and the retired 0DTE/expansion strategies still routed to the deleted
     #strategies-dashboard pair. Neither raised anything - the cards simply
     went nowhere.

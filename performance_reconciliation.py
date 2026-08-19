@@ -27,7 +27,6 @@ SPY_CONTRACT_VARIANTS: tuple[tuple[str, str, str, str], ...] = ()
 
 # The live strategies - genuinely different strategies, not
 # variants of one idea, but sharing one dashboard/results channel pair now
-# too (owner: "do the ratchet thing but instead all the other trades
 # tradebot makes ... tabs can stay meaningful and not scattered
 # craziness").
 # get their own independent leaderboard and their own shared channel pair.
@@ -37,8 +36,7 @@ OTHER_STRATEGY_VARIANTS = SPY_CONTRACT_VARIANTS + (
 )
 
 # Every independently-tracked live strategy that gets its own paginated
-# performance/results ledger - the two SPY_0DTE variants, SPY Key-Levels/
-# ORB/VWAP, SPY Expansion-Level, and the 10 ratchet-floor variants, none of
+# performance/results ledger - SPY Key-Levels/
 # which read each other's rows.
 # The 14 strategies promoted from the locked top 15, each with its own
 # channel, its own ledger and its own search markers. Generated from the
@@ -454,7 +452,6 @@ def format_variant_leaderboard(
     performance index and results feed elsewhere in that same channel
     (see _sync_monthly_performance_variant/_sync_strategy_results_variant)
     - this is the summary view on top of that detail, not a replacement
-    for it. Shared by format_ratchet_leaderboard (the 10 ratchet-floor
     variants) and format_strategy_leaderboard (the 4 other live
     strategies) - same ranking logic, different variant group and title.
     Owner: "a dashboard so we can see top performers.\""""
@@ -563,7 +560,6 @@ def _require_upsert(
     # A logical channel the code no longer declares at all has been
     # deliberately retired - posting to it is not a Discord failure, it is a
     # card with nowhere left to go. Raising here took the whole reporting job
-    # down after the 10 ratchet variants were retired: their leaderboard was
     # still posted, spy_scanner had already popped the channel, and every
     # discord-reporting run died on it. A channel that IS still declared but
     # will not acknowledge is a real failure and still raises.
@@ -991,8 +987,7 @@ def install() -> None:
 
 
 def validate_reconciliation() -> dict[str, int]:
-    # Ticker/play_types must be currently-live ones (SPY_0DTE/Key-Levels/
-    # Expansion/ratchet variants via STRATEGY_VARIANTS) - this used to test
+    # Ticker/play_types must be currently-live ones (Key-Levels/
     # against the retired REGULAR/SWING/SPREAD play types and ticker "F"
     # (Ford), silently validating a system that no longer exists. In the
     # installed system this is shadowed by performance_scorecards.py's own

@@ -235,28 +235,9 @@ def test_candidate_builder_accepts_a_contract_priced_well_under_its_own_cap():
     assert len(candidates) == 1
     # Defaults to the 5-minute variant when play_type isn't specified,
     # matching the original single-strategy behavior this builder started as.
-    assert candidates[0]["play_type"] == "SPY_0DTE_5M"
+    assert candidates[0]["play_type"] == spy_scanner.SPY_MANUAL_PLAY_TYPE
 
 
-def test_candidate_builder_tags_each_variant_with_its_own_play_type():
-    # The candidate builder itself is shared - same delta band, same risk
-    # cap, same contract selection - for both variants. play_type is the
-    # ONE thing that must differ, since it's what keeps their cooldowns,
-    # exposure accounting, and learning evidence from mixing together.
-    chain = [_option(delta=0.50, ask=2.00)]
-    candidates_1m = spy_scanner.scan_spy_contract_candidates(
-        chain, "call", "2026-08-10", 600.0, play_type="SPY_0DTE_1M"
-    )
-    candidates_5m = spy_scanner.scan_spy_contract_candidates(
-        chain, "call", "2026-08-10", 600.0, play_type="SPY_0DTE_5M"
-    )
-    assert candidates_1m[0]["play_type"] == "SPY_0DTE_1M"
-    assert candidates_5m[0]["play_type"] == "SPY_0DTE_5M"
-    # Everything else about the two candidates is identical - only the tag differs.
-    for key in candidates_1m[0]:
-        if key == "play_type":
-            continue
-        assert candidates_1m[0][key] == candidates_5m[0][key]
 
 
 def test_candidate_builder_rejects_a_contract_over_its_own_risk_cap():
@@ -302,7 +283,7 @@ def test_candidate_survives_candidate_to_row_without_a_keyerror():
         row = spy_scanner.candidate_to_row(candidates[0], [], spy_scanner.now_ct())
     finally:
         spy_scanner.TICKER = original_ticker
-    assert row["play_type"] == "SPY_0DTE_5M"
+    assert row["play_type"] == spy_scanner.SPY_MANUAL_PLAY_TYPE
     assert row["ticker"] == "SPY"
     assert row["cost_or_credit"] == "1.2"
     assert row["max_risk"] == "120.0"
@@ -310,13 +291,6 @@ def test_candidate_survives_candidate_to_row_without_a_keyerror():
     assert "BULLISH" in row["market_regime"]
 
 
-def test_spy_0dte_defaults_paused_when_config_is_silent():
-    # The code-level fallback (not the live config, which this session
-    # intentionally flips on) must still default to paused - a missing
-    # config key must never silently enable a leveraged, single-regime-
-    # backtested play type, for EITHER variant.
-    assert spy_scanner.DEFAULT_TRADE_TYPES_ENABLED["spy_0dte_1m"] is False
-    assert spy_scanner.DEFAULT_TRADE_TYPES_ENABLED["spy_0dte_5m"] is False
 
 
 def test_no_scanner_driven_0dte_variant_is_live_any_more():

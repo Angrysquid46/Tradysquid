@@ -6,7 +6,6 @@ It used to only exercise 2 of the system's 14 live play_types
 version, the fully retired REGULAR/SWING/SPREAD play types and ticker "F"
 (Ford), left over from before the SPY-only pivot. Either way, a real
 reconciliation bug in any of the other 12 strategies (Key-Levels,
-Expansion-Level, or any of the 10 ratchet variants) would have gone
 completely undetected. These tests lock in that every currently-live
 play_type actually gets exercised.
 """

@@ -19,7 +19,6 @@ matters for any "top N" exercise:
 |---|---|
 | Key-levels (10 references + 1m/3m/5m agreement) | `SPY_KEY_LEVELS` |
 
-The 10 ratchet variants are not 10 ideas. They are one entry with ten
 exit shapes, and those shapes are defined in **option-premium percent**
 (`step_pct` / `stop_pct` applied to `(mark - entry)/entry`), which cannot
 be measured from underlying bars at all. Ranking them against each other
@@ -255,10 +254,8 @@ ENTRY_WINDOW_SENSITIVITY = (
 )
 
 EXIT_SHAPES_NEED_OPTION_MODEL = (
-    "Every live exit is defined in option-premium percent - SPY_0DTE's "
-    "+50%/-50% with a one-time floor raise at +30%, and each ratchet variant's "
+    "Every live exit is defined in option-premium percent - the premium exit's "
     "step_pct/stop_pct floor. None of those can be measured from underlying "
-    "bars, so the 10 ratchet variants are indistinguishable here: they share "
     "one entry and differ only in exit shape. Ranking them against each other "
     "requires the Phase 5 option model."
 )

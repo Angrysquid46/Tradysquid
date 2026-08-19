@@ -1223,7 +1223,7 @@ class InformationEngineTests(unittest.TestCase):
 
     def test_streamed_quote_closes_paper_position_immediately(self) -> None:
         # This position already peaked at +40% in an earlier cycle
-        # (max_favorable_pct), well past SPY_0DTE's floor trigger (30%), so
+        # (max_favorable_pct), well past the premium exit's floor trigger (30%), so
         # the raised floor (-15%) is what should govern here, not the full
         # -50% stop - the incoming quote pulls it back to -16%, past the
         # floor, and the streaming path (not just REST polling) must catch it.
@@ -1274,7 +1274,6 @@ class InformationEngineTests(unittest.TestCase):
 
 
     def test_underlying_tick_refetches_a_stale_option_quote_and_catches_the_exit(self) -> None:
-        # Real bug caught live: a ratchet-floor trade peaked at +29%, but
         # its option quote hadn't ticked again by the time price
         # reversed, so it was never re-checked until it had already
         # fallen to +6% - a 23-point overshoot past where the floor
@@ -1291,7 +1290,6 @@ class InformationEngineTests(unittest.TestCase):
             row = {field: "" for field in spy_scanner.LOG_HEADER}
             row.update(
                 {
-                    "trade_id": "SPY-RATCHET-STALE-001",
                     "ticker": "SPY",
                     "play_type": "SPY_GAP_CONT_50",
                     "option_symbol": "SPY260821C00500002",

@@ -1,6 +1,5 @@
 """CLOSING_SIGNALS is the single source of truth every close-triggering
 call site checks against - and it has already drifted from what the exit-
-signal functions actually return twice: once for FLOOR STOP/RATCHET EOD
 CLOSE (fixed, see test_spy_ratchet.py), and again for spy_0dte_exit_signal's
 own bare "EOD CLOSE" (confirmed live: not in the set, meaning any SPY_0DTE_
 1M/5M position that reaches the 15-minutes-to-close window without hitting

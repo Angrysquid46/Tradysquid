@@ -76,7 +76,7 @@ from typing import Any, Callable
 
 import spy_scanner as s
 
-# MACD periods. These were previously read from spy_scanner's SPY_EXPANSION_*
+# MACD periods. These were previously read from another module's
 # constants, which coupled a generic indicator to one strategy's config - and
 # broke outright when that strategy was removed. 12/26/9 are the standard
 # values those constants also defaulted to.

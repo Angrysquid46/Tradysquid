@@ -55,7 +55,6 @@ class OptionExit:
     stop_pct: float | None = -50.0
     floor_trigger_pct: float | None = 30.0   # one-time floor raise (SPY_0DTE)
     floor_pct: float | None = -15.0
-    step_pct: float | None = None            # ratchet: locks a floor each step
     ratchet_stop_pct: float | None = None
     # SPY_KEY_LEVELS triggers on the UNDERLYING, not on option premium: a
     # stop at the key level (0.15% buffer) and a target at 2R. P/L is still

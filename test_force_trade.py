@@ -1,7 +1,7 @@
 """Tests for /force-trade: owner-forced manual SPY 0DTE entry that finds
 the best real contract matching the requested direction using the same
-contract-selection standards SPY_0DTE already uses, then hands it off to
-the exact same live exit rule every SPY_0DTE trade uses - "the traders
+contract-selection standards the scanner already uses, then hands it off to
+the exact same live exit rule every forced trade uses - "the traders
 open the best position they can find and then proceeds to go based off
 the traders rules." evolve_bot is untouched by this command entirely."""
 
