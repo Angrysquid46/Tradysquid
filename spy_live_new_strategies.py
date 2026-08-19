@@ -759,6 +759,26 @@ def results_key(play_type: str) -> str:
     return f"results_{play_type.removeprefix('SPY_').lower()}"
 
 
+def held_key(play_type: str) -> str:
+    return f"held_{play_type.removeprefix('SPY_').lower()}"
+
+
+def held_channel_slug(play_type: str) -> str:
+    """The strategy's own live-position channel.
+
+    Discord rate-limits per channel, not per bot. Every open position used
+    to edit its card in one shared #updates channel, so the cards competed
+    for a single bucket and the refresh interval had to grow with the
+    number of open positions - 12s at six, 24s at twelve.
+
+    A strategy holds at most one position at a time (scan_new_strategy_entries
+    skips an occupied strategy), so giving each its own channel puts exactly
+    one card in each bucket. Every card then refreshes at the floor,
+    independent of how many other strategies are in a trade.
+    """
+    return f"{channel_slug(play_type)}-held"
+
+
 def channel_names() -> dict[str, str]:
     """CHANNEL_NAMES entries for all 14.
 
@@ -771,6 +791,9 @@ def channel_names() -> dict[str, str]:
         channel = channel_slug(play_type)
         mapping[performance_key(play_type)] = channel
         mapping[results_key(play_type)] = channel
+        # The live position card routes to its OWN channel so it gets its
+        # own Discord rate-limit bucket - see held_channel_slug.
+        mapping[held_key(play_type)] = held_channel_slug(play_type)
     return mapping
 
 
@@ -826,6 +849,13 @@ def channel_specs() -> list[tuple[str, str, str]]:
             "STRATEGIES", channel_slug(play_type),
             f"#{spec['rank']} of the tested set - {spec['label']}. "
             f"Own entry signal, {exit_text}. "
-            f"Live P/L card plus this strategy's own trade history.",
+            f"This strategy's own trade history and performance card.",
+        ))
+        specs.append((
+            "STRATEGIES", held_channel_slug(play_type),
+            f"Live position for {spec['label']} while it is open. "
+            f"Its own channel so the card gets its own Discord rate-limit "
+            f"bucket and refreshes at full speed regardless of how many "
+            f"other strategies are in a trade.",
         ))
     return specs

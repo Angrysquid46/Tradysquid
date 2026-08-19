@@ -478,6 +478,32 @@ try:
 except Exception as _exc:   # pragma: no cover - import guard only
     print(f"new-strategy channel names unavailable: {_exc}", file=sys.stderr)
 
+
+# The shared channel every live card used to share. Still the route for
+# anything without a strategy of its own (manual trades), and the fallback
+# if the registry import above failed.
+SHARED_HELD_CHANNEL_KEY = "updates"
+
+
+def held_channel_key(play_type: str) -> str:
+    """Logical channel for a live position card.
+
+    Discord rate-limits per channel. One shared channel meant every open
+    card competed for a single bucket, so the refresh interval had to scale
+    with the number of open positions. Each strategy now owns a channel, so
+    each card has its own budget and refreshes at the floor.
+
+    Anything without its own strategy channel - manual trades especially -
+    keeps routing to the shared channel.
+    """
+    if not play_type:
+        return SHARED_HELD_CHANNEL_KEY
+    try:
+        key = _new_strategy_channels.held_key(play_type)
+    except Exception:   # pragma: no cover - registry import guard
+        return SHARED_HELD_CHANNEL_KEY
+    return key if key in CHANNEL_NAMES else SHARED_HELD_CHANNEL_KEY
+
 TAG_KEYS = {
     "WATCHING",
     "QUALIFIED",
@@ -5924,7 +5950,7 @@ def sync_open_trade_cards(
             entry_alert_text(row, link, summary_only=True),
         )
     discord.upsert_trade_message(
-        "updates",
+        held_channel_key(row.get("play_type", "")),
         report_state,
         "position",
         trade_id,
