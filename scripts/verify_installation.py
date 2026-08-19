@@ -1,18 +1,46 @@
+"""Verify this checkout is a working Tradysquid installation.
+
+Rewritten 2026-08-19. This used to import the `tradysquid/` package -
+AppConfig, Database, TradierClient, StrategyRegistry - and assert it held
+exactly 6 strategies. That package was the abandoned multi-ticker rewrite;
+nothing in the live trade path ever imported it, and its "6 strategies"
+were regular_call/regular_put/swing_call/swing_put/bull_put_spread/
+bear_call_spread, none of which have existed for months. So the installer
+was verifying a system that does not run, and the import was the only thing
+keeping 10,000 lines of dead code in the repository.
+
+It now verifies what actually runs: the flat scripts, the live strategy
+roster, the real trade log, and that the scanner exposes no order-placing
+surface.
+"""
+
 from __future__ import annotations
 
 import inspect
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
-import tradysquid
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-from tradysquid.core.config import AppConfig, redact
-from tradysquid.data.database import Database
-from tradysquid.providers.tradier import TradierClient
-from tradysquid.strategies.registry import StrategyRegistry
+import spy_scanner  # noqa: E402 - path must be set up first
+import performance_reconciliation  # noqa: E402
+
+# Anything that looks like a credential, so a failure receipt is safe to print.
+_SECRET = re.compile(
+    r"(?i)(token|secret|api[_-]?key|password|authorization)\s*[=:]\s*\S+"
+)
+
+EXPECTED_STRATEGY_COUNT = 15
+
+
+def redact(text: str) -> str:
+    return _SECRET.sub(lambda m: f"{m.group(1)}=[REDACTED]", str(text))
 
 
 class VerificationFailure(RuntimeError):
@@ -40,7 +68,7 @@ def _expected_python(root: Path) -> Path:
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parents[1]
+    root = ROOT
     state_path = root / "state" / "install-verification.json"
     state_path.parent.mkdir(parents=True, exist_ok=True)
     checks: dict[str, dict[str, Any]] = {}
@@ -52,12 +80,12 @@ def main() -> int:
     }
 
     try:
-        package_path = Path(tradysquid.__file__ or "").resolve()
+        scanner_path = Path(spy_scanner.__file__ or "").resolve()
         _require(
             checks,
-            "package-import",
-            package_path.is_file() and package_path.is_relative_to(root.resolve()),
-            {"package_path": str(package_path)},
+            "scanner-import",
+            scanner_path.is_file() and scanner_path.is_relative_to(root.resolve()),
+            {"scanner_path": str(scanner_path)},
         )
 
         expected_python = _expected_python(root)
@@ -81,96 +109,65 @@ def main() -> int:
             {"legacy_virtual_environment": str(legacy_venv)},
         )
 
-        config = AppConfig.load(root)
-        _require(checks, "configuration-load", True)
+        # config/scanner.json is the real tunable-parameter file; spy_scanner
+        # reads every threshold through configured().
+        config_path = root / "config" / "scanner.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
         _require(
             checks,
-            "universe-limit",
-            int(config.defaults["universe"]["maximum_active"]) == 25,
-            {"maximum_active": int(config.defaults["universe"]["maximum_active"])},
-        )
-        _require(
-            checks,
-            "global-risk-limit",
-            float(config.defaults["risk"]["maximum_position_risk_dollars"]) == 100.0,
-            {
-                "maximum_position_risk_dollars": float(
-                    config.defaults["risk"]["maximum_position_risk_dollars"]
-                )
-            },
+            "configuration-load",
+            isinstance(config, dict) and bool(config),
+            {"config_path": str(config_path)},
         )
 
-        registry = StrategyRegistry(config.strategies)
-        strategies = registry.all()
-        strategy_versions = {
-            strategy.id: {
-                "version": strategy.config.get("version"),
-                "configuration_hash": strategy.config.get("configuration_hash"),
-            }
-            for strategy in strategies
-        }
+        risk_cap = float(spy_scanner.configured("max_risk_per_trade", 500.0))
         _require(
             checks,
-            "strategy-registry",
-            len(strategies) == 6
-            and all(
-                value["version"] and len(str(value["configuration_hash"])) == 64
-                for value in strategy_versions.values()
-            ),
-            {"strategy_count": len(strategies), "strategies": strategy_versions},
+            "risk-cap",
+            0 < risk_cap <= 500.0,
+            {"max_risk_per_trade": risk_cap},
         )
 
-        database_path = (root / config.defaults["database"]["path"]).resolve()
-        expected_database_path = (root / "data" / "tradysquid.db").resolve()
+        live = sorted(performance_reconciliation.live_play_types())
         _require(
             checks,
-            "database-path",
-            database_path == expected_database_path,
-            {"database_path": str(database_path)},
-        )
-        database = Database(database_path)
-        database.initialize()
-        database.register_strategies(config.strategies)
-        _require(
-            checks,
-            "database-integrity",
-            database.integrity_check() == "ok",
-            {"integrity": database.integrity_check()},
-        )
-        _require(
-            checks,
-            "database-wal",
-            database.journal_mode() == "wal",
-            {"journal_mode": database.journal_mode()},
-        )
-        with database.connect() as connection:
-            foreign_keys = int(connection.execute("PRAGMA foreign_keys").fetchone()[0])
-        _require(
-            checks,
-            "database-foreign-keys",
-            foreign_keys == 1,
-            {"foreign_keys": foreign_keys},
+            "strategy-roster",
+            len(live) == EXPECTED_STRATEGY_COUNT,
+            {"strategy_count": len(live), "strategies": live},
         )
 
-        forbidden_terms = ("order", "cancel", "replace", "preview", "submit")
-        public_provider_methods = [
+        # Every live strategy must resolve a held-position channel, or its
+        # card silently goes nowhere.
+        unrouted = [p for p in live if not spy_scanner.held_channel_key(p)]
+        _require(
+            checks,
+            "strategy-channel-routing",
+            not unrouted,
+            {"unrouted": unrouted},
+        )
+
+        log_path = Path(spy_scanner.LOG_PATH).resolve()
+        _require(
+            checks,
+            "trade-log-path",
+            log_path.parent.is_dir(),
+            {"trade_log": str(log_path), "exists": log_path.is_file()},
+        )
+
+        # Paper trading only: the scanner must expose no order-placing surface.
+        forbidden_terms = ("place_order", "submit_order", "cancel_order",
+                           "preview_order", "replace_order", "modify_order")
+        forbidden = sorted(
             name
-            for name, member in inspect.getmembers(TradierClient, callable)
+            for name, _ in inspect.getmembers(spy_scanner, callable)
             if not name.startswith("_")
-        ]
-        forbidden_provider_methods = sorted(
-            name
-            for name in public_provider_methods
-            if any(term in name.lower() for term in forbidden_terms)
+            and any(term in name.lower() for term in forbidden_terms)
         )
         _require(
             checks,
-            "read-only-provider",
-            not forbidden_provider_methods,
-            {
-                "public_methods": public_provider_methods,
-                "forbidden_methods": forbidden_provider_methods,
-            },
+            "read-only-scanner",
+            not forbidden,
+            {"forbidden_methods": forbidden},
         )
 
         result.update(
@@ -178,9 +175,9 @@ def main() -> int:
                 "status": "PASS",
                 "python_executable": str(running_python),
                 "virtual_environment": str(running_prefix),
-                "tradysquid_package_path": str(package_path),
-                "database_path": str(database_path),
-                "strategy_count": len(strategies),
+                "scanner_path": str(scanner_path),
+                "trade_log": str(log_path),
+                "strategy_count": len(live),
             }
         )
         state_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
@@ -195,7 +192,7 @@ def main() -> int:
                 "error": redact(str(exc)),
             }
         )
-    except Exception as exc:  # production boundary: record a sanitized failure receipt
+    except Exception as exc:  # production boundary: record a sanitized receipt
         result.update(
             {
                 "status": "FAILED",

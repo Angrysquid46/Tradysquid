@@ -109,7 +109,7 @@ def test_generated_egg_info_cannot_block_clean_branch_switch() -> None:
     assert "*.egg-info/" in ignore_text.splitlines()
 
     tracked = subprocess.run(
-        ["git", "-C", str(ROOT), "ls-files", "tradysquid.egg-info"],
+        ["git", "-C", str(ROOT), "ls-files", "*.egg-info"],
         text=True,
         capture_output=True,
         check=False,

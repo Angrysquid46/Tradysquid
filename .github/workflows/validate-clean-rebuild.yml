@@ -111,7 +111,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $External | Out-Null
           Push-Location $External
           try {
-            & $Python -c "import pathlib, tradysquid, scripts; print(pathlib.Path(tradysquid.__file__).resolve())"
+            & $Python -c "import pathlib, spy_scanner; print(pathlib.Path(spy_scanner.__file__).resolve())"
             if ($LASTEXITCODE -ne 0) { throw 'External working-directory import failed.' }
             & $Python -m scripts.verify_installation
             if ($LASTEXITCODE -ne 0) { throw 'External working-directory verification failed.' }
