@@ -33,7 +33,7 @@ SPY_0DTE_VARIANTS: tuple[tuple[str, str, str, str], ...] = ()
 # variants of one idea, but sharing one dashboard/results channel pair now
 # too (owner: "do the ratchet thing but instead all the other trades
 # tradebot makes ... tabs can stay meaningful and not scattered
-# craziness"). Named separately from RATCHET_VARIANTS since the two groups
+# craziness").
 # get their own independent leaderboard and their own shared channel pair.
 # SPY_EXPANSION_LEVEL retired alongside the 0DTE pair; Key-Levels is the one
 # original strategy that survived into the locked top set.

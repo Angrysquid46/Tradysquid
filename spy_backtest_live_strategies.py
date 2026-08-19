@@ -17,7 +17,7 @@ matters for any "top N" exercise:
 
 | Entry signal | Live strategies using it |
 |---|---|
-| Opening-range breakout on 1-min bars | `SPY_0DTE_1M` + all 10 `SPY_RATCHET_*` = **11** |
+| Opening-range breakout on 1-min bars | `SPY_0DTE_1M` |
 | Opening-range breakout on 5-min bars | `SPY_0DTE_5M` |
 | Key-levels (10 references + 1m/3m/5m agreement) | `SPY_KEY_LEVELS` |
 
@@ -91,7 +91,7 @@ def _aggregate(rows: Sequence[dict[str, Any]], minutes: int) -> list[dict[str, A
 
 
 # ---------------------------------------------------------------------------
-# SPY_0DTE_1M / SPY_0DTE_5M / all 10 SPY_RATCHET_* - one shared entry
+# SPY_0DTE_1M / SPY_0DTE_5M - one shared entry
 # ---------------------------------------------------------------------------
 
 def live_opening_range_breakout(bar_minutes: int = 1) -> SignalFn:
