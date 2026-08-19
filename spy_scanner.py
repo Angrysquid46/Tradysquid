@@ -178,10 +178,6 @@ SPY_0DTE_OPENING_RANGE_MINUTES = int(os.environ.get(
 # A fresh TradingView alert for SPY older than this many seconds no longer
 # counts as a live signal, so a position doesn't reopen off a stale alert
 # well after the fact.
-SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS = int(os.environ.get(
-    "SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS",
-    configured("spy_0dte_1m_tradingview_max_age_seconds", 180),
-))
 # Keyed by play_type, not a single value - the same TradingView alert has
 # to be able to independently open SPY_0DTE_1M and every enabled ratchet
 # variant without one variant consuming it and starving the other ten.
@@ -1903,8 +1899,7 @@ def spy_0dte_opening_range_signal(
 
     bar_minutes is the interval of the intraday bars passed in (default 5,
     matching the original single-strategy behavior). This function is now
-    shared by every SPY_0DTE-family live strategy - SPY_0DTE_5M with
-    5-minute bars, SPY_0DTE_1M with
+    shared by the SPY_0DTE opening-range family.
     1-minute bars - so the number of bars needed to cover the same
     opening-range window has to scale with whatever interval the caller
     actually fetched, not stay hardcoded to 5-minute math for all of
@@ -2033,71 +2028,6 @@ def _tradingview_event_mark_consumed(play_type: str, event_id: int) -> None:
         pass
 
 
-def spy_0dte_tradingview_signal(
-    symbol: str = SPY_0DTE_TICKER, *, play_type: str = "SPY_0DTE_1M"
-) -> dict[str, Any]:
-    """Live TradingView-alert entry signal - this is the strategy the
-    TradingView webhook was actually built for (the Pine indicator behind
-    the 66.8% backtest fires the live alert here), not the Python opening-
-    range breakout used by SPY_0DTE_5M below. Shared by SPY_0DTE_1M and
-    per owner direction: they're the same
-    entry, only their exit (ratchet floor/stop vs. 1M's own exit) differs.
-    A fresh, direction-parseable TradingView alert for `symbol` is the
-    only thing that qualifies an entry; no alert means no trade, regardless
-    of what any other price math says. Consumption is tracked per
-    play_type (not globally), so the SAME alert can independently open
-    SPY_0DTE_1M and every enabled ratchet variant without one consuming it
-    and starving the others - each play_type can still only consume a
-    given alert once, so a position that opens and closes quickly can't
-    reopen off the same stale alert."""
-    try:
-        event = dynamic_universe.recent_tradingview_signal(
-            symbol, SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS
-        )
-    except Exception as exc:
-        return _unavailable_context(f"tradingview signal lookup failed: {exc}")
-    if not event:
-        return {
-            "qualified": False,
-            "regime": "NO TRADE",
-            "reason": "no TradingView alert received in the last "
-            f"{SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS}s",
-            "failures": ["no fresh TradingView alert"],
-        }
-    if _tradingview_event_already_consumed(play_type, int(event["id"])):
-        return {
-            "qualified": False,
-            "regime": "NO TRADE",
-            "reason": "the latest TradingView alert already opened a trade for this variant",
-            "failures": ["TradingView alert already consumed"],
-        }
-    direction = spy_0dte_tradingview_direction(event)
-    if direction is None:
-        return {
-            "qualified": False,
-            "regime": "NO TRADE",
-            "reason": f"TradingView alert received but direction was not recognized: {event.get('event_type')!r}",
-            "failures": ["TradingView alert direction unrecognized"],
-        }
-    # Consumption is marked only once a candidate built from this alert
-    # actually becomes a real open row (_mark_tradingview_event_if_opened,
-    # called from main()'s open loop), NOT here. Marking it here - on a
-    # mere successful parse - meant a fresh, correctly-parsed alert got
-    # permanently burned the first time ANY scan cycle glanced at it,
-    # even if scan_spy_0dte_candidates then found no real contract or a
-    # later filter (exposure cap, entry window) rejected it - with no
-    # way for a later, still-fresh scan cycle to ever retry it. Real
-    # incident: 2026-08-13 09:01:59 alert was marked consumed by all 11
-    # TradingView-gated strategies at 09:03:16, yet zero of them opened
-    # a real trade that day.
-    regime = "BULLISH / CONTROLLED" if direction == "BULLISH" else "BEARISH / CONTROLLED"
-    return {
-        "qualified": True,
-        "regime": regime,
-        "reason": f"TradingView alert ({event.get('event_type')}) at {event.get('received_at')}",
-        "failures": [],
-        "tradingview_event_id": event["id"],
-    }
 
 
 def spy_0dte_exit_signal(
@@ -2156,7 +2086,7 @@ def scan_spy_0dte_candidates(
     built standalone per explicit owner direction not to reuse the
     retired multi-ticker single-leg machinery.
 
-    Shared by both independently-tracked SPY_0DTE_1M and SPY_0DTE_5M
+    Retired as live strategies; retained because evolve_bot imports it.
     strategies - they differ only in the opening-range bar interval used
     by spy_0dte_opening_range_signal, not in contract selection, delta
     band, or risk cap. play_type tags which one a given candidate came
@@ -6604,66 +6534,6 @@ def _refresh_spot_price(fallback: float) -> float:
         return fallback
 
 
-def _run_spy_0dte_variant(
-    *,
-    play_type: str,
-    bar_minutes: int,
-    intraday_history: list[dict[str, Any]],
-    today_str: str,
-    spot_price: float,
-    candidates: list[dict[str, Any]],
-    quote_map: dict[str, dict[str, Any]],
-    add_candidates,
-) -> dict[str, Any]:
-    """Run one SPY 0DTE variant's signal + candidate build in isolation.
-    Two variants (SPY_0DTE_1M, SPY_0DTE_5M) call this independently with
-    their own intraday bar interval - each gets its own market-context
-    read, its own chain fetch, its own candidates tagged with its own
-    play_type, and neither one's failure or signal state can affect the
-    other's. They trade fully independently: both can be open at once,
-    each under its own $500/trade risk cap, by owner decision.
-
-    Both variants use the same self-contained Python opening-range
-    breakout signal, differing only in bar interval - SPY_0DTE_1M
-    previously read the live TradingView webhook alert instead
-    (spy_0dte_tradingview_signal), but that path proved to be this
-    system's single most bug-prone dependency (secret mismatches,
-    malformed Pine alert payloads, an alert-freshness window shorter
-    than the scan cadence, and alerts marked "consumed" on parse rather
-    than on actually opening a trade - four separate real incidents).
-    Owner, after all of it: "make them fire off something else because
-    I'm sick of seeing them all dead." spy_0dte_tradingview_signal and
-    the /tradingview webhook still exist and still work, just unused by
-    the live entry path now."""
-    try:
-        context = spy_0dte_opening_range_signal(intraday_history, bar_minutes=bar_minutes)
-    except Exception as exc:
-        context = _unavailable_context(f"spy 0dte ({play_type}) signal errored: {exc}")
-    if not context.get("qualified"):
-        return context
-    try:
-        allowed_strikes = set(filter_strikes(get_strikes(TICKER, today_str), spot_price))
-        raw_chain = get_chain(TICKER, today_str)
-        chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
-        for option in chain:
-            if option.get("symbol"):
-                quote_map[option["symbol"]] = option
-        calls = [option for option in chain if option.get("option_type") == "call"]
-        puts = [option for option in chain if option.get("option_type") == "put"]
-        regime = context["regime"]
-        if regime == "BULLISH / CONTROLLED":
-            add_candidates(
-                f"{play_type} calls",
-                scan_spy_0dte_candidates(calls, "call", today_str, spot_price, context, play_type=play_type),
-            )
-        elif regime == "BEARISH / CONTROLLED":
-            add_candidates(
-                f"{play_type} puts",
-                scan_spy_0dte_candidates(puts, "put", today_str, spot_price, context, play_type=play_type),
-            )
-    except Exception as exc:
-        print(f"SPY 0DTE ({play_type}) scan step failed: {exc}", file=sys.stderr)
-    return context
 
 
 
@@ -6934,7 +6804,6 @@ def scan_candidates(
         "puts": 0,
         "qualified_candidates": 0,
         "candidate_counts": {},
-        "spy_0dte_market_context": {},
     }
     candidates: list[dict[str, Any]] = []
     quote_map: dict[str, dict[str, Any]] = {}
@@ -6952,31 +6821,6 @@ def scan_candidates(
     # invent artificial differences that would muddy the comparison.
     if TICKER == SPY_0DTE_TICKER:
         today_str = now_ct().date().isoformat()
-        if today_str in expirations:
-            # Both retired 2026-08-17 - see SPY_0DTE_PLAY_TYPES. The loop
-            # is kept (rather than deleted) so restoring a variant means
-            # re-adding one line here, and so the surrounding expiration /
-            # chain plumbing stays exercised.
-            variants: tuple[tuple[str, int, list, bool], ...] = ()
-            for play_type, bar_minutes, intraday_history, variant_enabled in variants:
-                if not variant_enabled:
-                    stats["spy_0dte_market_context"][play_type] = _unavailable_context(
-                        f"{play_type} disabled in trade_types_enabled"
-                    )
-                    continue
-                stats["spy_0dte_market_context"][play_type] = _run_spy_0dte_variant(
-                    play_type=play_type,
-                    bar_minutes=bar_minutes,
-                    intraday_history=intraday_history,
-                    today_str=today_str,
-                    spot_price=spot_price,
-                    candidates=candidates,
-                    quote_map=quote_map,
-                    add_candidates=add_candidates,
-                )
-        else:
-            unavailable = _unavailable_context("no same-day expiration listed today")
-            stats["spy_0dte_market_context"] = {"SPY_0DTE_5M": unavailable, "SPY_0DTE_1M": unavailable}
 
 
     # SPY Key-Levels/ORB/VWAP - a second, fully independent SPY strategy.
