@@ -27,11 +27,6 @@ class FakeDiscord:
         self.channels = dict(spy_scanner.CHANNEL_NAMES)
         self.channels["daily_recap"] = "daily"
         self.channels["weekly_report"] = "weekly"
-        for variant in spy_scanner.SPY_RATCHET_VARIANTS:
-            suffix = variant["play_type"].removeprefix("SPY_RATCHET_").lower()
-            slug = suffix.replace("_", "-")
-            self.channels[f"performance_ratchet_{suffix}"] = f"monthly-ratchet-{slug}"
-            self.channels[f"results_ratchet_{suffix}"] = f"strategy-ratchet-{slug}"
         self.channels["ratchet_leaderboard"] = "ratchet-dashboard"
         self.cards: dict[str, str] = {}
         self.channel_cards: dict[str, list[str]] = {

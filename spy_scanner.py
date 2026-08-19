@@ -231,50 +231,6 @@ SPY_0DTE_FLOOR_TRIGGER_PCT = float(os.environ.get(
 SPY_0DTE_FLOOR_PCT = float(os.environ.get(
     "SPY_0DTE_FLOOR_PCT", configured("spy_0dte_floor_pct", -15.0)
 ))
-# SPY Ratchet-floor variants: 10 independently-tracked strategies, each
-# reusing SPY_0DTE's exact entry signal and contract selection (delta band,
-# max ask, risk cap - all shared as-is, not duplicated), but with a
-# different exit shape - no fixed take-profit target; a floor that locks in
-# profit every step_pct once peak gain first crosses it, and ratchets up
-# every further step; stop_pct only applies before the first step ever
-# fires. Picked from a 1,680-combo backtest against real Tradier 1-minute
-# SPY history (2026-08-10) - the 10 best-performing, non-degenerate
-# (step, stop) pairs, all net positive (PF 1.33-1.62 on that sample). One
-# shared exit function (spy_ratchet_exit_signal) serves all 10, each fed
-# its own numbers from this table - see SPY_RATCHET_VARIANT_BY_PLAY_TYPE.
-# RETIRED 2026-08-17. All 10 ratchet-floor variants are gone, on
-# measurement rather than preference:
-#
-# - the ORB entry all ten shared measured +0.0004 ATR/trade (t=+0.39) over
-#   3,347 sessions of real 1-minute data - indistinguishable from random
-#   entries on the same bars
-# - once the exit shapes were separable, which required the Phase 5 option
-#   model since step_pct/stop_pct are defined in option-premium percent,
-#   every ratchet placed BELOW the SPY_0DTE shape already deployed: best
-#   ratchet -$275k against SPY_0DTE's -$156k, worst -$417k. Their tight
-#   -16% to -18% base stops dropped win rates to 28-30% versus 42.9%.
-#
-# Emptied rather than deleted line by line: every derived structure -
-# SPY_RATCHET_PLAY_TYPES, SPY_RATCHET_VARIANT_BY_PLAY_TYPE, the
-# CHANNEL_NAMES entries, performance_reconciliation's REPORT_ROUTES - is
-# generated from this tuple, so they all empty together and no ratchet
-# channel gets recreated. spy_ratchet_exit_signal and its tests stay
-# intact and passing, so restoring a variant is a one-line change if the
-# owner ever wants one back.
-#
-# See docs/BACKTEST_RESULTS.md and docs/OPTION_RESULTS.md.
-SPY_RATCHET_VARIANTS: tuple[dict[str, Any], ...] = ()
-SPY_RATCHET_PLAY_TYPES = tuple(variant["play_type"] for variant in SPY_RATCHET_VARIANTS)
-SPY_RATCHET_VARIANT_BY_PLAY_TYPE = {variant["play_type"]: variant for variant in SPY_RATCHET_VARIANTS}
-
-
-def is_spy_ratchet_play_type(play_type: str | None) -> bool:
-    """True for any of the 10 independently-tracked ratchet-floor variants -
-    same pattern as is_spy_0dte_play_type, so callers don't re-list all 10
-    strings each time."""
-    return play_type in SPY_RATCHET_VARIANT_BY_PLAY_TYPE
-
-
 STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
 REENTRY_COOLDOWN_MINUTES = int(os.environ.get("REENTRY_COOLDOWN_MINUTES", "1440"))
 # No cap by default, per explicit direction: limiting how many positions
@@ -555,7 +511,6 @@ CLOSING_SIGNALS = {
     "THESIS INVALIDATED",
     "TIME DECAY EXIT",
     "FLOOR STOP",
-    "RATCHET EOD CLOSE",
     # spy_0dte_exit_signal's own bare "EOD CLOSE" (both its real 15-minutes-
     # to-close branch and its own error-fallback branch) - the exact bug
     # this set exists to prevent, missed from this set itself: a SPY_0DTE_1M/
@@ -602,33 +557,6 @@ AUTOMATED_CHANNEL_KEYS = [
     "errors",
     "workflow_log",
 ]
-# Two logical channels per ratchet variant (performance + results) - each
-# variant still gets its own logical key, own state tracking, and own
-# search-marker text (see performance_reconciliation.py), so its numbers
-# can never bleed into another variant's. Owner: "i want all the ratchet
-# stratagies in a single catagory instead of 11 different channels ...
-# have each thing tracked seperately." Only the REAL channel every
-# variant's logical key resolves to changed - all 10 now share one
-# dashboard channel and one results channel instead of 10 category/channel
-# pairs (see sync_discord_structure.py's RATCHET_CATEGORY_NAME).
-for _ratchet_variant in SPY_RATCHET_VARIANTS:
-    _ratchet_suffix = _ratchet_variant["play_type"].removeprefix("SPY_RATCHET_").lower()
-    CHANNEL_NAMES[f"performance_ratchet_{_ratchet_suffix}"] = "ratchet-dashboard"
-    CHANNEL_NAMES[f"results_ratchet_{_ratchet_suffix}"] = "ratchet-results"
-    AUTOMATED_CHANNEL_KEYS.append(f"performance_ratchet_{_ratchet_suffix}")
-    AUTOMATED_CHANNEL_KEYS.append(f"results_ratchet_{_ratchet_suffix}")
-# One more card in the shared dashboard channel: a leaderboard ranking all
-# 10 variants against each other by real P&L - owner: "a dashboard so we
-# can see top performers." See performance_reconciliation.py's
-# format_ratchet_leaderboard.
-# All 10 ratchet variants were retired 2026-08-17 and #ratchet-dashboard was
-# deleted with them, but this route survived - pointing at a channel that no
-# longer exists. A card sent to a dead channel is silently dropped, so it is
-# removed rather than left dangling. (Found by checking every route resolves
-# to a live channel; the per-variant routes above go empty on their own,
-# since they are generated from the now-empty SPY_RATCHET_VARIANTS.)
-CHANNEL_NAMES.pop("ratchet_leaderboard", None)
-# ratchet_leaderboard retired with the 10 variants - no route left to check.
 # Same idea for the other 4 live strategies (1-Minute, 5-Minute,
 # Key-Levels, Expansion-Level) - a leaderboard ranking them against each
 # other in the shared strategies-dashboard channel. See
@@ -1072,30 +1000,15 @@ def entry_alert_text(row: dict[str, str], include_link: str = "", summary_only: 
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"{play_type} LONG {kind}"
         setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
-        if is_spy_ratchet_play_type(play_type):
-            # No fixed take-profit target for a ratchet variant - the floor
-            # keeps ratcheting up with every step instead. Show the base
-            # stop (only in force before the first step fires) plus the
-            # step size itself, not a Target line.
-            variant = SPY_RATCHET_VARIANT_BY_PLAY_TYPE.get(play_type, {})
-            step_pct = variant.get("step_pct", 0.0) or 0.0
-            stop_pct_signed = variant.get("stop_pct", 0.0) or 0.0
-            stop = round(entry * (1 + stop_pct_signed / 100), 2)
-            price_line = (
-                f"**Entry:** {fmt_option_price(entry)} DB ({fmt_money(entry * 100)})\n"
-                f"**Stop (until first lock):** {fmt_option_price(stop)} CR ({fmt_money((stop - entry) * 100)})\n"
-                f"**Ratchet floor:** locks in every {step_pct:.0f}% gain, no fixed target"
-            )
-        else:
-            stop_pct = SPY_0DTE_STOP_PCT if is_spy_0dte_play_type(play_type) else SINGLE_STOP_PCT
-            target_pct = SPY_0DTE_TARGET_PCT if is_spy_0dte_play_type(play_type) else SINGLE_TAKE_PROFIT_PCT
-            stop = round(entry * (1 - stop_pct), 2)
-            target = round(entry * (1 + target_pct), 2)
-            price_line = (
-                f"**Entry:** {fmt_option_price(entry)} DB ({fmt_money(entry * 100)})\n"
-                f"**Target:** {fmt_option_price(target)} CR ({fmt_money((target - entry) * 100)})\n"
-                f"**Stop:** {fmt_option_price(stop)} CR ({fmt_money((stop - entry) * 100)})"
-            )
+        stop_pct = SPY_0DTE_STOP_PCT if is_spy_0dte_play_type(play_type) else SINGLE_STOP_PCT
+        target_pct = SPY_0DTE_TARGET_PCT if is_spy_0dte_play_type(play_type) else SINGLE_TAKE_PROFIT_PCT
+        stop = round(entry * (1 - stop_pct), 2)
+        target = round(entry * (1 + target_pct), 2)
+        price_line = (
+            f"**Entry:** {fmt_option_price(entry)} DB ({fmt_money(entry * 100)})\n"
+            f"**Target:** {fmt_option_price(target)} CR ({fmt_money((target - entry) * 100)})\n"
+            f"**Stop:** {fmt_option_price(stop)} CR ({fmt_money((stop - entry) * 100)})"
+        )
         risk_line = (
             f"**Max risk:** {fmt_money(as_float(row.get('max_risk')))}\n"
             f"**Break-even:** {fmt_option_price(breakeven)}"
@@ -1221,14 +1134,6 @@ def stop_overshoot_target_pct(row: dict[str, str], close_reason: str | None = No
         return None
     if is_spy_0dte_play_type(play_type):
         return -(SPY_0DTE_STOP_PCT * 100) if close_reason == "STOP OUT" else SPY_0DTE_FLOOR_PCT
-    if is_spy_ratchet_play_type(play_type):
-        variant = SPY_RATCHET_VARIANT_BY_PLAY_TYPE.get(play_type, {})
-        step_pct = variant.get("step_pct", 0.0) or 0.0
-        stop_pct = variant.get("stop_pct", 0.0) or 0.0
-        if close_reason == "STOP OUT":
-            return stop_pct
-        peak_pct = as_float(row.get("max_favorable_pct"), 0.0) or 0.0
-        return (peak_pct // step_pct) * step_pct if step_pct else 0.0
     configured_stop = SWING_STOP_PCT if play_type == "SWING" else SINGLE_STOP_PCT
     return -(configured_stop * 100) if close_reason == "STOP OUT" else 0.0
 
@@ -2237,50 +2142,6 @@ def spy_0dte_exit_signal(
     return "HOLD", "no exit condition met"
 
 
-def spy_ratchet_exit_signal(
-    entry_price: float,
-    mark: float,
-    minutes_remaining: float,
-    peak_pct: float,
-    step_pct: float,
-    stop_pct: float,
-) -> tuple[str, str]:
-    """Shared exit for every SPY_RATCHET_* variant (see SPY_RATCHET_VARIANTS)
-    - no fixed take-profit target. Once peak_pct first reaches step_pct, the
-    floor locks at the highest step_pct multiple <= peak_pct and ratchets up
-    every further step; stop_pct (already negative) only applies before the
-    first step ever fires. Ported directly from the backtest's
-    simulate_ratchet (scratch script, 2026-08-10) - same floor math, same
-    stop-before-first-step behavior, now driven off the real entry_price/
-    mark this evaluator already uses everywhere else instead of the
-    backtest's theta-approximated synthetic premium.
-
-    Uses distinct signal strings ("FLOOR STOP" / own "RATCHET EOD CLOSE")
-    rather than reusing SPY_0DTE's "BREAKEVEN STOP"/"EOD CLOSE" - those
-    names describe a different mechanism (a one-time raise vs. a
-    continuously-ratcheting floor) and "EOD CLOSE" specifically is not in
-    main()'s shared close-trigger set (SPY_0DTE's EOD handling is out of
-    scope for every other strategy, per the same precedent
-    spy_key_levels_exit_signal's "EXPIRATION CLOSE" already follows)."""
-    if entry_price <= 0:
-        return "HOLD", "no entry price to evaluate against"
-    pnl_pct = (mark - entry_price) / entry_price * 100
-    if peak_pct >= step_pct:
-        floor_pct = (peak_pct // step_pct) * step_pct
-        stop_level = floor_pct
-    else:
-        floor_pct = None
-        stop_level = stop_pct
-    if pnl_pct <= stop_level:
-        if floor_pct is not None:
-            return "FLOOR STOP", (
-                f"peaked at {peak_pct:.0f}%, down to {pnl_pct:.0f}% - ratchet floor locked at "
-                f"{floor_pct:.0f}% after crossing a {step_pct:.0f}% step"
-            )
-        return "STOP OUT", f"down {pnl_pct:.0f}%, past the {abs(stop_pct):.0f}% base stop before any step fired"
-    if minutes_remaining <= 15:
-        return "RATCHET EOD CLOSE", "closing ahead of same-day expiration - 0DTE never holds overnight"
-    return "HOLD", "no exit condition met"
 
 
 def scan_spy_0dte_candidates(
@@ -4469,58 +4330,6 @@ def evaluate_open_spy_expansion_row(
     return result
 
 
-def evaluate_open_spy_ratchet_row(
-    row: dict[str, str], quotes: dict[str, dict[str, Any]], timestamp: datetime
-) -> dict[str, Any]:
-    """Ratchet-floor SPY variants: same %-of-premium shape as SPY_0DTE's own
-    evaluator, but calls spy_ratchet_exit_signal with the row's own
-    play_type's (step_pct, stop_pct) from SPY_RATCHET_VARIANT_BY_PLAY_TYPE -
-    never spy_0dte_exit_signal. Independent of evaluate_open_row's SPY_0DTE/
-    SPY_KEY_LEVELS/SPY_EXPANSION branches entirely."""
-    entry = parse_entry_price(row)
-    quote = quotes.get(row.get("option_symbol", ""))
-    if not quote or not quote_is_reliable_for_exit(quote):
-        return {
-            "signal": "HOLD",
-            "note": "Live option quote unavailable; showing last tracked values.",
-            "mark": as_float(row.get("last_mark"), entry),
-            "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
-            "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
-        }
-    mark = conservative_option_exit(quote)
-    pnl_pct = ((mark - entry) / entry * 100) if entry else 0.0
-    previous_peak = as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct
-    peak_pct = max(previous_peak, pnl_pct)
-    close_time = timestamp.replace(hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1], second=0, microsecond=0)
-    minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
-    variant = SPY_RATCHET_VARIANT_BY_PLAY_TYPE.get(row.get("play_type"))
-    try:
-        if variant is None:
-            raise KeyError(f"unknown ratchet play_type {row.get('play_type')!r}")
-        signal, exit_note = spy_ratchet_exit_signal(
-            entry, mark, minutes_remaining, peak_pct, variant["step_pct"], variant["stop_pct"]
-        )
-    except Exception as exc:
-        print(f"spy_ratchet_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
-        signal = "RATCHET EOD CLOSE"
-        exit_note = "fallback: forced close (smart exit errored)"
-    row["max_favorable_pct"] = round_or_blank(peak_pct, 0)
-    rounded_mark = round(mark, 2)
-    rounded_pnl = rounded_mark - entry
-    rounded_pnl_pct = (rounded_pnl / entry * 100) if entry else 0.0
-    result = {
-        "signal": signal,
-        "mark": rounded_mark,
-        "pl_dollars": round(rounded_pnl * 100),
-        "pl_pct": round(rounded_pnl_pct),
-        "delta": greek(quote, "delta"),
-        "theta": greek(quote, "theta"),
-        "iv": iv_value(quote),
-        "minutes_remaining": round(minutes_remaining),
-        "exit_note": exit_note,
-    }
-    apply_evaluation_to_row(row, result, timestamp)
-    return result
 
 
 def evaluate_open_new_strategy_row(
@@ -4604,9 +4413,6 @@ def evaluate_open_row(
 
     if play_type == SPY_EXPANSION_PLAY_TYPE:
         return evaluate_open_spy_expansion_row(row, quotes, timestamp)
-
-    if is_spy_ratchet_play_type(play_type):
-        return evaluate_open_spy_ratchet_row(row, quotes, timestamp)
 
     import spy_live_new_strategies as _lns
     if _lns.is_new_strategy_play_type(play_type):
@@ -6910,14 +6716,6 @@ def update_performance_pages(
         (SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels",
          "results_key_levels", "Key-Levels Strategy"),
     ]
-    for variant in SPY_RATCHET_VARIANTS:
-        suffix = variant["play_type"].removeprefix("SPY_RATCHET_").lower()
-        strategy_variants.append((
-            variant["play_type"],
-            f"performance_ratchet_{suffix}",
-            f"results_ratchet_{suffix}",
-            f"{variant['label']} Strategy",
-        ))
     try:
         import spy_live_new_strategies as _live_roster
         for _spec in _live_roster.NEW_STRATEGY_SPECS:
@@ -7196,12 +6994,6 @@ DEFAULT_TRADE_TYPES_ENABLED = {
     # strategy. Same paused-by-default rule.
     "spy_expansion_level": False,
 }
-# 10 ratchet-floor strategies - same paused-by-default rule as every other
-# play type above: trade_types_enabled() only reads a config key that
-# already exists here, so these have to be added by name, not just set in
-# config/scanner.json, or the config flags would be silently ignored.
-for _default_variant in SPY_RATCHET_VARIANTS:
-    DEFAULT_TRADE_TYPES_ENABLED[_default_variant["play_type"].lower()] = False
 
 # The 14 strategies promoted from the locked top 15. Registered here by name
 # for the same reason as the ratchets above, and it is a real trap rather
@@ -7315,65 +7107,6 @@ def _run_spy_0dte_variant(
     return context
 
 
-def _run_spy_ratchet_variants(
-    *,
-    today_str: str,
-    spot_price: float,
-    intraday_1m: list[dict[str, Any]],
-    candidates: list[dict[str, Any]],
-    quote_map: dict[str, dict[str, Any]],
-    add_candidates,
-    enabled: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
-    """Run all 10 ratchet-floor variants off ONE shared read of the same
-    self-contained Python opening-range breakout signal SPY_0DTE_1M uses
-    (spy_0dte_opening_range_signal on 1-minute bars) - computed once here,
-    not once per variant, since it's identical for all 10. They previously
-    shared SPY_0DTE_1M's live TradingView alert instead
-    (spy_0dte_tradingview_signal), but that path proved to be this
-    system's single most bug-prone dependency across four separate real
-    incidents (secret mismatches, malformed Pine payloads, a freshness
-    window shorter than the scan cadence, alerts marked consumed on parse
-    rather than on actually opening a trade). Owner: "make them fire off
-    something else because I'm sick of seeing them all dead." Each
-    variant still gets its own chain fetch, its own play_type-tagged
-    candidates, and its own independent trade_types_enabled gate - fully
-    independent trades sharing one entry source. Uses
-    scan_spy_0dte_candidates as-is (already generic over play_type, same
-    delta band/risk cap as SPY_0DTE - only the exit shape is new for
-    these variants)."""
-    spot_price = _refresh_spot_price(spot_price)
-    try:
-        shared_context = spy_0dte_opening_range_signal(intraday_1m, bar_minutes=1)
-    except Exception as exc:
-        shared_context = _unavailable_context(f"spy ratchet signal errored: {exc}")
-    results: dict[str, dict[str, Any]] = {}
-    for variant in SPY_RATCHET_VARIANTS:
-        play_type = variant["play_type"]
-        config_key = play_type.lower()
-        if not enabled.get(config_key):
-            results[play_type] = _unavailable_context(f"{play_type} disabled in trade_types_enabled")
-            continue
-        context = dict(shared_context)
-        results[play_type] = context
-        if not context.get("qualified"):
-            continue
-        try:
-            allowed_strikes = set(filter_strikes(get_strikes(TICKER, today_str), spot_price))
-            raw_chain = get_chain(TICKER, today_str)
-            chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
-            for option in chain:
-                if option.get("symbol"):
-                    quote_map[option["symbol"]] = option
-            kind = "call" if context["regime"] == "BULLISH / CONTROLLED" else "put"
-            pool = [option for option in chain if option.get("option_type") == kind]
-            add_candidates(
-                f"{play_type} {kind}s",
-                scan_spy_0dte_candidates(pool, kind, today_str, spot_price, context, play_type=play_type),
-            )
-        except Exception as exc:
-            print(f"SPY ratchet ({play_type}) scan step failed: {exc}", file=sys.stderr)
-    return results
 
 
 def resample_bars(bars: list[dict[str, Any]], group_size: int) -> list[dict[str, Any]]:
@@ -7766,27 +7499,6 @@ def scan_candidates(
             unavailable = _unavailable_context("no same-day expiration listed today")
             stats["spy_0dte_market_context"] = {"SPY_0DTE_5M": unavailable, "SPY_0DTE_1M": unavailable}
 
-        # SPY Ratchet-floor variants: 10 more independently-tracked
-        # strategies, sharing the SAME self-contained Python opening-range
-        # breakout signal SPY_0DTE_1M uses (spy_0dte_opening_range_signal
-        # on 1-minute bars) - they're the same entry as 1M, only their
-        # exit shape (spy_ratchet_exit_signal) differs. See
-        # SPY_RATCHET_VARIANTS/_run_spy_ratchet_variants.
-        if today_str in expirations:
-            stats["spy_ratchet_market_context"] = _run_spy_ratchet_variants(
-                today_str=today_str,
-                spot_price=spot_price,
-                intraday_1m=intraday_1m,
-                candidates=candidates,
-                quote_map=quote_map,
-                add_candidates=add_candidates,
-                enabled=enabled,
-            )
-        else:
-            ratchet_unavailable = _unavailable_context("no same-day expiration listed today")
-            stats["spy_ratchet_market_context"] = {
-                variant["play_type"]: ratchet_unavailable for variant in SPY_RATCHET_VARIANTS
-            }
 
     # SPY Key-Levels/ORB/VWAP - a second, fully independent SPY strategy.
     # Runs its own data fetch and signal read regardless of what SPY_0DTE

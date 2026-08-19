@@ -320,6 +320,4 @@ def live_exit_shapes() -> list[OptionExit]:
         floor_pct=ss.SPY_0DTE_FLOOR_PCT,
         name="spy_0dte (+50/-50, floor +30->-15)",
     )]
-    for variant in ss.SPY_RATCHET_VARIANTS:
-        shapes.append(ratchet_rules(variant["step_pct"], variant["stop_pct"]))
     return shapes

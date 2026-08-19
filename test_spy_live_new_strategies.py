@@ -544,9 +544,6 @@ def test_no_report_roster_entry_references_a_missing_channel_route():
     for play_type in lns.NEW_STRATEGY_PLAY_TYPES:
         assert lns.performance_key(play_type) in ss.CHANNEL_NAMES
         assert lns.results_key(play_type) in ss.CHANNEL_NAMES
-    for variant in ss.SPY_RATCHET_VARIANTS:
-        suffix = variant["play_type"].removeprefix("SPY_RATCHET_").lower()
-        assert f"performance_ratchet_{suffix}" in ss.CHANNEL_NAMES
 
 
 def test_force_all_strategies_survives_a_roster_change():
