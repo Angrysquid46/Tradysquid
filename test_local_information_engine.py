@@ -785,6 +785,7 @@ class InformationEngineTests(unittest.TestCase):
         row = {
             "trade_id": "VALE-20260731-001",
             "ticker": "VALE",
+            "play_type": "SPY_GAP_CONT_50",
             "outcome": "WIN",
             "closed_at": "2026-07-31T13:00:00-05:00",
         }
@@ -795,7 +796,8 @@ class InformationEngineTests(unittest.TestCase):
             calls,
             [
                 ("entry", state, "entry", "VALE-20260731-001"),
-                ("updates", state, "position", "VALE-20260731-001"),
+                (spy_scanner.held_channel_key("SPY_GAP_CONT_50"),
+                 state, "position", "VALE-20260731-001"),
                 ("exit", state, "exit", "VALE-20260731-001"),
             ],
         )
@@ -803,7 +805,7 @@ class InformationEngineTests(unittest.TestCase):
     def test_delete_trade_message_finds_legacy_card_without_state(self) -> None:
         tracker = spy_scanner.DiscordTracker("token", "guild")
         tracker.ready = True
-        tracker.channels["updates"] = "held-channel"
+        tracker.channels[spy_scanner.held_channel_key("SPY_GAP_CONT_50")] = "held-channel"
         requests: list[tuple[str, str]] = []
 
         def request(method: str, path: str, payload=None):
@@ -822,7 +824,8 @@ class InformationEngineTests(unittest.TestCase):
         tracker._request = request
         state: dict = {}
         tracker.delete_trade_message(
-            "updates", state, "position", "VALE-20260731-001"
+            spy_scanner.held_channel_key("SPY_GAP_CONT_50"),
+            state, "position", "VALE-20260731-001",
         )
         self.assertIn(
             ("DELETE", "/channels/held-channel/messages/legacy-message"), requests
@@ -858,7 +861,7 @@ class InformationEngineTests(unittest.TestCase):
 
         tracker = spy_scanner.DiscordTracker("token", "guild")
         tracker.ready = True
-        tracker.channels["updates"] = "held-channel"
+        tracker.channels[spy_scanner.held_channel_key("SPY_GAP_CONT_50")] = "held-channel"
         requests: list[tuple[str, str]] = []
 
         def request(method: str, path: str, payload=None):
@@ -869,7 +872,10 @@ class InformationEngineTests(unittest.TestCase):
 
         tracker._request = request
         state: dict = {}
-        tracker.delete_trade_message("updates", state, "position", row["trade_id"])
+        tracker.delete_trade_message(
+            spy_scanner.held_channel_key("SPY_GAP_CONT_50"),
+            state, "position", row["trade_id"],
+        )
         self.assertIn(
             ("DELETE", "/channels/held-channel/messages/stale-position-card"), requests
         )
@@ -1001,12 +1007,20 @@ class InformationEngineTests(unittest.TestCase):
         row = {
             "trade_id": "SPY-20260810-003",
             "ticker": "SPY",
+            "play_type": "SPY_GAP_CONT_50",
             "outcome": "WIN",
             "closed_at": "2026-08-10T14:00:00-05:00",
             "pct_gain_loss": "10",
         }
         spy_scanner.post_close(row, spy_scanner.stored_close_evaluation(row), Tracker(), {})
-        self.assertEqual(set(deleted), {"entry", "updates", "exit"})
+        # The held card now lives in the strategy's OWN channel (each gets
+        # its own Discord rate-limit bucket), so the close must delete it
+        # from there - deleting from the retired shared channel would leave
+        # a stale HOLD card sitting in the strategy channel forever.
+        self.assertEqual(
+            set(deleted),
+            {"entry", spy_scanner.held_channel_key("SPY_GAP_CONT_50"), "exit"},
+        )
 
     def test_entry_snapshot_is_sent_to_trade_thread_not_chart_channel(self) -> None:
         calls: list[tuple[str, str]] = []

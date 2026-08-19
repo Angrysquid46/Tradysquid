@@ -341,12 +341,6 @@ def test_a_strategy_card_routes_to_its_own_channel_not_the_shared_one():
     assert s.held_channel_key("SPY_GAP_CONT_50") != s.SHARED_HELD_CHANNEL_KEY
 
 
-def test_a_trade_with_no_strategy_channel_still_routes_somewhere():
-    """Manual trades have no strategy channel and must not vanish."""
-    assert s.held_channel_key("") == s.SHARED_HELD_CHANNEL_KEY
-    assert s.held_channel_key("SPY_MANUAL_WHATEVER") == s.SHARED_HELD_CHANNEL_KEY
-
-
 def _strategy_row(trade_id, play_type):
     row = _open_row(trade_id)
     row["play_type"] = play_type
@@ -398,3 +392,51 @@ def test_trades_sharing_one_channel_are_still_paced_together():
         "six cards sharing ONE channel all redrew inside the shared "
         f"interval - that is the original rate-limit bug ({len(pushes)} pushed)"
     )
+
+
+# ---------------------------------------------------------------------------
+# Retiring the shared #held-positions channel
+# ---------------------------------------------------------------------------
+
+def test_the_shared_held_channel_is_no_longer_routed():
+    """Owner retired #held-positions once every strategy got its own."""
+    assert "updates" not in s.CHANNEL_NAMES
+    assert "exit" not in s.CHANNEL_NAMES
+    assert "updates" not in s.AUTOMATED_CHANNEL_KEYS
+    assert "exit" not in s.AUTOMATED_CHANNEL_KEYS
+
+
+def test_an_unroutable_play_type_returns_empty_not_a_dead_channel():
+    """It must not fall back to the retired channel - that would post a card
+    into a channel that no longer exists and silently vanish."""
+    assert s.held_channel_key("SPY_SOME_RETIRED_STRATEGY") == ""
+    assert s.held_channel_key("") == ""
+
+
+def test_every_live_play_type_still_routes_after_the_retirement():
+    unrouted = [pt for pt in pr.live_play_types() if not s.held_channel_key(pt)]
+    assert not unrouted, f"live strategies left with no held channel: {unrouted}"
+
+
+def test_the_structure_sync_deletes_the_retired_channel():
+    import sync_discord_structure as sync
+    assert "held-positions" in sync.DELETE_CHANNELS, (
+        "the channel would be recreated by the 3-minute structure sync"
+    )
+    declared = {getattr(x, "name", None) for x in sync.CHANNELS}
+    assert "held-positions" not in declared, (
+        "still declared as a ChannelSpec - sync would recreate it"
+    )
+
+
+def test_a_closed_trade_deletes_its_card_from_the_strategy_channel():
+    """The bug this change introduced and had to fix: cards moved to
+    per-strategy channels, but the close path still deleted from the old
+    shared channel - so every closed trade left a stale HOLD card behind."""
+    import inspect
+    for fn in (s.sync_closed_result_channels, s.post_close):
+        src = inspect.getsource(fn)
+        assert '"updates", report_state, "position"' not in src, (
+            f"{fn.__name__} still deletes the held card from the retired "
+            "shared channel instead of the strategy's own"
+        )
