@@ -8239,6 +8239,24 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
     if not active and not key_levels_enabled:
         return {"scanned": 0, "opened": 0, "skipped": 0, "reason": "none enabled"}
 
+    # Volatility gate, checked BEFORE any provider call or log read. These
+    # entries test PATTERN, not MAGNITUDE - a break above the 20-bar high is
+    # still a break when the day's whole range is $3.40, so the signal fires
+    # normally and then there is no room for a 0DTE to reach a +115% target.
+    #
+    # Measured over 17,998 backtested option trades: sessions whose trailing
+    # ATR-3 (prior sessions only, known at the open) sits under 0.7% of price
+    # return -$0.05/trade. Skipping them trades 18% less, lifts per-trade from
+    # $3.91 to $4.80, and total P/L still rises. Cached per session date, so
+    # this is one SQL read a day rather than one per 1-minute scan.
+    #
+    # Gates NEW ENTRIES ONLY. Held positions keep being managed and exited,
+    # and the end-of-day flatten is untouched.
+    quiet_reason = lns.atr_regime_blocked(now_ct().date().isoformat())
+    if quiet_reason:
+        return {"scanned": 0, "opened": 0, "regime_blocked": True,
+                "reason": quiet_reason}
+
     with lock:
         rows = read_log()
     active = [p for p in active if not has_open_position(rows, p)]

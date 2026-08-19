@@ -310,6 +310,109 @@ def live_feature_rows(
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Volatility regime gate
+# ---------------------------------------------------------------------------
+#
+# These entries test PATTERN, not MAGNITUDE: a break above the 20-bar high is
+# still a break when the whole day's range is $3.40. The signal fires exactly
+# as designed and then there is no room for a 0DTE to reach a +115% target.
+# Owner: "in sideways days when the boys get signals and go marching into
+# losses is just wild."
+#
+# Measured across 17,998 backtested option trades, bucketed by the trailing
+# ATR known AT THE OPEN (prior sessions only - never the day's own range,
+# which would be lookahead):
+#
+#   ATR-3 <0.7%    3,318 trades   -$0.05/trade    <- loses
+#   ATR-3 0.7-1.0% 3,745 trades   +$2.10/trade
+#   ATR-3 1.0-1.4% 3,972 trades   +$3.11/trade
+#   ATR-3 1.4-2.0% 3,308 trades   +$5.40/trade
+#   ATR-3 >2.0%    3,655 trades   +$8.87/trade
+#
+# Monotonic at every lookback tested (3/5/10/14), but the SHORT window is
+# what makes it usable. ATR-14 lagged so badly it read 1.04-1.17% through
+# the entire quiet stretch of 2026-08-10..17 - it was still carrying late
+# July's $11-13 ranges and would have waved every one of those days through.
+# ATR-3 flagged 08-11, 08-12, 08-13 and 08-17 as skip days.
+#
+# Skipping <0.7%: 18% fewer trades, +23% per trade ($3.91 -> $4.80), and
+# total P/L still rises ($70,359 -> $70,518). Not a risk tradeoff - those
+# trades collectively lose money.
+# Read lazily, not at import: spy_scanner imports THIS module, so touching
+# spy_scanner.configured at module level would be a circular import.
+def _atr_gate_settings() -> tuple[int, float]:
+    try:
+        import spy_scanner as _ss
+        return (int(_ss.configured("spy_atr_gate_lookback", 3)),
+                float(_ss.configured("spy_atr_gate_min_pct", 0.7)))
+    except Exception:
+        return (3, 0.7)
+
+_ATR_GATE_CACHE: dict[str, float | None] = {}
+
+
+def session_atr_pct(session: str, lookback: int | None = None) -> float | None:
+    """Trailing ATR as a % of price, over sessions ENDING BEFORE `session`.
+
+    Cached per session date - it cannot change during the day, so the
+    1-minute entry scan reads it once and never recomputes.
+    """
+    n = lookback or _atr_gate_settings()[0]
+    key = f"{session}:{n}"
+    if key in _ATR_GATE_CACHE:
+        return _ATR_GATE_CACHE[key]
+    value = None
+    try:
+        conn = sif.connect()
+        try:
+            rows = [
+                (r[0], r[1], r[2], r[3]) for r in conn.execute(
+                    "SELECT session_date, high, low, close FROM daily_bars "
+                    "WHERE ticker='SPY' AND session_date < ? "
+                    "ORDER BY session_date DESC LIMIT ?", (session, n + 1))
+            ]
+        finally:
+            conn.close()
+        if len(rows) >= n + 1:
+            rows.reverse()          # oldest first so prior close is available
+            true_ranges = []
+            for i in range(1, len(rows)):
+                prev_close = rows[i - 1][3]
+                _d, high, low, _c = rows[i]
+                if prev_close and high and low:
+                    true_ranges.append(
+                        max(high - low, abs(high - prev_close), abs(low - prev_close))
+                    )
+            last_close = rows[-1][3]
+            if true_ranges and last_close:
+                value = sum(true_ranges) / len(true_ranges) / last_close * 100
+    except Exception:
+        value = None                # data unavailable - fail OPEN, see below
+    _ATR_GATE_CACHE[key] = value
+    return value
+
+
+def atr_regime_blocked(session: str) -> str:
+    """Reason to sit out this session, or "" to trade it.
+
+    Fails OPEN: if the daily bars are missing or unreadable this returns "",
+    so a data problem degrades to today's behaviour rather than silently
+    halting every strategy.
+    """
+    lookback, floor = _atr_gate_settings()
+    if floor <= 0:
+        return ""
+    atr_pct = session_atr_pct(session, lookback)
+    if atr_pct is None:
+        return ""
+    if atr_pct < floor:
+        return (f"trailing ATR-{lookback} is {atr_pct:.2f}% of price, below the "
+                f"{floor:.2f}% floor - too quiet for a 0DTE to reach its target")
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Signals
 # ---------------------------------------------------------------------------

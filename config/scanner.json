@@ -53,6 +53,8 @@
   "spread_profit_target_pct": 0.5,
   "spread_stop_multiple": 2.0,
   "spy_0dte_1m_tradingview_max_age_seconds": 1200,
+  "spy_atr_gate_lookback": 3,
+  "spy_atr_gate_min_pct": 0.7,
   "spy_expansion_delta_max": 0.6,
   "spy_expansion_delta_min": 0.4,
   "spy_expansion_ema_fast_period": 20,

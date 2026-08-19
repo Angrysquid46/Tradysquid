@@ -27,6 +27,22 @@ import spy_scanner
 
 
 
+
+@pytest.fixture(autouse=True)
+def _regime_gate_open(monkeypatch):
+    """Neutralise the ATR volatility gate for this file.
+
+    scan_new_strategy_entries now sits out sessions whose trailing ATR-3 is
+    under 0.7% of price, and it checks that FIRST - before the log read or
+    any provider call. On a quiet day (today reads 0.63%) that returns
+    early, so every test here about entry plumbing, locking or card posting
+    would pass vacuously without ever reaching the code it names.
+
+    The gate has its own coverage in test_atr_regime_gate.py.
+    """
+    monkeypatch.setattr(lns, "atr_regime_blocked", lambda *a, **k: "")
+
+
 @pytest.fixture
 def tmp_state(monkeypatch, tmp_path=None):
     """Keep the scan's state file out of the live state/ directory."""
