@@ -212,7 +212,6 @@ class JournalContractTests(unittest.TestCase):
     def test_contract_self_validation_exercises_a_live_play_type_not_the_retired_regular_ford_one(self) -> None:
         # validate_contract() used to build its synthetic row with
         # play_type="REGULAR"/ticker="F" (Ford, retired) - entry_alert_text
-        # branches by play_type (SPY_0DTE vs ratchet vs the generic
         # default), so this self-test never actually exercised any branch a
         # real live trade renders through.
         import inspect

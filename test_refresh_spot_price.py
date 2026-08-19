@@ -1,8 +1,6 @@
 """scan_candidates() used to fetch spot_price once at the top of a scan
 cycle and reuse that same, increasingly stale value through 2 SPY_0DTE
-variants, 10 ratchet variants, Key-Levels, and Expansion-Level - each doing
 its own sequential network round-trip. _refresh_spot_price() re-fetches a
-lightweight quote at the start of the ratchet/Key-Levels/Expansion groups
 so strike selection and the journaled spot_at_entry aren't built off a
 value that's tens of seconds behind the real market by the time those
 later groups run.

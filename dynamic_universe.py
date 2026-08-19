@@ -170,7 +170,7 @@ def recent_tradingview_signal(
 ) -> dict[str, Any] | None:
     """Read-only lookup for the most recent TradingView alert for `symbol`
     received within the last `max_age_seconds`, used to gate a live trade
-    entry (see spy_scanner.spy_0dte_tradingview_signal). Deliberately does
+    entry (see the TradingView alert reader). Deliberately does
     NOT claim/consume the row via claim_events()/complete_event() - the
     existing provider-event-queue job still owns that lifecycle for posting
     the Discord research card, and this needs to read the same row without

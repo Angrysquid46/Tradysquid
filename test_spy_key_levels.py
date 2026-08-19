@@ -2,7 +2,7 @@
 separate from SPY_0DTE per explicit owner direction ("independent and
 unattached", "don't compare against or even think of other strategies while
 adding them"). These tests exist specifically to prove this strategy's
-constants, signal, and exit logic never quietly borrow SPY_0DTE's (delta
+constants, signal, and exit logic never quietly borrow the premium exit's (delta
 band, risk cap, stop model), and that its own level/direction/exit math is
 correct in isolation.
 """
@@ -428,9 +428,9 @@ def test_exit_signal_forces_close_only_on_the_actual_expiration_day():
 
 def test_expiration_close_signal_is_wired_into_the_close_trigger_set():
     # Regression guard: SPY Key-Levels uses its own "EXPIRATION CLOSE"
-    # string (deliberately distinct from SPY_0DTE's "EOD CLOSE") specifically
+    # string (deliberately distinct from the premium exit's "EOD CLOSE") specifically
     # so this strategy's forced-close signal actually closes positions in
-    # main() without changing SPY_0DTE's own closing behavior at all.
+    # main() without changing the premium exit's own closing behavior at all.
     import inspect
     source = inspect.getsource(spy_scanner)
     assert '"EXPIRATION CLOSE"' in source

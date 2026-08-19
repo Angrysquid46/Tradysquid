@@ -164,21 +164,21 @@ def uses_premium_exit(play_type: str | None) -> bool:
 
 
 SPY_OPENING_RANGE_MINUTES = int(os.environ.get(
-    "SPY_0DTE_OPENING_RANGE_MINUTES", configured("spy_0dte_opening_range_minutes", 30)
+    "SPY_OPENING_RANGE_MINUTES", configured("spy_opening_range_minutes", 30)
 ))
 # variant without one variant consuming it and starving the other ten.
 SPY_TRADINGVIEW_CONSUMED_EVENT_PATH = STATE_DIR / "spy-tradingview-consumed.json"
 SPY_DELTA_MIN = float(os.environ.get(
-    "SPY_0DTE_DELTA_MIN", configured("spy_0dte_delta_min", 0.40)
+    "SPY_DELTA_MIN", configured("spy_delta_min", 0.40)
 ))
 SPY_DELTA_MAX = float(os.environ.get(
-    "SPY_0DTE_DELTA_MAX", configured("spy_0dte_delta_max", 0.60)
+    "SPY_DELTA_MAX", configured("spy_delta_max", 0.60)
 ))
 SPY_MAX_CONTRACT_ASK = float(os.environ.get(
-    "SPY_0DTE_MAX_CONTRACT_ASK", configured("spy_0dte_max_contract_ask", 5.00)
+    "SPY_MAX_CONTRACT_ASK", configured("spy_max_contract_ask", 5.00)
 ))
 SPY_MAX_RISK_PER_TRADE = float(os.environ.get(
-    "SPY_0DTE_MAX_RISK_PER_TRADE", configured("spy_0dte_max_risk_per_trade", 500.0)
+    "SPY_MAX_RISK_PER_TRADE", configured("spy_max_risk_per_trade", 500.0)
 ))
 # Backtested on real intraday bars (opening-range breakout, real
 # transaction costs, worst-case intrabar stop/target checks): 86% win
@@ -188,12 +188,11 @@ SPY_MAX_RISK_PER_TRADE = float(os.environ.get(
 # drawdown that quarter): 81% win rate, bullish and bearish sides
 # performing almost identically (+71%/+69% avg), proving the downside
 # isn't just noise inside an uptrend. Live now (trade_types_enabled.
-# spy_0dte = true).
 SPY_STOP_PCT = float(os.environ.get(
-    "SPY_0DTE_STOP_PCT", configured("spy_0dte_stop_pct", 0.50)
+    "SPY_STOP_PCT", configured("spy_stop_pct", 0.50)
 ))
 SPY_TARGET_PCT = float(os.environ.get(
-    "SPY_0DTE_TARGET_PCT", configured("spy_0dte_target_pct", 0.50)
+    "SPY_TARGET_PCT", configured("spy_target_pct", 0.50)
 ))
 # Once a trade proves itself (crosses this peak), the stop-loss floor
 # raises ONCE from -50% to SPY_FLOOR_PCT and holds there - it does
@@ -208,10 +207,10 @@ SPY_TARGET_PCT = float(os.environ.get(
 # (a trade that peaks near the target and fully round-trips to the
 # stop) is real and happened 3 times in 62 backtested trades.
 SPY_FLOOR_TRIGGER_PCT = float(os.environ.get(
-    "SPY_0DTE_FLOOR_TRIGGER_PCT", configured("spy_0dte_floor_trigger_pct", 30.0)
+    "SPY_FLOOR_TRIGGER_PCT", configured("spy_floor_trigger_pct", 30.0)
 ))
 SPY_FLOOR_PCT = float(os.environ.get(
-    "SPY_0DTE_FLOOR_PCT", configured("spy_0dte_floor_pct", -15.0)
+    "SPY_FLOOR_PCT", configured("spy_floor_pct", -15.0)
 ))
 STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
 REENTRY_COOLDOWN_MINUTES = int(os.environ.get("REENTRY_COOLDOWN_MINUTES", "1440"))
@@ -389,8 +388,6 @@ CHANNEL_NAMES = {
     # 1-Minute, 5-Minute, Key-Levels, and Expansion-Level each keep their
     # own logical key, own state tracking, and own search-marker text (see
     # performance_reconciliation.py) - only the REAL channel every key
-    # resolves to is shared now, mirroring the ratchet consolidation.
-    # Owner: "do the ratchet thing but instead all the other trades
     # tradebot makes... tabs can stay meaningful and not scattered
     # craziness."
     "ticker_results": "ticker-results",
@@ -492,7 +489,7 @@ CLOSING_SIGNALS = {
     "THESIS INVALIDATED",
     "TIME DECAY EXIT",
     "FLOOR STOP",
-    # spy_0dte_exit_signal's own bare "EOD CLOSE" (both its real 15-minutes-
+    # the premium exit's own bare "EOD CLOSE" (both its real 15-minutes-
     # to-close branch and its own error-fallback branch) - the exact bug
     # this set exists to prevent, missed from this set itself: a 0DTE
     # 5M position that reaches the closing window without hitting a stop/
@@ -1882,7 +1879,7 @@ def spy_opening_range_signal(
 
     bar_minutes is the interval of the intraday bars passed in (default 5,
     matching the original single-strategy behavior). This function is now
-    shared by the SPY_0DTE opening-range family.
+    shared by the opening-range signal.
     1-minute bars - so the number of bars needed to cover the same
     opening-range window has to scale with whatever interval the caller
     actually fetched, not stay hardcoded to 5-minute math for all of
@@ -2062,7 +2059,7 @@ def scan_spy_contract_candidates(
     expiration: str,
     spot_price: float,
     market_context: dict[str, Any] | None = None,
-    play_type: str = "SPY_0DTE_5M",
+    play_type: str = SPY_MANUAL_PLAY_TYPE,
 ) -> list[dict[str, Any]]:
     """Candidate builder for SPY 0DTE - its own delta band and its own
     risk cap (SPY_MAX_CONTRACT_ASK/SPY_MAX_RISK_PER_TRADE),
@@ -2076,7 +2073,7 @@ def scan_spy_contract_candidates(
     from so the two are tracked, cooled-down, and learned from separately.
 
     candidate_to_row reads cost_or_credit/pop/max_profit/max_risk/
-    breakeven/option_symbol directly off every candidate, so a SPY_0DTE
+    breakeven/option_symbol directly off every candidate, so a forced
     candidate missing any of them would KeyError the moment a real trade
     tried to open, not just look incomplete in a report."""
     candidates: list[dict[str, Any]] = []
@@ -2137,11 +2134,11 @@ def scan_spy_contract_candidates(
 # SPY Key-Levels / ORB / VWAP strategy - a second, fully independent SPY
 # strategy family. Built entirely standalone per explicit owner direction:
 # no constant, delta band, risk cap, stop model, or exit rule below is read
-# from or shared with SPY_0DTE. It only reuses genuinely generic, already-
+# shared with anything else. It only reuses genuinely generic, already-
 # shared plumbing that every play type depends on (get_chain/get_strikes/
 # get_expirations/get_daily_history, simple_moving_average, option_has_
 # liquidity, candidate_to_row, evaluate_open_row's dispatch, close_row) -
-# the same plumbing SPY_0DTE itself sits on top of.
+# the same shared plumbing.
 #
 # Source strategy: premarket/prior-day/prior-week high-low, a 9:30-9:45 ET
 # opening range (wick high/low), session VWAP, and the 200-day SMA are
@@ -2195,7 +2192,7 @@ SPY_KEY_LEVELS_STOP_BUFFER_PCT = float(os.environ.get(
 # all the way to -42%/-46%/-50% before the underlying finally crossed
 # its stop level (only SPY_KEY_LEVELS_STOP_BUFFER_PCT = 0.15% away) at
 # 10:51am - theta plus a small adverse move ate the whole position while
-# the underlying-only stop had nothing to say about it. Unlike SPY_0DTE
+# the underlying-only stop had nothing to say about it. Unlike the premium-exit path
 # (a hard -50% premium stop, plus a floor that locks in once a trade
 # proves itself), Key-Levels previously had ZERO premium-based backstop
 # at all - a position could bleed to any loss for however long it takes
@@ -2489,7 +2486,7 @@ def spy_key_levels_exit_signal(
     peak_pct: float = 0.0,
 ) -> tuple[str, str]:
     """Underlying-price-based stop/target - this strategy's own exit model,
-    not the %-of-premium model the SPY_0DTE strategies use. Only forces a
+    not the %-of-premium model. Only forces a
     same-day close on the actual expiration date; a 1-3DTE/weekly position
     holds overnight until it hits its stop, target, or its own expiration
     day, per the spec's "additional time, flexibility, and room for error"
@@ -2535,7 +2532,7 @@ def spy_key_levels_exit_signal(
             "proven move instead of riding it back through the underlying-level stop"
         )
     if is_expiration_day and minutes_remaining <= 15:
-        # Named "EXPIRATION CLOSE" (not SPY_0DTE's "EOD CLOSE" string) so
+        # Named "EXPIRATION CLOSE" (not the premium-exit "EOD CLOSE" string) so
         # this strategy's forced-close signal is its own distinct value in
         # the shared close-trigger set main() checks - adding "EOD CLOSE"
         # there would also change the shared 0DTE closing behavior,
@@ -2552,7 +2549,7 @@ def scan_spy_key_levels_candidates(
     spot_price: float,
 ) -> list[dict[str, Any]]:
     """Candidate builder for SPY Key-Levels - its own delta band and risk
-    cap (SPY_KEY_LEVELS_*), independent of SPY_0DTE's. entry is a qualified
+    cap (SPY_KEY_LEVELS_*), independent. entry is a qualified
     result from spy_key_levels_entry_signal (side/active_level_name/
     active_level_price already resolved)."""
     kind = entry["side"]
@@ -2616,7 +2613,7 @@ def scan_spy_key_levels_candidates(
 # SPY 0-1 DTE Expansion-Level strategy - a third, fully independent SPY
 # strategy family. Built entirely standalone per the same owner direction
 # as SPY_KEY_LEVELS: no constant, delta band, risk cap, stop model, or
-# level-calculator below is shared with SPY_0DTE or SPY_KEY_LEVELS, even
+# level-calculator below is shared with SPY_KEY_LEVELS, even
 # where the underlying math is similar (prior-day/prior-week high-low) -
 # each strategy owns its own copy rather than reading another's. The only
 # things reused are genuinely generic, strategy-agnostic primitives that
@@ -2636,7 +2633,7 @@ def scan_spy_key_levels_candidates(
 # confirmed acceptable since nothing here renders charts, only the
 # underlying numeric condition matters), and the stop/target/floor exit
 # (this strategy's own %-of-premium constants, same mechanical shape as
-# SPY_0DTE's but independently defined and independently tunable, per
+# independently defined and independently tunable, per
 # explicit owner choice not to literally call spy_premium_exit_signal()).
 # ---------------------------------------------------------------------------
 
@@ -3740,7 +3737,7 @@ def evaluate_open_spy_key_levels_row(
     premium quote like every other play type (that's what realized money
     actually is), but the exit TRIGGER is the underlying-price-level stop/
     target stored on the row at entry, not a % of premium. Independent of
-    evaluate_open_row's SPY_0DTE branch entirely."""
+    evaluate_open_row's premium-exit branch entirely."""
     entry = parse_entry_price(row)
     quote = quotes.get(row.get("option_symbol", ""))
     if not quote or not quote_is_reliable_for_exit(quote):
@@ -3934,7 +3931,7 @@ def evaluate_open_row(
     try:
         signal, exit_note = spy_premium_exit_signal(entry, mark, minutes_remaining, peak_pct)
     except Exception as exc:
-        print(f"spy_0dte_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
+        print(f"spy_premium_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
         signal = "EOD CLOSE"
         exit_note = "fallback: forced close (smart exit errored) - 0DTE never holds overnight"
     row["max_favorable_pct"] = round_or_blank(peak_pct, 0)
@@ -6446,8 +6443,6 @@ DEFAULT_TRADE_TYPES_ENABLED = {
     # silently go live just because a config key went missing. Split into
     # two independently-toggleable strategies (1-minute vs 5-minute opening
     # range bar interval) that trade fully independently of each other.
-    "spy_0dte_1m": False,
-    "spy_0dte_5m": False,
     # SPY Key-Levels/ORB/VWAP strategy - a second, independent SPY strategy.
     # Same paused-by-default rule applies: never goes live just because a
     # config key went missing.
@@ -6457,7 +6452,6 @@ DEFAULT_TRADE_TYPES_ENABLED = {
 }
 
 # The 14 strategies promoted from the locked top 15. Registered here by name
-# for the same reason as the ratchets above, and it is a real trap rather
 # than a formality: trade_types_enabled() only applies a config override to
 # a key that ALREADY exists in this dict. Setting these in
 # config/scanner.json alone left all 14 silently disabled - the scan
@@ -6492,7 +6486,6 @@ def _unavailable_context(reason: str) -> dict[str, Any]:
 def _refresh_spot_price(fallback: float) -> float:
     """scan_candidates() fetches one spot_price at the top of a scan cycle
     and used to pass that same, increasingly stale value all the way
-    through 2 SPY_0DTE variants, 10 ratchet variants, Key-Levels, and
     Expansion-Level - each doing its own sequential network round-trip, so
     by the time the later groups ran, the strike selection and journaled
     spot_at_entry could be tens of seconds behind the real market. Fails
@@ -6672,7 +6665,7 @@ def _run_spy_key_levels_variant(
 ) -> dict[str, Any]:
     """Run the SPY Key-Levels/ORB/VWAP strategy's full signal + candidate
     build in isolation - its own data fetch, its own levels/direction/
-    catalyst read, its own candidates, independent of SPY_0DTE entirely."""
+    catalyst read, its own candidates, independent entirely."""
     spot_price = _refresh_spot_price(spot_price)
     try:
         premarket_bars = get_premarket_history(SPY_KEY_LEVELS_TICKER, interval="5min")
@@ -6794,8 +6787,7 @@ def scan_candidates(
 
 
     # SPY Key-Levels/ORB/VWAP - a second, fully independent SPY strategy.
-    # Runs its own data fetch and signal read regardless of what SPY_0DTE
-    # did above; nothing here reads spy_0dte_market_context or vice versa.
+    # Runs its own data fetch and signal read independently of every other strategy.
     if TICKER == SPY_KEY_LEVELS_TICKER:
         today_str = now_ct().date().isoformat()
         if enabled.get("spy_key_levels"):
@@ -6824,7 +6816,7 @@ def scan_candidates(
         )
 
     # SPY 0-1 DTE Expansion-Level - a third, fully independent SPY strategy.
-    # Runs its own data fetch and signal read regardless of what SPY_0DTE or
+    # Runs its own data fetch and signal read independently of
     # SPY_KEY_LEVELS did above.
 
     stats["qualified_candidates"] = len(candidates)

@@ -7,7 +7,6 @@ The full roster, each with its own rules, scored individually:
 - SPY_KEY_LEVELS - own entry, own exit.
 - Every new research strategy from Phases 3-4, each with its own entry.
 
-Exits are in option-premium percent, which is what makes the ten ratchets
 distinguishable at all.
 """
 
@@ -36,33 +35,13 @@ RESEARCH_EXIT = ob.OptionExit(
 
 
 def build_roster(conn):
-    """(trader_name, entry_signal_fn, exit_rules) for every trader."""
+    """(trader_name, entry_signal_fn, exit_rules) for every live trader."""
     variants = rep.all_variants(conn=conn)
-    orb1 = variants["LIVE SPY_0DTE (ORB)"]["1-min bars (1M + 10 ratchets)"]
-    orb5 = variants["LIVE SPY_0DTE (ORB)"]["5-min bars (5M)"]
-
-    spy0dte_exit = ob.OptionExit(
-        target_pct=ss.SPY_TARGET_PCT * 100,
-        stop_pct=-ss.SPY_STOP_PCT * 100,
-        floor_trigger_pct=ss.SPY_FLOOR_TRIGGER_PCT,
-        floor_pct=ss.SPY_FLOOR_PCT,
-        name="spy0dte +50/-50 floor+30",
-    )
-
-    roster = [
-    ]
-    roster.append((
+    roster = [(
         "LIVE SPY_KEY_LEVELS", variants["LIVE SPY_KEY_LEVELS"]["deployed rules"],
         ob.OptionExit(target_pct=100, stop_pct=-50, floor_trigger_pct=None,
                       floor_pct=None, name="key-levels 2R"),
-    ))
-
-    # Research strategies: own entry, best of the exit grid.
-    for family, members in variants.items():
-        if family.startswith("LIVE") or family.startswith("BASELINE"):
-            continue
-        for variant_name, fn in members.items():
-            roster.append((f"{family} | {variant_name}", fn, RESEARCH_EXIT))
+    )]
     return roster
 
 

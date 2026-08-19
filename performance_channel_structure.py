@@ -1,8 +1,6 @@
 """Install the shared, non-strategy-specific Performance-category scorecard
 destinations. Per-strategy monthly performance and strategy-breakdown
 scorecards live in the shared STRATEGIES category
-(channels strategies-dashboard/strategies-results and ratchet-dashboard/
-ratchet-results - see sync_discord_structure.py) instead of being
 recreated here. Daily, weekly, and monthly recaps stay here deliberately -
 they're calendar summaries across every live strategy combined, not
 something a per-strategy split duplicated, matching the explicit "we just

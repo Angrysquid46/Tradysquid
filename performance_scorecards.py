@@ -14,12 +14,10 @@ import spy_scanner
 import performance_reconciliation as base
 
 
-# v6 was the ratchet-channel consolidation (10 categories -> 1):
 # state_keys/hashes are unchanged per variant (by design, so each variant
 # stays independently tracked), but upsert_channel_message's hash-cache
 # short-circuit trusts a cached content_hash without checking the tracked
 # message still lives in the CURRENT channel_id - real bug found live
-# right after that consolidation: every ratchet variant's cached hash
 # still matched (nothing about the DATA changed), so it kept returning
 # the OLD message_id from the now-deleted per-variant channel without
 # ever posting into the new shared channel, and without raising anything
@@ -167,7 +165,6 @@ def _require_upsert(
     # A logical channel the code no longer declares at all has been
     # deliberately retired - posting to it is not a Discord failure, it is a
     # card with nowhere left to go. Raising here took the whole reporting job
-    # down after the 10 ratchet variants were retired: their leaderboard was
     # still posted, spy_scanner had already popped the channel, and every
     # discord-reporting run died on it. A channel that IS still declared but
     # will not acknowledge is a real failure and still raises.
@@ -375,7 +372,6 @@ def sync_reports(
             play_type=play_type, logical_name=performance_logical, label=label,
         )
 
-    # A derived summary card ranking all 10 ratchet variants against each
     # other, not a per-variant scorecard - lives in this file (not just
     # base.sync_reports, which this function fully replaces once
     # installed) so it actually runs. Owner: "a dashboard so we can see
@@ -417,8 +413,7 @@ def sync_reports(
 
 def validate_reconciliation() -> dict[str, int]:
     # Cycles through every currently-live play_type (base.STRATEGY_VARIANTS -
-    # both SPY_0DTE variants, Key-Levels, Expansion-Level, and all 10 ratchet
-    # variants), not just the two SPY_0DTE variants - a synthetic self-test
+    # variants), not just one - a synthetic self-test
     # that only ever exercised 2 of 14 live strategies gave no real coverage
     # for the other 12, including whichever one the owner most recently
     # added. Real bug once found this way: this used to run against the

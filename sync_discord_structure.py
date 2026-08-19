@@ -55,9 +55,7 @@ class ChannelSpec:
 # Old per-variant category names, kept only so the sync can find and
 # delete them (see DELETE_CATEGORIES/DELETE_CHANNELS below).
 
-# Same consolidation as the ratchet variants, applied to the other 4 live
 # strategies (1-Minute, 5-Minute, Key-Levels, Expansion-Level) - owner:
-# "do the ratchet thing but instead all the other trades tradebot makes
 # and just have a similar dashboard for the other trader types so the
 # homepage can be clean and we can still see all the results... tabs can
 # stay meaningful and not scattered craziness." Each strategy still gets
@@ -166,9 +164,7 @@ DELETE_CHANNELS = {
     # Strategy channels whose strategy was removed, or whose rank shifted -
     # an orphaned channel looks live but never updates again.
     *_RETIRED_STRATEGY_CHANNELS,
-    # All 10 ratchet-floor variants retired 2026-08-17: their shared ORB
     # entry measured at essentially zero (+0.0004 ATR/trade, t=+0.39), and
-    # every ratchet exit shape came last when scored as options - the best
     # of them lost $275k against the SPY_0DTE shape's $156k. Only the
     # locked top-15 strategies survive.
     # Retired 2026-08-19 - owner: "delete held positions as well since
@@ -188,11 +184,8 @@ DELETE_CHANNELS = {
     # 5m-performance/5m-results, now that SPY 0DTE is split into two
     # independently-tracked live strategies instead of one combined read.
     "performance-dashboard", "strategy-results", "strategy-breakdown",
-    # Retired in favor of the single shared ratchet-dashboard/ratchet-results
-    # pair above - owner: "all the ratchet stratagies in a single catagory
     # instead of 11 different channels."
     # Retired in favor of the single shared strategies-dashboard/
-    # strategies-results pair above - owner: "do the ratchet thing but
     # instead all the other trades tradebot makes."
     "1m-performance", "1m-results", "5m-performance", "5m-results",
     "key-levels-performance", "key-levels-results",

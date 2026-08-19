@@ -27,7 +27,6 @@ class FakeDiscord:
         self.channels = dict(spy_scanner.CHANNEL_NAMES)
         self.channels["daily_recap"] = "daily"
         self.channels["weekly_report"] = "weekly"
-        self.channels["ratchet_leaderboard"] = "ratchet-dashboard"
         self.cards: dict[str, str] = {}
         self.channel_cards: dict[str, list[str]] = {
             channel_id: [] for channel_id in self.channels.values()
@@ -186,7 +185,6 @@ class PerformanceScorecardTests(unittest.TestCase):
         # month as a placeholder even with no trades, so each trade-less
         # variant still contributes exactly one empty "current month"
         # scorecard: 2 + 2 + 1 + 1 = 6, plus 1 each for the 10 trade-less
-        # ratchet-floor variants used to add 1 each here, but all 10 were
         # retired 2026-08-17 (see spy_scanner.SPY_RATCHET_VARIANTS). The four
         # legacy strategies give 2 + 2 + 1 + 1 = 6, plus 1 each for the 14
         # strategies promoted from the locked set. That count is derived
@@ -211,7 +209,6 @@ class PerformanceScorecardTests(unittest.TestCase):
             len(_reconciliation.STRATEGY_VARIANTS) + len(traded_variants),
         )
         # One combined results card per variant that actually has trades
-        # (1m, 5m) - SPY_KEY_LEVELS/SPY_EXPANSION_LEVEL/ratchets have none
         # in this synthetic ledger, contributing 0 each.
         self.assertEqual(state["performance_reconciliation_strategy_groups"], 2)
         self.assertEqual(state["performance_reconciliation_history_pages"], 0)

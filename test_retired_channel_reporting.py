@@ -1,6 +1,5 @@
 """A retired channel must not take the whole reporting job down.
 
-Live failure this guards: after the 10 ratchet variants were retired,
 spy_scanner popped `ratchet_leaderboard` from CHANNEL_NAMES but both
 reporting modules still posted its leaderboard. Every discord-reporting
 run then died with "Discord did not acknowledge scorecard

@@ -337,8 +337,6 @@ def require_ticker_admin(interaction: dict[str, Any]) -> None:
 def filters_reply() -> str:
     config = dynamic_universe.scanner_config()
     traders = config.get("trade_types_enabled") or {}
-    status_1m = "on" if traders.get("spy_0dte_1m", False) else "off"
-    status_5m = "on" if traders.get("spy_0dte_5m", False) else "off"
 
     return "\n".join([
         "🎛️ **Active scanner controls**",
@@ -747,13 +745,13 @@ def force_all_strategies_reply(interaction: dict[str, Any]) -> str:
 def force_trade_reply(interaction: dict[str, Any]) -> str:
     """Owner-forced manual entry - finds the best real SPY 0DTE contract
     matching the requested direction using the exact same contract-
-    selection standards SPY_0DTE already uses (delta band, liquidity,
+    selection standards the scanner already uses (delta band, liquidity,
     price cap - scan_spy_contract_candidates, unchanged), tagged with its
     own play_type (SPY_MANUAL) so it's tracked independently from the
     two automated strategies. Opened through the exact same real
     functions a scan-driven entry uses (candidate_to_row/post_new_trade/
     sync_open_trade_cards), then managed by the exact same live exit
-    rule every SPY_0DTE trade uses (spy_premium_exit_signal, via
+    rule every forced trade uses (spy_premium_exit_signal, via
     evaluate_open_row - SPY_MANUAL is in PREMIUM_EXIT_PLAY_TYPES) - owner:
     "the traders open the best position they can find and then proceeds
     to go based off the traders rules." evolve_bot is untouched - owner:
@@ -827,7 +825,7 @@ def force_trade_reply(interaction: dict[str, Any]) -> str:
     return (
         f"✅ **Forced {call_or_put.upper()} entry: {row['trade_id']}**\n"
         f"SPY {row['strike']} {call_or_put.upper()} @ ${row['entry_price']} "
-        f"(delta {row['delta_at_entry']}, risk ${row['max_risk']}) - now managed under standard SPY_0DTE "
+        f"(delta {row['delta_at_entry']}, risk ${row['max_risk']}) - now managed under the standard "
         f"exit rules (stop {spy_scanner.SPY_STOP_PCT * 100:.0f}% / target {spy_scanner.SPY_TARGET_PCT * 100:.0f}%)."
     )
 
@@ -1054,7 +1052,7 @@ def status_reply(ticker: str) -> str:
     latest_status = info_engine.latest_observation("status")
     enabled = spy_scanner.trade_types_enabled()
     live_strategies = ", ".join(
-        name for name in ("spy_0dte_1m", "spy_0dte_5m", "spy_key_levels", "spy_expansion_level")
+        name for name in sorted(enabled)
         if enabled.get(name)
     ) or "none"
     return "\n".join([

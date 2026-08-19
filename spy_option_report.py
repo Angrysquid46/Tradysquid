@@ -98,7 +98,6 @@ def run(conn, option_conn, *, keys=None, exit_shape=None, exit_shapes=None,
 def compare_exit_shapes(conn, option_conn, key: str, *, limit=None) -> dict[str, Any]:
     """Run one strategy through every live exit shape.
 
-    This is what underlying bars could never do: the 10 ratchet variants
     share one entry and differ only here, so this is the first time they
     can be ranked against each other at all."""
     out = {}
@@ -174,7 +173,6 @@ def write_report(underlying: dict[str, Any], option: dict[str, Any],
     if shapes:
         lines.append(f"\n## Exit-shape comparison on `{key}`\n")
         lines.append(
-            "The 10 live ratchet variants share one entry and differ **only** in "
             "exit shape, which is defined in option-premium percent. On underlying "
             "bars they are indistinguishable; this is the first time they can be "
             "ranked against each other.\n"

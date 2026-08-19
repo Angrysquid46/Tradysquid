@@ -328,7 +328,6 @@ def _top_ranking_section(result: dict[str, Any], detail: dict[str, Any],
             shown += f", … (+{len(members) - 3} more)"
         lines.append(f"| {group} | **{len(members)}** — {shown} |")
     lines.append(
-        "\nSo 14 Discord strategies are really **4 entry signals**. The 10 ratchet "
         "variants are one entry with ten exit shapes, which is exactly the kind of "
         "duplication a channel-per-strategy layout multiplies into noise. Phase 7 "
         "should group by entry signal, and Phase 5 decides which exit shape on top "
