@@ -78,7 +78,12 @@ STREAM_LAST_CARD_PL: dict[str, float] = {}
 #
 # The interval therefore has to scale with how many cards share the
 # channel, not stay flat per card.
-STREAM_CARD_MIN_SECONDS = float(os.environ.get("STREAM_CARD_MIN_SECONDS", "3"))
+# Floor: the fastest a single card may redraw. Each strategy owns its held
+# channel now, so a card normally sits alone in its bucket and this floor
+# is what it actually runs at. Kept at 2s rather than 1s because the exit
+# post and the 60s position-tracker sweep also write to that channel - at
+# 1s there is no headroom left for them and the 429s come back.
+STREAM_CARD_MIN_SECONDS = float(os.environ.get("STREAM_CARD_MIN_SECONDS", "2"))
 STREAM_CARD_SECONDS_PER_POSITION = float(
     os.environ.get("STREAM_CARD_SECONDS_PER_POSITION", "2")
 )
@@ -1925,6 +1930,16 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
     with POSITION_FILE_LOCK:
         changed = False
         closed_events: list[tuple[dict[str, str], dict[str, Any]]] = []
+        # Discord rate-limits per channel, so a card only contends with
+        # other cards in the SAME channel - not with every open position.
+        # Each strategy owns a held channel now, so this is normally 1 and
+        # every card refreshes at the floor no matter how many strategies
+        # are in a trade. Manual trades still share one channel and are
+        # still paced against each other.
+        channel_load: dict[str, int] = {}
+        for _row, _ in relevant:
+            _key = spy_scanner.held_channel_key(_row.get("play_type", ""))
+            channel_load[_key] = channel_load.get(_key, 0) + 1
         for row, option_symbols in relevant:
             if not option_symbols.issubset(STREAM_QUOTES):
                 continue
@@ -1946,9 +1961,12 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
                 trade_id = row.get("trade_id", "")
                 last_write = STREAM_LAST_WRITTEN.get(trade_id, 0.0)
                 elapsed = now_monotonic - last_write
-                # All open cards share one channel's rate limit, so the wait
-                # scales with how many there are - see _card_push_interval.
-                interval = _card_push_interval(len(relevant))
+                # Paced against the cards sharing this card's channel only.
+                interval = _card_push_interval(
+                    channel_load.get(
+                        spy_scanner.held_channel_key(row.get("play_type", "")), 1
+                    )
+                )
                 pl_pct = evaluation.get("pl_pct")
                 last_card_pl = STREAM_LAST_CARD_PL.get(trade_id)
                 jumped = (

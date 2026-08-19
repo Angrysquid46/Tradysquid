@@ -308,3 +308,93 @@ def test_a_small_move_still_waits_out_the_scaled_interval():
     assert pushes == [], (
         "a card with no meaningful move was redrawn inside its interval"
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-strategy held channels - Discord rate-limits per CHANNEL, not per bot
+# ---------------------------------------------------------------------------
+#
+# Every live card used to edit into one shared #updates channel, so all open
+# positions competed for a single bucket and the interval had to grow with
+# the number of them (12s at six, 24s at twelve). A strategy holds at most
+# one position at a time, so giving each its own channel puts exactly one
+# card in each bucket - every card then refreshes at the floor regardless of
+# how many other strategies are trading.
+
+import spy_live_new_strategies as lns
+import performance_reconciliation as pr
+
+
+def test_every_live_strategy_has_its_own_held_channel():
+    live = sorted(pr.live_play_types())
+    channels = {pt: s.CHANNEL_NAMES.get(lns.held_key(pt)) for pt in live}
+    missing = [pt for pt, ch in channels.items() if not ch]
+    assert not missing, f"strategies with no held channel: {missing}"
+    # The entire point: distinct buckets, not a shared one.
+    assert len(set(channels.values())) == len(live), (
+        "held channels are not distinct - they would share a rate-limit bucket"
+    )
+
+
+def test_a_strategy_card_routes_to_its_own_channel_not_the_shared_one():
+    assert s.held_channel_key("SPY_GAP_CONT_50") == lns.held_key("SPY_GAP_CONT_50")
+    assert s.held_channel_key("SPY_GAP_CONT_50") != s.SHARED_HELD_CHANNEL_KEY
+
+
+def test_a_trade_with_no_strategy_channel_still_routes_somewhere():
+    """Manual trades have no strategy channel and must not vanish."""
+    assert s.held_channel_key("") == s.SHARED_HELD_CHANNEL_KEY
+    assert s.held_channel_key("SPY_MANUAL_WHATEVER") == s.SHARED_HELD_CHANNEL_KEY
+
+
+def _strategy_row(trade_id, play_type):
+    row = _open_row(trade_id)
+    row["play_type"] = play_type
+    return row
+
+
+def test_strategies_in_separate_channels_do_not_pace_each_other():
+    """THE regression this whole change exists to fix.
+
+    Six positions across six channels must each refresh at the floor. Under
+    the old shared-channel accounting they were paced to 12s.
+    """
+    play_types = [
+        "SPY_GAP_CONT_50", "SPY_FAILED_BREAK", "SPY_ORB_IMMEDIATE",
+        "SPY_SWEEP_10", "SPY_VWAP_RECLAIM", "SPY_MOMENTUM_ADX25",
+    ]
+    rows = [_strategy_row(f"SPY-SEP-{n}", pt) for n, pt in enumerate(play_types)]
+    engine.STREAM_LAST_WRITTEN.clear()
+    engine.STREAM_LAST_CARD_PL.clear()
+    # Drawn just over one floor ago - under the OLD global accounting the
+    # interval would be 12s and none of these would redraw.
+    drawn_at = engine.time.monotonic() - (engine.STREAM_CARD_MIN_SECONDS + 0.5)
+    for row in rows:
+        engine.STREAM_LAST_WRITTEN[row["trade_id"]] = drawn_at
+
+    pushes: list[str] = []
+    _fire_tick(rows, bid=0.52, ask=0.54, pushes=pushes)   # +4%, a HOLD
+
+    assert len(pushes) == len(rows), (
+        f"only {len(pushes)} of {len(rows)} cards redrew - strategies in "
+        "separate channels are still being paced against each other"
+    )
+
+
+def test_trades_sharing_one_channel_are_still_paced_together():
+    """The pacing must not be lost entirely - manual trades still share a
+    channel and still have to queue behind each other."""
+    rows = [_strategy_row(f"SPY-SHARED-{n}", "") for n in range(6)]
+    engine.STREAM_LAST_WRITTEN.clear()
+    engine.STREAM_LAST_CARD_PL.clear()
+    drawn_at = engine.time.monotonic() - (engine.STREAM_CARD_MIN_SECONDS + 0.5)
+    for row in rows:
+        engine.STREAM_LAST_WRITTEN[row["trade_id"]] = drawn_at
+
+    pushes: list[str] = []
+    _fire_tick(rows, bid=0.52, ask=0.54, pushes=pushes)
+
+    assert pushes == [], (
+        "six cards sharing ONE channel all redrew inside the shared "
+        f"interval - that is the original rate-limit bug ({len(pushes)} pushed)"
+    )
