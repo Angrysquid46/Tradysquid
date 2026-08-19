@@ -134,6 +134,23 @@ CHANNELS = [
     ChannelSpec("OWNER CONTROL", "workflow-log", "Release and deployment history."),
     ChannelSpec("OWNER CONTROL", "upgrade-review", "Member suggestions pending owner approval or decline."),
     ChannelSpec("OWNER CONTROL", "security-log", "Rejected requests and configuration warnings without secrets."),
+    # Reconciled 2026-08-19: these are live channels the bot already writes
+    # to that had drifted out of this spec entirely. Declared with their
+    # CURRENT topics so the sync is a no-op - the point is that a future
+    # audit can trust this list, not to change anything now. moderator-only
+    # is deliberately NOT declared: it sits outside any category in Discord,
+    # so declaring it would move it.
+    ChannelSpec("START HERE", "bot-commands", "Complete TradeBot slash-command reference and ticker-context instructions."),
+    ChannelSpec("START HERE", "risk-management", "Options risk disclosures and pre-trade safety checklist."),
+    ChannelSpec("START HERE", "strategy-rules", "Current scanner filters, management baselines, and trade lifecycle."),
+    ChannelSpec("LEARNING CENTER", "learning-start", "Begin here: learning path, definitions, safety, and how to ask TradeBot."),
+    ChannelSpec("PERFORMANCE", "daily-recap", "One updating scorecard per trading day with wins, losses, P/L, expectancy, and best/worst."),
+    ChannelSpec("PERFORMANCE", "weekly-report", "One updating scorecard per trading week; a new card begins with each new trading week."),
+    ChannelSpec("PERFORMANCE", "monthly-dashboard", "One updating scorecard per trading month, combined across every live strategy - P/L, wins, losses, expectancy."),
+    ChannelSpec("SYSTEM", "system-activity", "Always-on interval receipts, off-hours SPY research, event sweeps, and data freshness."),
+    ChannelSpec("SYSTEM", "automation-diagnostics", "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures."),
+    ChannelSpec("OWNER CONTROL", "applied-upgrades", "Verified installed upgrades, affected channels, implementations, and live runtime proof."),
+    ChannelSpec("OWNER CONTROL", "upgrade-requests", "Owner-submitted upgrade batches mirrored from any Discord channel."),
 ]
 
 
