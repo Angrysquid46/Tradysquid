@@ -51,8 +51,15 @@ def main() -> None:
         conn.close()
         option_conn.close()
 
+    # run() returns {sessions_scored, exit_shape, results: {name: stats}} -
+    # iterating the top level yields an int and a string and silently
+    # filters every strategy out, which is exactly what happened on the
+    # first 40-minute run.
+    payload = result.get("results") if isinstance(result, dict) else None
+    if not isinstance(payload, dict):
+        payload = result
     rows = []
-    for name, stats in result.items():
+    for name, stats in payload.items():
         if not isinstance(stats, dict):
             continue
         n = stats.get("trades") or 0

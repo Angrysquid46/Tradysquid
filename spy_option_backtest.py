@@ -69,6 +69,14 @@ class OptionExit:
     # trades run on, so their measured numbers described a rule the live
     # system does not follow.
     time_stop_minutes: int | None = None
+    # Stagnation bail: a 0DTE that is deeply negative and has stopped
+    # moving is not "waiting for a rebound" - theta accelerates into
+    # expiry and there is no overnight to recover in. The -75% stop is a
+    # percentage of premium with no concept of how much time remains to
+    # earn it back: down 40% at 09:45 is recoverable, down 40% at 14:20 is
+    # mostly just waiting to be down 75%.
+    stagnation_pct: float | None = None      # e.g. -40.0
+    stagnation_minutes: int | None = None    # ...after this long held
     underlying_stop_pct: float | None = None   # e.g. 0.15 = 0.15% adverse
     underlying_r_multiple: float | None = None # target = entry +/- R x this
     name: str = "spy_0dte"
@@ -138,6 +146,16 @@ def _exit_signal(pnl_pct: float, peak_pct: float, minutes_since_open: int,
     if minutes_since_open >= LAST_EXIT_MINUTE:
         return "eod_close", True
     return "", False
+
+
+def _stagnation_bail(pnl_pct: float, entry_minute: int, minute: int,
+                     rules: OptionExit) -> bool:
+    """Deeply negative AND held long enough that recovery is unlikely."""
+    if rules.stagnation_pct is None or rules.stagnation_minutes is None:
+        return False
+    if (minute - entry_minute) < rules.stagnation_minutes:
+        return False
+    return pnl_pct <= rules.stagnation_pct
 
 
 def _time_stop(entry_minute: int, minute: int, rules: OptionExit) -> bool:
@@ -217,6 +235,8 @@ def simulate_option_trades(
             peak_pct = max(peak_pct, pnl_pct)
 
             reason_now, should_exit = _exit_signal(pnl_pct, peak_pct, minute, rules)
+            if not should_exit and _stagnation_bail(pnl_pct, entry_minute, minute, rules):
+                reason_now, should_exit = "stagnation_bail", True
             if not should_exit and _time_stop(entry_minute, minute, rules):
                 reason_now, should_exit = "time_stop", True
             if not should_exit and rules.underlying_stop_pct:
