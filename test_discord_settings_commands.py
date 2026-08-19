@@ -42,8 +42,8 @@ def test_filters_reply_shows_both_spy_0dte_variants_and_does_not_crash():
         reply = bot.filters_reply()
         assert "1-minute** opening-range read (on)" in reply
         assert "5-minute** opening-range read (on)" in reply
-        assert f"{spy_scanner.SPY_0DTE_DELTA_MIN:.2f}" in reply
-        assert f"{spy_scanner.SPY_0DTE_MAX_CONTRACT_ASK:.2f}" in reply
+        assert f"{spy_scanner.SPY_DELTA_MIN:.2f}" in reply
+        assert f"{spy_scanner.SPY_MAX_CONTRACT_ASK:.2f}" in reply
 
 
 def test_filters_reply_shows_off_when_a_spy_0dte_variant_is_disabled():

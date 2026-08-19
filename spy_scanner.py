@@ -137,9 +137,8 @@ MAX_BID_ASK_PCT = float(os.environ.get("MAX_BID_ASK_PCT", "0.25"))
 # any of the multi-ticker machinery above. Its own risk cap, own delta
 # band, own stop/target, own signal - nothing here is read by any other
 # play type, and nothing above is read by this one.
-SPY_0DTE_TICKER = "SPY"
+SPY_CONTRACT_TICKER = "SPY"
 SPY_MANUAL_PLAY_TYPE = "SPY_MANUAL"
-# SPY_0DTE_1M and SPY_0DTE_5M retired 2026-08-17. Their shared opening-range
 # entry measured +0.0004 ATR/trade (t=+0.39) on 1-minute bars and -0.0004
 # (t=-0.64, negative in all four eras) on 5-minute bars across 3,347
 # sessions - indistinguishable from random entries on the same bars.
@@ -148,37 +147,37 @@ SPY_MANUAL_PLAY_TYPE = "SPY_MANUAL"
 # type an owner-opened position carries, so removing it would strand any
 # manual trade with no exit evaluator.
 #
-# The 0DTE exit machinery (spy_0dte_exit_signal and its tests) is left in
+# The 0DTE exit machinery (spy_premium_exit_signal and its tests) is left in
 # place, so restoring either variant is a one-line change.
 # See docs/BACKTEST_RESULTS.md.
-SPY_0DTE_PLAY_TYPES = (SPY_MANUAL_PLAY_TYPE,)
+PREMIUM_EXIT_PLAY_TYPES = (SPY_MANUAL_PLAY_TYPE,)
 
 
-def is_spy_0dte_play_type(play_type: str | None) -> bool:
+def uses_premium_exit(play_type: str | None) -> bool:
     """True for either independently-tracked SPY 0DTE variant (1-minute or
     5-minute opening-range bar interval) or a manually-forced entry
     (SPY_MANUAL - see /force-trade) - all three share every exit rule, risk
     cap, and delta band, so every place that branches on "is this a SPY
     0DTE trade" should treat them the same way rather than re-listing each
     string each time."""
-    return play_type in SPY_0DTE_PLAY_TYPES
+    return play_type in PREMIUM_EXIT_PLAY_TYPES
 
 
-SPY_0DTE_OPENING_RANGE_MINUTES = int(os.environ.get(
+SPY_OPENING_RANGE_MINUTES = int(os.environ.get(
     "SPY_0DTE_OPENING_RANGE_MINUTES", configured("spy_0dte_opening_range_minutes", 30)
 ))
 # variant without one variant consuming it and starving the other ten.
 SPY_TRADINGVIEW_CONSUMED_EVENT_PATH = STATE_DIR / "spy-tradingview-consumed.json"
-SPY_0DTE_DELTA_MIN = float(os.environ.get(
+SPY_DELTA_MIN = float(os.environ.get(
     "SPY_0DTE_DELTA_MIN", configured("spy_0dte_delta_min", 0.40)
 ))
-SPY_0DTE_DELTA_MAX = float(os.environ.get(
+SPY_DELTA_MAX = float(os.environ.get(
     "SPY_0DTE_DELTA_MAX", configured("spy_0dte_delta_max", 0.60)
 ))
-SPY_0DTE_MAX_CONTRACT_ASK = float(os.environ.get(
+SPY_MAX_CONTRACT_ASK = float(os.environ.get(
     "SPY_0DTE_MAX_CONTRACT_ASK", configured("spy_0dte_max_contract_ask", 5.00)
 ))
-SPY_0DTE_MAX_RISK_PER_TRADE = float(os.environ.get(
+SPY_MAX_RISK_PER_TRADE = float(os.environ.get(
     "SPY_0DTE_MAX_RISK_PER_TRADE", configured("spy_0dte_max_risk_per_trade", 500.0)
 ))
 # Backtested on real intraday bars (opening-range breakout, real
@@ -190,14 +189,14 @@ SPY_0DTE_MAX_RISK_PER_TRADE = float(os.environ.get(
 # performing almost identically (+71%/+69% avg), proving the downside
 # isn't just noise inside an uptrend. Live now (trade_types_enabled.
 # spy_0dte = true).
-SPY_0DTE_STOP_PCT = float(os.environ.get(
+SPY_STOP_PCT = float(os.environ.get(
     "SPY_0DTE_STOP_PCT", configured("spy_0dte_stop_pct", 0.50)
 ))
-SPY_0DTE_TARGET_PCT = float(os.environ.get(
+SPY_TARGET_PCT = float(os.environ.get(
     "SPY_0DTE_TARGET_PCT", configured("spy_0dte_target_pct", 0.50)
 ))
 # Once a trade proves itself (crosses this peak), the stop-loss floor
-# raises ONCE from -50% to SPY_0DTE_FLOOR_PCT and holds there - it does
+# raises ONCE from -50% to SPY_FLOOR_PCT and holds there - it does
 # not keep trailing behind every subsequent tick. A continuously-
 # trailing stop was tested and tested badly (it caught 21 of 24 fires
 # on trades that would have gone on to hit the real 50% target, only 3
@@ -208,10 +207,10 @@ SPY_0DTE_TARGET_PCT = float(os.environ.get(
 # full -50% - a real trade-off, not free money, but the disaster case
 # (a trade that peaks near the target and fully round-trips to the
 # stop) is real and happened 3 times in 62 backtested trades.
-SPY_0DTE_FLOOR_TRIGGER_PCT = float(os.environ.get(
+SPY_FLOOR_TRIGGER_PCT = float(os.environ.get(
     "SPY_0DTE_FLOOR_TRIGGER_PCT", configured("spy_0dte_floor_trigger_pct", 30.0)
 ))
-SPY_0DTE_FLOOR_PCT = float(os.environ.get(
+SPY_FLOOR_PCT = float(os.environ.get(
     "SPY_0DTE_FLOOR_PCT", configured("spy_0dte_floor_pct", -15.0)
 ))
 STRIKE_BAND_PCT = float(os.environ.get("STRIKE_BAND_PCT", "0.12"))
@@ -506,9 +505,6 @@ CLOSING_SIGNALS = {
     "EOD CLOSE",
 }
 
-# SPY_0DTE_1M/5M and SPY_EXPANSION_LEVEL were retired 2026-08-17, so their
-# performance_/results_ keys are gone from this list too - a key here with no
-# CHANNEL_NAMES route is dead weight even now that discover() tolerates it.
 AUTOMATED_CHANNEL_KEYS = [
     "scanner_feed",
     "premarket",
@@ -982,8 +978,8 @@ def entry_alert_text(row: dict[str, str], include_link: str = "", summary_only: 
         strike = fmt_strike(as_float(row.get("strike"), 0) or 0)
         strategy = f"{play_type} LONG {kind}"
         setup = f"🟢 BUY 1 {ticker} {strike} {kind}"
-        stop_pct = SPY_0DTE_STOP_PCT if is_spy_0dte_play_type(play_type) else SINGLE_STOP_PCT
-        target_pct = SPY_0DTE_TARGET_PCT if is_spy_0dte_play_type(play_type) else SINGLE_TAKE_PROFIT_PCT
+        stop_pct = SPY_STOP_PCT if uses_premium_exit(play_type) else SINGLE_STOP_PCT
+        target_pct = SPY_TARGET_PCT if uses_premium_exit(play_type) else SINGLE_TAKE_PROFIT_PCT
         stop = round(entry * (1 - stop_pct), 2)
         target = round(entry * (1 + target_pct), 2)
         price_line = (
@@ -1114,8 +1110,8 @@ def stop_overshoot_target_pct(row: dict[str, str], close_reason: str | None = No
     play_type = str(row.get("play_type") or "")
     if close_reason not in ("STOP OUT", "BREAKEVEN STOP", "FLOOR STOP") or play_type == "SPREAD":
         return None
-    if is_spy_0dte_play_type(play_type):
-        return -(SPY_0DTE_STOP_PCT * 100) if close_reason == "STOP OUT" else SPY_0DTE_FLOOR_PCT
+    if uses_premium_exit(play_type):
+        return -(SPY_STOP_PCT * 100) if close_reason == "STOP OUT" else SPY_FLOOR_PCT
     configured_stop = SWING_STOP_PCT if play_type == "SWING" else SINGLE_STOP_PCT
     return -(configured_stop * 100) if close_reason == "STOP OUT" else 0.0
 
@@ -1858,13 +1854,13 @@ def classify_market_condition(history: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 
-def spy_0dte_opening_range_signal(
+def spy_opening_range_signal(
     intraday: list[dict[str, Any]] | None, bar_minutes: int = 5
 ) -> dict[str, Any]:
     """Standalone SPY 0DTE entry signal - a classic, real, independently
     documented day-trading pattern (opening-range breakout), not a
     variant of regular/swing's momentum models. Waits for the first
-    SPY_0DTE_OPENING_RANGE_MINUTES of the session to establish a high/low,
+    SPY_OPENING_RANGE_MINUTES of the session to establish a high/low,
     then reads where price is trading RIGHT NOW relative to that range -
     the most recent bar, not the first bar that ever crossed it.
 
@@ -1892,7 +1888,7 @@ def spy_0dte_opening_range_signal(
     actually fetched, not stay hardcoded to 5-minute math for all of
     them."""
     intraday = intraday or []
-    bars_needed = max(SPY_0DTE_OPENING_RANGE_MINUTES // bar_minutes, 1)
+    bars_needed = max(SPY_OPENING_RANGE_MINUTES // bar_minutes, 1)
     if len(intraday) <= bars_needed:
         return {
             "qualified": False,
@@ -1945,11 +1941,11 @@ def spy_0dte_opening_range_signal(
     }
 
 
-SPY_0DTE_TRADINGVIEW_BULLISH_WORDS = ("buy", "long", "call", "bull")
-SPY_0DTE_TRADINGVIEW_BEARISH_WORDS = ("sell", "short", "put", "bear")
+SPY_TRADINGVIEW_BULLISH_WORDS = ("buy", "long", "call", "bull")
+SPY_TRADINGVIEW_BEARISH_WORDS = ("sell", "short", "put", "bear")
 
 
-def spy_0dte_tradingview_direction(event: dict[str, Any]) -> str | None:
+def spy_tradingview_direction(event: dict[str, Any]) -> str | None:
     """Parse a raw TradingView provider_events row into BULLISH/BEARISH,
     or None if the alert doesn't say. Checks the event_type column first
     (what the /tradingview webhook extracted from payload["event"]/
@@ -1968,8 +1964,8 @@ def spy_0dte_tradingview_direction(event: dict[str, Any]) -> str | None:
             if value:
                 haystacks.append(str(value))
     text = " ".join(haystacks).casefold()
-    is_bullish = any(word in text for word in SPY_0DTE_TRADINGVIEW_BULLISH_WORDS)
-    is_bearish = any(word in text for word in SPY_0DTE_TRADINGVIEW_BEARISH_WORDS)
+    is_bullish = any(word in text for word in SPY_TRADINGVIEW_BULLISH_WORDS)
+    is_bearish = any(word in text for word in SPY_TRADINGVIEW_BEARISH_WORDS)
     if is_bullish and not is_bearish:
         return "BULLISH"
     if is_bearish and not is_bullish:
@@ -2017,7 +2013,7 @@ def _tradingview_event_mark_consumed(play_type: str, event_id: int) -> None:
 
 
 
-def spy_0dte_exit_signal(
+def spy_premium_exit_signal(
     entry_price: float,
     mark: float,
     minutes_remaining: float,
@@ -2032,9 +2028,9 @@ def spy_0dte_exit_signal(
 
     peak_pct is the best pl_pct% this position has reached so far -
     the caller tracks it (same pattern as every other play type's
-    max_favorable_pct). The floor raises ONCE, from -SPY_0DTE_STOP_PCT
-    to SPY_0DTE_FLOOR_PCT, the first time peak_pct crosses
-    SPY_0DTE_FLOOR_TRIGGER_PCT, and never moves again after that - it
+    max_favorable_pct). The floor raises ONCE, from -SPY_STOP_PCT
+    to SPY_FLOOR_PCT, the first time peak_pct crosses
+    SPY_FLOOR_TRIGGER_PCT, and never moves again after that - it
     does not keep chasing the peak. A continuously-trailing version was
     tested and made things worse (21 of 24 fires cut off a trade that
     would have gone on to hit the real target; only 3 were genuine
@@ -2043,16 +2039,16 @@ def spy_0dte_exit_signal(
     if entry_price <= 0:
         return "HOLD", "no entry price to evaluate against"
     pnl_pct = (mark - entry_price) / entry_price * 100
-    stop_floor = SPY_0DTE_FLOOR_PCT if peak_pct >= SPY_0DTE_FLOOR_TRIGGER_PCT else -SPY_0DTE_STOP_PCT * 100
+    stop_floor = SPY_FLOOR_PCT if peak_pct >= SPY_FLOOR_TRIGGER_PCT else -SPY_STOP_PCT * 100
     if pnl_pct <= stop_floor:
-        if stop_floor > -SPY_0DTE_STOP_PCT * 100:
+        if stop_floor > -SPY_STOP_PCT * 100:
             return "BREAKEVEN STOP", (
                 f"peaked at {peak_pct:.0f}%, down to {pnl_pct:.0f}% - protecting the proven "
-                f"move instead of risking a full round-trip to the {SPY_0DTE_STOP_PCT * 100:.0f}% stop"
+                f"move instead of risking a full round-trip to the {SPY_STOP_PCT * 100:.0f}% stop"
             )
-        return "STOP OUT", f"down {pnl_pct:.0f}%, past the {SPY_0DTE_STOP_PCT * 100:.0f}% 0DTE stop"
-    if pnl_pct >= SPY_0DTE_TARGET_PCT * 100:
-        return "TAKE PROFIT", f"up {pnl_pct:.0f}%, past the {SPY_0DTE_TARGET_PCT * 100:.0f}% 0DTE target"
+        return "STOP OUT", f"down {pnl_pct:.0f}%, past the {SPY_STOP_PCT * 100:.0f}% 0DTE stop"
+    if pnl_pct >= SPY_TARGET_PCT * 100:
+        return "TAKE PROFIT", f"up {pnl_pct:.0f}%, past the {SPY_TARGET_PCT * 100:.0f}% 0DTE target"
     if minutes_remaining <= 15:
         return "EOD CLOSE", "closing ahead of same-day expiration - 0DTE never holds overnight"
     return "HOLD", "no exit condition met"
@@ -2060,7 +2056,7 @@ def spy_0dte_exit_signal(
 
 
 
-def scan_spy_0dte_candidates(
+def scan_spy_contract_candidates(
     chain: list[dict[str, Any]],
     kind: str,
     expiration: str,
@@ -2069,13 +2065,13 @@ def scan_spy_0dte_candidates(
     play_type: str = "SPY_0DTE_5M",
 ) -> list[dict[str, Any]]:
     """Candidate builder for SPY 0DTE - its own delta band and its own
-    risk cap (SPY_0DTE_MAX_CONTRACT_ASK/SPY_0DTE_MAX_RISK_PER_TRADE),
+    risk cap (SPY_MAX_CONTRACT_ASK/SPY_MAX_RISK_PER_TRADE),
     built standalone per explicit owner direction not to reuse the
     retired multi-ticker single-leg machinery.
 
     Retired as live strategies; retained because evolve_bot imports it.
     strategies - they differ only in the opening-range bar interval used
-    by spy_0dte_opening_range_signal, not in contract selection, delta
+    by spy_opening_range_signal, not in contract selection, delta
     band, or risk cap. play_type tags which one a given candidate came
     from so the two are tracked, cooled-down, and learned from separately.
 
@@ -2088,13 +2084,13 @@ def scan_spy_0dte_candidates(
         if not option_has_liquidity(option):
             continue
         delta = abs(greek(option, "delta") or 0.0)
-        if not SPY_0DTE_DELTA_MIN <= delta <= SPY_0DTE_DELTA_MAX:
+        if not SPY_DELTA_MIN <= delta <= SPY_DELTA_MAX:
             continue
         ask = as_float(option.get("ask"), 0.0) or 0.0
         bid = as_float(option.get("bid"), 0.0) or 0.0
         if ask <= 0:
             continue
-        if ask > SPY_0DTE_MAX_CONTRACT_ASK or ask * 100 > SPY_0DTE_MAX_RISK_PER_TRADE:
+        if ask > SPY_MAX_CONTRACT_ASK or ask * 100 > SPY_MAX_RISK_PER_TRADE:
             continue
         strike = float(option["strike"])
         max_profit: str | float = "UNLIMITED" if kind == "call" else round(max((strike - ask) * 100, 0), 2)
@@ -2117,7 +2113,7 @@ def scan_spy_0dte_candidates(
                 "open_interest": open_interest_value(option),
                 "option_volume": option_volume_value(option),
                 "bid_ask_width": round(max(ask - bid, 0), 2),
-                "option_symbol": option.get("symbol") or option_symbol(SPY_0DTE_TICKER, expiration, kind, strike),
+                "option_symbol": option.get("symbol") or option_symbol(SPY_CONTRACT_TICKER, expiration, kind, strike),
                 "spot_at_entry": spot_price,
                 "score": round(delta * 100, 1),
                 "setup_reason": (market_context or {}).get(
@@ -2204,7 +2200,7 @@ SPY_KEY_LEVELS_STOP_BUFFER_PCT = float(os.environ.get(
 # proves itself), Key-Levels previously had ZERO premium-based backstop
 # at all - a position could bleed to any loss for however long it takes
 # the underlying to reach its level. These two constants close that gap,
-# same shape as SPY_0DTE_STOP_PCT/FLOOR_TRIGGER_PCT/FLOOR_PCT. Values
+# same shape as SPY_STOP_PCT/FLOOR_TRIGGER_PCT/FLOOR_PCT. Values
 # are a reasoned first pass, not backtested against a real Key-Levels
 # sample the way 0DTE's floor was (62 trades) - the underlying-level
 # stop/target stay the strategy's primary exit; these only step in when
@@ -2641,7 +2637,7 @@ def scan_spy_key_levels_candidates(
 # underlying numeric condition matters), and the stop/target/floor exit
 # (this strategy's own %-of-premium constants, same mechanical shape as
 # SPY_0DTE's but independently defined and independently tunable, per
-# explicit owner choice not to literally call spy_0dte_exit_signal()).
+# explicit owner choice not to literally call spy_premium_exit_signal()).
 # ---------------------------------------------------------------------------
 
 
@@ -3902,7 +3898,7 @@ def evaluate_open_row(
     if _lns.is_new_strategy_play_type(play_type):
         return evaluate_open_new_strategy_row(row, quotes, timestamp)
 
-    if not is_spy_0dte_play_type(play_type):
+    if not uses_premium_exit(play_type):
         # Every play type this system opens is one of the two independently
         # tracked SPY 0DTE strategies, a manually-forced entry (SPY_MANUAL -
         # see /force-trade, which shares this exact exit rule "based off the
@@ -3936,7 +3932,7 @@ def evaluate_open_row(
     )
     minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
     try:
-        signal, exit_note = spy_0dte_exit_signal(entry, mark, minutes_remaining, peak_pct)
+        signal, exit_note = spy_premium_exit_signal(entry, mark, minutes_remaining, peak_pct)
     except Exception as exc:
         print(f"spy_0dte_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
         signal = "EOD CLOSE"
@@ -6793,7 +6789,7 @@ def scan_candidates(
     # stop/target/floor/EOD exit rules for both - bar interval is the one
     # variable actually being compared, per explicit owner direction not to
     # invent artificial differences that would muddy the comparison.
-    if TICKER == SPY_0DTE_TICKER:
+    if TICKER == SPY_CONTRACT_TICKER:
         today_str = now_ct().date().isoformat()
 
 

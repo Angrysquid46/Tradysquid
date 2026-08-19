@@ -18,7 +18,7 @@ Two rules keep it honest:
    the report rather than being dropped once the numbers look concrete.
 
 Exits are expressed in **option-premium percent**, which is how the live
-system already defines them (`SPY_0DTE_TARGET_PCT`, the ratchet
+system already defines them (`SPY_TARGET_PCT`, the ratchet
 `step_pct`/`stop_pct`). That is what finally makes the 10 ratchet
 variants separable - on underlying bars they share one entry and are
 indistinguishable.
@@ -35,8 +35,8 @@ import spy_option_model as om
 # Live contract-selection rules, mirrored from spy_scanner so the trade
 # being measured is the trade the system would actually take.
 DEFAULT_TARGET_DELTA = 0.50
-MAX_CONTRACT_ASK = 5.00        # SPY_0DTE_MAX_CONTRACT_ASK
-MAX_RISK_PER_TRADE = 500.0     # SPY_0DTE_MAX_RISK_PER_TRADE
+MAX_CONTRACT_ASK = 5.00        # SPY_MAX_CONTRACT_ASK
+MAX_RISK_PER_TRADE = 500.0     # SPY_MAX_RISK_PER_TRADE
 COMMISSION_PER_CONTRACT = 0.04  # each way
 # 0.04, not 0.65. The old figure was "typical retail" and is 16x what this
 # account actually pays - Robinhood charges no commission on options, only
@@ -315,10 +315,10 @@ def live_exit_shapes() -> list[OptionExit]:
     compared head to head - which underlying bars could never do."""
     import spy_scanner as ss
     shapes = [OptionExit(
-        target_pct=ss.SPY_0DTE_TARGET_PCT * 100,
-        stop_pct=-ss.SPY_0DTE_STOP_PCT * 100,
-        floor_trigger_pct=ss.SPY_0DTE_FLOOR_TRIGGER_PCT,
-        floor_pct=ss.SPY_0DTE_FLOOR_PCT,
+        target_pct=ss.SPY_TARGET_PCT * 100,
+        stop_pct=-ss.SPY_STOP_PCT * 100,
+        floor_trigger_pct=ss.SPY_FLOOR_TRIGGER_PCT,
+        floor_pct=ss.SPY_FLOOR_PCT,
         name="spy_0dte (+50/-50, floor +30->-15)",
     )]
     return shapes

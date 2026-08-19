@@ -2,7 +2,7 @@
 change actually takes effect in live trading.
 
 Starts empty (no override file), meaning the evolve bot's exit rule is an
-exact mirror of spy_scanner's live SPY_0DTE_STOP_PCT/TARGET_PCT constants
+exact mirror of spy_scanner's live SPY_STOP_PCT/TARGET_PCT constants
 - identical behavior to every earlier phase. An override only ever
 appears here via apply_proposal.apply_proposal(), which only ever runs
 when explicitly invoked with one specific, already-approved proposal_id.
@@ -71,9 +71,9 @@ def active_variant_params() -> dict[str, Any]:
             "floor_trigger_pct": override.get("floor_trigger_pct"),
         }
     return {
-        "variant_label": f"stop_{int(round(s.SPY_0DTE_STOP_PCT * 100))}_target_{int(round(s.SPY_0DTE_TARGET_PCT * 100))}",
-        "stop_pct": s.SPY_0DTE_STOP_PCT,
-        "target_pct": s.SPY_0DTE_TARGET_PCT,
+        "variant_label": f"stop_{int(round(s.SPY_STOP_PCT * 100))}_target_{int(round(s.SPY_TARGET_PCT * 100))}",
+        "stop_pct": s.SPY_STOP_PCT,
+        "target_pct": s.SPY_TARGET_PCT,
         "floor_pct": None,
         "floor_trigger_pct": None,
     }
@@ -87,7 +87,7 @@ def current_stop_pct() -> float:
     to duplicate the override-vs-default branching logic above."""
     override = load_active_override()
     if override is None:
-        return s.SPY_0DTE_STOP_PCT
+        return s.SPY_STOP_PCT
     return override["stop_pct"]
 
 
@@ -103,7 +103,7 @@ def current_exit_signal(
     test), once/if the owner has approved a Phase 12 proposal."""
     override = load_active_override()
     if override is None:
-        return s.spy_0dte_exit_signal(entry_price, mark, minutes_remaining, peak_pct)
+        return s.spy_premium_exit_signal(entry_price, mark, minutes_remaining, peak_pct)
     return backtest_exit.backtest_exit_signal(
         entry_price,
         mark,

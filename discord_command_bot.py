@@ -348,11 +348,11 @@ def filters_reply() -> str:
         f"independently of each other (both can hold a position at once):",
         f"• **1-minute** opening-range read ({status_1m})",
         f"• **5-minute** opening-range read ({status_5m})",
-        f"Opening range window: **{spy_scanner.SPY_0DTE_OPENING_RANGE_MINUTES}min**",
-        f"Delta range: **{spy_scanner.SPY_0DTE_DELTA_MIN:.2f}–{spy_scanner.SPY_0DTE_DELTA_MAX:.2f}**",
-        f"Stop / target: **-{spy_scanner.SPY_0DTE_STOP_PCT * 100:.0f}% / +{spy_scanner.SPY_0DTE_TARGET_PCT * 100:.0f}%**",
-        f"Floor lock: triggers at **+{spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT:.0f}%**, raises stop to **{spy_scanner.SPY_0DTE_FLOOR_PCT:.0f}%**",
-        f"Max contract ask / position risk: **${spy_scanner.SPY_0DTE_MAX_CONTRACT_ASK:.2f} / ${spy_scanner.SPY_0DTE_MAX_RISK_PER_TRADE:.0f}**",
+        f"Opening range window: **{spy_scanner.SPY_OPENING_RANGE_MINUTES}min**",
+        f"Delta range: **{spy_scanner.SPY_DELTA_MIN:.2f}–{spy_scanner.SPY_DELTA_MAX:.2f}**",
+        f"Stop / target: **-{spy_scanner.SPY_STOP_PCT * 100:.0f}% / +{spy_scanner.SPY_TARGET_PCT * 100:.0f}%**",
+        f"Floor lock: triggers at **+{spy_scanner.SPY_FLOOR_TRIGGER_PCT:.0f}%**, raises stop to **{spy_scanner.SPY_FLOOR_PCT:.0f}%**",
+        f"Max contract ask / position risk: **${spy_scanner.SPY_MAX_CONTRACT_ASK:.2f} / ${spy_scanner.SPY_MAX_RISK_PER_TRADE:.0f}**",
         "",
         "",
         "**SPY Key-Levels/ORB/VWAP** - a second, fully independent SPY",
@@ -748,13 +748,13 @@ def force_trade_reply(interaction: dict[str, Any]) -> str:
     """Owner-forced manual entry - finds the best real SPY 0DTE contract
     matching the requested direction using the exact same contract-
     selection standards SPY_0DTE already uses (delta band, liquidity,
-    price cap - scan_spy_0dte_candidates, unchanged), tagged with its
+    price cap - scan_spy_contract_candidates, unchanged), tagged with its
     own play_type (SPY_MANUAL) so it's tracked independently from the
     two automated strategies. Opened through the exact same real
     functions a scan-driven entry uses (candidate_to_row/post_new_trade/
     sync_open_trade_cards), then managed by the exact same live exit
-    rule every SPY_0DTE trade uses (spy_0dte_exit_signal, via
-    evaluate_open_row - SPY_MANUAL is in SPY_0DTE_PLAY_TYPES) - owner:
+    rule every SPY_0DTE trade uses (spy_premium_exit_signal, via
+    evaluate_open_row - SPY_MANUAL is in PREMIUM_EXIT_PLAY_TYPES) - owner:
     "the traders open the best position they can find and then proceeds
     to go based off the traders rules." evolve_bot is untouched - owner:
     "exclude ai bot because its a controlled test."
@@ -794,7 +794,7 @@ def force_trade_reply(interaction: dict[str, Any]) -> str:
         "regime": "BULLISH / CONTROLLED" if call_or_put == "call" else "BEARISH / CONTROLLED",
         "reason": "Manually forced via /force-trade.",
     }
-    candidates = spy_scanner.scan_spy_0dte_candidates(
+    candidates = spy_scanner.scan_spy_contract_candidates(
         pool, call_or_put, today_str, spot_price, fake_context, play_type=spy_scanner.SPY_MANUAL_PLAY_TYPE
     )
     if not candidates:
@@ -828,7 +828,7 @@ def force_trade_reply(interaction: dict[str, Any]) -> str:
         f"✅ **Forced {call_or_put.upper()} entry: {row['trade_id']}**\n"
         f"SPY {row['strike']} {call_or_put.upper()} @ ${row['entry_price']} "
         f"(delta {row['delta_at_entry']}, risk ${row['max_risk']}) - now managed under standard SPY_0DTE "
-        f"exit rules (stop {spy_scanner.SPY_0DTE_STOP_PCT * 100:.0f}% / target {spy_scanner.SPY_0DTE_TARGET_PCT * 100:.0f}%)."
+        f"exit rules (stop {spy_scanner.SPY_STOP_PCT * 100:.0f}% / target {spy_scanner.SPY_TARGET_PCT * 100:.0f}%)."
     )
 
 
@@ -1005,8 +1005,8 @@ def risk_reply(ticker: str, premium: float, contracts: int, side: str) -> str:
     premium = max(0.0, float(premium))
     contracts = max(1, min(int(contracts), 100))
     capital = premium * 100 * contracts
-    target_value = premium * (1 + spy_scanner.SPY_0DTE_TARGET_PCT)
-    stop_value = premium * (1 - spy_scanner.SPY_0DTE_STOP_PCT)
+    target_value = premium * (1 + spy_scanner.SPY_TARGET_PCT)
+    stop_value = premium * (1 - spy_scanner.SPY_STOP_PCT)
     target_dollars = (target_value - premium) * 100 * contracts
     stop_dollars = (stop_value - premium) * 100 * contracts
     return "\n".join([
@@ -1014,11 +1014,11 @@ def risk_reply(ticker: str, premium: float, contracts: int, side: str) -> str:
         f"Example: {contracts} contract(s) at ${premium:.2f} · {side.lower()}",
         f"Premium committed / maximum long-option loss: **${capital:,.0f}**",
         (
-            f"Configured +{spy_scanner.SPY_0DTE_TARGET_PCT * 100:.0f}% target: "
+            f"Configured +{spy_scanner.SPY_TARGET_PCT * 100:.0f}% target: "
             f"${target_value:.2f} · approximately **+${target_dollars:,.0f}**"
         ),
         (
-            f"Configured -{spy_scanner.SPY_0DTE_STOP_PCT * 100:.0f}% stop reference: "
+            f"Configured -{spy_scanner.SPY_STOP_PCT * 100:.0f}% stop reference: "
             f"${stop_value:.2f} · approximately **${stop_dollars:,.0f}**"
         ),
         (

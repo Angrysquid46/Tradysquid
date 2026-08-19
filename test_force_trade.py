@@ -102,7 +102,7 @@ def test_returns_early_when_no_candidate_clears_the_filters():
         mock.patch.object(spy_scanner, "filter_strikes", return_value=[600.0]),
         mock.patch.object(spy_scanner, "get_strikes", return_value=[600.0]),
         mock.patch.object(spy_scanner, "get_chain", return_value=[{"strike": 600.0, "option_type": "call"}]),
-        mock.patch.object(spy_scanner, "scan_spy_0dte_candidates", return_value=[]),
+        mock.patch.object(spy_scanner, "scan_spy_contract_candidates", return_value=[]),
     ):
         reply = bot.force_trade_reply(_owner_interaction())
     assert "nothing forced" in reply
@@ -118,7 +118,7 @@ def test_returns_early_when_exposure_cap_leaves_nothing_selected():
         mock.patch.object(spy_scanner, "filter_strikes", return_value=[600.0]),
         mock.patch.object(spy_scanner, "get_strikes", return_value=[600.0]),
         mock.patch.object(spy_scanner, "get_chain", return_value=[{"strike": 600.0, "option_type": "call"}]),
-        mock.patch.object(spy_scanner, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(spy_scanner, "scan_spy_contract_candidates", return_value=[candidate]),
         mock.patch.object(spy_scanner, "recently_tracked", return_value=False),
         mock.patch.object(spy_scanner, "apply_ticker_exposure_cap", return_value=[]),
     ):
@@ -157,7 +157,7 @@ def test_opens_the_best_candidate_tagged_as_spy_manual_and_posts_it():
         mock.patch.object(spy_scanner, "get_chain", return_value=[
             {"strike": 600.0, "option_type": "call"}, {"strike": 605.0, "option_type": "call"},
         ]),
-        mock.patch.object(spy_scanner, "scan_spy_0dte_candidates", return_value=[weaker_candidate, candidate]),
+        mock.patch.object(spy_scanner, "scan_spy_contract_candidates", return_value=[weaker_candidate, candidate]),
         mock.patch.object(spy_scanner, "recently_tracked", return_value=False),
         mock.patch.object(spy_scanner, "apply_ticker_exposure_cap", side_effect=lambda eligible, r, t: eligible),
         mock.patch.object(spy_scanner, "candidate_to_row", side_effect=fake_candidate_to_row) as fake_to_row,

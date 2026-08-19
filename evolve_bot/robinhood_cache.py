@@ -12,7 +12,7 @@ module makes a network call.
 Bars are normalized from Robinhood's raw field names (open_price/
 high_price/low_price/close_price/begins_at, volume as an int) into the
 plain open/high/low/close/timestamp/volume shape spy_scanner's own
-functions already expect (see spy_0dte_opening_range_signal, which reads
+functions already expect (see spy_opening_range_signal, which reads
 bar.get("high")/bar.get("low")/bar.get("close")) - so a cached day can be
 fed straight into that live code with no adapter at the call site.
 

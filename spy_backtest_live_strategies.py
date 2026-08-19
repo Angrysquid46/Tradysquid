@@ -25,13 +25,6 @@ exit shapes, and those shapes are defined in **option-premium percent**
 be measured from underlying bars at all. Ranking them against each other
 requires the Phase 5 option model; ranking their *entry* does not, and
 that is what this module supplies.
-
-A second correction worth recording: CLAUDE.md still says `SPY_0DTE_1M`
-enters on a live TradingView alert. That has not been true since the
-webhook path was retired after four separate incidents - the deployed
-code comments say so explicitly and every 0DTE-family strategy now uses
-the self-contained Python opening-range signal. Which is good news here:
-**every live entry is reproducible from bars.**
 """
 
 from __future__ import annotations
@@ -93,10 +86,10 @@ def _aggregate(rows: Sequence[dict[str, Any]], minutes: int) -> list[dict[str, A
 # ---------------------------------------------------------------------------
 
 def live_opening_range_breakout(bar_minutes: int = 1) -> SignalFn:
-    """The deployed `spy_0dte_opening_range_signal`, called directly.
+    """The deployed `spy_opening_range_signal`, called directly.
 
     The live function reads the opening range from the first
-    `SPY_0DTE_OPENING_RANGE_MINUTES` of bars and then compares the
+    `SPY_OPENING_RANGE_MINUTES` of bars and then compares the
     **latest** bar against it - deliberately, after a real incident where
     reading the first bar that ever broke out left the signal reporting a
     stale bullish direction all morning while price collapsed. So it
@@ -107,7 +100,7 @@ def live_opening_range_breakout(bar_minutes: int = 1) -> SignalFn:
     Passing `opening_range_bars + [current_bar]` gives the live function
     precisely the two things it reads, which keeps this faithful and O(1)
     per bar instead of re-slicing the whole session."""
-    bars_needed = max(ss.SPY_0DTE_OPENING_RANGE_MINUTES // bar_minutes, 1)
+    bars_needed = max(ss.SPY_OPENING_RANGE_MINUTES // bar_minutes, 1)
 
     def signals(rows: Sequence[dict[str, Any]]) -> list[tuple[int, str]]:
         if bar_minutes == 1:
@@ -136,7 +129,7 @@ def live_opening_range_breakout(bar_minutes: int = 1) -> SignalFn:
             row_index = index_of[position]
             if not _tradeable(rows[row_index]):
                 continue
-            context = ss.spy_0dte_opening_range_signal(
+            context = ss.spy_opening_range_signal(
                 opening_range + [source[position]], bar_minutes=bar_minutes
             )
             if not context.get("qualified"):

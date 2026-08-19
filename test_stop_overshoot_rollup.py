@@ -18,7 +18,7 @@ def _closed_row(**overrides) -> dict[str, str]:
         {
             "ticker": "SPY",
             # SPY_0DTE_1M was retired 2026-08-17, so it no longer resolves
-            # through is_spy_0dte_play_type and these assertions silently
+            # through uses_premium_exit and these assertions silently
             # exercised a different branch. SPY_MANUAL is live and shares the
             # same stop model.
             "play_type": spy_scanner.SPY_MANUAL_PLAY_TYPE,
@@ -33,7 +33,7 @@ def _closed_row(**overrides) -> dict[str, str]:
 def test_target_pct_defaults_to_the_rows_stored_last_signal():
     row = _closed_row(last_signal="STOP OUT")
     target = spy_scanner.stop_overshoot_target_pct(row)
-    assert target == -(spy_scanner.SPY_0DTE_STOP_PCT * 100)
+    assert target == -(spy_scanner.SPY_STOP_PCT * 100)
 
 
 def test_target_pct_prefers_an_explicit_close_reason_over_the_stored_one():
@@ -41,7 +41,7 @@ def test_target_pct_prefers_an_explicit_close_reason_over_the_stored_one():
     # close reason before it's been persisted to the row yet.
     row = _closed_row(last_signal="")
     target = spy_scanner.stop_overshoot_target_pct(row, "STOP OUT")
-    assert target == -(spy_scanner.SPY_0DTE_STOP_PCT * 100)
+    assert target == -(spy_scanner.SPY_STOP_PCT * 100)
 
 
 def test_target_pct_is_none_for_a_non_stop_close():
@@ -55,12 +55,12 @@ def test_target_pct_is_none_for_a_retired_spread_row():
 
 
 def test_compute_stop_overshoot_returns_none_when_the_stop_held():
-    row = _closed_row(pct_gain_loss=str(-(spy_scanner.SPY_0DTE_STOP_PCT * 100)))
+    row = _closed_row(pct_gain_loss=str(-(spy_scanner.SPY_STOP_PCT * 100)))
     assert spy_scanner.compute_stop_overshoot(row) is None
 
 
 def test_compute_stop_overshoot_returns_the_slip_when_the_stop_didnt_hold():
-    target = -(spy_scanner.SPY_0DTE_STOP_PCT * 100)
+    target = -(spy_scanner.SPY_STOP_PCT * 100)
     row = _closed_row(pct_gain_loss=str(target - 10))
     overshoot = spy_scanner.compute_stop_overshoot(row)
     assert overshoot == -10

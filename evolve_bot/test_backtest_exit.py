@@ -60,7 +60,7 @@ def test_a_tighter_stop_variant_stops_out_where_the_default_would_still_hold():
 def test_matches_the_live_exit_function_when_fed_the_live_defaults():
     """Drift guard: the two functions' logic must stay identical. Sweep a
     range of mark/peak/minutes combinations and confirm the parameterized
-    clone matches the live spy_0dte_exit_signal exactly when given the
+    clone matches the live spy_premium_exit_signal exactly when given the
     live module's own current constants."""
     scenarios = [
         (0.50, 0.20, 120, 0.0),
@@ -72,10 +72,10 @@ def test_matches_the_live_exit_function_when_fed_the_live_defaults():
         (2.00, 3.10, 120, 55.0),
     ]
     for entry_price, mark, minutes_remaining, peak_pct in scenarios:
-        live_signal, _ = s.spy_0dte_exit_signal(entry_price, mark, minutes_remaining, peak_pct)
+        live_signal, _ = s.spy_premium_exit_signal(entry_price, mark, minutes_remaining, peak_pct)
         clone_signal, _ = backtest_exit.backtest_exit_signal(
             entry_price, mark, minutes_remaining, peak_pct,
-            stop_pct=s.SPY_0DTE_STOP_PCT, target_pct=s.SPY_0DTE_TARGET_PCT,
-            floor_pct=s.SPY_0DTE_FLOOR_PCT, floor_trigger_pct=s.SPY_0DTE_FLOOR_TRIGGER_PCT,
+            stop_pct=s.SPY_STOP_PCT, target_pct=s.SPY_TARGET_PCT,
+            floor_pct=s.SPY_FLOOR_PCT, floor_trigger_pct=s.SPY_FLOOR_TRIGGER_PCT,
         )
         assert clone_signal == live_signal, (entry_price, mark, minutes_remaining, peak_pct)

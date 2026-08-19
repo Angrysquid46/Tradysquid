@@ -66,9 +66,9 @@ def test_opening_range_adapter_agrees_with_passing_the_whole_session():
     fn = live.live_opening_range_breakout(1)
     produced = dict(fn(rows))
 
-    bars_needed = ss.SPY_0DTE_OPENING_RANGE_MINUTES
+    bars_needed = ss.SPY_OPENING_RANGE_MINUTES
     for index in range(bars_needed, len(rows)):
-        context = ss.spy_0dte_opening_range_signal(rows[: index + 1], bar_minutes=1)
+        context = ss.spy_opening_range_signal(rows[: index + 1], bar_minutes=1)
         minute = rows[index]["minutes_since_open"]
         if not (live.MIN_ENTRY_MINUTE <= minute <= live.LAST_ENTRY_MINUTE):
             continue
