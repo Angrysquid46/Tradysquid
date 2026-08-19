@@ -28,7 +28,7 @@ class OfflineProvider:
 
 class SixStrategyRegistry:
     def all(self) -> list[object]:
-        return [object() for _ in range(6)]
+        return [object() for _ in range(15)]
 
 
 class EmptyLocalUniverse:
@@ -98,7 +98,7 @@ def test_closed_market_and_empty_universe_do_not_fail_installation(
     assert result["tradier_live_status"] == "PASS"
     assert result["market_state"] == "closed"
     assert result["universe_count"] == 0
-    assert result["strategy_registry_count"] == 6
+    assert result["strategy_registry_count"] == 15
     assert result["controlled_scan_performed"] is False
     assert result["option_chain_required"] is False
     assert result["market_open_required"] is False

@@ -13,9 +13,9 @@ from scripts.verify_live import run_live_verification
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_packaging_includes_tradysquid_and_scripts_packages() -> None:
+def test_packaging_includes_the_scripts_package() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'include = ["tradysquid*", "scripts*"]' in pyproject
+    assert 'include = ["scripts*"]' in pyproject
     assert (ROOT / "scripts" / "__init__.py").is_file()
 
 
@@ -62,7 +62,7 @@ def test_installation_verifier_runs_from_external_working_directory(tmp_path: Pa
     assert receipt["status"] == "PASS"
     assert Path(receipt["python_executable"]).resolve() == Path(sys.executable).resolve()
     assert Path(receipt["virtual_environment"]).resolve() == expected_venv
-    assert Path(receipt["tradysquid_package_path"]).resolve().is_relative_to(ROOT)
+    assert Path(receipt["scanner_path"]).resolve().is_relative_to(ROOT)
 
 
 class _FakeResponse:
@@ -81,7 +81,7 @@ class _FakeProvider:
 
 class _FakeRegistry:
     def all(self) -> list[dict[str, str]]:
-        return [{"strategy": str(index)} for index in range(6)]
+        return [{"strategy": str(index)} for index in range(15)]
 
 
 class _FakeUniverse:
@@ -132,7 +132,7 @@ def test_live_verifier_module_uses_mocked_read_only_services(monkeypatch, tmp_pa
     )
     rendered = json.dumps(receipt, sort_keys=True)
     assert receipt["status"] == "PASS"
-    assert receipt["strategy_decisions"] == 6
+    assert receipt["strategy_decisions"] == 15
     assert receipt["tradier_read_only"] is True
     assert receipt["market_state"] == "closed"
     assert receipt["controlled_scan_performed"] is False

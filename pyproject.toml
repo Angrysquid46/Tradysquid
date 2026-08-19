@@ -19,8 +19,8 @@ dev = ["pytest==8.3.4", "pytest-cov==6.0.0"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
-testpaths = ["tests"]
+testpaths = ["."]
 pythonpath = ["."]
 
 [tool.setuptools.packages.find]
-include = ["tradysquid*", "scripts*"]
+include = ["scripts*"]

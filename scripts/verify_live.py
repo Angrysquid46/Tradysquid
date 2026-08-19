@@ -2,14 +2,60 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
 import requests
 from dotenv import load_dotenv
 
-from tradysquid.app import Application
-from tradysquid.core.config import redact
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import spy_scanner  # noqa: E402 - path must be set up first
+import performance_reconciliation  # noqa: E402
+
+# Rewritten 2026-08-19: this used to build an Application from the
+# abandoned multi-ticker package and assert its registry held 6
+# strategies. Those six have not existed for months, so the live preflight
+# was verifying a system that does not run. It now checks the live scanner
+# and the real 15-strategy roster.
+EXPECTED_STRATEGY_COUNT = 15
+
+_SECRET = re.compile(r"(?i)(token|secret|api[_-]?key|password|authorization)\s*[=:]\s*\S+")
+
+
+def redact(text: str) -> str:
+    return _SECRET.sub(lambda m: f"{m.group(1)}=[REDACTED]", str(text))
+
+
+class _LiveApplication:
+    """Minimal stand-in exposing what this preflight actually needs."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.provider = spy_scanner
+
+    @property
+    def registry(self):
+        return self
+
+    def all(self):
+        return sorted(performance_reconciliation.live_play_types())
+
+    @property
+    def universe(self):
+        return self
+
+    def active(self):
+        return [spy_scanner.TICKER]
+
+    def market_clock(self):
+        is_open, checked_at = spy_scanner.market_is_open_now()
+        return {"clock": {"state": "open" if is_open else "closed",
+                          "timestamp": str(checked_at)}}
 
 
 REQUIRED_NAMES = (
@@ -80,11 +126,11 @@ def _strategy_count(app: Any) -> int:
             "Application strategy registry is unavailable",
         )
     strategies = list(all_strategies())
-    if len(strategies) != 6:
+    if len(strategies) != EXPECTED_STRATEGY_COUNT:
         raise LiveVerificationFailure(
             "APPLICATION",
             "strategy-registry",
-            f"Expected six registered strategies, got {len(strategies)}",
+            f"Expected {EXPECTED_STRATEGY_COUNT} live strategies, got {len(strategies)}",
         )
     return len(strategies)
 
@@ -144,7 +190,7 @@ def _warning(category: str, check: str, message: str) -> dict[str, str]:
 def run_live_verification(
     root: Path,
     *,
-    application_factory: Callable[[Path], Any] = Application,
+    application_factory: Callable[[Path], Any] = _LiveApplication,
     http_get: Callable[..., Any] = requests.get,
     load_environment: bool = True,
 ) -> dict[str, Any]:
