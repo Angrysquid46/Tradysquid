@@ -167,19 +167,6 @@ def is_spy_0dte_play_type(play_type: str | None) -> bool:
 SPY_0DTE_OPENING_RANGE_MINUTES = int(os.environ.get(
     "SPY_0DTE_OPENING_RANGE_MINUTES", configured("spy_0dte_opening_range_minutes", 30)
 ))
-# SPY_0DTE_1M is the variant this system's TradingView webhook was actually
-# built for: its own Pine indicator (the one behind the 66.8% backtest) is
-# the live entry trigger, not the Python opening-range breakout below - that
-# math stays in place only for SPY_0DTE_5M. The 10 ratchet-floor variants
-# share this exact same live TradingView alert too, per owner direction -
-# they're the same entry as 1M, only their exit (the ratchet floor/stop)
-# differs, so there's no reason for them to run a separate, less accurate
-# Python approximation of the same entry when the real signal is available.
-# A fresh TradingView alert for SPY older than this many seconds no longer
-# counts as a live signal, so a position doesn't reopen off a stale alert
-# well after the fact.
-# Keyed by play_type, not a single value - the same TradingView alert has
-# to be able to independently open SPY_0DTE_1M and every enabled ratchet
 # variant without one variant consuming it and starving the other ten.
 SPY_TRADINGVIEW_CONSUMED_EVENT_PATH = STATE_DIR / "spy-tradingview-consumed.json"
 SPY_0DTE_DELTA_MIN = float(os.environ.get(
@@ -508,7 +495,7 @@ CLOSING_SIGNALS = {
     "FLOOR STOP",
     # spy_0dte_exit_signal's own bare "EOD CLOSE" (both its real 15-minutes-
     # to-close branch and its own error-fallback branch) - the exact bug
-    # this set exists to prevent, missed from this set itself: a SPY_0DTE_1M/
+    # this set exists to prevent, missed from this set itself: a 0DTE
     # 5M position that reaches the closing window without hitting a stop/
     # target/floor would show "EOD CLOSE" as last_signal on its live card
     # but never actually get closed by any of the three call sites, since
@@ -1359,7 +1346,7 @@ def entry_window_blocked(now: datetime) -> str:
     # off?") - real cost was concrete, not theoretical: a real, correctly
     # parsed TradingView alert landed inside this window and was lost,
     # since by the time the window cleared the alert had already gone
-    # stale (SPY_0DTE_1M_TRADINGVIEW_MAX_AGE_SECONDS). TradingView alerts
+    # stale. TradingView alerts
     # are already rare (roughly 1-2/day observed); losing one to this
     # window is a real cost these strategies can't afford while they're
     # still building up real trade history to learn from.
@@ -2555,7 +2542,7 @@ def spy_key_levels_exit_signal(
         # Named "EXPIRATION CLOSE" (not SPY_0DTE's "EOD CLOSE" string) so
         # this strategy's forced-close signal is its own distinct value in
         # the shared close-trigger set main() checks - adding "EOD CLOSE"
-        # there would also change SPY_0DTE_1M/5M's own closing behavior,
+        # there would also change the shared 0DTE closing behavior,
         # which is explicitly out of scope for this strategy's changes.
         return "EXPIRATION CLOSE", "closing ahead of same-day expiration"
     return "HOLD", "no exit condition met"
@@ -3421,7 +3408,7 @@ def has_open_position(rows: list[dict[str, str]], play_type: str) -> bool:
     EXACT same contract, so without this a strategy could stack multiple
     concurrent positions if the underlying moved enough to qualify a
     different strike (confirmed live: SPY_KEY_LEVELS had stacked up to 6
-    at once, SPY_0DTE_5M up to 4). Owner: "as long as we do 1 trade at a
+    at once). Owner: "as long as we do 1 trade at a
     time we have a 500 limit... yes it's per trader not all together, 13
     traders a max of 13 and so on." Each of the 13 live strategies is
     capped at one open trade at a time, independent of every other
@@ -6108,18 +6095,7 @@ def format_scanner_feed(
         for item in expirations
     ) or "None available"
     by_strategy = stats.get("candidate_counts") or {}
-    spy_0dte_contexts = stats.get("spy_0dte_market_context") or {}
     trend_lines = []
-    for play_type in ("SPY_0DTE_1M", "SPY_0DTE_5M"):
-        ctx = spy_0dte_contexts.get(play_type) or {}
-        trend_lines.append(
-            f"**{play_type} regime:** {ctx.get('regime', 'Unavailable')} "
-            f"({'Passed' if ctx.get('qualified') else 'Blocked'})\n"
-            f"**Read:** {ctx.get('reason', '—')}"
-        )
-        blocked_by = list(ctx.get("failures") or [])
-        if blocked_by:
-            trend_lines[-1] += "\n**Blocked by:** " + "; ".join(blocked_by)
     key_levels_ctx = stats.get("spy_key_levels_context") or {}
     if key_levels_ctx:
         trend_lines.append(
@@ -6814,8 +6790,6 @@ def scan_candidates(
 
     # SPY 0DTE is the only trade family this system runs, now split into two
     # independently-tracked live strategies that differ only in the intraday
-    # bar interval their opening-range signal reads: SPY_0DTE_5M (the
-    # original) and SPY_0DTE_1M. Same delta band, same risk cap, same
     # stop/target/floor/EOD exit rules for both - bar interval is the one
     # variable actually being compared, per explicit owner direction not to
     # invent artificial differences that would muddy the comparison.

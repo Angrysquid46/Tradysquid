@@ -4,7 +4,6 @@ The full roster, each with its own rules, scored individually:
 
   ten separate traders with ten different exits (step_pct/stop_pct), so
   they get ten separate results.
-- SPY_0DTE_1M and SPY_0DTE_5M - same family, different bar interval.
 - SPY_KEY_LEVELS - own entry, own exit.
 - Every new research strategy from Phases 3-4, each with its own entry.
 
@@ -51,8 +50,6 @@ def build_roster(conn):
     )
 
     roster = [
-        ("LIVE SPY_0DTE_1M", orb1, spy0dte_exit),
-        ("LIVE SPY_0DTE_5M", orb5, spy0dte_exit),
     ]
     roster.append((
         "LIVE SPY_KEY_LEVELS", variants["LIVE SPY_KEY_LEVELS"]["deployed rules"],

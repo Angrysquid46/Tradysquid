@@ -121,17 +121,6 @@ def test_sma200_needs_a_full_two_hundred_sessions():
 # Structural claims the ranking depends on
 # ---------------------------------------------------------------------------
 
-def test_the_shared_orb_group_reflects_the_current_roster():
-    """This originally asserted that 11 strategies shared one ORB entry -
-    SPY_0DTE_1M plus the 10 ratchets - which was the finding that drove the
-    Discord restructure. All 11 have since been retired on measurement, so
-    the assertion is now the inverse: the group tracks whatever is actually
-    in the live roster rather than a number frozen from before the
-    retirement.
-    """
-    group = live.SHARED_ENTRY_GROUPS["LIVE ORB 1-min entry"]
-    assert "SPY_0DTE_1M" in group
-    assert len(group) == 1
 
 
 
@@ -139,7 +128,7 @@ def test_the_shared_orb_group_reflects_the_current_roster():
 def test_every_live_play_type_is_accounted_for_in_a_group():
     """No live strategy may be silently missing from the ranking."""
     grouped = {p for members in live.SHARED_ENTRY_GROUPS.values() for p in members}
-    expected = {"SPY_0DTE_1M", "SPY_0DTE_5M", "SPY_KEY_LEVELS"}
+    expected = {"SPY_KEY_LEVELS"}
     assert grouped == expected
 
 
