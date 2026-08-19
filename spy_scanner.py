@@ -2728,416 +2728,33 @@ def scan_spy_key_levels_candidates(
 # explicit owner choice not to literally call spy_0dte_exit_signal()).
 # ---------------------------------------------------------------------------
 
-SPY_EXPANSION_TICKER = "SPY"
-SPY_EXPANSION_PLAY_TYPE = "SPY_EXPANSION_LEVEL"
-
-# The spec's own formula: level_distance = abs(price - level); at_or_near =
-# level_distance <= configured_level_tolerance - a dollar tolerance, not a
-# percent, matching that formula literally. The source trader didn't supply
-# a number, so this stays a visible, tunable setting rather than a silently
-# invented permanent value.
-SPY_EXPANSION_LEVEL_TOLERANCE = float(os.environ.get(
-    "SPY_EXPANSION_LEVEL_TOLERANCE", configured("spy_expansion_level_tolerance", 0.50)
-))
-SPY_EXPANSION_EMA_FAST_PERIOD = int(os.environ.get(
-    "SPY_EXPANSION_EMA_FAST_PERIOD", configured("spy_expansion_ema_fast_period", 20)
-))
-SPY_EXPANSION_EMA_SLOW_PERIOD = int(os.environ.get(
-    "SPY_EXPANSION_EMA_SLOW_PERIOD", configured("spy_expansion_ema_slow_period", 200)
-))
-# "Use the system's existing MACD parameters without inventing different
-# settings" - the only existing MACD-adjacent code in this repo
-# (local_information_engine.py's market_snapshot) uses a 12/26 fast/slow
-# EMA pair for the MACD line; that's carried over here. A signal-line
-# period is also required to get a histogram (line minus its own signal
-# EMA), which nothing existing needed before - 9 is the universal standard
-# third MACD parameter, not a strategy-specific invention.
-SPY_EXPANSION_MACD_FAST_PERIOD = int(os.environ.get(
-    "SPY_EXPANSION_MACD_FAST_PERIOD", configured("spy_expansion_macd_fast_period", 12)
-))
-SPY_EXPANSION_MACD_SLOW_PERIOD = int(os.environ.get(
-    "SPY_EXPANSION_MACD_SLOW_PERIOD", configured("spy_expansion_macd_slow_period", 26)
-))
-SPY_EXPANSION_MACD_SIGNAL_PERIOD = int(os.environ.get(
-    "SPY_EXPANSION_MACD_SIGNAL_PERIOD", configured("spy_expansion_macd_signal_period", 9)
-))
-SPY_EXPANSION_DELTA_MIN = float(os.environ.get(
-    "SPY_EXPANSION_DELTA_MIN", configured("spy_expansion_delta_min", 0.40)
-))
-SPY_EXPANSION_DELTA_MAX = float(os.environ.get(
-    "SPY_EXPANSION_DELTA_MAX", configured("spy_expansion_delta_max", 0.60)
-))
-SPY_EXPANSION_MAX_CONTRACT_ASK = float(os.environ.get(
-    "SPY_EXPANSION_MAX_CONTRACT_ASK", configured("spy_expansion_max_contract_ask", 5.0)
-))
-SPY_EXPANSION_MAX_RISK_PER_TRADE = float(os.environ.get(
-    "SPY_EXPANSION_MAX_RISK_PER_TRADE", configured("spy_expansion_max_risk_per_trade", 500.0)
-))
-# Own %-of-premium stop/target/floor constants - same mechanical shape as
-# SPY_0DTE's exit model (a hard stop, a target, a one-time-raised breakeven
-# floor, forced flat near the close), independently defined per explicit
-# owner choice, not read from SPY_0DTE's own constants.
-SPY_EXPANSION_STOP_PCT = float(os.environ.get(
-    "SPY_EXPANSION_STOP_PCT", configured("spy_expansion_stop_pct", 0.50)
-))
-SPY_EXPANSION_TARGET_PCT = float(os.environ.get(
-    "SPY_EXPANSION_TARGET_PCT", configured("spy_expansion_target_pct", 0.50)
-))
-SPY_EXPANSION_FLOOR_TRIGGER_PCT = float(os.environ.get(
-    "SPY_EXPANSION_FLOOR_TRIGGER_PCT", configured("spy_expansion_floor_trigger_pct", 30.0)
-))
-SPY_EXPANSION_FLOOR_PCT = float(os.environ.get(
-    "SPY_EXPANSION_FLOOR_PCT", configured("spy_expansion_floor_pct", -15.0)
-))
-# How many calendar days of 15-minute bars to fetch for the EMA200/MACD
-# read - 50 comfortably covers EMA200 on all three derived timeframes
-# (15m/30m/1h) within Tradier's ~60-day 15-minute retention window,
-# confirmed live rather than assumed.
-SPY_EXPANSION_HISTORY_DAYS = int(os.environ.get(
-    "SPY_EXPANSION_HISTORY_DAYS", configured("spy_expansion_history_days", 50)
-))
 
 
-def spy_expansion_wick_range(bars: list[dict[str, Any]]) -> tuple[float | None, float | None]:
-    highs = [value for bar in bars if (value := as_float(bar.get("high"))) is not None]
-    lows = [value for bar in bars if (value := as_float(bar.get("low"))) is not None]
-    if not highs or not lows:
-        return None, None
-    return max(highs), min(lows)
 
 
-def spy_expansion_prior_day_range(
-    daily_bars: list[dict[str, Any]], today_str: str
-) -> tuple[float | None, float | None]:
-    prior = [bar for bar in daily_bars if str(bar.get("date", ""))[:10] < today_str]
-    if not prior:
-        return None, None
-    last = prior[-1]
-    return as_float(last.get("high")), as_float(last.get("low"))
 
 
-def spy_expansion_prior_week_range(
-    daily_bars: list[dict[str, Any]], today_str: str
-) -> tuple[float | None, float | None]:
-    today = date.fromisoformat(today_str)
-    this_week = today.isocalendar()[:2]
-    prior_week_bars = []
-    for bar in daily_bars:
-        raw_date = str(bar.get("date", ""))[:10]
-        try:
-            bar_date = date.fromisoformat(raw_date)
-        except ValueError:
-            continue
-        year, week, _ = bar_date.isocalendar()
-        if (year, week) != this_week and bar_date < today:
-            prior_week_bars.append(((year, week), bar))
-    if not prior_week_bars:
-        return None, None
-    latest_prior_week = max(key for key, _ in prior_week_bars)
-    bars_in_week = [bar for key, bar in prior_week_bars if key == latest_prior_week]
-    return spy_expansion_wick_range(bars_in_week)
 
 
-def spy_expansion_prior_month_range(
-    daily_bars: list[dict[str, Any]], today_str: str
-) -> tuple[float | None, float | None]:
-    today = date.fromisoformat(today_str)
-    this_month = (today.year, today.month)
-    prior_month_bars = []
-    for bar in daily_bars:
-        raw_date = str(bar.get("date", ""))[:10]
-        try:
-            bar_date = date.fromisoformat(raw_date)
-        except ValueError:
-            continue
-        month_key = (bar_date.year, bar_date.month)
-        if month_key != this_month and bar_date < today:
-            prior_month_bars.append((month_key, bar))
-    if not prior_month_bars:
-        return None, None
-    latest_prior_month = max(key for key, _ in prior_month_bars)
-    bars_in_month = [bar for key, bar in prior_month_bars if key == latest_prior_month]
-    return spy_expansion_wick_range(bars_in_month)
 
 
-def spy_expansion_nearest_level(
-    spot_price: float, levels: dict[str, float | None]
-) -> tuple[str | None, float | None, float | None]:
-    """Returns (level_code, level_price, distance) for the closest of the
-    six reference levels within SPY_EXPANSION_LEVEL_TOLERANCE dollars of
-    spot, or (None, None, None) if nothing qualifies. level_code is one of
-    PDH/PDL/PWH/PWL/PMH/PML, matching the spec's required signal field."""
-    best_code: str | None = None
-    best_price: float | None = None
-    best_distance: float | None = None
-    for code, level in levels.items():
-        if level is None or level <= 0:
-            continue
-        distance = abs(spot_price - level)
-        if distance <= SPY_EXPANSION_LEVEL_TOLERANCE:
-            if best_distance is None or distance < best_distance:
-                best_code, best_price, best_distance = code, level, distance
-    return best_code, best_price, best_distance
 
 
-def spy_expansion_ema_direction(
-    closes: list[float],
-    fast_period: int = SPY_EXPANSION_EMA_FAST_PERIOD,
-    slow_period: int = SPY_EXPANSION_EMA_SLOW_PERIOD,
-) -> tuple[str, float | None, float | None]:
-    """One timeframe's EMA structure read: BULLISH (fast > slow), BEARISH
-    (fast < slow), or UNKNOWN (not enough data / exactly equal)."""
-    fast = exponential_moving_average(closes, fast_period)
-    slow = exponential_moving_average(closes, slow_period)
-    if fast is None or slow is None:
-        return "UNKNOWN", fast, slow
-    if fast > slow:
-        return "BULLISH", fast, slow
-    if fast < slow:
-        return "BEARISH", fast, slow
-    return "UNKNOWN", fast, slow
 
 
-def spy_expansion_macd_histogram(
-    closes: list[float],
-    fast_period: int = SPY_EXPANSION_MACD_FAST_PERIOD,
-    slow_period: int = SPY_EXPANSION_MACD_SLOW_PERIOD,
-    signal_period: int = SPY_EXPANSION_MACD_SIGNAL_PERIOD,
-) -> tuple[float | None, float | None]:
-    """Returns (current_histogram, previous_histogram) - the previous value
-    is needed to tell "bright" (extending) from "dark" (fading) per the
-    4-color convention below."""
-    fast_series = exponential_moving_average_series(closes, fast_period)
-    slow_series = exponential_moving_average_series(closes, slow_period)
-    macd_line = [
-        f - s if f is not None and s is not None else None
-        for f, s in zip(fast_series, slow_series)
-    ]
-    valid_macd = [value for value in macd_line if value is not None]
-    if len(valid_macd) < signal_period + 1:
-        return None, None
-    signal_series = exponential_moving_average_series(valid_macd, signal_period)
-    histogram_series = [
-        m - sig if sig is not None else None
-        for m, sig in zip(valid_macd, signal_series)
-    ]
-    valid_histogram = [value for value in histogram_series if value is not None]
-    if len(valid_histogram) < 2:
-        return None, None
-    return valid_histogram[-1], valid_histogram[-2]
 
 
-def spy_expansion_macd_color(current: float | None, previous: float | None) -> str:
-    """Standard 4-color MACD histogram convention, confirmed acceptable by
-    the owner since nothing here renders charts - only the underlying
-    numeric condition is used, not a specific indicator's exact palette.
-    BRIGHT_GREEN: above zero and extending (rising further from the prior
-    bar). DARK_GREEN: above zero but fading back toward zero. BRIGHT_RED:
-    below zero and extending (falling further). DARK_RED: below zero but
-    fading back toward zero."""
-    if current is None or previous is None:
-        return "UNKNOWN"
-    if current > 0:
-        return "BRIGHT_GREEN" if current > previous else "DARK_GREEN"
-    if current < 0:
-        return "BRIGHT_RED" if current < previous else "DARK_RED"
-    return "UNKNOWN"
 
 
-def spy_expansion_timeframe_read(closes: list[float]) -> dict[str, Any]:
-    """One timeframe's complete read: EMA direction plus MACD color,
-    everything the signal-output spec asks to report per timeframe."""
-    ema_direction, ema_fast, ema_slow = spy_expansion_ema_direction(closes)
-    histogram, previous_histogram = spy_expansion_macd_histogram(closes)
-    color = spy_expansion_macd_color(histogram, previous_histogram)
-    return {
-        "ema_direction": ema_direction,
-        "ema_fast": ema_fast,
-        "ema_slow": ema_slow,
-        "macd_histogram": histogram,
-        "macd_color": color,
-    }
 
 
-def spy_expansion_signal(
-    *,
-    spot_price: float,
-    levels: dict[str, float | None],
-    timeframe_reads: dict[str, dict[str, Any]],
-) -> dict[str, Any]:
-    """Combines level proximity + full EMA/MACD alignment across every
-    required timeframe (15m/30m/1h) into the spec's five-state signal:
-    NO_SETUP / WATCHING_BULLISH_LEVEL / WATCHING_BEARISH_LEVEL /
-    CALL_ENTRY_QUALIFIED / PUT_ENTRY_QUALIFIED. All three timeframes must
-    independently agree - not a majority vote - per the spec's "on the
-    required higher timeframes" (plural, all of them) wording."""
-    level_code, level_price, distance = spy_expansion_nearest_level(spot_price, levels)
-    reads = list(timeframe_reads.values())
-    ema_all_bullish = bool(reads) and all(read["ema_direction"] == "BULLISH" for read in reads)
-    ema_all_bearish = bool(reads) and all(read["ema_direction"] == "BEARISH" for read in reads)
-    macd_all_bright_green = bool(reads) and all(read["macd_color"] == "BRIGHT_GREEN" for read in reads)
-    macd_all_bright_red = bool(reads) and all(read["macd_color"] == "BRIGHT_RED" for read in reads)
-
-    base = {
-        "reference_level_type": level_code,
-        "reference_level_price": level_price,
-        "distance_from_level": distance,
-        "timeframes": timeframe_reads,
-        "timeframes_aligned": False,
-    }
-
-    if level_code is None:
-        return {**base, "state": "NO_SETUP", "reason": "SPY is not at or near any of the six reference levels"}
-
-    if ema_all_bullish and macd_all_bright_green:
-        return {
-            **base,
-            "state": "CALL_ENTRY_QUALIFIED",
-            "side": "call",
-            "timeframes_aligned": True,
-            "reason": (
-                f"At {level_code} (${level_price:.2f}); 20 EMA above 200 EMA and MACD "
-                "histogram bright green across 15m/30m/1h"
-            ),
-        }
-    if ema_all_bearish and macd_all_bright_red:
-        return {
-            **base,
-            "state": "PUT_ENTRY_QUALIFIED",
-            "side": "put",
-            "timeframes_aligned": True,
-            "reason": (
-                f"At {level_code} (${level_price:.2f}); 200 EMA above 20 EMA and MACD "
-                "histogram bright red across 15m/30m/1h"
-            ),
-        }
-    if ema_all_bullish:
-        return {
-            **base,
-            "state": "WATCHING_BULLISH_LEVEL",
-            "reason": f"At {level_code} (${level_price:.2f}) with bullish EMA structure; awaiting bright-green MACD confirmation",
-        }
-    if ema_all_bearish:
-        return {
-            **base,
-            "state": "WATCHING_BEARISH_LEVEL",
-            "reason": f"At {level_code} (${level_price:.2f}) with bearish EMA structure; awaiting bright-red MACD confirmation",
-        }
-    return {
-        **base,
-        "state": "NO_SETUP",
-        "reason": f"At {level_code} (${level_price:.2f}) but EMA structure is not aligned across 15m/30m/1h",
-    }
 
 
-def spy_expansion_choose_expiration(expirations: list[str], today_str: str) -> str | None:
-    """0-1 DTE per the spec - nearest listed expiration that is today or
-    tomorrow. Improvised tie-break (spec never says how to pick between the
-    two): prefers 0DTE when listed, falls back to the next day out."""
-    if not expirations:
-        return None
-    today = date.fromisoformat(today_str)
-    same_day = [expiration for expiration in expirations if expiration == today_str]
-    if same_day:
-        return same_day[0]
-    next_day = (today + timedelta(days=1)).isoformat()
-    one_dte = [expiration for expiration in expirations if expiration == next_day]
-    if one_dte:
-        return one_dte[0]
-    return None
 
 
-def spy_expansion_stop_and_target(side: str, entry_price: float) -> tuple[float, float]:
-    stop = round(entry_price * (1 - SPY_EXPANSION_STOP_PCT), 4)
-    target = round(entry_price * (1 + SPY_EXPANSION_TARGET_PCT), 4)
-    return stop, target
 
 
-def spy_expansion_exit_signal(
-    entry_price: float, mark: float, minutes_remaining: float, peak_pct: float = 0.0
-) -> tuple[str, str]:
-    """Same mechanical shape as this system's other %-premium exit models
-    (hard stop, target, a one-time-raised breakeven floor, forced flat near
-    the close) but its own independently-defined constants - per explicit
-    owner choice not to literally call a sibling strategy's exit function."""
-    if entry_price <= 0:
-        return "HOLD", "no entry price to evaluate against"
-    pnl_pct = (mark - entry_price) / entry_price * 100
-    stop_floor = (
-        SPY_EXPANSION_FLOOR_PCT if peak_pct >= SPY_EXPANSION_FLOOR_TRIGGER_PCT
-        else -SPY_EXPANSION_STOP_PCT * 100
-    )
-    if pnl_pct <= stop_floor:
-        if stop_floor > -SPY_EXPANSION_STOP_PCT * 100:
-            return "BREAKEVEN STOP", (
-                f"peaked at {peak_pct:.0f}%, down to {pnl_pct:.0f}% - protecting the proven "
-                f"move instead of risking a full round-trip to the {SPY_EXPANSION_STOP_PCT * 100:.0f}% stop"
-            )
-        return "STOP OUT", f"down {pnl_pct:.0f}%, past the {SPY_EXPANSION_STOP_PCT * 100:.0f}% stop"
-    if pnl_pct >= SPY_EXPANSION_TARGET_PCT * 100:
-        return "TAKE PROFIT", f"up {pnl_pct:.0f}%, past the {SPY_EXPANSION_TARGET_PCT * 100:.0f}% target"
-    if minutes_remaining <= 15:
-        return "EXPANSION EOD CLOSE", "closing ahead of same-day expiration"
-    return "HOLD", "no exit condition met"
 
-
-def scan_spy_expansion_candidates(
-    chain: list[dict[str, Any]],
-    signal: dict[str, Any],
-    expiration: str,
-    spot_price: float,
-) -> list[dict[str, Any]]:
-    """Candidate builder for SPY Expansion-Level - its own delta band and
-    risk cap (SPY_EXPANSION_*), independent of SPY_0DTE's and
-    SPY_KEY_LEVELS'. signal is a qualified result from spy_expansion_signal
-    (side/reference_level_type/reference_level_price already resolved)."""
-    kind = signal["side"]
-    candidates: list[dict[str, Any]] = []
-    for option in chain:
-        if option.get("option_type") != kind:
-            continue
-        if not option_has_liquidity(option):
-            continue
-        delta = abs(greek(option, "delta") or 0.0)
-        if not SPY_EXPANSION_DELTA_MIN <= delta <= SPY_EXPANSION_DELTA_MAX:
-            continue
-        ask = as_float(option.get("ask"), 0.0) or 0.0
-        bid = as_float(option.get("bid"), 0.0) or 0.0
-        if ask <= 0:
-            continue
-        if ask > SPY_EXPANSION_MAX_CONTRACT_ASK or ask * 100 > SPY_EXPANSION_MAX_RISK_PER_TRADE:
-            continue
-        strike = float(option["strike"])
-        max_profit: str | float = "UNLIMITED" if kind == "call" else round(max((strike - ask) * 100, 0), 2)
-        breakeven = round(strike + ask if kind == "call" else strike - ask, 2)
-        candidates.append(
-            {
-                "play_type": SPY_EXPANSION_PLAY_TYPE,
-                "call_or_put": kind,
-                "strike": fmt_strike(strike),
-                "expiration": expiration,
-                "entry_price": round(ask, 2),
-                "cost_or_credit": str(round(ask, 2)),
-                "delta": round(delta, 4),
-                "theta": round(greek(option, "theta") or 0.0, 4),
-                "iv": round(iv_value(option), 4) if iv_value(option) is not None else "",
-                "pop": round(delta * 100, 1),
-                "max_profit": max_profit,
-                "max_risk": round(ask * 100, 2),
-                "breakeven": breakeven,
-                "open_interest": open_interest_value(option),
-                "option_volume": option_volume_value(option),
-                "bid_ask_width": round(max(ask - bid, 0), 2),
-                "option_symbol": option.get("symbol") or option_symbol(SPY_EXPANSION_TICKER, expiration, kind, strike),
-                "spot_at_entry": spot_price,
-                "score": round(delta * 100, 1),
-                "setup_reason": signal.get("reason", ""),
-                "market_regime": signal.get("state", ""),
-                "active_level_name": signal.get("reference_level_type", ""),
-            }
-        )
-    candidates.sort(key=lambda c: c["entry_price"])
-    return candidates
 
 
 def rolling_average(values: list[float], period: int) -> list[float | None]:
@@ -4282,52 +3899,6 @@ def evaluate_open_spy_key_levels_row(
     return result
 
 
-def evaluate_open_spy_expansion_row(
-    row: dict[str, str], quotes: dict[str, dict[str, Any]], timestamp: datetime
-) -> dict[str, Any]:
-    """SPY Expansion-Level exit: same %-of-premium shape as SPY_0DTE's own
-    evaluator, but calls spy_expansion_exit_signal with its own independent
-    constants - never spy_0dte_exit_signal. Independent of evaluate_open_row's
-    SPY_0DTE/SPY_KEY_LEVELS branches entirely."""
-    entry = parse_entry_price(row)
-    quote = quotes.get(row.get("option_symbol", ""))
-    if not quote or not quote_is_reliable_for_exit(quote):
-        return {
-            "signal": "HOLD",
-            "note": "Live option quote unavailable; showing last tracked values.",
-            "mark": as_float(row.get("last_mark"), entry),
-            "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
-            "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
-        }
-    mark = conservative_option_exit(quote)
-    pnl_pct = ((mark - entry) / entry * 100) if entry else 0.0
-    previous_peak = as_float(row.get("max_favorable_pct"), pnl_pct) or pnl_pct
-    peak_pct = max(previous_peak, pnl_pct)
-    close_time = timestamp.replace(hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1], second=0, microsecond=0)
-    minutes_remaining = max((close_time - timestamp).total_seconds() / 60, 0)
-    try:
-        signal, exit_note = spy_expansion_exit_signal(entry, mark, minutes_remaining, peak_pct)
-    except Exception as exc:
-        print(f"spy_expansion_exit_signal errored, forcing EOD close: {exc}", file=sys.stderr)
-        signal = "EXPANSION EOD CLOSE"
-        exit_note = "fallback: forced close (smart exit errored)"
-    row["max_favorable_pct"] = round_or_blank(peak_pct, 0)
-    rounded_mark = round(mark, 2)
-    rounded_pnl = rounded_mark - entry
-    rounded_pnl_pct = (rounded_pnl / entry * 100) if entry else 0.0
-    result = {
-        "signal": signal,
-        "mark": rounded_mark,
-        "pl_dollars": round(rounded_pnl * 100),
-        "pl_pct": round(rounded_pnl_pct),
-        "delta": greek(quote, "delta"),
-        "theta": greek(quote, "theta"),
-        "iv": iv_value(quote),
-        "minutes_remaining": round(minutes_remaining),
-        "exit_note": exit_note,
-    }
-    apply_evaluation_to_row(row, result, timestamp)
-    return result
 
 
 
@@ -4410,9 +3981,6 @@ def evaluate_open_row(
 
     if play_type == SPY_KEY_LEVELS_PLAY_TYPE:
         return evaluate_open_spy_key_levels_row(row, quotes, timestamp, underlying_spot_price)
-
-    if play_type == SPY_EXPANSION_PLAY_TYPE:
-        return evaluate_open_spy_expansion_row(row, quotes, timestamp)
 
     import spy_live_new_strategies as _lns
     if _lns.is_new_strategy_play_type(play_type):
@@ -6633,13 +6201,6 @@ def format_scanner_feed(
         blocked_by = list(key_levels_ctx.get("failures") or [])
         if blocked_by:
             trend_lines[-1] += "\n**Blocked by:** " + "; ".join(blocked_by)
-    expansion_ctx = stats.get("spy_expansion_context") or {}
-    if expansion_ctx:
-        trend_lines.append(
-            f"**SPY_EXPANSION_LEVEL regime:** {expansion_ctx.get('regime', 'Unavailable')} "
-            f"({'Passed' if expansion_ctx.get('qualified') else 'Blocked'})\n"
-            f"**Read:** {expansion_ctx.get('reason', '—')}"
-        )
         blocked_by = list(expansion_ctx.get("failures") or [])
         if blocked_by:
             trend_lines[-1] += "\n**Blocked by:** " + "; ".join(blocked_by)
@@ -6992,7 +6553,6 @@ DEFAULT_TRADE_TYPES_ENABLED = {
     "spy_key_levels": False,
     # SPY 0-1 DTE Expansion-Level strategy - a third, independent SPY
     # strategy. Same paused-by-default rule.
-    "spy_expansion_level": False,
 }
 
 # The 14 strategies promoted from the locked top 15. Registered here by name
@@ -7350,86 +6910,6 @@ def _run_spy_key_levels_variant(
     return context
 
 
-def _run_spy_expansion_variant(
-    *,
-    spot_price: float,
-    today_str: str,
-    candidates: list[dict[str, Any]],
-    quote_map: dict[str, dict[str, Any]],
-    add_candidates,
-) -> dict[str, Any]:
-    """Run the SPY 0-1 DTE Expansion-Level strategy's full signal + candidate
-    build in isolation - its own data fetch, its own level/EMA/MACD read,
-    its own candidates, independent of SPY_0DTE and SPY_KEY_LEVELS."""
-    spot_price = _refresh_spot_price(spot_price)
-    try:
-        daily_bars = get_daily_history(SPY_EXPANSION_TICKER, days=260)
-        bars_15m = get_recent_intraday_history(
-            SPY_EXPANSION_TICKER, "15min", SPY_EXPANSION_HISTORY_DAYS
-        )
-    except (TradierError, requests.RequestException) as exc:
-        return {"state": "NO_SETUP", "reason": f"spy expansion data fetch failed: {exc}"}
-
-    if len(bars_15m) < SPY_EXPANSION_EMA_SLOW_PERIOD:
-        return {
-            "state": "NO_SETUP",
-            "reason": f"fewer than {SPY_EXPANSION_EMA_SLOW_PERIOD} 15-minute bars available for EMA200",
-        }
-
-    bars_30m = resample_bars(bars_15m, 2)
-    bars_1h = resample_bars(bars_15m, 4)
-
-    def _closes(bars: list[dict[str, Any]]) -> list[float]:
-        return [value for bar in bars if (value := as_float(bar.get("close") or bar.get("price"))) is not None]
-
-    timeframe_reads = {
-        "15m": spy_expansion_timeframe_read(_closes(bars_15m)),
-        "30m": spy_expansion_timeframe_read(_closes(bars_30m)),
-        "1h": spy_expansion_timeframe_read(_closes(bars_1h)),
-    }
-
-    prior_day_high, prior_day_low = spy_expansion_prior_day_range(daily_bars, today_str)
-    prior_week_high, prior_week_low = spy_expansion_prior_week_range(daily_bars, today_str)
-    prior_month_high, prior_month_low = spy_expansion_prior_month_range(daily_bars, today_str)
-    levels = {
-        "PDH": prior_day_high,
-        "PDL": prior_day_low,
-        "PWH": prior_week_high,
-        "PWL": prior_week_low,
-        "PMH": prior_month_high,
-        "PML": prior_month_low,
-    }
-
-    signal = spy_expansion_signal(spot_price=spot_price, levels=levels, timeframe_reads=timeframe_reads)
-    context = {
-        "qualified": signal["state"] in ("CALL_ENTRY_QUALIFIED", "PUT_ENTRY_QUALIFIED"),
-        "regime": signal["state"],
-        "reason": signal.get("reason", ""),
-        "failures": [] if signal["state"] not in ("NO_SETUP",) else [signal.get("reason", "")],
-        "state": signal["state"],
-        "levels": levels,
-        "timeframes": timeframe_reads,
-    }
-    if signal["state"] not in ("CALL_ENTRY_QUALIFIED", "PUT_ENTRY_QUALIFIED"):
-        return context
-
-    try:
-        expirations = get_expirations(SPY_EXPANSION_TICKER)
-        expiration = spy_expansion_choose_expiration(expirations, today_str)
-        if expiration is None:
-            context["qualified"] = False
-            context["reason"] = "no tradeable 0-1 DTE expiration currently listed"
-            context["failures"] = [context["reason"]]
-            return context
-        raw_chain = get_chain(SPY_EXPANSION_TICKER, expiration)
-        for option in raw_chain:
-            if option.get("symbol"):
-                quote_map[option["symbol"]] = option
-        found = scan_spy_expansion_candidates(raw_chain, signal, expiration, spot_price)
-        add_candidates(f"SPY_EXPANSION_LEVEL {signal['side']}s", found)
-    except Exception as exc:
-        print(f"SPY Expansion-Level scan step failed: {exc}", file=sys.stderr)
-    return context
 
 
 def scan_candidates(
@@ -7533,23 +7013,6 @@ def scan_candidates(
     # SPY 0-1 DTE Expansion-Level - a third, fully independent SPY strategy.
     # Runs its own data fetch and signal read regardless of what SPY_0DTE or
     # SPY_KEY_LEVELS did above.
-    if TICKER == SPY_EXPANSION_TICKER:
-        today_str = now_ct().date().isoformat()
-        # SPY_EXPANSION_LEVEL retired 2026-08-17: -0.0044 ATR/trade
-        # (t=-0.34) over 818 trades, positive in only 2 of 4 eras. The gate
-        # is left in place so the config flag remains the single switch.
-        if False and enabled.get("spy_expansion_level"):
-            stats["spy_expansion_context"] = _run_spy_expansion_variant(
-                spot_price=spot_price,
-                today_str=today_str,
-                candidates=candidates,
-                quote_map=quote_map,
-                add_candidates=add_candidates,
-            )
-        else:
-            stats["spy_expansion_context"] = _unavailable_context(
-                "spy_expansion_level disabled in trade_types_enabled"
-            )
 
     stats["qualified_candidates"] = len(candidates)
     return candidates, quote_map, stats

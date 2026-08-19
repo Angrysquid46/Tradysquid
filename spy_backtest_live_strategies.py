@@ -20,7 +20,6 @@ matters for any "top N" exercise:
 | Opening-range breakout on 1-min bars | `SPY_0DTE_1M` + all 10 `SPY_RATCHET_*` = **11** |
 | Opening-range breakout on 5-min bars | `SPY_0DTE_5M` |
 | Key-levels (10 references + 1m/3m/5m agreement) | `SPY_KEY_LEVELS` |
-| Expansion (EMA 20/200 + MACD across 15m/30m/1h) | `SPY_EXPANSION_LEVEL` |
 
 The 10 ratchet variants are not 10 ideas. They are one entry with ten
 exit shapes, and those shapes are defined in **option-premium percent**
@@ -218,206 +217,15 @@ def live_key_levels(sma200_by_session: dict[str, float]) -> SignalFn:
     return signals
 
 
-# ---------------------------------------------------------------------------
-# SPY_EXPANSION_LEVEL
-# ---------------------------------------------------------------------------
-
-def _aggregate_across_sessions(
-    bars: Sequence[dict[str, Any]], minutes: int
-) -> tuple[list[dict[str, Any]], list[int]]:
-    """Aggregate multi-session 1-minute bars, returning the bars and the
-    index in `bars` at which each one closes.
-
-    Buckets are keyed on (session, minute-block) - keying on the minute
-    block alone would merge 10:00 on Monday with 10:00 on Tuesday."""
-    out: list[dict[str, Any]] = []
-    ends: list[int] = []
-    key: tuple[str, int] | None = None
-    for index, row in enumerate(bars):
-        since_open = row.get("minutes_since_open")
-        if since_open is None or since_open < 0:
-            continue
-        current = (row["session_date"], since_open // minutes)
-        if current != key:
-            key = current
-            out.append({"open": row["open"], "high": row["high"],
-                        "low": row["low"], "close": row["close"]})
-            ends.append(index)
-        else:
-            bar = out[-1]
-            bar["high"] = max(bar["high"], row["high"])
-            bar["low"] = min(bar["low"], row["low"])
-            bar["close"] = row["close"]
-            ends[-1] = index
-    return out, ends
 
 
-def timeframe_read_series(closes: Sequence[float]) -> list[dict[str, Any]]:
-    """One EMA/MACD read per bar, computed in a single pass.
-
-    Equivalent to calling `spy_expansion_timeframe_read(closes[:k+1])` for
-    every k, but O(N) instead of O(N^2). That equivalence is not an
-    assumption: `exponential_moving_average_series` is prefix-stable - it
-    seeds at index period-1 from the SMA of the first `period` values and
-    smooths forward - so its value at index k depends only on
-    `closes[:k+1]`. The MACD line is elementwise, and the signal line is
-    an EMA over the non-None suffix of it, so the same property holds
-    through the whole chain. `test_timeframe_read_series_matches_the_live
-    _function_bar_for_bar` pins it against the live function directly.
-
-    Recomputing per bar cost 26 minutes across the history; this is the
-    difference between the ranking being runnable and not."""
-    values = list(closes)
-    fast_series = ss.exponential_moving_average_series(values, ss.SPY_EXPANSION_MACD_FAST_PERIOD)
-    slow_series = ss.exponential_moving_average_series(values, ss.SPY_EXPANSION_MACD_SLOW_PERIOD)
-    ema_fast = ss.exponential_moving_average_series(values, ss.SPY_EXPANSION_EMA_FAST_PERIOD)
-    ema_slow = ss.exponential_moving_average_series(values, ss.SPY_EXPANSION_EMA_SLOW_PERIOD)
-
-    macd_line = [
-        f - s if f is not None and s is not None else None
-        for f, s in zip(fast_series, slow_series)
-    ]
-    # Index of each valid MACD entry, so a bar can be mapped onto its
-    # position within the compacted series the live function builds.
-    valid_macd: list[float] = []
-    valid_count_at: list[int] = []
-    for value in macd_line:
-        if value is not None:
-            valid_macd.append(value)
-        valid_count_at.append(len(valid_macd))
-
-    signal_series = ss.exponential_moving_average_series(
-        valid_macd, ss.SPY_EXPANSION_MACD_SIGNAL_PERIOD
-    )
-    histogram_series = [
-        m - sig if sig is not None else None
-        for m, sig in zip(valid_macd, signal_series)
-    ]
-    valid_histogram: list[float] = []
-    histogram_count_at: list[int] = []
-    for value in histogram_series:
-        if value is not None:
-            valid_histogram.append(value)
-        histogram_count_at.append(len(valid_histogram))
-
-    out: list[dict[str, Any]] = []
-    for index in range(len(values)):
-        direction = "UNKNOWN"
-        fast, slow = ema_fast[index], ema_slow[index]
-        if fast is not None and slow is not None:
-            if fast > slow:
-                direction = "BULLISH"
-            elif fast < slow:
-                direction = "BEARISH"
-
-        current = previous = None
-        macd_valid = valid_count_at[index]
-        if macd_valid >= ss.SPY_EXPANSION_MACD_SIGNAL_PERIOD + 1:
-            available = histogram_count_at[macd_valid - 1]
-            if available >= 2:
-                current = valid_histogram[available - 1]
-                previous = valid_histogram[available - 2]
-        out.append({
-            "ema_direction": direction,
-            "macd_color": ss.spy_expansion_macd_color(current, previous),
-        })
-    return out
 
 
-def _expansion_signals_for_session(
-    rows: Sequence[dict[str, Any]], history: Sequence[dict[str, Any]]
-) -> list[tuple[int, str]]:
-    """One session's expansion signals, given enough prior 1-minute bars
-    to build a 200-period EMA on 15m/30m/60m.
-
-    The EMA/MACD reads are computed once per higher-timeframe bar, not
-    once per minute. They can only change when such a bar closes, and the
-    naive version re-aggregated ~16,000 history bars on every single
-    minute - 23 minutes of work for the full history instead of about
-    two. Same functions, same math, same values; just not recomputed
-    hundreds of times for an answer that has not moved."""
-    out: list[tuple[int, str]] = []
-    if not rows:
-        return out
-
-    first = rows[0]
-    levels = {
-        "PDH": first.get("prev_day_high"), "PDL": first.get("prev_day_low"),
-        "PWH": first.get("prev_week_high"), "PWL": first.get("prev_week_low"),
-        "PMH": first.get("premarket_high"), "PML": first.get("premarket_low"),
-    }
-    if not any(value for value in levels.values()):
-        return out
-
-    combined = list(history) + list(rows)
-    offset = len(history)
-
-    # read_at[minutes][row_index] -> the read in force at that minute,
-    # carried forward from the last CLOSED higher-timeframe bar.
-    read_at: dict[int, list[dict[str, Any] | None]] = {}
-    for minutes in (15, 30, 60):
-        bars, ends = _aggregate_across_sessions(combined, minutes)
-        reads = timeframe_read_series([bar["close"] for bar in bars])
-        timeline: list[dict[str, Any] | None] = [None] * len(rows)
-        current: dict[str, Any] | None = None
-        position = 0
-        for index in range(len(rows)):
-            combined_index = offset + index
-            # Advance through any higher-timeframe bars that closed at or
-            # before this minute - only a CLOSED bar may inform a read.
-            while position < len(bars) and ends[position] <= combined_index:
-                current = reads[position]
-                position += 1
-            timeline[index] = current
-        read_at[minutes] = timeline
-
-    for index, row in enumerate(rows):
-        if not _tradeable(row):
-            continue
-        price = row["close"]
-        code, _price, _distance = ss.spy_expansion_nearest_level(price, levels)
-        if code is None:
-            continue
-
-        reads = {
-            label: read_at[minutes][index]
-            for label, minutes in (("15m", 15), ("30m", 30), ("1h", 60))
-        }
-        if any(value is None for value in reads.values()):
-            continue
-
-        signal = ss.spy_expansion_signal(
-            spot_price=price, levels=levels, timeframe_reads=reads
-        )
-        state = signal.get("state")
-        if state == "CALL_ENTRY_QUALIFIED":
-            out.append((index, "LONG"))
-        elif state == "PUT_ENTRY_QUALIFIED":
-            out.append((index, "SHORT"))
-    return out
 
 
-def build_expansion_cache(load_sessions) -> dict[str, list[tuple[int, str]]]:
-    """Precompute expansion signals for every session in one ordered walk.
-
-    Expansion is the only live strategy that needs cross-session history,
-    and a signal function that quietly accumulated state would give
-    different answers on a second pass. Precomputing sidesteps that
-    entirely."""
-    cache: dict[str, list[tuple[int, str]]] = {}
-    history: deque[dict[str, Any]] = deque(maxlen=EXPANSION_HISTORY_SESSIONS * 400)
-    for session, rows in load_sessions():
-        cache[session] = _expansion_signals_for_session(rows, history)
-        history.extend(rows)
-    return cache
 
 
-def live_expansion(cache: dict[str, list[tuple[int, str]]]) -> SignalFn:
-    def signals(rows: Sequence[dict[str, Any]]) -> list[tuple[int, str]]:
-        if not rows:
-            return []
-        return cache.get(rows[0]["session_date"], [])
-    return signals
+
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +250,6 @@ SHARED_ENTRY_GROUPS: dict[str, list[str]] = {
     "LIVE ORB 1-min entry": ["SPY_0DTE_1M"],
     "LIVE ORB 5-min entry": ["SPY_0DTE_5M"],
     "LIVE Key-Levels entry": ["SPY_KEY_LEVELS"],
-    "LIVE Expansion entry": ["SPY_EXPANSION_LEVEL"],
 }
 
 # The adapters impose an entry window (minutes 5-360) that the live
@@ -468,20 +275,3 @@ EXIT_SHAPES_NEED_OPTION_MODEL = (
 )
 
 
-def build_live_variants(conn) -> dict[str, dict[str, SignalFn]]:
-    """The live Discord strategies, as backtestable entry signals."""
-    import spy_backtest as bt
-    import spy_intraday_features as sif
-
-    session_ohlc = sif.all_session_ohlc(conn)
-    sma200 = daily_sma200(session_ohlc)
-    expansion_cache = build_expansion_cache(lambda: bt.load_sessions(conn))
-
-    return {
-        "LIVE SPY_0DTE (ORB)": {
-            "1-min bars (1M + 10 ratchets)": live_opening_range_breakout(1),
-            "5-min bars (5M)": live_opening_range_breakout(5),
-        },
-        "LIVE SPY_KEY_LEVELS": {"deployed rules": live_key_levels(sma200)},
-        "LIVE SPY_EXPANSION_LEVEL": {"deployed rules": live_expansion(expansion_cache)},
-    }

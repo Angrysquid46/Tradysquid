@@ -76,6 +76,49 @@ from typing import Any, Callable
 
 import spy_scanner as s
 
+# MACD periods. These were previously read from spy_scanner's SPY_EXPANSION_*
+# constants, which coupled a generic indicator to one strategy's config - and
+# broke outright when that strategy was removed. 12/26/9 are the standard
+# values those constants also defaulted to.
+MACD_FAST_PERIOD = 12
+MACD_SLOW_PERIOD = 26
+MACD_SIGNAL_PERIOD = 9
+
+
+def macd_histogram(closes, fast_period=MACD_FAST_PERIOD, slow_period=MACD_SLOW_PERIOD,
+                   signal_period=MACD_SIGNAL_PERIOD):
+    """(current, previous) MACD histogram values.
+
+    Moved here when the SPY_EXPANSION_LEVEL strategy was removed - this is
+    generic MACD math, nothing about it was specific to that strategy.
+    """
+    fast_series = s.exponential_moving_average_series(closes, fast_period)
+    slow_series = s.exponential_moving_average_series(closes, slow_period)
+    macd_line = [f - sl if f is not None and sl is not None else None
+                 for f, sl in zip(fast_series, slow_series)]
+    valid_macd = [v for v in macd_line if v is not None]
+    if len(valid_macd) < signal_period + 1:
+        return None, None
+    signal_series = s.exponential_moving_average_series(valid_macd, signal_period)
+    histogram = [m - sig if sig is not None else None
+                 for m, sig in zip(valid_macd, signal_series)]
+    valid = [v for v in histogram if v is not None]
+    if len(valid) < 2:
+        return None, None
+    return valid[-1], valid[-2]
+
+
+def macd_histogram_color(current, previous):
+    """Standard 4-colour MACD convention: bright when extending away from
+    zero, dark when fading back toward it."""
+    if current is None or previous is None:
+        return "UNKNOWN"
+    if current > 0:
+        return "BRIGHT_GREEN" if current > previous else "DARK_GREEN"
+    if current < 0:
+        return "BRIGHT_RED" if current < previous else "DARK_RED"
+    return "UNKNOWN"
+
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "state" / "market_memory.db"
 DAILY_CSV_PATH = ROOT / "state" / "market_memory_daily.csv"
@@ -620,13 +663,13 @@ def _build_series_cache(bars: list[sqlite3.Row]) -> dict[str, Any]:
     ema_50 = s.exponential_moving_average_series(closes, 50)
     ema_200 = s.exponential_moving_average_series(closes, 200)
 
-    fast_ema = s.exponential_moving_average_series(closes, s.SPY_EXPANSION_MACD_FAST_PERIOD)
-    slow_ema = s.exponential_moving_average_series(closes, s.SPY_EXPANSION_MACD_SLOW_PERIOD)
+    fast_ema = s.exponential_moving_average_series(closes, MACD_FAST_PERIOD)
+    slow_ema = s.exponential_moving_average_series(closes, MACD_SLOW_PERIOD)
     macd_line = [
         f - sl if f is not None and sl is not None else None
         for f, sl in zip(fast_ema, slow_ema)
     ]
-    # spy_expansion_macd_histogram computes the signal line as an EMA of
+    # macd_histogram computes the signal line as an EMA of
     # the MACD line's own valid (non-None) values, compacted - since
     # macd_line only ever transitions from None to real values once (a
     # single contiguous non-None tail, never gaps), reproducing that same
@@ -634,10 +677,10 @@ def _build_series_cache(bars: list[sqlite3.Row]) -> dict[str, Any]:
     # every index the old per-bar call would have produced.
     valid_start = next((i for i, v in enumerate(macd_line) if v is not None), len(macd_line))
     compacted = macd_line[valid_start:]
-    signal_compacted = s.exponential_moving_average_series(compacted, s.SPY_EXPANSION_MACD_SIGNAL_PERIOD)
+    signal_compacted = s.exponential_moving_average_series(compacted, MACD_SIGNAL_PERIOD)
     # raw_histogram never suppresses anything - every position where a
     # real signal value exists gets a real histogram value. This is what
-    # "previous" reads: spy_expansion_macd_histogram's own "need >= 2
+    # "previous" reads: macd_histogram's own "need >= 2
     # valid histogram entries" rule is evaluated FRESH at whichever bar
     # is being treated as "current" - a bar that was itself suppressed to
     # None when IT was current (not enough trailing context yet) still
@@ -739,9 +782,9 @@ def compute_features_for_window(
         ema_50 = s.exponential_moving_average(closes, 50)
         ema_200 = s.exponential_moving_average(closes, 200)
 
-        macd_current, macd_previous = s.spy_expansion_macd_histogram(closes) if len(closes) > 1 else (None, None)
-        fast_ema = s.exponential_moving_average(closes, s.SPY_EXPANSION_MACD_FAST_PERIOD)
-        slow_ema = s.exponential_moving_average(closes, s.SPY_EXPANSION_MACD_SLOW_PERIOD)
+        macd_current, macd_previous = macd_histogram(closes) if len(closes) > 1 else (None, None)
+        fast_ema = s.exponential_moving_average(closes, MACD_FAST_PERIOD)
+        slow_ema = s.exponential_moving_average(closes, MACD_SLOW_PERIOD)
         macd_line = (fast_ema - slow_ema) if fast_ema is not None and slow_ema is not None else None
         macd_signal = (macd_line - macd_current) if macd_line is not None and macd_current is not None else None
 
@@ -767,7 +810,7 @@ def compute_features_for_window(
             if trailing_avg > 0:
                 relative_volume = volumes[-1] / trailing_avg
 
-    macd_color = s.spy_expansion_macd_color(macd_current, macd_previous) if macd_current is not None else "UNKNOWN"
+    macd_color = macd_histogram_color(macd_current, macd_previous) if macd_current is not None else "UNKNOWN"
     bb_width_pct = ((bb_upper - bb_lower) / bb_mid * 100) if bb_upper is not None and bb_mid else None
 
     # Golden/death cross - the classic long-term trend-shift marker (SMA50
