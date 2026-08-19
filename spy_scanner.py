@@ -3824,8 +3824,38 @@ def evaluate_open_new_strategy_row(
     import spy_live_new_strategies as lns
 
     entry = parse_entry_price(row)
+
+    # Elapsed time is computed BEFORE any quote check: a time stop is about
+    # the clock, not the price.
+    minutes_held: float | None = None
+    _opened = row.get("timestamp") or row.get("entry_timestamp")
+    if _opened:
+        try:
+            minutes_held = max(
+                (timestamp - datetime.fromisoformat(str(_opened))).total_seconds() / 60, 0)
+        except (TypeError, ValueError):
+            minutes_held = None
     quote = quotes.get(row.get("option_symbol", ""))
     if not quote or not quote_is_reliable_for_exit(quote):
+        # Real incident 2026-08-19: this returned HOLD before the time stop
+        # was ever considered. SPY_OPENING_GAP_FADE sat 127 minutes on a
+        # 15-minute stop; TOD_FINAL30 and EXHAUSTION_1ATR sat 127 on 30.
+        # All three rode to -76% while SPY_FIRST_PULLBACK left the SAME
+        # contract at +98%. A 0DTE spread widens as it decays, which is
+        # exactly when its time stop matters most - so an unreliable quote
+        # must never be what silences it.
+        _time_stop = lns.exit_rules_for(row.get("play_type") or "")[2]
+        if (_time_stop is not None and minutes_held is not None
+                and minutes_held >= _time_stop):
+            return {
+                "signal": "TIME STOP",
+                "note": (f"held {minutes_held:.0f} minutes, past this "
+                         f"strategy's {_time_stop}-minute time stop "
+                         "(quote unreliable; exiting on the clock)"),
+                "mark": as_float(row.get("last_mark"), entry),
+                "pl_dollars": as_float(row.get("current_pl_dollars"), 0.0),
+                "pl_pct": as_float(row.get("current_pl_pct"), 0.0),
+            }
         return {
             "signal": "HOLD",
             "note": "Live option quote unavailable; showing last tracked values.",
