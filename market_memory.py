@@ -89,8 +89,6 @@ def macd_histogram(closes, fast_period=MACD_FAST_PERIOD, slow_period=MACD_SLOW_P
                    signal_period=MACD_SIGNAL_PERIOD):
     """(current, previous) MACD histogram values.
 
-    Moved here when the SPY_EXPANSION_LEVEL strategy was removed - this is
-    generic MACD math, nothing about it was specific to that strategy.
     """
     fast_series = s.exponential_moving_average_series(closes, fast_period)
     slow_series = s.exponential_moving_average_series(closes, slow_period)

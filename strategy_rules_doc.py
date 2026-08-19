@@ -218,20 +218,8 @@ def build() -> str:
         "scanning cannot delay an exit.",
         "- **Each strategy has its own channel, its own ledger and its own "
         "backtest card.** Nothing shares an exit or a signal.",
+        "## Known limits",
         "",
-        "## Things that are NOT live (do not resurrect)",
-        "",
-        "- The 10 ratchet variants and `SPY_EXPANSION_LEVEL` - retired, and "
-        "their code was deleted outright on 2026-08-19. Nothing is left to "
-        "re-enable.",
-        "- `SPY_0DTE_1M` / `SPY_0DTE_5M`, `SPY_GAP_CONT_25`, `SPY_GAP_CONT_100`, "
-        "`SPY_SWEEP_5` - retired play types. Closed rows survive in the trade "
-        "log and are filtered out of all reporting by "
-        "`performance_reconciliation._RETIRED_ROUTE_PLAY_TYPES`, which is why "
-        "those strings still appear in the code.",
-        "- `spy_0dte_exit_signal` / `scan_spy_0dte_candidates` remain in "
-        "`spy_scanner` despite the play types being retired: `evolve_bot` "
-        "imports both, and it is kept as a separate controlled test.",
         "- **Premarket-based strategies cannot work**: `premarket_high/low/range` "
         "are 0% populated on recent sessions and the live feature builder never "
         "constructs them. S5 Premarket Breakout scored well and was rejected for "

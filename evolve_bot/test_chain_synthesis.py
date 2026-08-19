@@ -20,7 +20,7 @@ def test_build_candidates_returns_only_strikes_within_the_delta_band():
     )
     assert candidates
     for c in candidates:
-        assert chain_synthesis.SPY_0DTE_DELTA_MIN <= abs(c["delta"]) <= chain_synthesis.SPY_0DTE_DELTA_MAX
+        assert chain_synthesis.SPY_DELTA_MIN <= abs(c["delta"]) <= chain_synthesis.SPY_DELTA_MAX
 
 
 def test_build_candidates_marks_synthetic_when_no_real_cache_exists():

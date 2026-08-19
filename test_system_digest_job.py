@@ -48,7 +48,7 @@ def test_overshoot_rollup_ignores_trades_closed_before_the_window():
 def test_overshoot_rollup_counts_a_real_overshoot_within_the_window():
     now = spy_scanner.now_ct()
     since = now - __import__("datetime").timedelta(hours=24)
-    target = -(spy_scanner.SPY_0DTE_STOP_PCT * 100)
+    target = -(spy_scanner.SPY_STOP_PCT * 100)
     row = _row(
         closed_at=now.isoformat(),
         last_signal="STOP OUT",
@@ -63,7 +63,7 @@ def test_overshoot_rollup_counts_a_real_overshoot_within_the_window():
 def test_overshoot_rollup_counts_the_close_but_not_the_overshoot_when_the_stop_held():
     now = spy_scanner.now_ct()
     since = now - __import__("datetime").timedelta(hours=24)
-    target = -(spy_scanner.SPY_0DTE_STOP_PCT * 100)
+    target = -(spy_scanner.SPY_STOP_PCT * 100)
     row = _row(closed_at=now.isoformat(), last_signal="STOP OUT", pct_gain_loss=str(target))
     stop_closes, overshoots, worst = engine._overshoot_rollup([row], since)
     assert stop_closes == 1
@@ -112,7 +112,7 @@ def test_system_digest_job_posts_one_upserted_card_with_all_three_sections():
         spy_scanner.LOG_PATH = Path(temp) / "plays.csv"
         engine.DB_PATH = Path(temp) / "status.db"
         now = spy_scanner.now_ct()
-        target = -(spy_scanner.SPY_0DTE_STOP_PCT * 100)
+        target = -(spy_scanner.SPY_STOP_PCT * 100)
         row = _row(closed_at=now.isoformat(), last_signal="STOP OUT", pct_gain_loss=str(target - 5))
         spy_scanner.write_log([row])
         connection = engine.connect_db()

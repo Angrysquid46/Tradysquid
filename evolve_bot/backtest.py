@@ -109,7 +109,7 @@ def _find_breakout_index(bars: list[dict[str, Any]]) -> int | None:
     """Mirrors spy_0dte_opening_range_signal's own breakout search so the
     backtest knows WHICH bar to treat as the entry moment - the live
     function only reports that a breakout happened, not where."""
-    bars_needed = max(s.SPY_0DTE_OPENING_RANGE_MINUTES // 1, 1)
+    bars_needed = max(s.SPY_OPENING_RANGE_MINUTES // 1, 1)
     if len(bars) <= bars_needed:
         return None
     opening_range = bars[:bars_needed]
@@ -215,7 +215,7 @@ def run_backtest_for_day(trading_day: str, variants: list[dict[str, Any]] | None
     bars = robinhood_cache.load_equity_bars("SPY", trading_day)
     if not bars:
         return []
-    signal = s.spy_0dte_opening_range_signal(bars, bar_minutes=1)
+    signal = s.spy_opening_range_signal(bars, bar_minutes=1)
     if not signal.get("qualified"):
         return []
     breakout_index = _find_breakout_index(bars)

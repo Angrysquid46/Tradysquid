@@ -8,7 +8,7 @@ strategies - SPY_0DTE_1M and SPY_0DTE_5M. SPY_0DTE_1M's entry signal is a
 live TradingView alert (spy_0dte_tradingview_signal) - the strategy this
 system's TradingView webhook was actually built to drive, tied to the Pine
 indicator behind the 66.8% backtest. SPY_0DTE_5M keeps the Python
-opening-range breakout (spy_0dte_opening_range_signal). Contract selection,
+opening-range breakout (spy_opening_range_signal). Contract selection,
 delta band, risk cap, and stop/target/floor/EOD exit rules are identical and
 shared between both regardless of entry-signal source. Several tests below
 exist specifically to prove the two variants stay isolated from each other
@@ -28,8 +28,8 @@ import dynamic_universe
 import spy_scanner
 
 # SPY_0DTE_1M and SPY_0DTE_5M were retired 2026-08-17 (see
-# spy_scanner.SPY_0DTE_PLAY_TYPES), so the live tuple holds only
-# SPY_MANUAL. spy_0dte_exit_signal and its evaluate_open_row dispatch are
+# spy_scanner.PREMIUM_EXIT_PLAY_TYPES), so the live tuple holds only
+# SPY_MANUAL. spy_premium_exit_signal and its evaluate_open_row dispatch are
 # still in the codebase and still matter - restoring a variant is a
 # one-line change - so the exit-logic tests below inject the retired play
 # types explicitly rather than silently passing against a tuple that no
@@ -39,7 +39,7 @@ RETIRED_0DTE_PLAY_TYPES = ("SPY_0DTE_1M", "SPY_0DTE_5M", spy_scanner.SPY_MANUAL_
 
 @pytest.fixture(autouse=True)
 def _restore_retired_0dte_play_types():
-    with mock.patch.object(spy_scanner, "SPY_0DTE_PLAY_TYPES", RETIRED_0DTE_PLAY_TYPES):
+    with mock.patch.object(spy_scanner, "PREMIUM_EXIT_PLAY_TYPES", RETIRED_0DTE_PLAY_TYPES):
         yield
 
 
@@ -77,20 +77,20 @@ def _option(delta: float, ask: float, bid: float | None = None, strike: float = 
 
 
 def test_opening_range_signal_does_not_qualify_before_the_range_is_established():
-    context = spy_scanner.spy_0dte_opening_range_signal(_opening_range_bars()[:3])
+    context = spy_scanner.spy_opening_range_signal(_opening_range_bars()[:3])
     assert context["qualified"] is False
 
 
 def test_opening_range_signal_does_not_qualify_while_still_inside_the_range():
     bars = _opening_range_bars() + [_bar(601.5)]
-    context = spy_scanner.spy_0dte_opening_range_signal(bars)
+    context = spy_scanner.spy_opening_range_signal(bars)
     assert context["qualified"] is False
     assert "inside the opening range" in context["reason"]
 
 
 def test_opening_range_signal_fires_bullish_on_a_real_breakout_above():
     bars = _opening_range_bars() + [_bar(602.5)]
-    context = spy_scanner.spy_0dte_opening_range_signal(bars)
+    context = spy_scanner.spy_opening_range_signal(bars)
     assert context["qualified"] is True
     assert context["regime"] == "BULLISH / CONTROLLED"
     assert "above" in context["reason"]
@@ -98,7 +98,7 @@ def test_opening_range_signal_fires_bullish_on_a_real_breakout_above():
 
 def test_opening_range_signal_fires_bearish_on_a_real_breakdown_below():
     bars = _opening_range_bars() + [_bar(599.0)]
-    context = spy_scanner.spy_0dte_opening_range_signal(bars)
+    context = spy_scanner.spy_opening_range_signal(bars)
     assert context["qualified"] is True
     assert context["regime"] == "BEARISH / CONTROLLED"
     assert "below" in context["reason"]
@@ -115,18 +115,18 @@ def test_opening_range_signal_reflects_the_latest_bar_not_a_stale_first_breakout
     and stopped out. A later bar must be able to override an earlier
     one, including flipping the regime entirely on a real reversal."""
     bars = _opening_range_bars() + [_bar(602.5), _bar(603.5)]
-    context = spy_scanner.spy_0dte_opening_range_signal(bars)
+    context = spy_scanner.spy_opening_range_signal(bars)
     assert context["breakout_price"] == 603.5  # the latest bar, not the first breakout
 
     reversal_bars = _opening_range_bars() + [_bar(602.5), _bar(598.0)]
-    reversed_context = spy_scanner.spy_0dte_opening_range_signal(reversal_bars)
+    reversed_context = spy_scanner.spy_opening_range_signal(reversal_bars)
     assert reversed_context["regime"] == "BEARISH / CONTROLLED"
     assert reversed_context["breakout_price"] == 598.0
 
 
 def test_opening_range_signal_returns_to_no_trade_once_price_re_enters_the_range():
     bars = _opening_range_bars() + [_bar(602.5), _bar(601.0)]
-    context = spy_scanner.spy_0dte_opening_range_signal(bars)
+    context = spy_scanner.spy_opening_range_signal(bars)
     assert context["qualified"] is False
     assert "inside the opening range" in context["reason"]
 
@@ -136,13 +136,13 @@ def test_opening_range_signal_scales_bars_needed_to_a_1_minute_interval():
     # has to scale with bar_minutes or a 1-minute feed would lock in a range
     # from only the first 6 minutes instead of the real 30-minute window.
     thirty_one_minute_bars = [_bar(600.0 + (i % 3) * 0.2) for i in range(30)]
-    context_too_few = spy_scanner.spy_0dte_opening_range_signal(
+    context_too_few = spy_scanner.spy_opening_range_signal(
         thirty_one_minute_bars[:29], bar_minutes=1
     )
     assert context_too_few["qualified"] is False
 
     bars = thirty_one_minute_bars + [_bar(602.5)]
-    context = spy_scanner.spy_0dte_opening_range_signal(bars, bar_minutes=1)
+    context = spy_scanner.spy_opening_range_signal(bars, bar_minutes=1)
     assert context["qualified"] is True
     assert context["regime"] == "BULLISH / CONTROLLED"
 
@@ -154,28 +154,28 @@ def test_opening_range_signal_5m_and_1m_can_disagree_on_the_same_session():
     # while the finer 1-minute data underneath it has already broken out.
     five_min_bars = _opening_range_bars() + [_bar(601.5)]  # stays inside
     one_min_bars = [_bar(600.0 + (i % 3) * 0.2) for i in range(30)] + [_bar(602.5)]  # breaks out
-    context_5m = spy_scanner.spy_0dte_opening_range_signal(five_min_bars, bar_minutes=5)
-    context_1m = spy_scanner.spy_0dte_opening_range_signal(one_min_bars, bar_minutes=1)
+    context_5m = spy_scanner.spy_opening_range_signal(five_min_bars, bar_minutes=5)
+    context_1m = spy_scanner.spy_opening_range_signal(one_min_bars, bar_minutes=1)
     assert context_5m["qualified"] is False
     assert context_1m["qualified"] is True
 
 
 def test_exit_signal_stops_out_at_the_spy_0dte_specific_threshold():
     entry = 2.00
-    stop_mark = entry * (1 - spy_scanner.SPY_0DTE_STOP_PCT) - 0.01
-    signal, note = spy_scanner.spy_0dte_exit_signal(entry, stop_mark, minutes_remaining=200)
+    stop_mark = entry * (1 - spy_scanner.SPY_STOP_PCT) - 0.01
+    signal, note = spy_scanner.spy_premium_exit_signal(entry, stop_mark, minutes_remaining=200)
     assert signal == "STOP OUT"
 
 
 def test_exit_signal_takes_profit_at_the_spy_0dte_specific_threshold():
     entry = 2.00
-    target_mark = entry * (1 + spy_scanner.SPY_0DTE_TARGET_PCT) + 0.01
-    signal, note = spy_scanner.spy_0dte_exit_signal(entry, target_mark, minutes_remaining=200)
+    target_mark = entry * (1 + spy_scanner.SPY_TARGET_PCT) + 0.01
+    signal, note = spy_scanner.spy_premium_exit_signal(entry, target_mark, minutes_remaining=200)
     assert signal == "TAKE PROFIT"
 
 
 def test_exit_signal_holds_between_stop_and_target_with_time_left():
-    signal, note = spy_scanner.spy_0dte_exit_signal(2.00, 2.10, minutes_remaining=200)
+    signal, note = spy_scanner.spy_premium_exit_signal(2.00, 2.10, minutes_remaining=200)
     assert signal == "HOLD"
 
 
@@ -183,8 +183,8 @@ def test_exit_signal_full_stop_still_applies_before_the_trade_has_proven_itself(
     # peak_pct never crossed the floor trigger - the full -50% stop is
     # still what governs, not the raised floor.
     entry = 2.00
-    stop_mark = entry * (1 - spy_scanner.SPY_0DTE_STOP_PCT) - 0.01
-    signal, note = spy_scanner.spy_0dte_exit_signal(entry, stop_mark, minutes_remaining=200, peak_pct=10.0)
+    stop_mark = entry * (1 - spy_scanner.SPY_STOP_PCT) - 0.01
+    signal, note = spy_scanner.spy_premium_exit_signal(entry, stop_mark, minutes_remaining=200, peak_pct=10.0)
     assert signal == "STOP OUT"
 
 
@@ -192,9 +192,9 @@ def test_exit_signal_raises_the_floor_once_a_trade_has_proven_itself():
     # Peaked well past the trigger, then pulled back to the floor level -
     # protects the proven move instead of risking the full round-trip.
     entry = 2.00
-    peak = spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT + 10
-    floor_mark = entry * (1 + spy_scanner.SPY_0DTE_FLOOR_PCT / 100) - 0.01
-    signal, note = spy_scanner.spy_0dte_exit_signal(entry, floor_mark, minutes_remaining=200, peak_pct=peak)
+    peak = spy_scanner.SPY_FLOOR_TRIGGER_PCT + 10
+    floor_mark = entry * (1 + spy_scanner.SPY_FLOOR_PCT / 100) - 0.01
+    signal, note = spy_scanner.spy_premium_exit_signal(entry, floor_mark, minutes_remaining=200, peak_pct=peak)
     assert signal == "BREAKEVEN STOP"
     assert "peaked" in note
 
@@ -203,35 +203,35 @@ def test_exit_signal_does_not_fire_the_floor_on_a_pullback_that_stays_above_it()
     # Proven trade, dipped some, but still well above the raised floor -
     # must hold, not exit on ordinary noise.
     entry = 2.00
-    peak = spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT + 10
-    mark_above_floor = entry * (1 + (spy_scanner.SPY_0DTE_FLOOR_PCT + 5) / 100)
-    signal, note = spy_scanner.spy_0dte_exit_signal(entry, mark_above_floor, minutes_remaining=200, peak_pct=peak)
+    peak = spy_scanner.SPY_FLOOR_TRIGGER_PCT + 10
+    mark_above_floor = entry * (1 + (spy_scanner.SPY_FLOOR_PCT + 5) / 100)
+    signal, note = spy_scanner.spy_premium_exit_signal(entry, mark_above_floor, minutes_remaining=200, peak_pct=peak)
     assert signal == "HOLD"
 
 
 def test_exit_signal_floor_never_raises_below_its_own_default_stop():
     # Sanity check on the constants themselves: the floor is meant to be
     # a smaller loss than the full stop, not a wider one.
-    assert spy_scanner.SPY_0DTE_FLOOR_PCT > -spy_scanner.SPY_0DTE_STOP_PCT * 100
+    assert spy_scanner.SPY_FLOOR_PCT > -spy_scanner.SPY_STOP_PCT * 100
 
 
 def test_exit_signal_forces_a_close_as_the_session_ends_even_at_flat_pnl():
     # 0DTE never holds overnight - there is no next session to trail into.
-    signal, note = spy_scanner.spy_0dte_exit_signal(2.00, 2.02, minutes_remaining=10)
+    signal, note = spy_scanner.spy_premium_exit_signal(2.00, 2.02, minutes_remaining=10)
     assert signal == "EOD CLOSE"
 
 
 def test_candidate_builder_rejects_a_delta_outside_its_own_band():
-    chain = [_option(delta=0.20, ask=1.00)]  # below SPY_0DTE_DELTA_MIN
-    assert spy_scanner.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0) == []
+    chain = [_option(delta=0.20, ask=1.00)]  # below SPY_DELTA_MIN
+    assert spy_scanner.scan_spy_contract_candidates(chain, "call", "2026-08-10", 600.0) == []
 
 
 def test_candidate_builder_accepts_a_contract_priced_well_under_its_own_cap():
-    # $2.00 is well under SPY_0DTE_MAX_CONTRACT_ASK - proves ordinary
+    # $2.00 is well under SPY_MAX_CONTRACT_ASK - proves ordinary
     # contract prices clear the real, standalone cap this play type uses.
-    assert 2.00 < spy_scanner.SPY_0DTE_MAX_CONTRACT_ASK
+    assert 2.00 < spy_scanner.SPY_MAX_CONTRACT_ASK
     chain = [_option(delta=0.50, ask=2.00)]
-    candidates = spy_scanner.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0)
+    candidates = spy_scanner.scan_spy_contract_candidates(chain, "call", "2026-08-10", 600.0)
     assert len(candidates) == 1
     # Defaults to the 5-minute variant when play_type isn't specified,
     # matching the original single-strategy behavior this builder started as.
@@ -244,10 +244,10 @@ def test_candidate_builder_tags_each_variant_with_its_own_play_type():
     # ONE thing that must differ, since it's what keeps their cooldowns,
     # exposure accounting, and learning evidence from mixing together.
     chain = [_option(delta=0.50, ask=2.00)]
-    candidates_1m = spy_scanner.scan_spy_0dte_candidates(
+    candidates_1m = spy_scanner.scan_spy_contract_candidates(
         chain, "call", "2026-08-10", 600.0, play_type="SPY_0DTE_1M"
     )
-    candidates_5m = spy_scanner.scan_spy_0dte_candidates(
+    candidates_5m = spy_scanner.scan_spy_contract_candidates(
         chain, "call", "2026-08-10", 600.0, play_type="SPY_0DTE_5M"
     )
     assert candidates_1m[0]["play_type"] == "SPY_0DTE_1M"
@@ -260,9 +260,9 @@ def test_candidate_builder_tags_each_variant_with_its_own_play_type():
 
 
 def test_candidate_builder_rejects_a_contract_over_its_own_risk_cap():
-    ask = spy_scanner.SPY_0DTE_MAX_CONTRACT_ASK + 1.00
+    ask = spy_scanner.SPY_MAX_CONTRACT_ASK + 1.00
     chain = [_option(delta=0.50, ask=ask)]
-    assert spy_scanner.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0) == []
+    assert spy_scanner.scan_spy_contract_candidates(chain, "call", "2026-08-10", 600.0) == []
 
 
 def test_candidate_builder_carries_the_tradingview_event_id_through():
@@ -272,7 +272,7 @@ def test_candidate_builder_carries_the_tradingview_event_id_through():
     actually created, which TradingView alert it came from."""
     chain = [_option(delta=0.50, ask=2.00)]
     context = {"regime": "BULLISH / CONTROLLED", "reason": "buy alert", "tradingview_event_id": 42}
-    candidates = spy_scanner.scan_spy_0dte_candidates(
+    candidates = spy_scanner.scan_spy_contract_candidates(
         chain, "call", "2026-08-10", 600.0, market_context=context, play_type="SPY_0DTE_1M"
     )
     assert candidates[0]["tradingview_event_id"] == 42
@@ -280,18 +280,18 @@ def test_candidate_builder_carries_the_tradingview_event_id_through():
 
 def test_candidate_builder_leaves_tradingview_event_id_none_without_a_market_context():
     chain = [_option(delta=0.50, ask=2.00)]
-    candidates = spy_scanner.scan_spy_0dte_candidates(chain, "call", "2026-08-10", 600.0)
+    candidates = spy_scanner.scan_spy_contract_candidates(chain, "call", "2026-08-10", 600.0)
     assert candidates[0]["tradingview_event_id"] is None
 
 
 def test_candidate_survives_candidate_to_row_without_a_keyerror():
     # candidate_to_row reads cost_or_credit/pop/max_profit/max_risk/
     # breakeven/option_symbol directly off every candidate regardless of
-    # play_type - a real bug let scan_spy_0dte_candidates ship without
+    # play_type - a real bug let scan_spy_contract_candidates ship without
     # several of them, which would only surface as a crash the moment a
     # real SPY 0DTE trade actually tried to open, not in any report.
     chain = [_option(delta=0.50, ask=1.20, strike=600.0)]
-    candidates = spy_scanner.scan_spy_0dte_candidates(
+    candidates = spy_scanner.scan_spy_contract_candidates(
         chain, "call", "2026-08-10", 600.0,
         market_context={"reason": "broke above the opening range at $601.50", "regime": "BULLISH / CONTROLLED"},
     )
@@ -326,21 +326,21 @@ def test_no_scanner_driven_0dte_variant_is_live_any_more():
     import importlib
     module = importlib.reload(spy_scanner)
     try:
-        assert module.SPY_0DTE_PLAY_TYPES == (module.SPY_MANUAL_PLAY_TYPE,)
-        assert module.is_spy_0dte_play_type("SPY_0DTE_1M") is False
-        assert module.is_spy_0dte_play_type("SPY_0DTE_5M") is False
-        assert module.is_spy_0dte_play_type(module.SPY_MANUAL_PLAY_TYPE) is True
+        assert module.PREMIUM_EXIT_PLAY_TYPES == (module.SPY_MANUAL_PLAY_TYPE,)
+        assert module.uses_premium_exit("SPY_0DTE_1M") is False
+        assert module.uses_premium_exit("SPY_0DTE_5M") is False
+        assert module.uses_premium_exit(module.SPY_MANUAL_PLAY_TYPE) is True
     finally:
         importlib.reload(module)
 
 
 def test_is_spy_0dte_play_type_recognizes_both_variants_and_nothing_else():
-    assert spy_scanner.is_spy_0dte_play_type("SPY_0DTE_1M") is True
-    assert spy_scanner.is_spy_0dte_play_type("SPY_0DTE_5M") is True
+    assert spy_scanner.uses_premium_exit("SPY_0DTE_1M") is True
+    assert spy_scanner.uses_premium_exit("SPY_0DTE_5M") is True
     # The bare pre-split string is now retired, not a live variant.
-    assert spy_scanner.is_spy_0dte_play_type("SPY_0DTE") is False
-    assert spy_scanner.is_spy_0dte_play_type("REGULAR") is False
-    assert spy_scanner.is_spy_0dte_play_type(None) is False
+    assert spy_scanner.uses_premium_exit("SPY_0DTE") is False
+    assert spy_scanner.uses_premium_exit("REGULAR") is False
+    assert spy_scanner.uses_premium_exit(None) is False
 
 
 def _row(**overrides) -> dict[str, str]:
@@ -389,7 +389,7 @@ def test_evaluate_open_row_raises_the_floor_after_a_spy_0dte_position_has_proven
             "greeks": {"delta": 0.55, "mid_iv": 0.20, "theta": -0.4},
         }
     }
-    row = _row(max_favorable_pct=str(spy_scanner.SPY_0DTE_FLOOR_TRIGGER_PCT + 10))
+    row = _row(max_favorable_pct=str(spy_scanner.SPY_FLOOR_TRIGGER_PCT + 10))
     evaluation = spy_scanner.evaluate_open_row(row, quote, spy_scanner.now_ct())
     assert evaluation["signal"] == "BREAKEVEN STOP"
 
@@ -453,33 +453,33 @@ def _tradingview_event(event_type: str, event_id: int = 1, payload: dict | None 
 
 def test_tradingview_direction_recognizes_common_buy_conventions():
     for event_type in ("buy", "BUY", "long", "Call"):
-        assert spy_scanner.spy_0dte_tradingview_direction(_tradingview_event(event_type)) == "BULLISH"
+        assert spy_scanner.spy_tradingview_direction(_tradingview_event(event_type)) == "BULLISH"
 
 
 def test_tradingview_direction_recognizes_common_sell_conventions():
     for event_type in ("sell", "SELL", "short", "Put"):
-        assert spy_scanner.spy_0dte_tradingview_direction(_tradingview_event(event_type)) == "BEARISH"
+        assert spy_scanner.spy_tradingview_direction(_tradingview_event(event_type)) == "BEARISH"
 
 
 def test_tradingview_direction_falls_back_to_payload_action_field():
     event = _tradingview_event("alert", payload={"action": "buy", "price": 774.5})
-    assert spy_scanner.spy_0dte_tradingview_direction(event) == "BULLISH"
+    assert spy_scanner.spy_tradingview_direction(event) == "BULLISH"
 
 
 def test_tradingview_direction_falls_back_to_json_encoded_payload():
     import json
     event = _tradingview_event("alert", payload=json.dumps({"strategy_action": "sell"}))
-    assert spy_scanner.spy_0dte_tradingview_direction(event) == "BEARISH"
+    assert spy_scanner.spy_tradingview_direction(event) == "BEARISH"
 
 
 def test_tradingview_direction_returns_none_when_unrecognized():
-    assert spy_scanner.spy_0dte_tradingview_direction(_tradingview_event("breakout")) is None
+    assert spy_scanner.spy_tradingview_direction(_tradingview_event("breakout")) is None
 
 
 def test_tradingview_direction_returns_none_when_both_sides_mentioned():
     # A message like "buy/sell zone" that mentions both conventions is
     # genuinely ambiguous - must not guess a direction from it.
-    assert spy_scanner.spy_0dte_tradingview_direction(_tradingview_event("buy or sell")) is None
+    assert spy_scanner.spy_tradingview_direction(_tradingview_event("buy or sell")) is None
 
 
 

@@ -226,7 +226,7 @@ def test_close_open_positions_credits_bankroll_and_marks_loss_on_a_stop_out():
     bank = bankroll.debit_entry(bank, 100.0)  # simulate the entry cost already paid
     timestamp = datetime(2026, 8, 12, 10, 0, tzinfo=CT)  # mid-session, well outside the EOD-close window
 
-    # entry $0.50, SPY_0DTE_STOP_PCT is -50% - mark $0.20 is a -60% move,
+    # entry $0.50, SPY_STOP_PCT is -50% - mark $0.20 is a -60% move,
     # clearly past the stop rather than close enough to be ambiguous.
     with (
         mock.patch.object(engine.s, "get_quotes", return_value={"SPY260812P00770000": {"bid": 0.20, "ask": 0.22}}),
@@ -519,7 +519,7 @@ def test_try_open_new_position_skips_when_the_signal_is_not_qualified():
         mock.patch.object(engine.s, "get_daily_history", return_value=[]),
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "UNKNOWN"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
-        mock.patch.object(engine.s, "spy_0dte_opening_range_signal", return_value={"qualified": False}),
+        mock.patch.object(engine.s, "spy_opening_range_signal", return_value={"qualified": False}),
     ):
         row, updated_bank = engine._try_open_new_position([], bankroll.default_state(), datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
     assert row is None
@@ -540,13 +540,13 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "CHOPPY / NORMAL VOL"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
         mock.patch.object(
-            engine.s, "spy_0dte_opening_range_signal",
+            engine.s, "spy_opening_range_signal",
             return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "broke below the range", "range_high": 601.0, "range_low": 599.0},
         ),
         mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
-        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.s, "scan_spy_contract_candidates", return_value=[candidate]),
         mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=0.85),
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=15.5),
@@ -572,10 +572,10 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
     assert row["model_score_at_entry"] == "0.71"
     assert row["price_source_at_entry"] == "real"
     assert row["variant_label"] == (
-        f"stop_{int(round(engine.s.SPY_0DTE_STOP_PCT * 100))}"
-        f"_target_{int(round(engine.s.SPY_0DTE_TARGET_PCT * 100))}"
+        f"stop_{int(round(engine.s.SPY_STOP_PCT * 100))}"
+        f"_target_{int(round(engine.s.SPY_TARGET_PCT * 100))}"
     )
-    assert row["stop_pct"] == str(engine.s.SPY_0DTE_STOP_PCT)
+    assert row["stop_pct"] == str(engine.s.SPY_STOP_PCT)
     assert row["floor_pct"] == ""
     # Derived from the real bankroll.POSITION_SIZE_PCT constant rather than
     # a hardcoded percentage, so this test doesn't silently drift out of
@@ -606,13 +606,13 @@ def test_try_open_new_position_records_the_active_override_as_the_trades_variant
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "CHOPPY / NORMAL VOL"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
         mock.patch.object(
-            engine.s, "spy_0dte_opening_range_signal",
+            engine.s, "spy_opening_range_signal",
             return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "broke below the range", "range_high": 601.0, "range_low": 599.0},
         ),
         mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
-        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.s, "scan_spy_contract_candidates", return_value=[candidate]),
         mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=0.85),
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=15.5),
@@ -647,13 +647,13 @@ def test_try_open_new_position_posts_a_real_discord_alert_on_entry():
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "CHOPPY / NORMAL VOL"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
         mock.patch.object(
-            engine.s, "spy_0dte_opening_range_signal",
+            engine.s, "spy_opening_range_signal",
             return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "broke below the range", "range_high": 601.0, "range_low": 599.0},
         ),
         mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
-        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.s, "scan_spy_contract_candidates", return_value=[candidate]),
         mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=0.85),
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=15.5),
@@ -704,13 +704,13 @@ def test_try_open_new_position_leaves_market_features_blank_when_unavailable():
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "UNKNOWN"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
         mock.patch.object(
-            engine.s, "spy_0dte_opening_range_signal",
+            engine.s, "spy_opening_range_signal",
             return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "x", "range_high": 601.0, "range_low": 599.0},
         ),
         mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
-        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.s, "scan_spy_contract_candidates", return_value=[candidate]),
         mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=None),
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
@@ -745,13 +745,13 @@ def test_try_open_new_position_ignores_a_low_model_score_when_filter_is_disabled
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "UNKNOWN"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
         mock.patch.object(
-            engine.s, "spy_0dte_opening_range_signal",
+            engine.s, "spy_opening_range_signal",
             return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "x", "range_high": 601.0, "range_low": 599.0},
         ),
         mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
-        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.s, "scan_spy_contract_candidates", return_value=[candidate]),
         mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=None),
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
@@ -782,13 +782,13 @@ def test_try_open_new_position_skips_a_low_model_score_when_filter_is_enabled():
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "UNKNOWN"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
         mock.patch.object(
-            engine.s, "spy_0dte_opening_range_signal",
+            engine.s, "spy_opening_range_signal",
             return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "x", "range_high": 601.0, "range_low": 599.0},
         ),
         mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
-        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.s, "scan_spy_contract_candidates", return_value=[candidate]),
         mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=None),
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
@@ -818,13 +818,13 @@ def test_try_open_new_position_opens_a_high_model_score_when_filter_is_enabled()
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "UNKNOWN"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
         mock.patch.object(
-            engine.s, "spy_0dte_opening_range_signal",
+            engine.s, "spy_opening_range_signal",
             return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "x", "range_high": 601.0, "range_low": 599.0},
         ),
         mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
-        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.s, "scan_spy_contract_candidates", return_value=[candidate]),
         mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=None),
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
@@ -857,13 +857,13 @@ def test_try_open_new_position_never_blocks_on_a_missing_model_score_even_when_f
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "UNKNOWN"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
         mock.patch.object(
-            engine.s, "spy_0dte_opening_range_signal",
+            engine.s, "spy_opening_range_signal",
             return_value={"qualified": True, "regime": "BEARISH / CONTROLLED", "reason": "x", "range_high": 601.0, "range_low": 599.0},
         ),
         mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[{"strike": 600.0, "option_type": "put"}]),
-        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[candidate]),
+        mock.patch.object(engine.s, "scan_spy_contract_candidates", return_value=[candidate]),
         mock.patch.object(engine.market_features, "put_call_ratio_from_chain", return_value=None),
         mock.patch.object(engine.market_features, "fetch_vix_series", return_value=[]),
         mock.patch.object(engine.market_features, "vix_on_or_before", return_value=None),
@@ -885,13 +885,13 @@ def test_try_open_new_position_skips_when_no_candidates_pass_the_filters():
         mock.patch.object(engine.s, "classify_market_condition", return_value={"label": "UNKNOWN"}),
         mock.patch.object(engine.s, "get_intraday_history", return_value=[]),
         mock.patch.object(
-            engine.s, "spy_0dte_opening_range_signal",
+            engine.s, "spy_opening_range_signal",
             return_value={"qualified": True, "regime": "BULLISH / CONTROLLED", "reason": "x"},
         ),
         mock.patch.object(engine.s, "filter_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_strikes", return_value=[600.0]),
         mock.patch.object(engine.s, "get_chain", return_value=[]),
-        mock.patch.object(engine.s, "scan_spy_0dte_candidates", return_value=[]),
+        mock.patch.object(engine.s, "scan_spy_contract_candidates", return_value=[]),
     ):
         row, updated_bank = engine._try_open_new_position([], bankroll.default_state(), datetime(2026, 8, 12, 10, 0, tzinfo=CT), 600.0)
     assert row is None

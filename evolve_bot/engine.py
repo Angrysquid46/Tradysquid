@@ -435,7 +435,7 @@ def find_candidate(timestamp, spot_price: float, play_type: str = PLAY_TYPE) -> 
     history = s.get_daily_history(s.TICKER, days=120)
     market_condition = s.classify_market_condition(history)["label"]
     intraday_1m = s.get_intraday_history(s.TICKER, interval="1min")
-    context = s.spy_0dte_opening_range_signal(intraday_1m, bar_minutes=1)
+    context = s.spy_opening_range_signal(intraday_1m, bar_minutes=1)
     if not context.get("qualified"):
         return {
             "qualified": False, "reason": "opening range signal not qualified",
@@ -447,7 +447,7 @@ def find_candidate(timestamp, spot_price: float, play_type: str = PLAY_TYPE) -> 
     chain = [option for option in raw_chain if float(option.get("strike", -1)) in allowed_strikes]
     kind = "call" if context["regime"] == "BULLISH / CONTROLLED" else "put"
     pool = [option for option in chain if option.get("option_type") == kind]
-    candidates = s.scan_spy_0dte_candidates(pool, kind, today_str, spot_price, context, play_type=play_type)
+    candidates = s.scan_spy_contract_candidates(pool, kind, today_str, spot_price, context, play_type=play_type)
     if not candidates:
         return {
             "qualified": False, "reason": "no candidates passed filters",

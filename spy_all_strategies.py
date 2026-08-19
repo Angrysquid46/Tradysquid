@@ -42,10 +42,10 @@ def build_roster(conn):
     orb5 = variants["LIVE SPY_0DTE (ORB)"]["5-min bars (5M)"]
 
     spy0dte_exit = ob.OptionExit(
-        target_pct=ss.SPY_0DTE_TARGET_PCT * 100,
-        stop_pct=-ss.SPY_0DTE_STOP_PCT * 100,
-        floor_trigger_pct=ss.SPY_0DTE_FLOOR_TRIGGER_PCT,
-        floor_pct=ss.SPY_0DTE_FLOOR_PCT,
+        target_pct=ss.SPY_TARGET_PCT * 100,
+        stop_pct=-ss.SPY_STOP_PCT * 100,
+        floor_trigger_pct=ss.SPY_FLOOR_TRIGGER_PCT,
+        floor_pct=ss.SPY_FLOOR_PCT,
         name="spy0dte +50/-50 floor+30",
     )
 

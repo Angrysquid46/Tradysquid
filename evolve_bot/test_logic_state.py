@@ -12,7 +12,7 @@ def test_current_exit_signal_matches_the_live_default_with_no_override():
         with mock.patch.object(logic_state, "ACTIVE_OVERRIDE_PATH", Path(temp) / "nope.json"):
             got = logic_state.current_exit_signal(1.0, 1.6, 100.0, 60.0)
 
-        expected = logic_state.s.spy_0dte_exit_signal(1.0, 1.6, 100.0, 60.0)
+        expected = logic_state.s.spy_premium_exit_signal(1.0, 1.6, 100.0, 60.0)
         assert got == expected
 
 
@@ -31,7 +31,7 @@ def test_current_exit_signal_uses_the_applied_override_when_one_exists():
 def test_current_stop_pct_matches_the_live_default_with_no_override():
     with tempfile.TemporaryDirectory() as temp:
         with mock.patch.object(logic_state, "ACTIVE_OVERRIDE_PATH", Path(temp) / "nope.json"):
-            assert logic_state.current_stop_pct() == logic_state.s.SPY_0DTE_STOP_PCT
+            assert logic_state.current_stop_pct() == logic_state.s.SPY_STOP_PCT
 
 
 def test_current_stop_pct_uses_the_applied_override_when_one_exists():
@@ -48,13 +48,13 @@ def test_active_variant_params_matches_the_live_default_with_no_override():
     with tempfile.TemporaryDirectory() as temp:
         with mock.patch.object(logic_state, "ACTIVE_OVERRIDE_PATH", Path(temp) / "nope.json"):
             params = logic_state.active_variant_params()
-    assert params["stop_pct"] == logic_state.s.SPY_0DTE_STOP_PCT
-    assert params["target_pct"] == logic_state.s.SPY_0DTE_TARGET_PCT
+    assert params["stop_pct"] == logic_state.s.SPY_STOP_PCT
+    assert params["target_pct"] == logic_state.s.SPY_TARGET_PCT
     assert params["floor_pct"] is None
     assert params["floor_trigger_pct"] is None
     assert params["variant_label"] == (
-        f"stop_{int(round(logic_state.s.SPY_0DTE_STOP_PCT * 100))}"
-        f"_target_{int(round(logic_state.s.SPY_0DTE_TARGET_PCT * 100))}"
+        f"stop_{int(round(logic_state.s.SPY_STOP_PCT * 100))}"
+        f"_target_{int(round(logic_state.s.SPY_TARGET_PCT * 100))}"
     )
 
 

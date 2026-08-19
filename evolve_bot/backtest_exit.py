@@ -1,7 +1,7 @@
-"""Parameterized clone of spy_scanner.spy_0dte_exit_signal for the backtest.
+"""Parameterized clone of spy_scanner.spy_premium_exit_signal for the backtest.
 
 The live function reads its stop/target/floor levels off module-level
-constants (SPY_0DTE_STOP_PCT etc.) sourced from config/scanner.json - fine
+constants (SPY_STOP_PCT etc.) sourced from config/scanner.json - fine
 for live trading where there's one active setting, but the backtest wants
 to replay the SAME real historical price path under many different
 stop/target/floor combinations to generate volume from a limited number of

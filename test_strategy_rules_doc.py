@@ -51,12 +51,6 @@ def test_key_levels_is_documented_as_an_underlying_exit():
     assert str(spy_scanner.SPY_KEY_LEVELS_STOP_BUFFER_PCT) in body
 
 
-def test_retired_things_are_listed_as_retired():
-    """So they are not resurrected or re-measured."""
-    body = doc.build()
-    for dead in ("ratchet", "SPY_GAP_CONT_25", "SPY_SWEEP_5",
-                 "SPY_GAP_CONT_100", "SPY_EXPANSION_LEVEL"):
-        assert dead in body, f"{dead} not recorded as retired"
 
 
 def test_the_premarket_dead_end_is_recorded():

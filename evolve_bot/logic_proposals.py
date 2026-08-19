@@ -13,7 +13,7 @@ v1 scope: exit-parameter proposals. backtest.py already replays every real
 cached trading day through a 5x5 stop_pct/target_pct grid (25 variants) -
 this module aggregates each variant's real performance and checks whether
 any variant meaningfully outperforms the evolve bot's own live exit rule
-(currently a direct mirror of spy_scanner's live SPY_0DTE_STOP_PCT/
+(currently a direct mirror of spy_scanner's live SPY_STOP_PCT/
 TARGET_PCT - see engine.evaluate_exit_for_row). If one does, by a real
 margin and with enough real trading-day coverage to say something, a
 structured proposal is appended to the review queue. If not, "no evidence
@@ -242,7 +242,7 @@ def _build_proposal(result: dict[str, Any]) -> dict[str, Any]:
             "with zero real edge. Treat this as a candidate worth tracking as more real data "
             "accumulates, not a proven edge.",
             "NOT auto-applied. Applying this would mean parameterizing engine.py's exit call "
-            "(currently mirrors spy_scanner's live SPY_0DTE_STOP_PCT/TARGET_PCT directly) and "
+            "(currently mirrors spy_scanner's live SPY_STOP_PCT/TARGET_PCT directly) and "
             "requires explicit owner sign-off.",
         ],
         "status": "pending_owner_review",

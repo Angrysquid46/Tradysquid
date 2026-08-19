@@ -39,14 +39,14 @@ def _flat_bars(price: float = 600.0, count: int = 10) -> list[dict]:
 
 
 def test_key_levels_constants_are_independent_of_spy_0dte_constants():
-    assert spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE not in spy_scanner.SPY_0DTE_PLAY_TYPES
-    assert spy_scanner.SPY_KEY_LEVELS_MAX_RISK_PER_TRADE is not spy_scanner.SPY_0DTE_MAX_RISK_PER_TRADE \
-        or spy_scanner.SPY_KEY_LEVELS_MAX_CONTRACT_ASK != spy_scanner.SPY_0DTE_MAX_CONTRACT_ASK
+    assert spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE not in spy_scanner.PREMIUM_EXIT_PLAY_TYPES
+    assert spy_scanner.SPY_KEY_LEVELS_MAX_RISK_PER_TRADE is not spy_scanner.SPY_MAX_RISK_PER_TRADE \
+        or spy_scanner.SPY_KEY_LEVELS_MAX_CONTRACT_ASK != spy_scanner.SPY_MAX_CONTRACT_ASK
 
 
 def test_key_levels_delta_band_is_its_own_not_spy_0dtes():
     # Distinct objects/definitions - a real regression here would be someone
-    # aliasing SPY_KEY_LEVELS_DELTA_MIN = SPY_0DTE_DELTA_MIN, which happens
+    # aliasing SPY_KEY_LEVELS_DELTA_MIN = SPY_DELTA_MIN, which happens
     # to hold the same numeric value today but must not be the same binding.
     assert "SPY_KEY_LEVELS_DELTA_MIN" in dir(spy_scanner)
     assert "SPY_KEY_LEVELS_DELTA_MAX" in dir(spy_scanner)

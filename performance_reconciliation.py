@@ -23,21 +23,15 @@ _INSTALLED = False
 
 _ORIGINAL_CLOSED_ROWS = spy_scanner.closed_rows
 
-# SPY_0DTE_1M and SPY_0DTE_5M were retired 2026-08-17. Left in place they
-# stayed in STRATEGY_VARIANTS with no REPORT_ROUTES entry, so the reconciler
-# would build a card for a strategy that no longer exists and have nowhere
-# to send it.
-SPY_0DTE_VARIANTS: tuple[tuple[str, str, str, str], ...] = ()
+SPY_CONTRACT_VARIANTS: tuple[tuple[str, str, str, str], ...] = ()
 
-# The 4 non-ratchet live strategies - genuinely different strategies, not
+# The live strategies - genuinely different strategies, not
 # variants of one idea, but sharing one dashboard/results channel pair now
 # too (owner: "do the ratchet thing but instead all the other trades
 # tradebot makes ... tabs can stay meaningful and not scattered
 # craziness").
 # get their own independent leaderboard and their own shared channel pair.
-# SPY_EXPANSION_LEVEL retired alongside the 0DTE pair; Key-Levels is the one
-# original strategy that survived into the locked top set.
-OTHER_STRATEGY_VARIANTS = SPY_0DTE_VARIANTS + (
+OTHER_STRATEGY_VARIANTS = SPY_CONTRACT_VARIANTS + (
     (spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE, "performance_key_levels",
      "results_key_levels", "Key-Levels Strategy"),
 )
@@ -66,13 +60,12 @@ REPORT_ROUTES = {
 # The shared #strategies-dashboard / #strategies-results pair was deleted
 # 2026-08-17, so these routes are resolved per strategy instead.
 #
-# SPY_0DTE_1M, SPY_0DTE_5M and SPY_EXPANSION_LEVEL are retired: their routes
-# are dropped entirely rather than left pointing at a deleted channel, which
-# would silently discard any card built from a historical row. SPY_KEY_LEVELS
-# survives and routes to its own channel like the other 13.
-_RETIRED_ROUTE_PLAY_TYPES = {"SPY_0DTE_1M", "SPY_0DTE_5M", "SPY_EXPANSION_LEVEL"}
+# Play types that may appear in historical closed rows but are not part of
+# the live roster. Anything here is excluded from every report so the
+# numbers only ever describe what this system actually trades.
+_NON_ROSTER_PLAY_TYPES = {"SPY_0DTE_1M", "SPY_0DTE_5M", "SPY_EXPANSION_LEVEL"}
 for _play_type, _perf_logical, _results_logical, _label in OTHER_STRATEGY_VARIANTS:
-    if _play_type in _RETIRED_ROUTE_PLAY_TYPES:
+    if _play_type in _NON_ROSTER_PLAY_TYPES:
         REPORT_ROUTES.pop(_perf_logical, None)
         REPORT_ROUTES.pop(_results_logical, None)
         continue
@@ -324,11 +317,6 @@ def top_strategies_lines(completed: list[dict[str, str]], limit: int = 3) -> lis
 
 def result_summary(title: str, completed: list[dict[str, str]], period_text: str) -> str:
     # Daily, weekly and monthly count the LIVE strategies only. The trade
-    # log still holds closed rows from retired ones - SPY_GAP_CONT_25,
-    # SPY_SWEEP_5, SPY_GAP_CONT_100, SPY_0DTE_5M - and counting them put
-    # SPY_GAP_CONT_25 in the monthly card's "Top Strategies" list for a
-    # strategy that no longer exists. Filtered here rather than in each
-    # report, since daily/weekly/monthly all render through this.
     completed = only_live_strategies(completed)
     metrics = spy_scanner.result_metrics(completed)
     lines = [
@@ -437,11 +425,6 @@ def live_play_types() -> set[str]:
     """Every play type currently traded - the only ones reporting may count.
 
     The trade log still holds rows from retired strategies
-    (SPY_GAP_CONT_25, SPY_SWEEP_5, SPY_GAP_CONT_100, SPY_0DTE_5M). Those
-    were real paper trades, but they belong to strategies that no longer
-    exist, and counting them puts a dead strategy in the monthly card and
-    in the "Top Strategies" list. Owner: daily, weekly and monthly count
-    the live strategies only.
     """
     live = {spy_scanner.SPY_KEY_LEVELS_PLAY_TYPE}
     for group in (OTHER_STRATEGY_VARIANTS, NEW_STRATEGY_VARIANTS):

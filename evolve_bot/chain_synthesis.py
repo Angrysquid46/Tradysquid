@@ -2,7 +2,7 @@
 
 Tradier doesn't serve a chain for an expired expiration (confirmed live -
 see synthetic_pricing.py's module docstring), so there is no real chain to
-run spy_scanner.scan_spy_0dte_candidates against for a historical day. This
+run spy_scanner.scan_spy_contract_candidates against for a historical day. This
 builds an equivalent candidate list directly: for each nearby $1-wide
 strike, price and delta come from synthetic_pricing's Black-Scholes model,
 then a real Robinhood price (if this exact contract/day was cached by
@@ -30,10 +30,10 @@ import synthetic_pricing as pricing
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import spy_scanner as s  # noqa: E402 - path must be set up first
 
-SPY_0DTE_DELTA_MIN = s.SPY_0DTE_DELTA_MIN
-SPY_0DTE_DELTA_MAX = s.SPY_0DTE_DELTA_MAX
-SPY_0DTE_MAX_CONTRACT_ASK = s.SPY_0DTE_MAX_CONTRACT_ASK
-SPY_0DTE_MAX_RISK_PER_TRADE = s.SPY_0DTE_MAX_RISK_PER_TRADE
+SPY_DELTA_MIN = s.SPY_DELTA_MIN
+SPY_DELTA_MAX = s.SPY_DELTA_MAX
+SPY_MAX_CONTRACT_ASK = s.SPY_MAX_CONTRACT_ASK
+SPY_MAX_RISK_PER_TRADE = s.SPY_MAX_RISK_PER_TRADE
 
 
 def strikes_near_spot(spot_price: float, band_pct: float = 0.03, width: float = 1.0) -> list[float]:
@@ -80,10 +80,10 @@ def build_candidates(
     candidates: list[dict[str, Any]] = []
     for strike in strikes_near_spot(spot_price):
         delta = pricing.black_scholes_delta(spot_price, strike, years_to_expiry, volatility, call_or_put)
-        if not SPY_0DTE_DELTA_MIN <= abs(delta) <= SPY_0DTE_DELTA_MAX:
+        if not SPY_DELTA_MIN <= abs(delta) <= SPY_DELTA_MAX:
             continue
         synthetic_price = pricing.black_scholes_price(spot_price, strike, years_to_expiry, volatility, call_or_put)
-        symbol = s.option_symbol(s.SPY_0DTE_TICKER, expiration, call_or_put, strike)
+        symbol = s.option_symbol(s.SPY_CONTRACT_TICKER, expiration, call_or_put, strike)
         real = _real_price_at(symbol, moment_iso)
         if real is not None:
             bid, ask = real
@@ -93,7 +93,7 @@ def build_candidates(
             price_source = "synthetic"
         if ask <= 0:
             continue
-        if ask > SPY_0DTE_MAX_CONTRACT_ASK or ask * 100 > SPY_0DTE_MAX_RISK_PER_TRADE:
+        if ask > SPY_MAX_CONTRACT_ASK or ask * 100 > SPY_MAX_RISK_PER_TRADE:
             continue
         candidates.append(
             {
