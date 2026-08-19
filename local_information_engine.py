@@ -59,6 +59,44 @@ RUNNING_JOBS: set[str] = set()
 RUNNING_JOBS_LOCK = threading.Lock()
 STREAM_QUOTES: dict[str, dict[str, Any]] = {}
 STREAM_LAST_WRITTEN: dict[str, float] = {}
+# P/L last actually rendered onto each card, so a position that moves hard
+# can jump the debounce queue instead of sitting stale behind it.
+STREAM_LAST_CARD_PL: dict[str, float] = {}
+# Card-refresh pacing. These are DISPLAY controls only: evaluate_open_row
+# and the close path run on every single tick regardless, so widening them
+# can never delay an exit - it only slows how often the visible card is
+# redrawn.
+#
+# Why they exist: a 0DTE option's P/L is never still, so the "content
+# unchanged" fast path in upsert_channel_message almost never fires and
+# nearly every push became a real PATCH. At the old flat 2s-per-trade
+# debounce, six open positions produced ~3 edits/sec into a single
+# channel. Discord allows on the order of one edit per second per channel,
+# so the channel sat permanently rate-limited - and an exhausted 429 retry
+# raises DiscordError, which is what used to tear down the market-data
+# websocket.
+#
+# The interval therefore has to scale with how many cards share the
+# channel, not stay flat per card.
+STREAM_CARD_MIN_SECONDS = float(os.environ.get("STREAM_CARD_MIN_SECONDS", "3"))
+STREAM_CARD_SECONDS_PER_POSITION = float(
+    os.environ.get("STREAM_CARD_SECONDS_PER_POSITION", "2")
+)
+# A move this large (in P/L percentage points) since the last redraw is
+# worth showing sooner, but never faster than STREAM_CARD_MIN_SECONDS.
+STREAM_CARD_FORCE_PL_MOVE = float(os.environ.get("STREAM_CARD_FORCE_PL_MOVE", "10"))
+
+
+def _card_push_interval(open_position_count: int) -> float:
+    """Seconds a single card must wait between redraws.
+
+    Scales with the number of open positions because they all edit the same
+    Discord channel and share its rate limit.
+    """
+    return max(
+        STREAM_CARD_MIN_SECONDS,
+        max(open_position_count, 1) * STREAM_CARD_SECONDS_PER_POSITION,
+    )
 # monotonic time.time() each symbol's STREAM_QUOTES entry was last
 # refreshed (by a real stream tick OR the active refetch in
 # _stream_quote_event) - see STREAM_QUOTE_STALE_SECONDS.
@@ -1907,9 +1945,22 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
             else:
                 trade_id = row.get("trade_id", "")
                 last_write = STREAM_LAST_WRITTEN.get(trade_id, 0.0)
-                if now_monotonic - last_write >= 2:
+                elapsed = now_monotonic - last_write
+                # All open cards share one channel's rate limit, so the wait
+                # scales with how many there are - see _card_push_interval.
+                interval = _card_push_interval(len(relevant))
+                pl_pct = evaluation.get("pl_pct")
+                last_card_pl = STREAM_LAST_CARD_PL.get(trade_id)
+                jumped = (
+                    last_card_pl is not None
+                    and pl_pct is not None
+                    and abs(pl_pct - last_card_pl) >= STREAM_CARD_FORCE_PL_MOVE
+                )
+                if elapsed >= interval or (jumped and elapsed >= STREAM_CARD_MIN_SECONDS):
                     STREAM_STATS["card_pushes"] += 1
                     STREAM_LAST_WRITTEN[trade_id] = now_monotonic
+                    if pl_pct is not None:
+                        STREAM_LAST_CARD_PL[trade_id] = pl_pct
                     changed = True
                     row["current_pl_pct"] = spy_scanner.round_or_blank(
                         evaluation.get("pl_pct"), 1

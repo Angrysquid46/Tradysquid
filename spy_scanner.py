@@ -318,6 +318,17 @@ DISCORD_MIGRATE_LEGACY_MESSAGES = os.environ.get(
     "DISCORD_MIGRATE_LEGACY_MESSAGES", "false"
 ).lower() == "true"
 DISCORD_FORMAT_VERSION = "13"
+# How often a single card re-scans its channel for stray duplicates. The
+# sweep costs a GET of 100 messages, and it used to run on EVERY push -
+# including the unchanged-content fast path that otherwise does no I/O at
+# all. Six open positions ticking through the stream therefore produced a
+# steady stream of requests that changed nothing and burned the channel's
+# rate limit. Neither a PATCH nor an unchanged push can create a duplicate;
+# only a POST or a second process can. So the sweep stays as a safety net
+# but runs on an interval per card rather than per tick.
+DISCORD_DEDUPE_INTERVAL_SECONDS = float(
+    os.environ.get("DISCORD_DEDUPE_INTERVAL_SECONDS", "300")
+)
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Tradysquids-TradeBot/1.0"})
@@ -4827,6 +4838,9 @@ class DiscordTracker:
         self.missing_channels: list[str] = []
         self.private_system_channels: set[str] = set()
         self._channel_message_cache: dict[str, list[dict[str, Any]]] = {}
+        # Last time each card's duplicate sweep actually hit the API, so the
+        # sweep can be rate-limited per card instead of running per push.
+        self._dedupe_swept_at: dict[str, float] = {}
 
     @property
     def enabled(self) -> bool:
@@ -5074,6 +5088,14 @@ class DiscordTracker:
         def remove_matching_duplicates(keep_id: str) -> None:
             if not search_token:
                 return
+            # Throttled: see DISCORD_DEDUPE_INTERVAL_SECONDS. Running this on
+            # every push meant the "content unchanged, nothing to do" path
+            # still cost a full 100-message GET per card per tick.
+            now = time.monotonic()
+            last_swept = self._dedupe_swept_at.get(state_key, 0.0)
+            if last_swept and now - last_swept < DISCORD_DEDUPE_INTERVAL_SECONDS:
+                return
+            self._dedupe_swept_at[state_key] = now
             recent = self._request("GET", f"/channels/{channel_id}/messages?limit=100")
             for message in recent if isinstance(recent, list) else []:
                 candidate_id = str(message.get("id") or "")
@@ -5116,6 +5138,11 @@ class DiscordTracker:
                                 self._request("DELETE", f"/channels/{channel_id}/messages/{duplicate_id}")
                         messages[state_key] = message_id
                         hashes[state_key] = content_hash
+                        # This branch just scanned the channel and deleted
+                        # every extra match, so it *is* a duplicate sweep -
+                        # record it so the next push does not immediately
+                        # repeat the same 100-message GET.
+                        self._dedupe_swept_at[state_key] = time.monotonic()
                         return message_id
 
         created = self._request("POST", f"/channels/{channel_id}/messages", payload)
@@ -5123,6 +5150,10 @@ class DiscordTracker:
             message_id = str(created["id"])
             messages[state_key] = message_id
             hashes[state_key] = content_hash
+            # Reached only after the search above found no existing card, so
+            # the channel was scanned on the way here and this message is by
+            # construction the only one carrying this token.
+            self._dedupe_swept_at[state_key] = time.monotonic()
         return message_id
 
     def upsert_singleton_message(
