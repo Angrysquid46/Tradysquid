@@ -17,8 +17,6 @@ matters for any "top N" exercise:
 
 | Entry signal | Live strategies using it |
 |---|---|
-| Opening-range breakout on 1-min bars | `SPY_0DTE_1M` |
-| Opening-range breakout on 5-min bars | `SPY_0DTE_5M` |
 | Key-levels (10 references + 1m/3m/5m agreement) | `SPY_KEY_LEVELS` |
 
 The 10 ratchet variants are not 10 ideas. They are one entry with ten
@@ -91,7 +89,7 @@ def _aggregate(rows: Sequence[dict[str, Any]], minutes: int) -> list[dict[str, A
 
 
 # ---------------------------------------------------------------------------
-# SPY_0DTE_1M / SPY_0DTE_5M - one shared entry
+# The retired 0DTE pair shared one entry
 # ---------------------------------------------------------------------------
 
 def live_opening_range_breakout(bar_minutes: int = 1) -> SignalFn:
@@ -247,8 +245,6 @@ def daily_sma200(session_ohlc: Sequence[tuple[str, dict[str, float]]]) -> dict[s
 # Recorded so the ranking can state plainly that these are one entry with
 # many exits, not many independent strategies.
 SHARED_ENTRY_GROUPS: dict[str, list[str]] = {
-    "LIVE ORB 1-min entry": ["SPY_0DTE_1M"],
-    "LIVE ORB 5-min entry": ["SPY_0DTE_5M"],
     "LIVE Key-Levels entry": ["SPY_KEY_LEVELS"],
 }
 

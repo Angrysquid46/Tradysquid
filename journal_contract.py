@@ -406,7 +406,7 @@ def validate_contract() -> dict[str, Any]:
         {
             "trade_id": "TEST-JOURNAL-001",
             "timestamp": datetime.now().astimezone().isoformat(),
-            "play_type": "SPY_0DTE_1M",
+            "play_type": "SPY_GAP_CONT_50",
             "ticker": "SPY",
             "call_or_put": "call",
             "strike": "600",

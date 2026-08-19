@@ -220,7 +220,13 @@ class JournalContractTests(unittest.TestCase):
         source = inspect.getsource(journal_contract.validate_contract)
         self.assertNotIn('"REGULAR"', source)
         self.assertNotIn('"F"', source)
-        self.assertIn("SPY_0DTE", source)
+        # The sample must use a play type that is CURRENTLY live - the
+        # point of this test - not a specific historical family name.
+        import performance_reconciliation as _pr
+        self.assertTrue(
+            any(f'"{p}"' in source for p in _pr.live_play_types()),
+            "journal contract self-validation does not use a live play type",
+        )
 
     def test_entry_card_title_names_which_strategy_opened_it(self) -> None:
         # Owner ask: every position card must show which strategy/trader

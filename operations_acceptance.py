@@ -155,26 +155,6 @@ def discord_channels_and_cards() -> dict[str, Any]:
     if summed_records(card_text["ticker-results"]) != expected_closed:
         raise OperationsAcceptanceFailure("#ticker-results trade counts do not reconcile to the canonical ledger.")
 
-    # Performance and results ARE split per strategy - each channel only
-    # ever reconciles to ITS OWN play_type's closed count, never the total,
-    # since the two strategies trade fully independently of each other.
-    for play_type, performance_channel, results_channel, label in (
-        ("SPY_0DTE_1M", "1m-performance", "1m-results", "1-Minute Strategy"),
-        ("SPY_0DTE_5M", "5m-performance", "5m-results", "5-Minute Strategy"),
-    ):
-        variant_expected = len([row for row in closed if row.get("play_type") == play_type])
-        if not re.search(
-            rf"Canonical ledger coverage\D+{variant_expected}/{variant_expected}\b",
-            card_text[performance_channel],
-        ):
-            raise OperationsAcceptanceFailure(
-                f"#{performance_channel} does not reconcile to {variant_expected} canonical closed trades for {label}."
-            )
-        if summed_records(card_text[results_channel]) != variant_expected:
-            raise OperationsAcceptanceFailure(
-                f"#{results_channel} trade counts do not reconcile to the canonical ledger for {label}."
-            )
-
     if not re.search(rf"Trades\D+{expected_wins}\b", card_text["wins"]):
         raise OperationsAcceptanceFailure("#wins summary does not reconcile to the canonical ledger.")
     if not re.search(rf"Trades\D+{expected_losses}\b", card_text["losses"]):
