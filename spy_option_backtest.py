@@ -301,7 +301,8 @@ def summarize_options(trades: Sequence[OptionTrade]) -> dict[str, Any]:
 
 
 def ratchet_rules(step_pct: float, stop_pct: float) -> OptionExit:
-    """One of the 10 live SPY_RATCHET_* exit shapes."""
+    """A ratchet-floor exit shape (retired as a live strategy; kept as a
+    measurable exit shape for the backtest grid)."""
     return OptionExit(
         target_pct=None, stop_pct=None, floor_trigger_pct=None, floor_pct=None,
         step_pct=step_pct, ratchet_stop_pct=stop_pct,

@@ -51,21 +51,9 @@ class ChannelSpec:
     channel_type: int = 0
 
 
-# Originally one category per ratchet-floor variant (10 categories, 20
-# channels) - owner: "i want all the ratchet stratagies in a single
-# catagory instead of 11 different channels ... pl wins and loses for
-# everything in here on 1 tab but have each thing tracked seperately and
-# a dashboard so we can see top performers." Collapsed to one shared
-# category/pair of channels; each variant still gets its own tracked card
-# within them (see spy_scanner.CHANNEL_NAMES and
-# performance_reconciliation.REPORT_ROUTES - only the REAL channel name
-# per variant's logical key changed, the 10 distinct logical keys and
-# their own state/coverage tracking did not).
-RATCHET_CATEGORY_NAME = "RATCHET STRATEGIES"
 
 # Old per-variant category names, kept only so the sync can find and
 # delete them (see DELETE_CATEGORIES/DELETE_CHANNELS below).
-_OLD_RATCHET_CATEGORY_NAMES: list[str] = []
 
 # Same consolidation as the ratchet variants, applied to the other 4 live
 # strategies (1-Minute, 5-Minute, Key-Levels, Expansion-Level) - owner:
@@ -154,23 +142,11 @@ CHANNELS = [
 ]
 
 
-def _ratchet_slug(play_type: str) -> str:
-    return play_type.removeprefix("SPY_RATCHET_").lower().replace("_", "-")
 
 
-# All 10 ratchet variants were retired 2026-08-17, so the shared pair of
-# channels they used is no longer created - see DELETE_CHANNELS and
-# DELETE_CATEGORIES below, which remove the category outright.
-#
-# They were retired on measurement, not preference: the ORB entry all ten
-# shared came out at +0.0004 ATR/trade (t=+0.39) over 3,347 sessions, and
-# when the exit shapes were finally separable - which needed the Phase 5
-# option model, since step_pct/stop_pct are defined in option-premium
-# percent - every ratchet placed below the SPY_0DTE shape already running.
 
 # Old per-variant channels (10 categories x 2 channels), retired in favor
 # of the shared pair above.
-_OLD_RATCHET_CHANNEL_NAMES: set[str] = set()
 
 # Imported here rather than further down: DELETE_CHANNELS below needs the
 # retired-slug list, and a later import would leave it silently empty.
@@ -195,7 +171,6 @@ DELETE_CHANNELS = {
     # every ratchet exit shape came last when scored as options - the best
     # of them lost $275k against the SPY_0DTE shape's $156k. Only the
     # locked top-15 strategies survive.
-    "ratchet-dashboard", "ratchet-results",
     # Retired 2026-08-19 - owner: "delete held positions as well since
     # that's no longer active". Live cards moved to one held channel per
     # strategy so each gets its own Discord rate-limit bucket; this shared
@@ -216,7 +191,6 @@ DELETE_CHANNELS = {
     # Retired in favor of the single shared ratchet-dashboard/ratchet-results
     # pair above - owner: "all the ratchet stratagies in a single catagory
     # instead of 11 different channels."
-    *_OLD_RATCHET_CHANNEL_NAMES,
     # Retired in favor of the single shared strategies-dashboard/
     # strategies-results pair above - owner: "do the ratchet thing but
     # instead all the other trades tradebot makes."
@@ -227,8 +201,6 @@ DELETE_CHANNELS = {
 
 DELETE_CATEGORIES = {
     "ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE",
-    RATCHET_CATEGORY_NAME,
-    *_OLD_RATCHET_CATEGORY_NAMES,
     *_OLD_STRATEGY_CATEGORY_NAMES,
 }
 
@@ -264,8 +236,6 @@ CHANNEL_STARTERS = {
     "workflow-log": "Used for releases, deployments, and rollback reports.",
     "upgrade-review": "Manual owner review only.",
     "security-log": "Receives rejected requests and configuration warnings.",
-    "ratchet-dashboard": "Updated as each ratchet-floor variant's paper trades open and close, plus a leaderboard ranking all 10.",
-    "ratchet-results": "Updated from every ratchet-floor variant's recorded paper-trade outcomes, each tagged with its own variant.",
 }
 
 

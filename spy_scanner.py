@@ -495,8 +495,7 @@ TAG_KEYS = {
 # local_information_engine.py's real-time stream handler and REST fallback)
 # must check against. This exists because each new strategy family has
 # historically invented its own close-signal string (SPY_KEY_LEVELS'
-# "EXPIRATION CLOSE", SPY_EXPANSION_LEVEL's "EXPANSION EOD CLOSE", the
-# ratchet variants' "FLOOR STOP"/"RATCHET EOD CLOSE") and every call site
+# "EXPIRATION CLOSE") and every call site
 # had its own separately hand-maintained copy of this set - which silently
 # drifted: two of the three call sites never got the newer strings added,
 # so a real close signal would show up on the live card but not actually
@@ -1905,7 +1904,7 @@ def spy_0dte_opening_range_signal(
     bar_minutes is the interval of the intraday bars passed in (default 5,
     matching the original single-strategy behavior). This function is now
     shared by every SPY_0DTE-family live strategy - SPY_0DTE_5M with
-    5-minute bars, SPY_0DTE_1M and all 10 SPY_RATCHET_* variants with
+    5-minute bars, SPY_0DTE_1M with
     1-minute bars - so the number of bars needed to cover the same
     opening-range window has to scale with whatever interval the caller
     actually fetched, not stay hardcoded to 5-minute math for all of
@@ -2041,7 +2040,7 @@ def spy_0dte_tradingview_signal(
     TradingView webhook was actually built for (the Pine indicator behind
     the 66.8% backtest fires the live alert here), not the Python opening-
     range breakout used by SPY_0DTE_5M below. Shared by SPY_0DTE_1M and
-    every SPY_RATCHET_* variant, per owner direction: they're the same
+    per owner direction: they're the same
     entry, only their exit (ratchet floor/stop vs. 1M's own exit) differs.
     A fresh, direction-parseable TradingView alert for `symbol` is the
     only thing that qualifies an entry; no alert means no trade, regardless

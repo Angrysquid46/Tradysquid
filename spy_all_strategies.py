@@ -2,11 +2,10 @@
 
 The full roster, each with its own rules, scored individually:
 
-- 10 SPY_RATCHET_* traders. They fire on the same ORB 1-min signal but are
   ten separate traders with ten different exits (step_pct/stop_pct), so
   they get ten separate results.
 - SPY_0DTE_1M and SPY_0DTE_5M - same family, different bar interval.
-- SPY_KEY_LEVELS, SPY_EXPANSION_LEVEL - own entries, own exits.
+- SPY_KEY_LEVELS - own entry, own exit.
 - Every new research strategy from Phases 3-4, each with its own entry.
 
 Exits are in option-premium percent, which is what makes the ten ratchets
@@ -55,16 +54,10 @@ def build_roster(conn):
         ("LIVE SPY_0DTE_1M", orb1, spy0dte_exit),
         ("LIVE SPY_0DTE_5M", orb5, spy0dte_exit),
     ]
-    # Ten separate traders on one shared signal.
     roster.append((
         "LIVE SPY_KEY_LEVELS", variants["LIVE SPY_KEY_LEVELS"]["deployed rules"],
         ob.OptionExit(target_pct=100, stop_pct=-50, floor_trigger_pct=None,
                       floor_pct=None, name="key-levels 2R"),
-    ))
-    roster.append((
-        "LIVE SPY_EXPANSION_LEVEL", variants["LIVE SPY_EXPANSION_LEVEL"]["deployed rules"],
-        ob.OptionExit(target_pct=50, stop_pct=-50,
-                      floor_trigger_pct=30.0, floor_pct=-15.0, name="expansion +50/-50"),
     ))
 
     # Research strategies: own entry, best of the exit grid.
