@@ -54,24 +54,8 @@ def _rows(count: int, session: str = "2020-06-15", start_minute: int = 0, base: 
 # Parity with the deployed code
 # ---------------------------------------------------------------------------
 
-def test_timeframe_read_series_matches_the_live_function_bar_for_bar():
-    """The optimisation that made the ranking runnable at all. If this
-    ever drifts, the expansion strategy in the results is a different
-    strategy from the one on Discord."""
-    closes = _series(400)
-    series = live.timeframe_read_series(closes)
-    assert len(series) == len(closes)
-
-    for index in range(len(closes)):
-        expected = ss.spy_expansion_timeframe_read(closes[: index + 1])
-        assert series[index]["ema_direction"] == expected["ema_direction"], f"EMA differs at {index}"
-        assert series[index]["macd_color"] == expected["macd_color"], f"MACD colour differs at {index}"
 
 
-def test_timeframe_read_series_is_unknown_before_it_has_enough_data():
-    series = live.timeframe_read_series(_series(30))
-    assert series[0]["ema_direction"] == "UNKNOWN"
-    assert series[0]["macd_color"] == "UNKNOWN"
 
 
 def test_opening_range_adapter_agrees_with_passing_the_whole_session():
@@ -99,25 +83,8 @@ def test_opening_range_adapter_agrees_with_passing_the_whole_session():
 # Aggregation
 # ---------------------------------------------------------------------------
 
-def test_cross_session_aggregation_does_not_merge_two_days():
-    """Bucketing on minute-of-session alone would fuse 10:00 Monday with
-    10:00 Tuesday into one bar, silently corrupting every higher-timeframe
-    read."""
-    rows = _rows(30, session="2020-06-15") + _rows(30, session="2020-06-16")
-    bars, ends = live._aggregate_across_sessions(rows, 15)
-    assert len(bars) == 4                      # two 15-min bars per session
-    assert len(ends) == 4
-    assert ends == sorted(ends)
 
 
-def test_aggregate_rolls_ohlc_correctly():
-    rows = _rows(15)
-    bars, _ends = live._aggregate_across_sessions(rows, 15)
-    assert len(bars) == 1
-    assert bars[0]["open"] == rows[0]["open"]
-    assert bars[0]["close"] == rows[-1]["close"]
-    assert bars[0]["high"] == pytest.approx(max(r["high"] for r in rows))
-    assert bars[0]["low"] == pytest.approx(min(r["low"] for r in rows))
 
 
 def test_five_minute_adapter_only_reads_completed_bars():
@@ -172,7 +139,7 @@ def test_the_shared_orb_group_reflects_the_current_roster():
 def test_every_live_play_type_is_accounted_for_in_a_group():
     """No live strategy may be silently missing from the ranking."""
     grouped = {p for members in live.SHARED_ENTRY_GROUPS.values() for p in members}
-    expected = {"SPY_0DTE_1M", "SPY_0DTE_5M", "SPY_KEY_LEVELS", "SPY_EXPANSION_LEVEL"}
+    expected = {"SPY_0DTE_1M", "SPY_0DTE_5M", "SPY_KEY_LEVELS"}
     assert grouped == expected
 
 
