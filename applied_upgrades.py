@@ -26,6 +26,10 @@ SUPERVISOR_STATE_PATH = ROOT / "state" / "supervisor-state.json"
 ENGINE_ACCEPTANCE_PATH = ROOT / "state" / "market-intelligence-startup.json"
 CHANNEL_NAME = "applied-upgrades"
 JOB_NAME = "applied-upgrades-dashboard"
+# The catalog key of the dashboard's own spec. Same string as JOB_NAME, but
+# named separately because validate() looks the spec up by key - relying on
+# its position in INFRA_SPECS broke as soon as a newer spec was appended.
+DASHBOARD_SPEC_KEY = "applied-upgrades-dashboard"
 VERSION = "applied-upgrades-v1"
 OVERVIEW_STATE = f"{VERSION}:overview-message-id"
 MESSAGE_STATE_PREFIX = f"{VERSION}:card-message-id:"
@@ -769,7 +773,21 @@ def validate() -> dict[str, Any]:
     original_numbers = [item.acceptance_number for item in BATCH_SPECS]
     if original_numbers != list(range(1, 14)):
         raise RuntimeError("Original batch catalog must preserve requests 1 through 13")
-    if CHANNEL_NAME not in INFRA_SPECS[-1].channels:
+    # Find the dashboard's own spec by key, not by position. This used to
+    # read INFRA_SPECS[-1], which silently assumed the applied-upgrades
+    # dashboard would stay the newest infra spec forever. Appending
+    # spy-technicals-visibility broke that assumption and made validate()
+    # raise - and because validate() runs inside deployment validation,
+    # EVERY deploy failed its gate and rolled back, regardless of what the
+    # commit actually changed.
+    dashboard = next(
+        (item for item in INFRA_SPECS if item.key == DASHBOARD_SPEC_KEY), None
+    )
+    if dashboard is None:
+        raise RuntimeError(
+            f"Applied-upgrades dashboard spec {DASHBOARD_SPEC_KEY!r} is missing"
+        )
+    if CHANNEL_NAME not in dashboard.channels:
         raise RuntimeError("Applied-upgrades dashboard does not verify its own channel")
     return {
         "version": VERSION,
