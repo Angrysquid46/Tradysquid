@@ -109,7 +109,7 @@ STREAM_QUOTE_RECEIVED_AT: dict[str, float] = {}
 # A 0DTE option's own quote can print far less often than SPY's own
 # underlying ticks do. _stream_quote_event used to only re-evaluate a
 # position when its OWN option symbol ticked - real bug caught live: a
-# ratchet-floor trade peaked at +29%, but its option hadn't ticked again
+# a trade peaked at +29%, but its option hadn't ticked again
 # by the time price reversed, so it didn't get re-checked until it had
 # already fallen to +6% (a 23-point overshoot past where the floor
 # should have locked it in). Now, on ANY tick relevant to an open row
@@ -1848,7 +1848,7 @@ def _stream_quote_event(event: dict[str, Any]) -> None:
     Reacting to underlying ticks matters: a 0DTE option's own quote can
     print far less often than SPY itself ticks, and previously a row was
     only re-evaluated when its own option symbol happened to tick - real
-    bug caught live, a ratchet-floor trade peaked at +29% but its option
+    bug caught live, a trade peaked at +29% but its option
     hadn't ticked again by the time price reversed, so it wasn't
     re-checked until it had already fallen to +6% (23 points of P&L
     given up past where the floor should have locked it in). Now a stale
