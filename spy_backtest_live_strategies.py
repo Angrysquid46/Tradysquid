@@ -439,7 +439,7 @@ def daily_sma200(session_ohlc: Sequence[tuple[str, dict[str, float]]]) -> dict[s
 # Recorded so the ranking can state plainly that these are one entry with
 # many exits, not many independent strategies.
 SHARED_ENTRY_GROUPS: dict[str, list[str]] = {
-    "LIVE ORB 1-min entry": ["SPY_0DTE_1M"] + list(ss.SPY_RATCHET_PLAY_TYPES),
+    "LIVE ORB 1-min entry": ["SPY_0DTE_1M"],
     "LIVE ORB 5-min entry": ["SPY_0DTE_5M"],
     "LIVE Key-Levels entry": ["SPY_KEY_LEVELS"],
     "LIVE Expansion entry": ["SPY_EXPANSION_LEVEL"],

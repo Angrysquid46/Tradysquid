@@ -65,9 +65,7 @@ RATCHET_CATEGORY_NAME = "RATCHET STRATEGIES"
 
 # Old per-variant category names, kept only so the sync can find and
 # delete them (see DELETE_CATEGORIES/DELETE_CHANNELS below).
-_OLD_RATCHET_CATEGORY_NAMES = [
-    f"{variant['label'].upper()} STRATEGY" for variant in spy_scanner.SPY_RATCHET_VARIANTS
-]
+_OLD_RATCHET_CATEGORY_NAMES: list[str] = []
 
 # Same consolidation as the ratchet variants, applied to the other 4 live
 # strategies (1-Minute, 5-Minute, Key-Levels, Expansion-Level) - owner:
@@ -171,11 +169,7 @@ def _ratchet_slug(play_type: str) -> str:
 
 # Old per-variant channels (10 categories x 2 channels), retired in favor
 # of the shared pair above.
-_OLD_RATCHET_CHANNEL_NAMES = set()
-for _variant in spy_scanner.SPY_RATCHET_VARIANTS:
-    _slug = _ratchet_slug(_variant["play_type"])
-    _OLD_RATCHET_CHANNEL_NAMES.add(f"ratchet-{_slug}-performance")
-    _OLD_RATCHET_CHANNEL_NAMES.add(f"ratchet-{_slug}-results")
+_OLD_RATCHET_CHANNEL_NAMES: set[str] = set()
 
 # Imported here rather than further down: DELETE_CHANNELS below needs the
 # retired-slug list, and a later import would leave it silently empty.

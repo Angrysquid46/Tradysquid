@@ -29,19 +29,6 @@ _ORIGINAL_CLOSED_ROWS = spy_scanner.closed_rows
 # to send it.
 SPY_0DTE_VARIANTS: tuple[tuple[str, str, str, str], ...] = ()
 
-# 10 more independently-tracked strategies - one per ratchet-floor variant.
-# Built from spy_scanner.SPY_RATCHET_VARIANTS (single source of truth for
-# the (step, stop) pairs) rather than hand-duplicated 10 times.
-RATCHET_VARIANTS = tuple(
-    (
-        variant["play_type"],
-        f"performance_ratchet_{variant['play_type'].removeprefix('SPY_RATCHET_').lower()}",
-        f"results_ratchet_{variant['play_type'].removeprefix('SPY_RATCHET_').lower()}",
-        f"{variant['label']} Strategy",
-    )
-    for variant in spy_scanner.SPY_RATCHET_VARIANTS
-)
-
 # The 4 non-ratchet live strategies - genuinely different strategies, not
 # variants of one idea, but sharing one dashboard/results channel pair now
 # too (owner: "do the ratchet thing but instead all the other trades
@@ -69,7 +56,7 @@ try:
 except Exception:   # pragma: no cover - import guard only
     NEW_STRATEGY_VARIANTS = ()
 
-STRATEGY_VARIANTS = OTHER_STRATEGY_VARIANTS + RATCHET_VARIANTS + NEW_STRATEGY_VARIANTS
+STRATEGY_VARIANTS = OTHER_STRATEGY_VARIANTS + NEW_STRATEGY_VARIANTS
 
 REPORT_ROUTES = {
     "daily_recap": "daily-recap",
@@ -118,18 +105,6 @@ for _play_type, _perf_logical, _results_logical, _label in NEW_STRATEGY_VARIANTS
         REPORT_ROUTES[_results_logical] = spy_scanner.CHANNEL_NAMES.get(
             _results_logical, _own
         )
-# All 10 ratchet variants now share one dashboard channel and one results
-# channel (owner: "all the ratchet stratagies in a single catagory instead
-# of 11 different channels") - same pattern as above, its own separate
-# shared pair.
-for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
-    REPORT_ROUTES[_perf_logical] = "ratchet-dashboard"
-    REPORT_ROUTES[_results_logical] = "ratchet-results"
-RATCHET_LEADERBOARD_LOGICAL = "ratchet_leaderboard"
-# #ratchet-dashboard was deleted with the 10 ratchet variants; a route to a
-# dead channel silently drops its card.
-REPORT_ROUTES.pop(RATCHET_LEADERBOARD_LOGICAL, None)
-
 REPORT_MARKERS = {
     "daily_recap": (
         "Daily Performance Index",
@@ -194,17 +169,6 @@ try:
     REPORT_MARKERS.update(_new_strategy_markers.report_markers())
 except Exception:   # pragma: no cover - import guard only
     pass
-for _play_type, _perf_logical, _results_logical, _label in RATCHET_VARIANTS:
-    REPORT_MARKERS[_perf_logical] = (
-        f"{_label} Monthly Performance Index",
-        f"{_label} Monthly Performance ·",
-        f"{_label} Monthly Trade History ·",
-    )
-    REPORT_MARKERS[_results_logical] = (
-        f"{_label} Results",
-        f"{_label} Trade History ·",
-    )
-REPORT_MARKERS[RATCHET_LEADERBOARD_LOGICAL] = ("Ratchet Strategy Leaderboard",)
 REPORT_MARKERS[STRATEGY_LEADERBOARD_LOGICAL] = ("Strategy Leaderboard",)
 
 STATE_PREFIXES = (
@@ -220,10 +184,6 @@ STATE_PREFIXES = (
     "key-levels-results",
     "expansion-performance",
     "expansion-results",
-) + tuple(
-    f"ratchet-{variant['play_type'].removeprefix('SPY_RATCHET_').lower().replace('_', '-')}-{suffix}"
-    for variant in spy_scanner.SPY_RATCHET_VARIANTS
-    for suffix in ("performance", "results")
 )
 
 
@@ -541,8 +501,6 @@ def format_variant_leaderboard(
     return "\n".join(lines)
 
 
-def format_ratchet_leaderboard(rows: list[dict[str, str]]) -> str:
-    return format_variant_leaderboard(RATCHET_VARIANTS, rows, "Ratchet Strategy Leaderboard")
 
 
 def format_strategy_leaderboard(rows: list[dict[str, str]]) -> str:
@@ -1006,14 +964,6 @@ def sync_reports(
     # A derived summary card, not a paginated per-variant report - no
     # coverage count to reconcile against, unlike every entry in the loop
     # above.
-    _require_upsert(
-        discord,
-        RATCHET_LEADERBOARD_LOGICAL,
-        state,
-        "report-v3:ratchet_leaderboard:index",
-        format_ratchet_leaderboard(rows),
-        "Ratchet Strategy Leaderboard",
-    )
     _require_upsert(
         discord,
         STRATEGY_LEADERBOARD_LOGICAL,

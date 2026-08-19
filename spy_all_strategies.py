@@ -56,11 +56,6 @@ def build_roster(conn):
         ("LIVE SPY_0DTE_5M", orb5, spy0dte_exit),
     ]
     # Ten separate traders on one shared signal.
-    for variant in ss.SPY_RATCHET_VARIANTS:
-        roster.append((
-            f"LIVE {variant['play_type']}", orb1,
-            ob.ratchet_rules(variant["step_pct"], variant["stop_pct"]),
-        ))
     roster.append((
         "LIVE SPY_KEY_LEVELS", variants["LIVE SPY_KEY_LEVELS"]["deployed rules"],
         ob.OptionExit(target_pct=100, stop_pct=-50, floor_trigger_pct=None,

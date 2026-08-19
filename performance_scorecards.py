@@ -380,14 +380,6 @@ def sync_reports(
     # base.sync_reports, which this function fully replaces once
     # installed) so it actually runs. Owner: "a dashboard so we can see
     # top performers."
-    _require_upsert(
-        discord,
-        base.RATCHET_LEADERBOARD_LOGICAL,
-        state,
-        "report-v5:ratchet_leaderboard:index",
-        base.format_ratchet_leaderboard(rows),
-        "Ratchet Strategy Leaderboard",
-    )
     # Same idea for the other 4 live strategies (1-Minute/5-Minute/
     # Key-Levels/Expansion-Level), ranked against each other in the shared
     # strategies-dashboard channel.
@@ -496,9 +488,7 @@ def install() -> None:
         return
     base.install()
     base.REPORT_VERSION = REPORT_VERSION
-    results_logical_names = ("results_1m", "results_5m", "results_key_levels", "results_expansion") + tuple(
-        results_logical for _, _, results_logical, _ in base.RATCHET_VARIANTS
-    )
+    results_logical_names = ("results_1m", "results_5m", "results_key_levels", "results_expansion")
     for logical_name in results_logical_names:
         base.REPORT_MARKERS[logical_name] = tuple(
             dict.fromkeys((*base.REPORT_MARKERS[logical_name], "Strategy Scorecard ·"))
