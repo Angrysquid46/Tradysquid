@@ -104,7 +104,6 @@ CHANNELS = [
     ChannelSpec("COMMUNITY", "general-chat", "The main member conversation channel."),
     ChannelSpec("LIVE TRADING DESK", "scanner-feed", "Every scanned ticker, filter result, and data timestamp."),
     ChannelSpec("LIVE TRADING DESK", "new-positions", "New paper positions that passed all active filters."),
-    ChannelSpec("LIVE TRADING DESK", "held-positions", "Updating cards for open paper positions only."),
     ChannelSpec("LIVE TRADING DESK", "wins", "Closed profitable paper positions."),
     ChannelSpec("LIVE TRADING DESK", "losses", "All other closed paper positions; no scratch outcome."),
     ChannelSpec("LIVE TRADING DESK", "trade-journal", "One complete lifecycle thread per paper trade.", 15),
@@ -202,6 +201,13 @@ DELETE_CHANNELS = {
     # of them lost $275k against the SPY_0DTE shape's $156k. Only the
     # locked top-15 strategies survive.
     "ratchet-dashboard", "ratchet-results",
+    # Retired 2026-08-19 - owner: "delete held positions as well since
+    # that's no longer active". Live cards moved to one held channel per
+    # strategy so each gets its own Discord rate-limit bucket; this shared
+    # channel had nothing left routing to it. No manual trade has ever been
+    # opened (0 SPY_MANUAL rows in the log), so nothing fell back to it
+    # either.
+    "held-positions",
     "qualified-trades", "scratches", "expired", "exit-alerts",
     "f-dashboard", "f-options-setups", "f-charts", "f-news-events",
     "f-research-performance", "vale-dashboard", "vale-options-setups",
@@ -234,7 +240,6 @@ DELETE_CATEGORIES = {
 CHANNEL_STARTERS = {
     "scanner-feed": "Runs every 15 minutes during regular market hours.",
     "new-positions": "Updates only when a paper setup passes every active filter.",
-    "held-positions": "Contains only currently open paper positions.",
     "wins": "Updates immediately when a tracked paper position closes profitably.",
     "losses": "Updates immediately when a tracked paper position closes without a profit.",
     "premarket": "Updated on weekday premarket research runs.",

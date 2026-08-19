@@ -242,10 +242,16 @@ def test_reset_refreshes_every_summary_dashboard_immediately():
         # Every live-trading-desk channel gets wiped directly, not driven
         # by trade IDs still present in the log.
         wiped = {c[1] for c in calls if c[0] in ("wipe_threads", "wipe_messages")}
+        # Live cards moved out of the single shared #held-positions channel
+        # into one channel per strategy, so a reset has to wipe each of
+        # those too - otherwise it reports success while leaving a stale
+        # HOLD card in every strategy channel.
+        held = {k for k in spy_scanner.CHANNEL_NAMES if k.startswith("held_")}
+        assert held, "no per-strategy held channels are registered"
         assert wiped == {
-            "forum", "qualified", "entry", "updates",
+            "forum", "qualified", "entry",
             "wins", "losses", "scratches", "expired",
-        }
+        } | held
 
         # refresh_all_summary_dashboards only owns ticker_results and
         # wins/losses/scratches now - performance_1m/results_1m/

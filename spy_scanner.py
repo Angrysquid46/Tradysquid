@@ -436,8 +436,11 @@ CHANNEL_NAMES = {
     # scan-activity content, not the channel meant to show real entries.
     "qualified": "scanner-feed",
     "entry": "new-positions",
-    "updates": "held-positions",
-    "exit": "held-positions",
+    # "updates" and "exit" both pointed at #held-positions, retired
+    # 2026-08-19 when live cards moved to one channel per strategy. Nothing
+    # ever posted to "exit" - it was only ever used for cleanup deletes -
+    # and "updates" is superseded by held_channel_key. Both keys are left
+    # unmapped so discover() does not keep hunting for a deleted channel.
     "wins": "wins",
     "losses": "losses",
     "scratches": "losses",
@@ -479,30 +482,43 @@ except Exception as _exc:   # pragma: no cover - import guard only
     print(f"new-strategy channel names unavailable: {_exc}", file=sys.stderr)
 
 
-# The shared channel every live card used to share. Still the route for
-# anything without a strategy of its own (manual trades), and the fallback
-# if the registry import above failed.
+# The single shared channel every live card used to write to. Retired once
+# each strategy got its own - see held_channel_key. Kept as a named constant
+# because the reset path and older report state still refer to it.
 SHARED_HELD_CHANNEL_KEY = "updates"
+
+_UNROUTED_HELD_PLAY_TYPES: set[str] = set()
 
 
 def held_channel_key(play_type: str) -> str:
-    """Logical channel for a live position card.
+    """Logical channel for a live position card, or "" if it has none.
 
     Discord rate-limits per channel. One shared channel meant every open
     card competed for a single bucket, so the refresh interval had to scale
     with the number of open positions. Each strategy now owns a channel, so
     each card has its own budget and refreshes at the floor.
 
-    Anything without its own strategy channel - manual trades especially -
-    keeps routing to the shared channel.
+    Returns "" rather than falling back to the retired shared channel: every
+    live play type has its own channel, so an empty result means a play type
+    that is no longer on the roster (or a registry import failure). Both
+    callers - upsert and delete - already treat an unknown channel as a
+    no-op, but a silent one is how a card goes missing without anyone
+    noticing, so the first occurrence per play type is reported.
     """
-    if not play_type:
-        return SHARED_HELD_CHANNEL_KEY
     try:
-        key = _new_strategy_channels.held_key(play_type)
+        key = _new_strategy_channels.held_key(play_type) if play_type else ""
     except Exception:   # pragma: no cover - registry import guard
-        return SHARED_HELD_CHANNEL_KEY
-    return key if key in CHANNEL_NAMES else SHARED_HELD_CHANNEL_KEY
+        key = ""
+    if key and key in CHANNEL_NAMES:
+        return key
+    if play_type not in _UNROUTED_HELD_PLAY_TYPES:
+        _UNROUTED_HELD_PLAY_TYPES.add(play_type)
+        print(
+            f"No held-position channel for play_type {play_type!r}; "
+            "its live card will not be posted.",
+            file=sys.stderr,
+        )
+    return ""
 
 TAG_KEYS = {
     "WATCHING",
@@ -571,8 +587,6 @@ AUTOMATED_CHANNEL_KEYS = [
     "sec_filings",
     "qualified",
     "entry",
-    "updates",
-    "exit",
     "wins",
     "losses",
     "scratches",
@@ -5693,7 +5707,17 @@ def reset_all_trade_data(discord: DiscordTracker, *, archive: bool) -> dict[str,
 
     report_state = read_report_state()
     cleared_cards = 0
-    for logical_name in ("qualified", "entry", "updates", "wins", "losses", "scratches", "expired"):
+    # Every per-strategy held channel is wiped too. Live cards moved out of
+    # the single shared channel into one channel per strategy, so wiping
+    # only the shared one would leave a stale HOLD card sitting in each
+    # strategy's channel after a reset claimed to have cleared everything.
+    held_channels = sorted(
+        key for key in CHANNEL_NAMES if key.startswith("held_")
+    )
+    for logical_name in (
+        "qualified", "entry", "wins", "losses",
+        "scratches", "expired", *held_channels,
+    ):
         try:
             cleared_cards += discord.wipe_channel_messages(logical_name)
         except DiscordError as exc:
@@ -6033,7 +6057,8 @@ def sync_closed_result_channels(
                 # lifecycle.
                 discord.delete_trade_message("entry", report_state, "entry", trade_id)
                 discord.delete_trade_message(
-                    "updates", report_state, "position", trade_id
+                    held_channel_key(row.get("play_type", "")),
+                    report_state, "position", trade_id,
                 )
                 discord.delete_trade_message("exit", report_state, "exit", trade_id)
                 trade_intelligence.acknowledge(
@@ -6044,7 +6069,10 @@ def sync_closed_result_channels(
             content = close_alert_text(row, stored_close_evaluation(row), link, summary_only=True)
             discord.upsert_trade_result(result_channel, report_state, trade_id, content)
             discord.delete_trade_message("entry", report_state, "entry", trade_id)
-            discord.delete_trade_message("updates", report_state, "position", trade_id)
+            discord.delete_trade_message(
+                held_channel_key(row.get("play_type", "")),
+                report_state, "position", trade_id,
+            )
             discord.delete_trade_message("exit", report_state, "exit", trade_id)
             mark_closed_result_routed(row, report_state)
             trade_intelligence.acknowledge(
@@ -6121,7 +6149,10 @@ def post_close(row: dict[str, str], evaluation: dict[str, Any], discord: Discord
     # and the result channel above - the new-positions/held-positions
     # channel cards have no reason to sit there permanently after that.
     discord.delete_trade_message("entry", report_state, "entry", row.get("trade_id", ""))
-    discord.delete_trade_message("updates", report_state, "position", row.get("trade_id", ""))
+    discord.delete_trade_message(
+        held_channel_key(row.get("play_type", "")),
+        report_state, "position", row.get("trade_id", ""),
+    )
     discord.delete_trade_message("exit", report_state, "exit", row.get("trade_id", ""))
     row["discord_status"] = row["outcome"]
     row["last_discord_signal"] = evaluation.get("signal", "CLOSE")
