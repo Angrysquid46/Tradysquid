@@ -1,4 +1,4 @@
-"""The suite must not write the live supervisor state file.
+"""The suite must not write live state files.
 
 Reproduces the 2026-08-20 finding directly: after a full-suite run the real
 `state/supervisor-state.json` contained `"service_health": {"fake-service":
@@ -93,3 +93,29 @@ def test_the_fake_service_scenario_does_not_touch_the_live_file() -> None:
     assert json.loads(supervisor.DEPLOY_STATE_PATH.read_text(encoding="utf-8"))[
         "service_health"
     ] == {"fake-service": True}
+
+
+# ---------------------------------------------------------------------------
+# The activity log, same class of bug
+# ---------------------------------------------------------------------------
+
+def test_the_suite_cannot_write_to_the_live_activity_log() -> None:
+    """Fails without the conftest redirect.
+
+    Within minutes of shipping activity_log, a fixture put a FORD contract
+    (F260807C00015000, play_type REGULAR) into production's activity.jsonl,
+    and it was read as evidence that erased multi-ticker code was still
+    running trades. It came from test_local_information_engine.py.
+
+    activity_log.record is called from candidate_to_row, so EVERY test that
+    builds a trade row appended to the production record. A log that exists
+    to be read as evidence must not be writable by tests.
+
+    Deliberately lives here rather than in test_activity_log.py: that
+    module has its own autouse fixture redirecting LOG_PATH, so the same
+    assertion there passes with or without the guard and proves nothing.
+    """
+    import activity_log
+
+    live = Path(__file__).resolve().parent / "state" / "activity.jsonl"
+    assert activity_log.LOG_PATH.resolve() != live.resolve()
