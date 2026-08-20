@@ -152,6 +152,20 @@ It verifies every condition below against the LIVE system and exits
 non-zero if any fail. Paste its output instead of asserting the work is
 finished. If it says NOT DONE, the work is not done.
 
+**An approved plan is a contract. Every bullet ships in the same pass.**
+
+When the owner approves a plan, all of it is the task. Doing the biggest
+item and reporting the rest as "still outstanding" is a failed task being
+described as progress. There is no such thing as delivering most of it.
+
+This happened with evolve: the approved plan said reset-on-blowout AND a
+guard stopping tests posting to Discord AND deleting the stale cards. The
+reset shipped; the other two were handed back as leftovers. The owner had
+to ask why - which is the redundancy every rule here exists to remove.
+
+If one item genuinely cannot be finished, say so BEFORE starting, not
+after delivering the rest. "I did part of it" is never the report.
+
 **Definition of done for this repo:** `deployed_sha` == `origin/main`,
 `last_update_status` == `DEPLOYED`, the root suite shows no NEW failures
 against a baseline worktree, the 252-test deploy gate is green, and the
