@@ -129,6 +129,20 @@ class DiscordPostError(Exception):
 
 
 def enabled() -> bool:
+    # A test run must never reach the real server. evolve's unit fixtures
+    # use trade_id "T1" with entry 0.50 / exit 0.20, and those cards were
+    # found sitting in the live #evolve-losses channel showing a fake $970
+    # balance and blank strike/expiration - indistinguishable at a glance
+    # from a real losing trade. Credentials are present in this process
+    # because .env is loaded for the real bot, so having a token is not
+    # evidence that posting is wanted.
+    #
+    # Opt back in deliberately with EVOLVE_ALLOW_TEST_DISCORD=1 when a test
+    # genuinely means to hit Discord.
+    if "PYTEST_CURRENT_TEST" in os.environ and not os.environ.get(
+        "EVOLVE_ALLOW_TEST_DISCORD"
+    ):
+        return False
     return bool(BOT_TOKEN and GUILD_ID)
 
 
