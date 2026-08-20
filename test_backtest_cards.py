@@ -9,6 +9,8 @@ this surface stays out of the daily/weekly/monthly performance reporting.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import backtest_cards as bc
 import local_information_engine as engine
 import spy_scanner
@@ -182,3 +184,24 @@ def test_the_time_stop_is_measured_from_entry_not_from_the_open():
     rules = ob.OptionExit(115.0, -75.0, None, None, time_stop_minutes=30)
     assert ob._time_stop(entry_minute=300, minute=310, rules=rules) is False
     assert ob._time_stop(entry_minute=300, minute=330, rules=rules) is True
+
+
+def test_metadata_is_not_returned_as_a_strategy(monkeypatch) -> None:
+    """The card job iterates load_results() directly, so a metadata key
+    leaking through posts a card titled "## _measurement".
+
+    Uses tempfile rather than pytest's tmp_path: its shared pytest-of-<user>
+    base raises PermissionError on this checkout (see conftest.py).
+    """
+    import json as _json
+    import tempfile
+
+    path = Path(tempfile.mkdtemp(prefix="backtest-cards-")) / "cards.json"
+    path.write_text(_json.dumps({
+        "SPY_GAP_CONT_50": {"trades": 10, "win_rate": 50.0},
+        "_measurement": {"sessions_scored": 1007, "note": "provenance"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(bc, "RESULTS_PATH", path)
+
+    assert list(bc.load_results()) == ["SPY_GAP_CONT_50"]
+    assert bc.load_measurement()["sessions_scored"] == 1007
