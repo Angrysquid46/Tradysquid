@@ -35,6 +35,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import spy_scanner as s  # noqa: E402 - path must be set up first
 
+import json
+import logic_proposals
+import apply_proposal
 import bankroll
 import discord_post
 import logic_state
@@ -465,6 +468,110 @@ def find_candidate(timestamp, spot_price: float, play_type: str = PLAY_TYPE) -> 
     }
 
 
+DECLINE_LOG = STATE_DIR / "decline_log.txt"
+
+
+def _log_decline(reason: str) -> None:
+    """Why a cycle did not open, appended for the owner to read.
+
+    Every decline used to be a bare `return None`. That is how five days of
+    no trades looked identical to five days of no setups.
+    """
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = s.now_ct().isoformat(timespec="seconds")
+        with DECLINE_LOG.open("a", encoding="utf-8") as handle:
+            handle.write("[" + stamp + "] " + reason + chr(10))
+    except OSError:
+        pass
+
+ARCHIVE_DIR = STATE_DIR / "archive"
+RUN_HISTORY = STATE_DIR / "run_history.jsonl"
+
+
+def _archive_run(rows, bank, cause):
+    """Append the finished run's trades to an immutable per-run file.
+
+    trades.csv is live and rewritten every cycle; anything only stored
+    there can be lost to a bad write. The archive is append-only and keyed
+    by run, so the full history stays readable no matter what happens to
+    the working log.
+    """
+    run = int(bank.get("run_number", 1))
+    mine = [r for r in rows if str(r.get("run_number") or "") == str(run)]
+    try:
+        ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        if mine:
+            import csv
+            dest = ARCHIVE_DIR / ("run_%d.csv" % run)
+            with dest.open("w", encoding="utf-8", newline="") as fh:
+                w = csv.DictWriter(fh, fieldnames=list(mine[0].keys()))
+                w.writeheader()
+                w.writerows(mine)
+    except OSError:
+        pass
+    return mine
+
+
+def _run_postmortem(mine, bank, cause):
+    """What this run did, so the change that follows answers THIS failure.
+
+    Continuous tuning already reads every closed trade ever. That cannot
+    tell you what went wrong in the run that just died - which is the
+    question worth answering when starting the next one.
+    """
+    closed = [r for r in mine if str(r.get("outcome") or "").upper() not in ("", "OPEN")]
+    wins = [r for r in closed if str(r.get("outcome")).upper() == "WIN"]
+    pl = [s.as_float(r.get("realized_pl_dollars"), 0.0) or 0.0 for r in closed]
+    losses = [x for x in pl if x < 0]
+    reasons = {}
+    for r in closed:
+        key = str(r.get("last_signal") or r.get("exit_reason") or "?")
+        reasons[key] = reasons.get(key, 0) + 1
+    return {
+        "run_number": int(bank.get("run_number", 1)),
+        "ended_because": cause,
+        "trades": len(closed),
+        "win_rate": round(len(wins) / len(closed) * 100, 1) if closed else 0.0,
+        "net_pl": round(sum(pl), 2),
+        "worst_loss": round(min(losses), 2) if losses else 0.0,
+        "avg_loss": round(sum(losses) / len(losses), 2) if losses else 0.0,
+        "exit_reasons": reasons,
+        "ended_at": s.now_ct().isoformat(timespec="seconds"),
+    }
+
+
+def _evolve_after_blowout(rows, bank, cause):
+    """Archive the dead run, learn from it, apply the change, record it.
+
+    Owner: "it applies automatically, I don't want it to ask me to improve
+    itself ... let it run wild." So the proposal path runs unattended here.
+    Every applied change is written to run_history.jsonl with the
+    post-mortem that motivated it, so a run that gets WORSE is traceable to
+    the exact change that did it - the one thing the owner did ask for.
+
+    Never raises: a failure to learn must not stop the next run starting.
+    """
+    mine = _archive_run(rows, bank, cause)
+    report = _run_postmortem(mine, bank, cause)
+    applied = None
+    try:
+        cycle = logic_proposals.run_proposal_cycle()
+        pid = cycle.get("proposal_id") or (cycle.get("proposal") or {}).get("id")
+        if pid:
+            applied = apply_proposal.apply_proposal(str(pid))
+    except Exception as exc:
+        applied = {"error": "%s: %s" % (type(exc).__name__, str(exc)[:160])}
+    report["applied"] = applied
+    report["active_variant_after"] = logic_state.active_variant_params()
+    try:
+        RUN_HISTORY.parent.mkdir(parents=True, exist_ok=True)
+        with RUN_HISTORY.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(report, default=str) + chr(10))
+    except OSError:
+        pass
+    return report
+
 def _try_open_new_position(
     rows: list[dict[str, str]], bank: dict[str, Any], timestamp, spot_price: float
 ) -> tuple[dict[str, str] | None, dict[str, Any]]:
@@ -479,6 +586,7 @@ def _try_open_new_position(
         return None, bank
     found = find_candidate(timestamp, spot_price)
     if not found["qualified"]:
+        _log_decline(f"no qualified candidate: {found.get('reason', 'signal did not fire')}")
         return None, bank
     best = found["candidate"]
     context = found["context"]
@@ -506,6 +614,22 @@ def _try_open_new_position(
     size_dollars = bankroll.position_size_dollars(bank, self_tuning.current_position_size_pct())
     contracts = bankroll.contracts_affordable(size_dollars, best["entry_price"])
     if contracts < 1:
+        # Cannot fund a single contract: this run is over. Previously a
+        # silent `return None`, which froze the bot for five days from
+        # 2026-08-14 - it could not open, so it never closed, so
+        # credit_exit (the only reset trigger) was never reached again.
+        # Owner: "when it can't afford a trade then that should cause a
+        # reset ... so it can learn what it fucked up and try other things."
+        # Closed trades keep their run_number and the learning path reads
+        # them all, so the money resets without losing the lesson.
+        _evolve_after_blowout(rows, bank, "cannot fund a contract")
+        bank = bankroll.start_new_run(bank)
+        _log_decline(
+            f"blown out - {size_dollars:.2f} position size cannot fund one "
+            f"{best['entry_price']:.2f} contract ({best['entry_price'] * 100:.0f} "
+            f"per contract); starting run {bank['run_number']} at "
+            f"{bank['balance']:.0f}"
+        )
         return None, bank
     cost = round(best["entry_price"] * 100 * contracts, 2)
 
