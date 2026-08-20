@@ -52,19 +52,23 @@ def main() -> None:
     try:
         roster = build_roster(conn)
         print(f"traders to score: {len(roster)}", flush=True)
-        tradeable = om.sessions_with_zero_dte(option_conn)
+        # See spy_option_report.run - eod_chain cannot supply an IV.
+        import option_session_inputs as osi
+
+        chain_sessions = om.sessions_with_zero_dte(option_conn)
         trades = {name: [] for name, _, _ in roster}
         vol_cache: dict[str, float | None] = {}
         scored = 0
 
         for session, rows in bt.load_sessions(conn):
-            if session not in tradeable:
+            if not osi.zero_dte_listed(session, chain_sessions=chain_sessions):
                 continue
             if session not in vol_cache:
-                vol_cache[session] = om.implied_vol_for_session(option_conn, session)
-            vol = vol_cache[session]
-            if not vol:
+                vol_cache[session] = osi.session_inputs(session, option_conn)
+            inputs = vol_cache[session]
+            if inputs is None:
                 continue
+            vol = inputs.vol
             scored += 1
             signal_cache: dict[int, list] = {}
             for name, fn, rules in roster:

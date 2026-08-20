@@ -62,21 +62,21 @@ Each strategy under **its own** exit rules, one contract, $0.04/contract commiss
 
 | Strategy | Trades | Win% | Break-even | $/trade |
 |---|---|---|---|---|
-| SPY_GAP_CONT_50 | 1,743 | 42.5% | 31.3% | +8.47 |
-| SPY_FAILED_BREAK | 906 | 42.6% | 37.8% | +2.85 |
-| SPY_ORB_IMMEDIATE | 418 | 43.1% | 37.1% | +4.67 |
-| SPY_SWEEP_10 | 704 | 38.4% | 33.2% | +3.20 |
-| SPY_VWAP_RECLAIM | 557 | 37.5% | 32.1% | +4.54 |
-| SPY_MOMENTUM_ADX25 | 5,803 | 41.2% | 36.2% | +2.85 |
-| SPY_TOD_MIDDAY | 2,809 | 38.2% | 31.3% | +4.66 |
-| SPY_CONFLUENCE_4 | 2,507 | 41.8% | 35.6% | +3.43 |
-| SPY_TOD_FINAL30 | 281 | 44.8% | 39.8% | +2.00 |
-| SPY_MTF_4OF4 | 1,457 | 38.0% | 32.4% | +3.32 |
-| SPY_EXHAUSTION_1ATR | 307 | 43.0% | 34.5% | +4.06 |
-| SPY_FIRST_PULLBACK | 338 | 40.5% | 39.3% | +0.65 |
-| SPY_OPENING_GAP_FADE | 13 | 53.8% | 32.6% | +15.69 |
-| SPY_KEY_LEVELS | 1,591 | 42.4% | 21.8% | +26.86 |
-| SPY_COMPRESSION_3BAR | 155 | 50.3% | 37.2% | +6.62 |
+| SPY_GAP_CONT_50 | 406 | 26.6% | 41.8% | -29.90 |
+| SPY_FAILED_BREAK | 653 | 21.1% | 46.4% | -34.18 |
+| SPY_ORB_IMMEDIATE | 511 | 24.5% | 40.3% | -30.34 |
+| SPY_SWEEP_10 | 568 | 18.5% | 43.7% | -34.81 |
+| SPY_VWAP_RECLAIM | 637 | 21.0% | 43.3% | -41.19 |
+| SPY_MOMENTUM_ADX25 | 1,715 | 22.3% | 42.5% | -29.05 |
+| SPY_TOD_MIDDAY | 1,078 | 17.3% | 45.3% | -39.34 |
+| SPY_CONFLUENCE_4 | 825 | 19.9% | 45.0% | -39.55 |
+| SPY_TOD_FINAL30 | 482 | 26.1% | 42.8% | -6.33 |
+| SPY_MTF_4OF4 | 766 | 17.0% | 45.2% | -32.91 |
+| SPY_EXHAUSTION_1ATR | 351 | 31.9% | 43.5% | -5.74 |
+| SPY_FIRST_PULLBACK | 429 | 27.7% | 42.2% | -20.14 |
+| SPY_OPENING_GAP_FADE | 14 | 42.9% | 48.7% | -3.09 |
+| SPY_KEY_LEVELS | 4,755 | 29.6% | 47.9% | -12.36 |
+| SPY_COMPRESSION_3BAR | 192 | 17.2% | 46.0% | -27.15 |
 
 ## Rules that apply to every strategy
 

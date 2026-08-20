@@ -63,7 +63,14 @@ def run(conn, option_conn, *, keys=None, exit_shape=None, exit_shapes=None,
         if family in variants and variant in variants[family]:
             wanted[key] = variants[family][variant]
 
-    tradeable = om.sessions_with_zero_dte(option_conn)
+    # Volatility comes from option_session_inputs, never from eod_chain.
+    # That table is an end-of-day snapshot, so its 0DTE implied vols are
+    # solved at expiry and collapse toward zero - it priced 480 of 988
+    # sessions under 3% vol, which is what made every result here read
+    # positive. See option_session_inputs.measured_session_iv.
+    import option_session_inputs as osi
+
+    chain_sessions = om.sessions_with_zero_dte(option_conn)
     rules = exit_shape or ob.OptionExit()
 
     trades: dict[str, list] = defaultdict(list)
@@ -71,13 +78,14 @@ def run(conn, option_conn, *, keys=None, exit_shape=None, exit_shapes=None,
     sessions_scored = 0
 
     for session, rows in bt.load_sessions(conn, limit=limit):
-        if session not in tradeable:
+        if not osi.zero_dte_listed(session, chain_sessions=chain_sessions):
             continue
         if session not in vol_cache:
-            vol_cache[session] = om.implied_vol_for_session(option_conn, session)
-        vol = vol_cache[session]
-        if not vol:
+            vol_cache[session] = osi.session_inputs(session, option_conn)
+        inputs = vol_cache[session]
+        if inputs is None:
             continue
+        vol = inputs.vol
         sessions_scored += 1
         for key, signal_fn in wanted.items():
             signals = signal_fn(rows)
