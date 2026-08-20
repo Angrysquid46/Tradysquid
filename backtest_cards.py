@@ -34,7 +34,7 @@ RESULTS_PATH = Path("state/backtest_cards.json")
 CHANNEL_KEY = "backtest_results"
 
 
-def load_results() -> dict[str, Any]:
+def _load_raw() -> dict[str, Any]:
     if not RESULTS_PATH.exists():
         return {}
     try:
@@ -42,6 +42,26 @@ def load_results() -> dict[str, Any]:
     except (OSError, ValueError):
         return {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+def load_results() -> dict[str, Any]:
+    """Strategy entries only.
+
+    The file also carries an underscore-prefixed `_measurement` block -
+    when the run happened, how many sessions, and how many had a measured
+    IV rather than a VIX proxy. The card job iterates whatever this
+    returns, so leaving metadata in would post a card titled
+    "## _measurement" to the channel.
+    """
+    return {key: value for key, value in _load_raw().items()
+            if not key.startswith("_")}
+
+
+def load_measurement() -> dict[str, Any]:
+    """Provenance for the stored numbers: when, how many sessions, and how
+    many of them had a genuinely measured implied volatility."""
+    block = _load_raw().get("_measurement")
+    return block if isinstance(block, dict) else {}
 
 
 def save_results(results: dict[str, Any]) -> None:
