@@ -253,6 +253,31 @@ ENTRY_WINDOW_SENSITIVITY = (
     "t=-0.64 -> +0.27), so the result is not an artefact of the window."
 )
 
+def build_live_variants(conn) -> dict[str, dict[str, SignalFn]]:
+    """The live Discord strategies, as backtestable entry signals.
+
+    Restored 2026-08-20. This function was deleted along with the retired
+    SPY_EXPANSION_LEVEL strategy in #274, but `spy_backtest_report.
+    all_variants` still calls it, so every option-backtest entry point
+    that passes a connection - spy_option_report.run, run_own_exits,
+    spy_all_strategies - died with AttributeError. Nothing noticed because
+    nothing tests them.
+
+    Only SPY_KEY_LEVELS is here now. The ORB and expansion entries this
+    used to return were strategies the system no longer runs, and putting
+    them back would resurrect exactly what #274 and #148 erased. The other
+    14 live strategies are not adapters at all: their signal callables are
+    already in `spy_live_new_strategies.NEW_STRATEGY_SPECS`, which is what
+    a caller should use for those.
+    """
+    import spy_intraday_features as sif
+
+    session_ohlc = sif.all_session_ohlc(conn)
+    return {
+        "LIVE SPY_KEY_LEVELS": {"deployed rules": live_key_levels(daily_sma200(session_ohlc))},
+    }
+
+
 EXIT_SHAPES_NEED_OPTION_MODEL = (
     "Every live exit is defined in option-premium percent - the premium exit's "
     "step_pct/stop_pct floor. None of those can be measured from underlying "

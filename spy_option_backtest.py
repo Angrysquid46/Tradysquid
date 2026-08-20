@@ -56,6 +56,16 @@ class OptionExit:
     floor_trigger_pct: float | None = 30.0   # one-time floor raise (SPY_0DTE)
     floor_pct: float | None = -15.0
     ratchet_stop_pct: float | None = None
+    # Restored 2026-08-20. #281 removed this field while erasing the
+    # ratchet STRATEGIES, but left both readers behind: _exit_signal opens
+    # with `if rules.step_pct` and ratchet_rules() still passes it. The
+    # result was that simulate_option_trades raised AttributeError on every
+    # single call - the whole option backtest engine was dead, and no test
+    # touched it, so nothing said so. A ratchet floor is still a legitimate
+    # exit SHAPE to measure even though no strategy runs one live, which is
+    # what ratchet_rules() exists for. Default None, so every non-ratchet
+    # exit takes the same branch it always did.
+    step_pct: float | None = None
     # SPY_KEY_LEVELS triggers on the UNDERLYING, not on option premium: a
     # stop at the key level (0.15% buffer) and a target at 2R. P/L is still
     # marked off the option, which is what realised money is - only the
