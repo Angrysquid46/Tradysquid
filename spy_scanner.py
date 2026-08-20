@@ -3151,9 +3151,30 @@ def _preserve_closed_trades(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     CLOSED on disk can never be written back as OPEN. Any other field may
     be overwritten normally.
 
-    A trade_id absent from `rows` entirely is left alone rather than
-    re-added, so a deliberate purge (reset_all_trade_data) still works.
+    A trade_id absent from `rows` is RESTORED, not dropped - unless the
+    write is a deliberate purge (`rows` empty), which is how
+    reset_all_trade_data clears everything.
+
+    That second invariant was missing and cost four trades on 2026-08-20.
+    SPY-20260820-004 through -007 were opened by the entry scan, their
+    cards posted to Discord, and then they vanished from the CSV entirely:
+    the log went 001, then 007, then back to 002. #s06-momentum-adx25-held
+    was left showing a HOLD card for -007, frozen at 10:46, for a trade
+    that no longer existed anywhere on disk.
+
+    Same cross-process race as above, different symptom.
+    closed_position_cleanup_job reads the log, spends seconds syncing
+    journals and result channels over the network, then writes its copy
+    back - and the entry scan runs every minute inside that window. The
+    original guard only stopped a CLOSED trade being reopened, so an OPEN
+    trade the stale writer had never seen was silently deleted instead.
+
+    Restoring is safe because no caller removes a single row on purpose.
+    Every writer either appends or mutates in place; the only intentional
+    deletion in the codebase is write_log([]).
     """
+    if not rows:
+        return rows          # deliberate purge - reset_all_trade_data
     try:
         existing = read_log()
     except Exception:
@@ -3163,8 +3184,8 @@ def _preserve_closed_trades(rows: list[dict[str, str]]) -> list[dict[str, str]]:
         for row in existing
         if row.get("trade_id") and (row.get("outcome") or "").upper() not in ("", "OPEN")
     }
-    if not closed_on_disk:
-        return rows
+    # NOTE: no early return when closed_on_disk is empty - the
+    # lost-update restore below applies whether or not anything has closed.
     protected: list[dict[str, str]] = []
     for row in rows:
         trade_id = row.get("trade_id")
@@ -3178,6 +3199,20 @@ def _preserve_closed_trades(rows: list[dict[str, str]]) -> list[dict[str, str]]:
             protected.append(disk_row)
             continue
         protected.append(row)
+
+    # Anything on disk this writer never saw is a lost update, not a
+    # deletion. Restored at the end, which is also where it belongs: the
+    # rows a stale writer misses are by definition the newest ones.
+    seen = {row.get("trade_id") for row in rows if row.get("trade_id")}
+    for disk_row in existing:
+        trade_id = disk_row.get("trade_id")
+        if trade_id and trade_id not in seen:
+            print(
+                f"restoring trade {trade_id} - absent from a stale write "
+                f"that would have deleted it",
+                file=sys.stderr,
+            )
+            protected.append(disk_row)
     return protected
 
 
