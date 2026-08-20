@@ -60,11 +60,15 @@ def test_seeded_sandbox_still_reads_like_the_real_state(
 
 def test_the_fake_service_scenario_does_not_touch_the_live_file() -> None:
     """The exact path that corrupted the file on 2026-08-20."""
-    # Importing this module is what rebinds supervisor.ensure_services to
-    # the state-writing wrapper - the same thing test_simple_upgrade_flow
-    # does, which is how unrelated tests inherited the write.
-    importlib.import_module("run_supervisor_simple")
-    assert supervisor.ensure_services.__module__ == "run_supervisor_simple"
+    # Call run_supervisor_simple.ensure_services directly rather than
+    # supervisor.ensure_services. Both run_supervisor_simple and
+    # run_supervisor_resilient rebind that name at import, so which wrapper
+    # is installed depends on which module a given session imported first -
+    # and the resilient one runs an engine-acceptance probe with real
+    # network and Discord calls, which has no place in a unit test. This is
+    # the function whose write_state call put "fake-service" in the live
+    # file, so it is the one worth pinning.
+    simple = importlib.import_module("run_supervisor_simple")
 
     process = Mock()
     process.pid = 40001
@@ -77,7 +81,7 @@ def test_the_fake_service_scenario_does_not_touch_the_live_file() -> None:
     supervisor.PROCESSES = {"fake-service": process}
     try:
         with patch.object(supervisor, "discord_post"):
-            supervisor.ensure_services()
+            simple.ensure_services()
     finally:
         supervisor.SERVICES = original_services
         supervisor.PROCESSES = original_processes
