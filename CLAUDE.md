@@ -33,27 +33,55 @@ This is a TRANSLATION, not an echo. Repeating the words back is useless.
 The job is to state which part of THIS system the request lands on, so the
 fix that gets built is coherent with how the code actually works:
 
-    You want:    <the outcome, in plain terms>
-    In this system that means:
-                 <named files, functions, code paths, channels, jobs>
-    Done when:   <the observable end state, checkable>
-    Not doing:   <deliberately excluded, and why>
+**The owner reads this on a phone.** That is not a style note, it is the
+constraint. Four things are unreadable on a narrow screen, and all four
+were being done at once:
 
-Worked example. "the boys did bad today, fix it" is not a spec. Translated:
+- indented blocks, which markdown renders as CODE - no wrapping, so they
+  run off the right edge
+- prose hard-wrapped at 72 characters, which re-wraps into ragged
+  half-lines
+- wide monospace tables
+- long paragraphs
 
-    You want:    strategies to stop losing on trades they never chose
-    In this system that means:
-                 - entry: scan_new_strategy_entries + the /force-* commands
-                   in discord_command_bot, which bypass signals entirely
-                 - selection: scan_new_strategy_candidates, one shared delta
-                   band for all 14, every caller taking candidates[0]
-                 - exit: evaluate_open_new_strategy_row, whose quote gate
-                   returns HOLD before the time stop is ever evaluated
-    Done when:   a forced entry cannot open outside market hours or on an
-                 expired contract, and a time stop fires on elapsed minutes
-                 regardless of quote quality
-    Not doing:   per-strategy delta bands - that needs measurement, not a
-                 guess at what looks reasonable
+So: short lines, bold labels, no indented blocks, no wide tables, no
+blockquotes. Write the translation like this:
+
+**You want** - the outcome, one line.
+
+**In this system** - the named files, functions, channels or jobs.
+Bullets if there is more than one.
+
+**Done when** - the observable end state.
+
+**Not doing** - what is excluded, and why.
+
+Worked example. "the boys did bad today, fix it" is not a spec:
+
+**You want** - strategies to stop losing on trades they never chose.
+
+**In this system**
+
+- `scan_new_strategy_entries` and the `/force-*` commands, which bypass
+  signals entirely
+- `scan_new_strategy_candidates` - one shared delta band, every caller
+  taking `candidates[0]`
+- `evaluate_open_new_strategy_row` - its quote gate returns HOLD before
+  the time stop is ever reached
+
+**Done when** - a forced entry cannot open after hours or on an expired
+contract, and a time stop fires on elapsed minutes regardless of quote
+quality.
+
+**Not doing** - per-strategy delta bands. That needs measurement, not a
+guess.
+
+Keep it short. A translation longer than the answer would have been is its
+own kind of unreadable - it is a check that you understood the request,
+not a design document.
+
+These rules apply to EVERY reply, not only translations. If the owner has
+to scroll sideways or squint, the content did not arrive.
 
 If the translation is wrong, the owner corrects four lines instead of hours
 of work. That only holds if it is unconditional - the one skipped for being
