@@ -62,8 +62,21 @@ what doesn't belong" is four words and got answered eight different ways in
 one day, because it was never translated into which files, which channels,
 which surfaces.
 
-Translating is NOT asking permission. Translate, then do the work in the
-same reply, unless the plan rule below applies.
+**Then STOP. Wait for approval before doing anything.**
+
+The order is: owner asks -> you rewrite -> owner approves -> you work. The
+rewrite is a checkpoint, not a preamble to charging ahead in the same
+reply. Post the translation and nothing else. No tool calls, no edits, no
+reads, no "while I was at it".
+
+This applies to EVERY message, including questions. "Is it done?" gets a
+translation and a stop, same as "delete the package". No exceptions for
+small, obvious, urgent, or already-discussed. If the owner has to scroll
+past tool output to find the rewrite, the rewrite did not happen.
+
+Once the owner approves - "yes", "go", "do it", "finish it" - execute the
+whole thing end to end without stopping again. Approval covers the work as
+translated; it does not need re-asking at each step.
 
 **Then plan, unless it is a single obvious edit.** Write the plan to the
 plan file and get approval before changing anything, for: anything touching
