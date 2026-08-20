@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 import discord_post
 
 
@@ -20,6 +22,22 @@ def _fake_response(status_code: int, json_body=None, content=b"{}"):
 
 def _reset_cache():
     discord_post._channel_cache = {}
+
+
+
+@pytest.fixture(autouse=True)
+def _allow_discord_in_this_module(monkeypatch):
+    """This module exercises the posting logic itself, with `_request`
+    mocked - so it opts past the guard that stops the rest of the suite
+    reaching the live server.
+
+    The guard exists because evolve's fixtures posted seven fake "T1"
+    trades into the real #evolve-losses channel, where they were
+    indistinguishable from real losing trades. Opting in here is safe only
+    because every test below replaces the transport; nothing in this file
+    may perform a real request.
+    """
+    monkeypatch.setenv("EVOLVE_ALLOW_TEST_DISCORD", "1")
 
 
 def test_enabled_is_false_without_credentials():

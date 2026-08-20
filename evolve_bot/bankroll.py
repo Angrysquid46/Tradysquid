@@ -120,23 +120,60 @@ def credit_exit(state: dict[str, Any], proceeds_dollars: float) -> dict[str, Any
         state["peak_balance"] = STARTING_BALANCE
     return state
 
-def blown_out(state: dict[str, Any], position_size: float,
-              premium_per_contract: float) -> bool:
-    """True when the run can no longer fund a single contract.
+def blown_out(state: dict[str, Any], premium_per_contract: float) -> bool:
+    """True when the ACCOUNT cannot fund a single contract.
 
-    RESET_FLOOR alone is not a sufficient bankruptcy test. A run can sit
-    far above it and still be unable to trade: on 2026-08-14 the balance
-    was $478 with a tuned 5% size, giving $23.90 per trade against
-    contracts costing $46-$100. contracts_affordable correctly returned 0,
-    the engine silently declined, and because it never opened it never
-    closed - so credit_exit, the only place a reset could fire, was never
-    reached again. The run froze for five days with no trades and no
-    signal that anything was wrong.
+    Judges the BALANCE, not the position size. That distinction is the
+    whole bug: this used to ask whether `position_size` could fund a
+    contract, and a 5% size on a healthy $1,000 balance is $50 against
+    0DTE contracts costing $109-$177. So a brand-new run at full starting
+    balance declared itself bankrupt on its first candidate, reset to
+    $1,000, and did it again - 10 times on 2026-08-20 alone, with no trade
+    taken since 2026-08-14. Every reset logged "blown out" while the
+    account was untouched at $1,000.
 
-    Functional bankruptcy is "cannot afford to participate", not "balance
-    below $25".
+    Being unable to afford a contract at 5% of a full bankroll is a SIZING
+    problem, not bankruptcy. Bankruptcy is when the money is gone.
     """
-    return contracts_affordable(position_size, premium_per_contract) < 1
+    if premium_per_contract <= 0:
+        return False
+    return state["balance"] < premium_per_contract * 100
+
+
+def contracts_for_trade(state: dict[str, Any], risk_budget: float,
+                        premium_per_contract: float,
+                        stop_pct: float = 1.0) -> int:
+    """How many contracts to buy, sized by RISK rather than by notional.
+
+    The old rule sized by notional: 5% of the balance was the most that
+    could be spent, so a $1,000 account could spend $50 - against SPY 0DTE
+    contracts that cost $40 to $500. Owner, correctly: "why limit it to 5%
+    ... when options will range from 40 to 500 dollars." At that size the
+    bot could not buy anything and froze for six days.
+
+    5% of the account is a sensible thing to RISK. It is not a sensible
+    thing to spend, because a long option's loss is bounded by the stop,
+    not by what it cost. With the active -20% stop, a $177 contract puts
+    $35 at risk - 3.5% of a $1,000 account. Spending $177 and risking $177
+    are only the same thing if the stop never fires.
+
+    So: risk_budget is the most this trade may LOSE, and the number of
+    contracts is whatever keeps the stop-loss inside it.
+
+    An option is indivisible, so when the budget lands between zero and one
+    contract the answer is one contract as long as the ACCOUNT can fund it -
+    the alternative is never trading, which is the state this replaces.
+    Returns 0 only when the balance genuinely cannot buy a single contract.
+    """
+    if premium_per_contract <= 0:
+        return 0
+    if blown_out(state, premium_per_contract):
+        return 0
+    cost_per_contract = premium_per_contract * 100
+    loss_per_contract = cost_per_contract * max(min(stop_pct, 1.0), 0.01)
+    affordable_by_balance = int(state["balance"] // cost_per_contract)
+    by_risk = int(risk_budget // loss_per_contract)
+    return max(min(by_risk, affordable_by_balance), 1)
 
 
 def start_new_run(state: dict[str, Any]) -> dict[str, Any]:
