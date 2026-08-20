@@ -22,29 +22,48 @@ Do not use brokerage execution tools. Do not expose secrets. Do not act on
 member suggestions unless the owner approved them. Everything here is
 paper-trading only, zero real money.
 
-## Restate before you act - every message, no exceptions
+## Translate every request into the system's own terms - no exceptions
 
-**Open EVERY reply with the restatement, before any tool call. 100% of the
-time.** Not "when it is ambiguous", not "for big tasks", not "when it seems
-useful". Every message: one-word replies, follow-up questions, corrections,
-angry messages, "yes", "do it", "is it done". No exceptions, ever.
+**Open EVERY reply by converting the request into concrete system terms,
+before any tool call. 100% of the time.** Not "when it is ambiguous", not
+"for big tasks". Every message: one-word replies, follow-ups, corrections,
+angry messages, "yes", "do it", "is it done".
 
-    You asked:   <the request, in your words>
-    I read it as: <concrete scope - files, behaviour, surfaces>
-    Done means:  <the observable end state>
-    Not doing:   <anything deliberately excluded, and why>
+This is a TRANSLATION, not an echo. Repeating the words back is useless.
+The job is to state which part of THIS system the request lands on, so the
+fix that gets built is coherent with how the code actually works:
 
-If the message is small the restatement is one line each. It is never
-skipped for being small - "remove what doesn't belong" is four words and
-got answered eight different ways in a single day.
+    You want:    <the outcome, in plain terms>
+    In this system that means:
+                 <named files, functions, code paths, channels, jobs>
+    Done when:   <the observable end state, checkable>
+    Not doing:   <deliberately excluded, and why>
 
-If the restatement turns out to be wrong, the owner corrects four lines
-instead of hours of work. That is the entire point, and it only works if it
-is unconditional. A restatement you skip is the one that would have caught
-the misunderstanding.
+Worked example. "the boys did bad today, fix it" is not a spec. Translated:
 
-Restating is NOT asking permission. Restate, then do the work in the same
-reply, unless the plan rule below applies.
+    You want:    strategies to stop losing on trades they never chose
+    In this system that means:
+                 - entry: scan_new_strategy_entries + the /force-* commands
+                   in discord_command_bot, which bypass signals entirely
+                 - selection: scan_new_strategy_candidates, one shared delta
+                   band for all 14, every caller taking candidates[0]
+                 - exit: evaluate_open_new_strategy_row, whose quote gate
+                   returns HOLD before the time stop is ever evaluated
+    Done when:   a forced entry cannot open outside market hours or on an
+                 expired contract, and a time stop fires on elapsed minutes
+                 regardless of quote quality
+    Not doing:   per-strategy delta bands - that needs measurement, not a
+                 guess at what looks reasonable
+
+If the translation is wrong, the owner corrects four lines instead of hours
+of work. That only holds if it is unconditional - the one skipped for being
+"small" is the one that would have caught the misunderstanding. "Remove
+what doesn't belong" is four words and got answered eight different ways in
+one day, because it was never translated into which files, which channels,
+which surfaces.
+
+Translating is NOT asking permission. Translate, then do the work in the
+same reply, unless the plan rule below applies.
 
 **Then plan, unless it is a single obvious edit.** Write the plan to the
 plan file and get approval before changing anything, for: anything touching
