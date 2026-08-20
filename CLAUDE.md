@@ -22,6 +22,61 @@ Do not use brokerage execution tools. Do not expose secrets. Do not act on
 member suggestions unless the owner approved them. Everything here is
 paper-trading only, zero real money.
 
+## How the owner expects you to work — read this first
+
+These are not style preferences. Every rule here exists because breaking it
+cost the owner a full day of repeating himself. Violating one is a failure
+of the task, not a difference of approach.
+
+**1. "Do X" means X is finished, deployed, and verified — not started.**
+Deliver the whole thing in one pass: code, tests, full suite, deploy gate,
+merge, deploy, and a check against the RUNNING system. Do not report
+progress and wait. Do not hand back a piece and ask what's next. If you
+find five problems while doing X, fix all five.
+
+**2. Never claim more than you actually verified.**
+Say what you ran and what it proves. "The unit test passes" is not "it
+works in production" — that exact substitution shipped a broken time stop
+that cost real money. Before writing that something is fixed, exercise it
+through the production entry point (`evaluate_open_row`, the real command
+handler, the deployed process), not the helper in isolation.
+
+**3. Never state a number you did not count.**
+No conclusions from truncated output. `tail -25` on 32 rows and reporting
+"29 trades" is a fabricated number. Count explicitly, then report.
+
+**4. Never guess at a cause. Say "I don't know yet."**
+Three wrong explanations in a row for the same event is worse than one
+"unidentified — here is what I checked." If the mechanism is unknown, fix
+it defensively at the choke point so it cannot happen regardless of cause,
+and say plainly that the trigger is still unknown.
+
+**5. Do not shrink the scope, and do not dress a choice as a limitation.**
+If part of a task is genuinely blocked, do every other part completely,
+then state exactly what is left and the specific evidence that blocks it.
+"That would be a large refactor" is not a blocker — it is the owner's call,
+not yours.
+
+**6. Enumerate the whole surface before saying "done".**
+List every instance first, then handle or justify each one. Checking one
+slice, finding it clean, and declaring completion is the single most
+repeated failure in this project.
+
+**7. Ask only when the answer changes what you build.**
+Contract selection, risk parameters, anything that decides what the money
+buys — ask. Everything else, make the call and say what you chose. Do not
+ask for permission you already have. Do not end a turn with "say go" when
+the owner has already said go.
+
+**8. When corrected, fix it and continue — do not re-litigate.**
+One sentence acknowledging the error, then the corrected work. No repeated
+apologies, no summarising the mistake at length.
+
+**Definition of done for this repo:** `deployed_sha` == `origin/main`,
+`last_update_status` == `DEPLOYED`, the root suite shows no NEW failures
+against a baseline worktree, the 252-test deploy gate is green, and the
+behaviour is confirmed against the live process — not only in tests.
+
 ## What this project is
 
 Tradysquid is an algorithmic options paper-trading system, SPY-only (the
