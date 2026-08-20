@@ -55,6 +55,7 @@ from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8",
                               errors="replace", line_buffering=True)
 
+import option_session_inputs as osi
 import spy_backtest as bt
 import spy_backtest_report as rep
 import spy_live_new_strategies as lns
@@ -107,21 +108,26 @@ def run(limit: int | None = None) -> dict:
         roster = build_roster(conn)
         print(f"{len(roster)} strategies x {len(HORIZONS)} horizons, one pass",
               flush=True)
-        tradeable = om.sessions_with_zero_dte(option_conn)
-        vol_cache: dict[str, float | None] = {}
+        # The listing record, plus option_session_inputs for a volatility
+        # that is not the degenerate at-expiry ATM row - see
+        # measured_session_iv. Half these sessions used to price at under
+        # 3% vol.
+        chain_sessions = om.sessions_with_zero_dte(option_conn)
+        vol_cache: dict[str, object] = {}
 
         # A smoke run takes the NEWEST sessions: the archive starts long
         # before same-day expiries existed, so the oldest N would be
         # skipped wholesale and score nothing.
         for session, rows in bt.load_sessions(conn, limit=limit,
                                               newest=bool(limit)):
-            if session not in tradeable:
+            if not osi.zero_dte_listed(session, chain_sessions=chain_sessions):
                 continue
             if session not in vol_cache:
-                vol_cache[session] = om.implied_vol_for_session(option_conn, session)
-            vol = vol_cache[session]
-            if not vol:
+                vol_cache[session] = osi.session_inputs(session, option_conn)
+            inputs = vol_cache[session]
+            if inputs is None:
                 continue
+            vol = inputs.vol
             sessions_scored += 1
             for play, signal_fn in roster:
                 signals = signal_fn(rows)
