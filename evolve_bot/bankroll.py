@@ -119,3 +119,39 @@ def credit_exit(state: dict[str, Any], proceeds_dollars: float) -> dict[str, Any
         state["balance"] = STARTING_BALANCE
         state["peak_balance"] = STARTING_BALANCE
     return state
+
+def blown_out(state: dict[str, Any], position_size: float,
+              premium_per_contract: float) -> bool:
+    """True when the run can no longer fund a single contract.
+
+    RESET_FLOOR alone is not a sufficient bankruptcy test. A run can sit
+    far above it and still be unable to trade: on 2026-08-14 the balance
+    was $478 with a tuned 5% size, giving $23.90 per trade against
+    contracts costing $46-$100. contracts_affordable correctly returned 0,
+    the engine silently declined, and because it never opened it never
+    closed - so credit_exit, the only place a reset could fire, was never
+    reached again. The run froze for five days with no trades and no
+    signal that anything was wrong.
+
+    Functional bankruptcy is "cannot afford to participate", not "balance
+    below $25".
+    """
+    return contracts_affordable(position_size, premium_per_contract) < 1
+
+
+def start_new_run(state: dict[str, Any]) -> dict[str, Any]:
+    """End the current run and begin the next one at STARTING_BALANCE.
+
+    Same accounting as the reset inside credit_exit, extracted so a run can
+    also be ended by being unable to trade rather than only by drawing down
+    to the floor. Closed trades keep their run_number in the trade log, and
+    the learning path (self_tuning / logic_proposals / retrain_loop) reads
+    every closed trade regardless of run - so a reset restores the money
+    without discarding what the run taught.
+    """
+    state = dict(state)
+    state["total_resets"] += 1
+    state["run_number"] += 1
+    state["balance"] = STARTING_BALANCE
+    state["peak_balance"] = STARTING_BALANCE
+    return state
