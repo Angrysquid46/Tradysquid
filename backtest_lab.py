@@ -135,17 +135,32 @@ class Coverage:
     first_session: str | None
     last_session: str | None
     elapsed_seconds: float
+    # How the volatility input was obtained, per session. A measured chain
+    # IV and a VIX proxy are different strengths of evidence and the split
+    # travels with the result rather than being assumed.
+    measured_sessions: int = 0
+    proxy_sessions: int = 0
 
     @property
     def covers_daily_0dte_era(self) -> bool:
         return bool(self.last_session and self.last_session >= DAILY_0DTE_FROM)
 
     def warning(self) -> str:
-        if self.covers_daily_0dte_era:
-            return ""
-        return (f"NOTE: scored {self.first_session} to {self.last_session}. "
+        notes = []
+        if not self.covers_daily_0dte_era:
+            notes.append(
+                f"NOTE: scored {self.first_session} to {self.last_session}. "
                 f"SPY had no daily 0DTE expiry until {DAILY_0DTE_FROM}, so "
                 f"none of this is from the regime these ideas trade in.")
+        if self.proxy_sessions:
+            share = self.proxy_sessions / max(
+                self.measured_sessions + self.proxy_sessions, 1) * 100
+            notes.append(
+                f"NOTE: {self.proxy_sessions:,} of "
+                f"{self.measured_sessions + self.proxy_sessions:,} sessions "
+                f"({share:.0f}%) priced off a VIX proxy, not a measured "
+                f"same-day IV. 0DTE vol is routinely far from 30-day vol.")
+        return "\n".join(notes)
 
 
 # ---------------------------------------------------------------------------
@@ -347,6 +362,7 @@ def measure(ideas: Iterable[Idea], *, since: str | None = None,
     Ten ideas cost what one costs, which is the point: the expensive part
     is reading 1.4M bars and pricing options, not the rules.
     """
+    import option_session_inputs as osi
     import spy_backtest as bt
     import spy_option_data as od
 
@@ -356,19 +372,25 @@ def measure(ideas: Iterable[Idea], *, since: str | None = None,
     started = time.perf_counter()
     trades: dict[str, list[ob.OptionTrade]] = {idea.label: [] for idea in ideas}
     scored, first, last = 0, None, None
+    measured = proxied = 0
 
     try:
-        tradeable = om.sessions_with_zero_dte(option_conn)
-        vol_cache: dict[str, float | None] = {}
+        # The real listing record, used only for sessions old enough to
+        # need it - after 2022-05-04 a weekday 0DTE is a calendar fact.
+        chain_sessions = om.sessions_with_zero_dte(option_conn)
+        vol_cache: dict[str, osi.SessionInputs | None] = {}
         for session, rows in bt.load_sessions(conn, limit=limit, newest=newest,
                                               since=since, until=until):
-            if session not in tradeable:
+            if not osi.zero_dte_listed(session, chain_sessions=chain_sessions):
                 continue
             if session not in vol_cache:
-                vol_cache[session] = om.implied_vol_for_session(option_conn, session)
-            vol = vol_cache[session]
-            if not vol:
+                vol_cache[session] = osi.session_inputs(session, option_conn)
+            inputs = vol_cache[session]
+            if inputs is None:
                 continue
+            vol = inputs.vol
+            measured += inputs.is_measured
+            proxied += not inputs.is_measured
             scored += 1
             first = first or session
             last = session
@@ -392,7 +414,8 @@ def measure(ideas: Iterable[Idea], *, since: str | None = None,
 
     results = [summarize(idea.label, trades[idea.label]) for idea in ideas]
     return results, Coverage(scored, first, last,
-                             round(time.perf_counter() - started, 1))
+                             round(time.perf_counter() - started, 1),
+                             measured_sessions=measured, proxy_sessions=proxied)
 
 
 def report(results: Sequence[Result], coverage: Coverage) -> str:

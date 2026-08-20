@@ -25,6 +25,7 @@ from urllib.parse import quote, quote_plus, urljoin
 
 import spy_scanner
 import ai_coordination
+import capture_0dte_chain
 import diagnostic_upgrade_system as diagnostics
 import dynamic_universe
 import outcome_learning
@@ -2461,6 +2462,24 @@ JOBS = [
         background=True,
         provider_heavy=True,
         retry_interval=timedelta(minutes=30),
+    ),
+    # The option archive was a one-time parquet import ending 2023-12-29
+    # with no updater, so every backtest priced off either a stale window
+    # or a VIX proxy. Nothing can fix that retroactively - no provider
+    # sells intraday SPY option history - but Tradier serves the CURRENT
+    # chain with real IV and greeks, and SPY lists a same-day expiry every
+    # weekday. Captured hourly and stored idempotently per day, the last
+    # run before the close is what survives, which is what an end-of-day
+    # table wants. From here the archive grows by one measured session a
+    # day instead of standing still.
+    Job(
+        "zero-dte-chain-capture",
+        timedelta(hours=1),
+        capture_0dte_chain.capture_job,
+        market_hours_only=True,
+        background=True,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=15),
     ),
     Job(
         "new-strategy-entry-scan",
