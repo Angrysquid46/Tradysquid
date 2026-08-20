@@ -699,10 +699,14 @@ def force_all_strategies_reply(interaction: dict[str, Any]) -> str:
             skipped.append(f"{spec['label']} (exposure cap or cooldown)")
             continue
 
-        row = spy_scanner.candidate_to_row(
-            selected[0], rows, timestamp,
-            market_condition="MANUAL FORCE" if not real else "LIVE SIGNAL",
-        )
+        try:
+            row = spy_scanner.candidate_to_row(
+                selected[0], rows, timestamp,
+                market_condition="MANUAL FORCE" if not real else "LIVE SIGNAL",
+            )
+        except spy_scanner.UntradeableEntry as exc:
+            skipped.append(str(exc))
+            continue
         rows.append(row)
         spy_scanner.safe_discord_call(
             f"forced {play_type} post",
@@ -805,7 +809,11 @@ def force_trade_reply(interaction: dict[str, Any]) -> str:
         return "Ticker exposure cap is already full, or every real candidate is on cooldown - nothing forced."
 
     best = selected[0]
-    row = spy_scanner.candidate_to_row(best, rows, timestamp, market_condition="MANUAL FORCE")
+    try:
+        row = spy_scanner.candidate_to_row(best, rows, timestamp,
+                                           market_condition="MANUAL FORCE")
+    except spy_scanner.UntradeableEntry as exc:
+        return f"Nothing forced - {exc}"
     rows.append(row)
     spy_scanner.write_log(rows)
 

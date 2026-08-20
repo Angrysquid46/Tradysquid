@@ -9,6 +9,11 @@ carry that tag through storage, the journal card, and a lookback report.
 
 from __future__ import annotations
 
+# Dated forward: candidate_to_row refuses an expiration in the past,
+# so a hardcoded date silently rots into a failing test.
+_FUTURE_EXPIRY = (__import__('datetime').date.today() +
+                  __import__('datetime').timedelta(days=7)).isoformat()
+
 import spy_scanner as s
 
 
@@ -78,7 +83,7 @@ def test_candidate_to_row_carries_the_market_condition_through():
         "play_type": "SPY_0DTE_1M",
         "call_or_put": "call",
         "strike": 600,
-        "expiration": "2026-08-11",
+        "expiration": _FUTURE_EXPIRY,
         "cost_or_credit": "0.50",
         "entry_price": 0.50,
         "delta": 0.4,
@@ -91,7 +96,11 @@ def test_candidate_to_row_carries_the_market_condition_through():
         "open_interest": 1000,
         "bid_ask_width": 0.05,
     }
-    row = s.candidate_to_row(candidate, [], s.now_ct(), market_condition="TRENDING_UP / HIGH VOL")
+    # Mid-session timestamp: candidate_to_row now refuses entries dated
+    # outside market hours, so a test that used the wall clock only passed
+    # when the suite ran during the session.
+    _t = s.now_ct().replace(hour=10, minute=0, second=0, microsecond=0)
+    row = s.candidate_to_row(candidate, [], _t, market_condition="TRENDING_UP / HIGH VOL")
     assert row["market_condition_at_entry"] == "TRENDING_UP / HIGH VOL"
 
 
@@ -100,7 +109,7 @@ def test_candidate_to_row_defaults_to_empty_market_condition():
         "play_type": "SPY_0DTE_1M",
         "call_or_put": "call",
         "strike": 600,
-        "expiration": "2026-08-11",
+        "expiration": _FUTURE_EXPIRY,
         "cost_or_credit": "0.50",
         "entry_price": 0.50,
         "delta": 0.4,
@@ -113,7 +122,11 @@ def test_candidate_to_row_defaults_to_empty_market_condition():
         "open_interest": 1000,
         "bid_ask_width": 0.05,
     }
-    row = s.candidate_to_row(candidate, [], s.now_ct())
+    # Mid-session timestamp: candidate_to_row now refuses entries dated
+    # outside market hours, so a test that used the wall clock only passed
+    # when the suite ran during the session.
+    _t = s.now_ct().replace(hour=10, minute=0, second=0, microsecond=0)
+    row = s.candidate_to_row(candidate, [], _t)
     assert row["market_condition_at_entry"] == ""
 
 
@@ -126,7 +139,7 @@ def test_entry_alert_text_shows_the_market_condition_line():
             "play_type": "SPY_0DTE_1M",
             "call_or_put": "call",
             "strike": "600",
-            "expiration": "2026-08-11",
+            "expiration": _FUTURE_EXPIRY,
             "entry_price": "0.50",
             "market_condition_at_entry": "TRENDING_UP / HIGH VOL",
         }
