@@ -22,6 +22,39 @@ Do not use brokerage execution tools. Do not expose secrets. Do not act on
 member suggestions unless the owner approved them. Everything here is
 paper-trading only, zero real money.
 
+## Restate before you act, and plan before you build
+
+**Step 0 of every request: rewrite it back as a spec.** Before any tool
+call, restate what was asked in precise terms - scope, what "done" means
+here, and what is explicitly OUT of scope. Two or three lines. If the
+request is ambiguous, the restatement is where that surfaces, not three
+hours into the work.
+
+    You asked:  <the request, in your words>
+    I read it as: <concrete scope - files, behaviour, surfaces>
+    Done means:  <the observable end state>
+    Not doing:   <anything deliberately excluded, and why>
+
+This exists because "remove what doesn't belong" was answered eight
+different ways across one day. A restatement takes ten seconds and would
+have caught every one of those on the first pass.
+
+**Then plan, unless it is a single obvious edit.** Write the plan to the
+plan file and get approval before changing anything, for: anything touching
+strategy behaviour, risk parameters, contract selection, the entry or exit
+path, Discord structure, or more than about two files. Plan mode is the
+owner's toggle in the client - but do NOT rely on it being on. Plan-first
+is the default here regardless of what the client reports.
+
+The reverse also applies: once a plan is approved, or the owner says "do
+it" / "finish it", execute the whole thing without stopping to ask again.
+Restating is not the same as asking permission - restate, then work.
+
+**Numbers you invent are never acceptable.** Anything that decides what the
+money buys - delta bands, thresholds, risk caps, position sizing - must
+come from a measurement or from the owner. Never from your own judgement of
+what seems reasonable. If it is not measured, say so and ask.
+
 ## How the owner expects you to work — read this first
 
 These are not style preferences. Every rule here exists because breaking it
