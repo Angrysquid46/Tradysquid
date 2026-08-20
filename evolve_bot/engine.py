@@ -611,8 +611,14 @@ def _try_open_new_position(
     if MODEL_FILTER_ENABLED and model_score is not None and model_score < MODEL_MIN_WIN_PROBABILITY:
         return None, bank
 
+    # size_dollars is now the RISK budget for this trade, not the amount
+    # that may be spent - see bankroll.contracts_for_trade. Sizing needs the
+    # active stop to convert risk into contracts, so the variant is read
+    # here rather than after the sizing decision.
+    variant = logic_state.active_variant_params()
     size_dollars = bankroll.position_size_dollars(bank, self_tuning.current_position_size_pct())
-    contracts = bankroll.contracts_affordable(size_dollars, best["entry_price"])
+    contracts = bankroll.contracts_for_trade(
+        bank, size_dollars, best["entry_price"], logic_state.current_stop_pct())
     if contracts < 1:
         # Cannot fund a single contract: this run is over. Previously a
         # silent `return None`, which froze the bot for five days from
@@ -625,15 +631,13 @@ def _try_open_new_position(
         _evolve_after_blowout(rows, bank, "cannot fund a contract")
         bank = bankroll.start_new_run(bank)
         _log_decline(
-            f"blown out - {size_dollars:.2f} position size cannot fund one "
-            f"{best['entry_price']:.2f} contract ({best['entry_price'] * 100:.0f} "
-            f"per contract); starting run {bank['run_number']} at "
-            f"{bank['balance']:.0f}"
+            f"blown out - balance {bank['balance']:.2f} cannot fund one "
+            f"{best['entry_price']:.2f} contract "
+            f"({best['entry_price'] * 100:.0f} per contract); starting run "
+            f"{bank['run_number']} at {bank['balance']:.0f}"
         )
         return None, bank
     cost = round(best["entry_price"] * 100 * contracts, 2)
-
-    variant = logic_state.active_variant_params()
 
     row = tradelog.blank_row()
     row.update(

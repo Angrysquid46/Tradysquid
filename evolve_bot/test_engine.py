@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import bankroll
+import logic_state
 import engine
 import tradelog
 
@@ -581,8 +582,12 @@ def test_try_open_new_position_opens_and_debits_the_bankroll_when_everything_qua
     # a hardcoded percentage, so this test doesn't silently drift out of
     # sync (and start asserting the WRONG number instead of failing) if
     # that constant is ever tuned.
-    expected_size_dollars = bankroll.STARTING_BALANCE * bankroll.POSITION_SIZE_PCT
-    expected_contracts = int(expected_size_dollars // 50.0)  # $0.50 premium -> $50/contract
+    # position_size_pct is now a RISK budget, not a spend cap: contracts are
+    # whatever keeps the stop-loss inside it. Sizing by spend meant a 5%
+    # budget could not buy a single $40-$500 option and the bot froze.
+    expected_risk_budget = bankroll.STARTING_BALANCE * bankroll.POSITION_SIZE_PCT
+    loss_per_contract = 50.0 * logic_state.current_stop_pct()  # $0.50 premium
+    expected_contracts = max(int(expected_risk_budget // loss_per_contract), 1)
     expected_cost = 0.50 * 100 * expected_contracts
     assert row["contracts"] == str(expected_contracts)
     assert updated_bank["balance"] == bankroll.STARTING_BALANCE - expected_cost
