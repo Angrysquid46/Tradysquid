@@ -3556,6 +3556,55 @@ def save_chain_snapshot(
         print(f"Could not save chain snapshot for {row.get('trade_id')}: {exc}", file=sys.stderr)
 
 
+class UntradeableEntry(RuntimeError):
+    """Refused to open a position that could never be traded or exited."""
+
+
+def assert_tradeable_entry(candidate: dict[str, Any], timestamp: datetime) -> None:
+    """Refuse an entry the market cannot actually fill or exit.
+
+    2026-08-19: three 0DTE positions on SPY260819C00769000 were opened at
+    17:32 - two and a half hours after the 15:00 close, on a contract that
+    had already expired. They are unclosable: there is no market to exit
+    into and the option settled hours earlier. They sat OPEN in the log.
+
+    Two separate batches that day were written with /force-all-strategies
+    text while the command-bot access log shows no interaction at either
+    time (the log is continuous, 114-120 entries an hour, so that is real
+    evidence rather than a gap). The trigger is still unidentified - which
+    is exactly why this guard lives at candidate_to_row, the single point
+    every entry path funnels through, instead of in the callers. Whatever
+    reaches it, an expired or after-hours entry is refused.
+
+    Deliberately NOT a silent skip: it raises, so the caller reports the
+    refusal rather than logging a position that cannot be managed.
+    """
+    expiration = str(candidate.get("expiration") or "").strip()
+    if expiration:
+        try:
+            expires = datetime.strptime(expiration, "%Y-%m-%d").date()
+        except ValueError:
+            expires = None
+        if expires is not None and expires < timestamp.date():
+            raise UntradeableEntry(
+                f"{candidate.get('play_type', 'entry')}: contract expired "
+                f"{expiration}, cannot open on {timestamp.date().isoformat()}"
+            )
+
+    # Judged on the ENTRY timestamp, not the wall clock: this decides
+    # whether the moment the position is being opened for is tradeable,
+    # which is deterministic and testable. Weekends count as closed.
+    minutes = timestamp.hour * 60 + timestamp.minute
+    opens = MARKET_OPEN[0] * 60 + MARKET_OPEN[1]
+    closes = MARKET_CLOSE[0] * 60 + MARKET_CLOSE[1]
+    if timestamp.weekday() >= 5 or not (opens <= minutes < closes):
+        raise UntradeableEntry(
+            f"{candidate.get('play_type', 'entry')}: market closed at "
+            f"{timestamp.strftime('%a %H:%M')} - no fill and no exit until it "
+            "reopens, and a same-day contract would expire first"
+        )
+
+
 def candidate_to_row(
     candidate: dict[str, Any],
     rows: list[dict[str, str]],
@@ -3563,6 +3612,7 @@ def candidate_to_row(
     *,
     market_condition: str = "",
 ) -> dict[str, str]:
+    assert_tradeable_entry(candidate, timestamp)
     row = blank_row()
     row.update(
         {
@@ -7126,7 +7176,11 @@ def main(*, publish_shared: bool = True, position_lock: Any = None) -> int:
 
         new_rows: list[dict[str, str]] = []
         for candidate in selected:
-            row = candidate_to_row(candidate, rows, timestamp, market_condition=market_condition)
+            try:
+                row = candidate_to_row(candidate, rows, timestamp, market_condition=market_condition)
+            except UntradeableEntry as exc:
+                print(f"Refused entry: {exc}", file=sys.stderr)
+                continue
             rows.append(row)
             new_rows.append(row)
             _mark_tradingview_event_if_opened(candidate)
@@ -7426,8 +7480,12 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
             selected = apply_ticker_exposure_cap(eligible, rows, TICKER)
             if not selected:
                 continue
-            row = candidate_to_row(selected[0], rows, timestamp,
-                                   market_condition=signal.get("regime") or "LIVE SIGNAL")
+            try:
+                row = candidate_to_row(selected[0], rows, timestamp,
+                                       market_condition=signal.get("regime") or "LIVE SIGNAL")
+            except UntradeableEntry as exc:
+                print(f"Refused entry: {exc}", file=sys.stderr)
+                continue
             rows.append(row)
             write_log(rows)
             last_bar[play_type] = signal["bar_time"]
@@ -7468,11 +7526,16 @@ def scan_new_strategy_entries(position_lock: Any = None) -> dict[str, Any]:
                                 if not recently_tracked(rows, c, timestamp)]
                     selected = apply_ticker_exposure_cap(eligible, rows, TICKER)
                     if selected:
-                        row = candidate_to_row(selected[0], rows, timestamp,
-                                               market_condition="LIVE SIGNAL")
-                        rows.append(row)
-                        write_log(rows)
-                        opened.append(SPY_KEY_LEVELS_PLAY_TYPE)
+                        try:
+                            row = candidate_to_row(selected[0], rows, timestamp,
+                                                   market_condition="LIVE SIGNAL")
+                        except UntradeableEntry as exc:
+                            print(f"Refused entry: {exc}", file=sys.stderr)
+                            row = None
+                        if row is not None:
+                            rows.append(row)
+                            write_log(rows)
+                            opened.append(SPY_KEY_LEVELS_PLAY_TYPE)
                     else:
                         row = None
                 else:

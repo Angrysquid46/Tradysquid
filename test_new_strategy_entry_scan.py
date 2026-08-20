@@ -202,6 +202,22 @@ def _synthetic_chain(spot: float, expiration: str):
     return chain
 
 
+
+def _freeze_mid_session(monkeypatch):
+    """Pin the clock inside market hours and the expiry in the future.
+
+    candidate_to_row refuses entries dated outside the session or on an
+    already-expired contract (see test_no_untradeable_entries). These tests
+    drive the real scan, which stamps rows with now_ct(), so without this
+    they only pass when the suite happens to run mid-session.
+    """
+    import datetime as _dt
+    frozen = spy_scanner.now_ct().replace(hour=10, minute=0, second=0, microsecond=0)
+    while frozen.weekday() >= 5:
+        frozen -= _dt.timedelta(days=1)
+    monkeypatch.setattr(spy_scanner, "now_ct", lambda: frozen)
+    return frozen, (frozen.date() + _dt.timedelta(days=7)).isoformat()
+
 def test_a_real_signal_opens_exactly_one_position_and_posts_it(monkeypatch, tmp_state):
     """Drives the whole function on real bars: feature rows -> signal ->
     candidates -> row appended -> Discord post.
@@ -215,9 +231,10 @@ def test_a_real_signal_opens_exactly_one_position_and_posts_it(monkeypatch, tmp_
     if rows is None:
         pytest.skip("no signal-bearing session in the sampled window")
 
+    _frozen, _future_exp = _freeze_mid_session(monkeypatch)
     signal = lns.signals_on_latest_bar(rows)[0]
     spot = float(signal["spot_at_signal"])
-    expiration = "2026-08-17"
+    expiration = _future_exp
     lock = _TrackingLock()
     written: list[list] = []
     posted: list[dict] = []
@@ -317,13 +334,14 @@ def test_the_same_signal_bar_is_never_traded_twice(monkeypatch, tmp_state):
     """Without this, a signal at 10:07 that opens at 10:08 and stops out at
     10:09 gets re-entered by the 10:10 scan, because that bar is still
     inside the lookback window."""
+    _frozen, _future_exp = _freeze_mid_session(monkeypatch)
     rows = _real_signal_rows()
     if rows is None:
         pytest.skip("no signal-bearing session in the sampled window")
 
     signal = lns.recent_signals(rows)[0]
     spot = float(signal["spot_at_signal"])
-    expiration = "2026-08-17"
+    expiration = _future_exp
     written: list[list] = []
 
     monkeypatch.setattr(spy_scanner, "trade_types_enabled",

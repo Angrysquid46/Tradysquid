@@ -272,15 +272,19 @@ def test_candidate_survives_candidate_to_row_without_a_keyerror():
     # several of them, which would only surface as a crash the moment a
     # real SPY 0DTE trade actually tried to open, not in any report.
     chain = [_option(delta=0.50, ask=1.20, strike=600.0)]
+    # Forward-dated: candidate_to_row refuses an expiration already past, so
+    # a hardcoded date silently rots this test into a failure.
+    _exp = (spy_scanner.now_ct().date()
+            + __import__("datetime").timedelta(days=7)).isoformat()
     candidates = spy_scanner.scan_spy_contract_candidates(
-        chain, "call", "2026-08-10", 600.0,
+        chain, "call", _exp, 600.0,
         market_context={"reason": "broke above the opening range at $601.50", "regime": "BULLISH / CONTROLLED"},
     )
     assert len(candidates) == 1
     original_ticker = spy_scanner.TICKER
     spy_scanner.TICKER = "SPY"
     try:
-        row = spy_scanner.candidate_to_row(candidates[0], [], spy_scanner.now_ct())
+        row = spy_scanner.candidate_to_row(candidates[0], [], spy_scanner.now_ct().replace(hour=10, minute=0, second=0, microsecond=0))
     finally:
         spy_scanner.TICKER = original_ticker
     assert row["play_type"] == spy_scanner.SPY_MANUAL_PLAY_TYPE

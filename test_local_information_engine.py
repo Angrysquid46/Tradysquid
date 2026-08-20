@@ -60,7 +60,11 @@ class InformationEngineTests(unittest.TestCase):
     def test_new_trade_persists_full_thesis_checklist(self) -> None:
         candidate = {
             "play_type": "REGULAR", "call_or_put": "call", "strike": "15",
-            "expiration": "2026-08-07", "option_symbol": "F260807C00015000",
+            # Forward-dated: candidate_to_row refuses an already-expired
+            # contract, so a hardcoded date rots this test into a failure.
+            "expiration": (spy_scanner.now_ct().date()
+                           + timedelta(days=7)).isoformat(),
+            "option_symbol": "F260807C00015000",
             "cost_or_credit": "0.25 debit", "entry_price": 0.25, "delta": 0.4,
             "theta": -0.02, "iv": 0.5, "pop": 40, "max_profit": 0,
             "max_risk": 25, "breakeven": 15.25, "open_interest": 500,
@@ -68,7 +72,11 @@ class InformationEngineTests(unittest.TestCase):
             "setup_reason": "price above VWAP with volume confirmation",
             "market_regime": "BULLISH / CONTROLLED",
         }
-        row = spy_scanner.candidate_to_row(candidate, [], spy_scanner.now_ct())
+        _t = spy_scanner.now_ct().replace(hour=10, minute=0, second=0,
+                                          microsecond=0)
+        while _t.weekday() >= 5:
+            _t -= timedelta(days=1)
+        row = spy_scanner.candidate_to_row(candidate, [], _t)
         for key in (
             "thesis", "entry_confirmation", "invalidation", "risk_plan",
             "learning_plan", "evidence_limitations",
