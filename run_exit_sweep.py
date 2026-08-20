@@ -7,11 +7,18 @@ import backtest_lab as lab, exit_sweep as es
 import spy_live_new_strategies as lns, spy_backtest_live_strategies as blive
 import spy_backtest as bt, spy_intraday_features as sif
 
-TARGETS = (25, 50, 75, 100, 150)
-STOPS = (-25, -40, -50, -60, -75)
-CLOCKS = (5, 10, 15, 20, 30, 45)
-TRAILS = ((15, 20), (25, 40), (40, 60))
-COMBOS = ((50, -50, 15), (75, -50, 30), (100, -60, 30))
+# Contract selection: the one parameter all 15 strategies share. Live is
+# 0.50 for every one of them.
+DELTAS = (0.25, 0.35, 0.50, 0.65, 0.80)
+
+# A narrower exit set than the first sweep, because paths must be rebuilt
+# per delta - exits are free, deltas are not. Keeps the shapes that either
+# ran live or finished near the top last time.
+TARGETS = (50, 115, 150)
+STOPS = (-50, -75)
+CLOCKS = (5, 10, 30)
+TRAILS = ((25, 40),)
+COMBOS = ((115, -75, 30),)
 
 def build_exits():
     out = {}
@@ -43,14 +50,15 @@ def main():
     since = sys.argv[1] if len(sys.argv) > 1 else None
     until = sys.argv[2] if len(sys.argv) > 2 else None
     entries, exits = build_entries(), build_exits()
-    print(f"{len(entries)} entries x {len(exits)} exits = "
-          f"{len(entries)*len(exits)} combinations", flush=True)
-    results, cov = es.sweep(entries, exits, since=since, until=until)
+    print(f"{len(entries)} entries x {len(DELTAS)} deltas x {len(exits)} exits "
+          f"= {len(entries)*len(DELTAS)*len(exits)} combinations", flush=True)
+    results, cov = es.sweep(entries, exits, deltas=DELTAS,
+                            since=since, until=until)
     payload = {f"{k[0]}|{k[1]}": {"entry": k[0], "exit": k[1],
                "trades": r.trades, "win_rate": r.win_rate,
                "avg_dollars": r.avg_dollars, "total_dollars": r.total_dollars}
                for k, r in results.items()}
-    Path("state/exit_sweep.json").write_text(json.dumps(
+    Path("state/delta_exit_sweep.json").write_text(json.dumps(
         {"coverage": {"sessions": cov.sessions_scored,
                       "first": cov.first_session, "last": cov.last_session,
                       "measured_iv": cov.measured_sessions,

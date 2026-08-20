@@ -99,3 +99,19 @@ def test_a_rule_that_never_exits_is_flattened_at_the_bell() -> None:
     assert len(trades) == 1
     assert trades[0].exit_reason == "eod_close"
     assert trades[0].exit_minute == ob.LAST_EXIT_MINUTE
+
+
+def test_target_delta_actually_changes_the_contract() -> None:
+    """The delta sweep is only meaningful if it picks a different strike.
+
+    Contract selection is the one thing all 15 strategies share -
+    scan_new_strategy_candidates takes no strategy argument - so this is
+    the parameter being tested.
+    """
+    rows = _drifting()
+    cheap = es.build_paths(rows, [(1, "LONG")], 0.15, target_delta=0.25)
+    rich = es.build_paths(rows, [(1, "LONG")], 0.15, target_delta=0.70)
+    assert cheap and rich
+    assert cheap[0].strike != rich[0].strike
+    # A lower-delta call is further out of the money and cheaper.
+    assert cheap[0].entry_price < rich[0].entry_price

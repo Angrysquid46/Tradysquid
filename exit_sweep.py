@@ -153,10 +153,23 @@ def apply_rule(paths: Sequence[Path], rule: lab.ExitFn, *, label: str
 
 
 def sweep(entries: dict[str, lab.EntryFn], exits: dict[str, lab.ExitFn], *,
+          deltas: Sequence[float] = (ob.DEFAULT_TARGET_DELTA,),
           since: str | None = None, until: str | None = None,
           limit: int | None = None, progress_every: int = 250
           ) -> tuple[dict[tuple[str, str], lab.Result], lab.Coverage]:
-    """Every entry against every exit, in one walk of the archive."""
+    """Every entry against every exit, at every target delta, in one walk.
+
+    `deltas` sweeps CONTRACT SELECTION, which until now was the one thing
+    all 15 strategies shared: scan_new_strategy_candidates takes no
+    strategy argument at all - one delta band, one ask ceiling, one risk
+    cap, and every caller takes candidates[0]. A 5-minute exhaustion fade
+    and a 30-minute momentum continuation are handed the identical
+    0.50-delta contract.
+
+    Paths must be rebuilt per delta, because the strike changes and so does
+    every price along it. So this costs len(deltas) times a single-delta
+    sweep, unlike adding exits, which is free.
+    """
     import option_session_inputs as osi
     import spy_backtest as bt
     import spy_option_data as od
@@ -165,7 +178,7 @@ def sweep(entries: dict[str, lab.EntryFn], exits: dict[str, lab.ExitFn], *,
     option_conn = od.open_readonly()
     started = time.perf_counter()
     trades: dict[tuple[str, str], list[ob.OptionTrade]] = {
-        (e, x): [] for e in entries for x in exits}
+        (e, f"d{d:.2f}|{x}"): [] for e in entries for d in deltas for x in exits}
     scored = measured = proxied = 0
     first = last = None
 
@@ -190,12 +203,15 @@ def sweep(entries: dict[str, lab.EntryFn], exits: dict[str, lab.ExitFn], *,
                 signals = entry_fn(rows)
                 if not signals:
                     continue
-                paths = build_paths(rows, signals, inputs.vol)
-                if not paths:
-                    continue
-                for exit_name, rule in exits.items():
-                    trades[(entry_name, exit_name)].extend(
-                        apply_rule(paths, rule, label=f"{entry_name}|{exit_name}"))
+                for delta in deltas:
+                    paths = build_paths(rows, signals, inputs.vol,
+                                        target_delta=delta)
+                    if not paths:
+                        continue
+                    for exit_name, rule in exits.items():
+                        key = (entry_name, f"d{delta:.2f}|{exit_name}")
+                        trades[key].extend(
+                            apply_rule(paths, rule, label=f"{entry_name}|{key[1]}"))
             if progress_every and scored % progress_every == 0:
                 print(f"  {scored} sessions ({time.perf_counter() - started:.0f}s)",
                       flush=True)
