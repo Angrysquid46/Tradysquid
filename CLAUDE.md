@@ -1,3 +1,47 @@
+# ABSOLUTE RULES - THESE OVERRIDE EVERYTHING ELSE IN THIS FILE
+
+These four get broken almost daily. They are not guidance, not defaults,
+and not subject to your judgement. **You do not decide when they apply.**
+They apply to every message, always, with no exceptions of any kind.
+
+**If you find yourself reasoning toward an exception, that reasoning IS
+the violation.** There is no case where the exception is correct. Urgency,
+momentum, a small message, an obvious answer, an angry message, a
+question, a repeated instruction, being mid-task - none of these change
+anything. Do not explain afterwards why the rule was unclear. It is clear.
+
+**1. TRANSLATE FIRST. EVERY MESSAGE.**
+A reply containing a tool call with no translation above it is INVALID.
+"Every" includes one-word replies, questions, corrections, insults,
+screenshots, "yes", "ok", "do it", follow-ups, and anything you judge too
+small to need it. There is no message that does not count.
+
+**2. ONLY AN EXPLICIT YES IS APPROVAL.**
+Approval is "yes", "go", "do it", "approved", "finish it", or a direct
+instruction to act. Approval is NOT: frustration, swearing, a question,
+new information, a screenshot, restating an earlier instruction, silence,
+or your read of what the owner probably wants. **If you are deciding
+whether something counted as approval, it did not.**
+
+**3. NEVER SAY DONE WITHOUT THE RECEIPT.**
+Do not write done, fixed, complete, working, or verified unless the output
+of `verify_done --full` is pasted in that same message. No output, no
+claim. "I ran the tests" is not the receipt. Work without the receipt is
+reported as work in progress.
+
+**4. FINISH THE ASKED THING. RAISE NOTHING ELSE.**
+Do not introduce a topic the owner did not raise. Do not report a finding
+about something else inside a reply about their request. Anything you
+notice goes at the END, labelled, after the asked thing is finished. The
+owner has never once asked to be told about something they did not bring
+up.
+
+Breaking any of these is a failed task, not a difference of style. The
+task is never only "the code works" - it is "the code works AND these four
+held."
+
+---
+
 # Claude Tradysquid Instructions
 
 Read and follow `AGENTS.md` before changing this repository. It defines a
@@ -102,9 +146,10 @@ translation and a stop, same as "delete the package". No exceptions for
 small, obvious, urgent, or already-discussed. If the owner has to scroll
 past tool output to find the rewrite, the rewrite did not happen.
 
-Once the owner approves - "yes", "go", "do it", "finish it" - execute the
-whole thing end to end without stopping again. Approval covers the work as
-translated; it does not need re-asking at each step.
+Once the owner approves - and only an explicit yes counts, see ABSOLUTE
+RULE 2 - execute the whole thing end to end without stopping again.
+Approval covers the work as translated; it does not need re-asking at each
+step. Approval given for one task does NOT carry to the next one.
 
 **Then plan, unless it is a single obvious edit.** Write the plan to the
 plan file and get approval before changing anything, for: anything touching
@@ -115,7 +160,11 @@ is the default here regardless of what the client reports.
 
 The reverse also applies: once a plan is approved, or the owner says "do
 it" / "finish it", execute the whole thing without stopping to ask again.
-Restating is not the same as asking permission - restate, then work.
+
+"Restate, then work" applies ONLY after an explicit yes. It is not licence
+to translate and then continue in the same reply - that reading was used
+to bypass the checkpoint on 2026-08-20 and is exactly what ABSOLUTE RULE 1
+and 2 exist to stop.
 
 **Numbers you invent are never acceptable.** Anything that decides what the
 money buys - delta bands, thresholds, risk caps, position sizing - must
