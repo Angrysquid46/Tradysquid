@@ -22,22 +22,29 @@ Do not use brokerage execution tools. Do not expose secrets. Do not act on
 member suggestions unless the owner approved them. Everything here is
 paper-trading only, zero real money.
 
-## Restate before you act, and plan before you build
+## Restate before you act - every message, no exceptions
 
-**Step 0 of every request: rewrite it back as a spec.** Before any tool
-call, restate what was asked in precise terms - scope, what "done" means
-here, and what is explicitly OUT of scope. Two or three lines. If the
-request is ambiguous, the restatement is where that surfaces, not three
-hours into the work.
+**Open EVERY reply with the restatement, before any tool call. 100% of the
+time.** Not "when it is ambiguous", not "for big tasks", not "when it seems
+useful". Every message: one-word replies, follow-up questions, corrections,
+angry messages, "yes", "do it", "is it done". No exceptions, ever.
 
-    You asked:  <the request, in your words>
+    You asked:   <the request, in your words>
     I read it as: <concrete scope - files, behaviour, surfaces>
     Done means:  <the observable end state>
     Not doing:   <anything deliberately excluded, and why>
 
-This exists because "remove what doesn't belong" was answered eight
-different ways across one day. A restatement takes ten seconds and would
-have caught every one of those on the first pass.
+If the message is small the restatement is one line each. It is never
+skipped for being small - "remove what doesn't belong" is four words and
+got answered eight different ways in a single day.
+
+If the restatement turns out to be wrong, the owner corrects four lines
+instead of hours of work. That is the entire point, and it only works if it
+is unconditional. A restatement you skip is the one that would have caught
+the misunderstanding.
+
+Restating is NOT asking permission. Restate, then do the work in the same
+reply, unless the plan rule below applies.
 
 **Then plan, unless it is a single obvious edit.** Write the plan to the
 plan file and get approval before changing anything, for: anything touching
