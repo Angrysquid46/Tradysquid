@@ -20,6 +20,7 @@ from flask import Flask, Response, abort, jsonify, request
 from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
 
+import activity_log
 import spy_scanner
 import dynamic_universe
 import local_information_engine as info_engine
@@ -1432,7 +1433,39 @@ def handle_message_component(interaction: dict[str, Any]) -> Response:
 
 @APP.post("/interactions")
 def interactions() -> Response:
-    verify_discord_request()
+    # Recorded BEFORE verification and before any work, because the case
+    # this exists for left no other trace: on 2026-08-20 twelve positions
+    # opened stamped "/force-all-strategies", the owner had not run it, and
+    # a scan of all 123 Discord channels found zero interactions that day.
+    # A rejected or replayed request must still leave a line here.
+    raw = request.get_json(force=True, silent=True) or {}
+    data = raw.get("data") or {}
+    invoker = (raw.get("member") or {}).get("user") or raw.get("user") or {}
+    activity_log.record(
+        "discord.interaction",
+        interaction_id=raw.get("id"),
+        interaction_type=raw.get("type"),
+        command=data.get("name"),
+        user=invoker.get("username"),
+        user_id=invoker.get("id"),
+        guild_id=raw.get("guild_id"),
+        channel_id=raw.get("channel_id"),
+        # A Discord RETRY reuses the interaction id and application id but
+        # carries a fresh signature timestamp - which is how a replayed
+        # command is told apart from a new one.
+        signature_timestamp=request.headers.get("X-Signature-Timestamp"),
+        has_signature=bool(request.headers.get("X-Signature-Ed25519")),
+        remote_addr=request.headers.get("X-Forwarded-For") or request.remote_addr,
+        user_agent=request.headers.get("User-Agent"),
+    )
+    try:
+        verify_discord_request()
+    except Exception as exc:
+        activity_log.record("discord.interaction.rejected",
+                            interaction_id=raw.get("id"),
+                            reason=type(exc).__name__,
+                            detail=str(exc)[:200])
+        raise
     interaction = request.get_json(force=True)
     if interaction.get("type") == 1:
         return jsonify({"type": 1})
@@ -1448,6 +1481,11 @@ def interactions() -> Response:
             "type": 4,
             "data": {"content": "This command is not enabled in this server.", "flags": 64},
         })
+    activity_log.record("discord.command.dispatched",
+                        interaction_id=interaction.get("id"),
+                        command=(interaction.get("data") or {}).get("name"),
+                        user=((interaction.get("member") or {}).get("user")
+                              or interaction.get("user") or {}).get("username"))
     threading.Thread(target=process_command, args=(interaction,), daemon=True).start()
     return jsonify({"type": 5})
 

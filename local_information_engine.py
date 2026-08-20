@@ -24,6 +24,7 @@ from typing import Any, Callable
 from urllib.parse import quote, quote_plus, urljoin
 
 import spy_scanner
+import activity_log
 import ai_coordination
 import capture_0dte_chain
 import diagnostic_upgrade_system as diagnostics
@@ -2534,6 +2535,18 @@ def due(connection: sqlite3.Connection, job: Job, now: datetime) -> bool:
     return True
 
 
+# Jobs whose successful output is worth a line. Everything else would be
+# thousands of "position-tracker: OK" a day, which is how a real signal
+# gets buried.
+NOTEWORTHY_JOBS = {
+    "new-strategy-entry-scan",
+    "zero-dte-chain-capture",
+    "closed-position-cleanup",
+    "backtest-cards",
+    "research-store-refresh",
+}
+
+
 def run_job(connection: sqlite3.Connection, job: Job) -> None:
     started = iso_now()
     cursor = connection.execute(
@@ -2548,6 +2561,11 @@ def run_job(connection: sqlite3.Connection, job: Job) -> None:
         detail = f"{type(exc).__name__}: {exc}"[:1000]
         status = "ERROR"
         print(f"{job.name}: {detail}", file=sys.stderr)
+        # Job failures went to stderr and a sqlite row nobody reads. A
+        # failing job is the single most useful thing to know early - the
+        # information-engine acceptance check has been RETRYING since
+        # 23:52 yesterday and nothing surfaced it.
+        activity_log.record("job.error", job=job.name, detail=detail)
     connection.execute(
         "UPDATE job_runs SET finished_at=?, status=?, detail=? WHERE id=?",
         (iso_now(), status, detail, cursor.lastrowid),
@@ -2555,6 +2573,8 @@ def run_job(connection: sqlite3.Connection, job: Job) -> None:
     set_state(connection, f"job:{job.name}", utc_now().isoformat())
     set_state(connection, f"job-error:{job.name}", "1" if status == "ERROR" else "0")
     connection.commit()
+    if status == "OK" and job.name in NOTEWORTHY_JOBS:
+        activity_log.record("job.ok", job=job.name, detail=str(detail)[:300])
     print(f"{job.name}: {status} · {detail}")
 
 

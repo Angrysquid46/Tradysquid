@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
+import activity_log
 import requests
 import dynamic_universe
 import economic_calendar
@@ -3719,6 +3720,20 @@ def candidate_to_row(
             "active_level_name": str(candidate.get("active_level_name", "")),
             "expiration_tier": str(candidate.get("expiration_tier", "")),
         }
+    )
+    # Every entry path funnels through here, so this is the one place that
+    # sees all of them: the 1-minute scan, SPY_KEY_LEVELS, and every
+    # /force-* command. market_condition is what distinguishes a real
+    # signal from a forced one, which is exactly what was unreadable when
+    # twelve forced positions appeared with no Discord record.
+    activity_log.record(
+        "trade.open",
+        trade_id=row.get("trade_id"),
+        play_type=row.get("play_type"),
+        option_symbol=row.get("option_symbol"),
+        entry_price=row.get("entry_price"),
+        market_condition=market_condition,
+        setup_score=row.get("setup_score"),
     )
     return row
 
