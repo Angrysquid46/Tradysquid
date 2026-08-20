@@ -43,6 +43,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent
 LIVE_SUPERVISOR_STATE = ROOT / "state" / "supervisor-state.json"
+LIVE_ACTIVITY_LOG = ROOT / "state" / "activity.jsonl"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -86,3 +87,35 @@ def sandboxed_supervisor_state():
         yield sandbox
     finally:
         supervisor.DEPLOY_STATE_PATH = original
+
+
+@pytest.fixture(scope="session", autouse=True)
+def sandboxed_activity_log():
+    """Keep the test suite out of the live activity log.
+
+    Third instance of this class of bug in one day, after evolve's fixtures
+    posting to the real #evolve-losses channel and the suite overwriting
+    the live supervisor state. This one was worse in kind: activity_log
+    writes from `candidate_to_row`, so every test that builds a trade row
+    appended to production's record.
+
+    It produced a genuine false alarm within minutes of shipping - the
+    owner was shown `option_symbol: F260807C00015000`, a FORD contract with
+    play_type REGULAR, in a SPY-only system where the multi-ticker code was
+    erased. It came from a fixture in test_local_information_engine.py. The
+    log exists to be read as evidence, so evidence is exactly what it must
+    not fabricate.
+    """
+    try:
+        import activity_log
+    except Exception:
+        yield None
+        return
+
+    sandbox = _sandbox_dir() / "activity.jsonl"
+    original = activity_log.LOG_PATH
+    activity_log.LOG_PATH = sandbox
+    try:
+        yield sandbox
+    finally:
+        activity_log.LOG_PATH = original

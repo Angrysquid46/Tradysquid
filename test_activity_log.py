@@ -132,3 +132,4 @@ def test_the_interaction_endpoint_logs_before_it_verifies() -> None:
     assert record_at < verify_at
     assert "interaction_id" in source
     assert "signature_timestamp" in source
+
