@@ -72,6 +72,14 @@ the owner has already said go.
 One sentence acknowledging the error, then the corrected work. No repeated
 apologies, no summarising the mistake at length.
 
+**Do not claim completion from judgement - run the check:**
+
+    ./.venv-tradysquid/Scripts/python.exe verify_done.py --full
+
+It verifies every condition below against the LIVE system and exits
+non-zero if any fail. Paste its output instead of asserting the work is
+finished. If it says NOT DONE, the work is not done.
+
 **Definition of done for this repo:** `deployed_sha` == `origin/main`,
 `last_update_status` == `DEPLOYED`, the root suite shows no NEW failures
 against a baseline worktree, the 252-test deploy gate is green, and the
