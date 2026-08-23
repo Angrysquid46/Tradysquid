@@ -1,0 +1,142 @@
+{
+  "schema": "Tradysquid 2.0 build backlog - Master Spec Section 19 (starting map, not a finish line). Section 20 requires appending newly discovered work to discovered_subphases at the end of every phase rather than silently expanding scope.",
+  "source_section": 19,
+  "phases": [
+    {
+      "phase_number": 0,
+      "name": "Governance bootstrap / logging activation",
+      "status": "complete",
+      "dependencies": [],
+      "completion_criteria": "governance/PROJECT_STATE.yaml(.json), PHASES.yaml(.json), ACTIVE_HANDOFF.yaml(.json), CHANGELOG.jsonl, OWNERSHIP.*, IMMUTABLE_RULES.* exist; a locking/concurrency mechanism is active; root/scoped agent instructions enforce read-before-write (Section 12). Tied to the commit that introduces it.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 1,
+      "name": "Backup and freeze",
+      "status": "not_started",
+      "dependencies": ["Phase 0"],
+      "completion_criteria": "Section 16 backups (raw SPY observations, raw option observations, daily manifests, data catalog) protected before any purge begins.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 2,
+      "name": "Final inventory",
+      "status": "not_started",
+      "dependencies": ["Phase 1"],
+      "completion_criteria": "Every repository path classified PURGE / PRESERVE / EXTRACT-NEUTRALIZE / UNKNOWN per Section 2's survivor criteria, recorded before Phase 3 purge acts on it.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 3,
+      "name": "Legacy purge",
+      "status": "not_started",
+      "dependencies": ["Phase 2"],
+      "completion_criteria": "Section 2's purge list removed (old traders/strategies, entries/exits/configs, learned thresholds/models, champion/challenger/shadow/evolve/self-learning systems, journals/trades/positions/rankings/performance history, old research conclusions, trader-specific Discord state, dead-trader-only tests). No old trader becomes a template.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 4,
+      "name": "Governance hardening",
+      "status": "not_started",
+      "dependencies": ["Phase 3"],
+      "completion_criteria": "Schemas, write guards, ownership enforcement (Section 11's SHARED_CORE/SHARED_DATA/BLACKTIDE_ONLY/CLAUDE_ONLY/HUMAN_LEARNING_CENTER machine-readable ownership), stale-state detection, atomic state updates, concurrency prevention, scoped agent instructions, continuity/CI enforcement in place. Must not recreate competing copies of the Phase 0 state files.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 5,
+      "name": "Shared factual market-data architecture / storage",
+      "status": "not_started",
+      "dependencies": ["Phase 4"],
+      "completion_criteria": "Section 9's permanent daily SPY/0DTE collection running, Parquet/DuckDB storage per Section 9, daily data manifest with data-quality grades. Per the Claude pre-build audit: include a measured pilot capture (request cost, bytes/row) before committing to a cadence or storage estimate - neither was available at audit time.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 6,
+      "name": "Neutral point-in-time backtest laboratory",
+      "status": "not_started",
+      "dependencies": ["Phase 5"],
+      "completion_criteria": "Section 10's market.as_of(timestamp)/options.as_of(timestamp)/events.as_of(timestamp) interface built, Tier A/B/C evidence labeling enforced, formal backtests reproducible from recorded inputs.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 7,
+      "name": "Shared runtime / API / cache / events",
+      "status": "not_started",
+      "dependencies": ["Phase 5"],
+      "completion_criteria": "Section 8's shared API-budget architecture and priority scheme built; one shared factual market service ('one observation, many authorized readers').",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 8,
+      "name": "Neutral competition scorekeeper",
+      "status": "not_started",
+      "dependencies": ["Phase 4"],
+      "completion_criteria": "Section 6's authoritative competition accounting built outside both private traders, consuming only immutable official trade records; neither trader can modify results.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 9,
+      "name": "Discord rebuild",
+      "status": "not_started",
+      "dependencies": ["Phase 8"],
+      "completion_criteria": "Section 14 synchronized surfaces/dashboards/scoreboards; Section 7 rivalry channel/personas/memory with the trading brain unable to read rivalry messages; Section 14 health/reconciliation states implemented.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 10,
+      "name": "Learning Center shell",
+      "status": "not_started",
+      "dependencies": ["Phase 9"],
+      "completion_criteria": "Section 15 category, #learning-index, and all 43 chapter channels (#01 through #43) exist as a shell with an indexing/search structure; content population is Phase 16.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 11,
+      "name": "Independent bot ownership areas",
+      "status": "not_started",
+      "dependencies": ["Phase 4"],
+      "completion_criteria": "bots/blacktide and bots/claude ownership areas exist per Section 11, with protected-write enforcement between them active before either trader is implemented.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 12,
+      "name": "BLACKTIDE implementation",
+      "status": "not_started",
+      "dependencies": ["Phase 6", "Phase 7", "Phase 11"],
+      "completion_criteria": "Codex-owned private trader built under Section 4's immutable competition rules, using only shared/approved resources per Section 3.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 13,
+      "name": "Claude competitor implementation",
+      "status": "not_started",
+      "dependencies": ["Phase 6", "Phase 7", "Phase 11"],
+      "completion_criteria": "Claude-owned private trader built under Section 4's immutable competition rules, using only shared/approved resources per Section 3.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 14,
+      "name": "Full validation",
+      "status": "not_started",
+      "dependencies": ["Phase 12", "Phase 13"],
+      "completion_criteria": "Section 20's BUILD COMPLETE bar met: every known phase/subphase complete, no unresolved blocker, no orphaned integration, no stale/unowned Discord surface, project state and Git synchronized, required tests pass, and both Claude and Codex independently find no additional phase required.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 15,
+      "name": "Competition launch",
+      "status": "not_started",
+      "dependencies": ["Phase 14"],
+      "completion_criteria": "Both bots launched at Section 4's starting bankroll ($1,000) with 0 inherited trades.",
+      "discovered_subphases": []
+    },
+    {
+      "phase_number": 16,
+      "name": "Full Learning Center population",
+      "status": "not_started",
+      "dependencies": ["Phase 10"],
+      "completion_criteria": "Section 15's full 43-chapter curriculum authored (comprehensive original explanations, not skimmed), every lesson carries a stable ID, human Q&A can search and link directly to lessons.",
+      "discovered_subphases": []
+    }
+  ]
+}

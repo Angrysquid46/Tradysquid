@@ -1,0 +1,15 @@
+{
+  "last_updated": "2026-08-23T17:05:52.062664-05:00",
+  "branch": "claude/phase0-governance-bootstrap",
+  "current_commit": "6448ba2cdbff6a4ce4c55da419aed6242694b199",
+  "commit_subject": "Merge pull request #307 from Angrysquid46/codex/phase0-coordination-bootstrap",
+  "current_phase": "Phase 0",
+  "current_subphase": "static governance files authored; extending ai_coordination.py",
+  "active_lock": {
+    "actor": "Claude",
+    "task": "Phase 0: governance bootstrap (Section 12)",
+    "work_id": "9d8ac2b9-6fe9-4881-bb23-f46e5c8a6553",
+    "started_at": "2026-08-23T16:58:56.278772-05:00"
+  },
+  "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."
+}

@@ -1,0 +1,60 @@
+{
+  "schema": "Machine-readable ownership per Master Spec Section 11. Fields: path, owner, readers, writers, protected, purpose. Intentionally incomplete at Phase 0 - bots/blacktide and bots/claude don't exist until Phase 11+, so this file is a schema plus what concretely exists today. Each later phase must add its own new paths' ownership entries here rather than this file guessing them in advance.",
+  "source_section": 11,
+  "ownership_classes": [
+    "SHARED_CORE",
+    "SHARED_DATA",
+    "BLACKTIDE_ONLY",
+    "CLAUDE_ONLY",
+    "HUMAN_LEARNING_CENTER"
+  ],
+  "rule": "Claude cannot modify BLACKTIDE-private resources. ChatGPT/Codex cannot modify Claude-private resources. Neither competitor autonomously changes immutable competition law.",
+  "entries": [
+    {
+      "path": "TRADYSQUID_2_MASTER_PREBUILD.md",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner"],
+      "protected": true,
+      "purpose": "Approved architecture, goals, and rules. Agents follow it; only the owner edits it (Section 24)."
+    },
+    {
+      "path": "AGENTS.md",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Root agent instructions enforcing read-before-write (Section 12)."
+    },
+    {
+      "path": "AI_COLLABORATION.md",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Cross-agent collaboration contract and control-hub field reference."
+    },
+    {
+      "path": "ai_coordination.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Shared exclusive-lock/checkpoint/finish/verify tool; the required locking/concurrency mechanism for Phase 0 (Section 12)."
+    },
+    {
+      "path": "governance/",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": true,
+      "purpose": "PROJECT_STATE/PHASES/ACTIVE_HANDOFF/CHANGELOG/OWNERSHIP/IMMUTABLE_RULES - the single shared source of project truth per Section 13. Writes should go through ai_coordination.py's begin/checkpoint/finish, not direct edits, once Phase 4 write-guard enforcement lands."
+    }
+  ],
+  "not_yet_assigned": [
+    "bots/blacktide (BLACKTIDE_ONLY, created Phase 11)",
+    "bots/claude (CLAUDE_ONLY, created Phase 11)",
+    "shared/ market/options/backtest/features/execution/api_budget/competition/events/discord (SHARED_CORE or SHARED_DATA, created Phases 5-9)",
+    "learning/ catalog/lessons/search/references (HUMAN_LEARNING_CENTER, created Phase 10)"
+  ]
+}
