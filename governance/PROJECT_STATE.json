@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-23T17:11:34.941882-05:00",
-  "branch": "claude/phase0-governance-mirror-fix",
-  "current_commit": "7dc03f851113e26448b96d1a75c23986096b9c9b",
-  "commit_subject": "Phase 0: governance bootstrap (Master Spec Section 12)",
+  "last_updated": "2026-08-23T17:40:45.934067-05:00",
+  "branch": "claude/fix-test-ai-coordination-governance-isolation",
+  "current_commit": "3ca0882238bd1ef33b992d0f68648bba7646e28e",
+  "commit_subject": "Merge pull request #309 from Angrysquid46/claude/phase0-governance-mirror-fix",
   "current_phase": "Phase 0",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
   "active_lock": null,

@@ -13,6 +13,17 @@ def control(tmp_path, monkeypatch):
     monkeypatch.setattr(coordination, "EVENTS_PATH", tmp_path / "CHANGELOG.jsonl")
     monkeypatch.setattr(coordination, "STATE_PATH", tmp_path / "CURRENT_STATE.md")
     monkeypatch.setattr(coordination, "HISTORY_PATH", tmp_path / "GIT_HISTORY.md")
+
+    # acquire/checkpoint/finish also mirror into governance/ (Section 12) -
+    # isolate those paths too, or these tests corrupt the repo's real
+    # governance/*.json files with this fixture's fake data.
+    gov_dir = tmp_path / "governance"
+    monkeypatch.setattr(coordination, "GOVERNANCE_DIR", gov_dir)
+    monkeypatch.setattr(coordination, "GOV_PROJECT_STATE_PATH", gov_dir / "PROJECT_STATE.json")
+    monkeypatch.setattr(coordination, "GOV_PHASES_PATH", gov_dir / "PHASES.json")
+    monkeypatch.setattr(coordination, "GOV_ACTIVE_HANDOFF_PATH", gov_dir / "ACTIVE_HANDOFF.json")
+    monkeypatch.setattr(coordination, "GOV_CHANGELOG_PATH", gov_dir / "CHANGELOG.jsonl")
+
     monkeypatch.setattr(coordination, "git", lambda *args: "abc123")
     monkeypatch.setattr(coordination, "update_current_state", lambda: {})
     monkeypatch.setattr(coordination, "update_git_history", lambda: None)
