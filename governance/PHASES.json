@@ -8,14 +8,16 @@
       "status": "complete",
       "dependencies": [],
       "completion_criteria": "governance/PROJECT_STATE.yaml(.json), PHASES.yaml(.json), ACTIVE_HANDOFF.yaml(.json), CHANGELOG.jsonl, OWNERSHIP.*, IMMUTABLE_RULES.* exist; a locking/concurrency mechanism is active; root/scoped agent instructions enforce read-before-write (Section 12). Tied to the commit that introduces it.",
+      "completion_evidence": "PRs #308-310 merged. governance/*.json created and kept in sync by ai_coordination.py's begin/checkpoint/finish (OneDrive lock stays the real exclusion mechanism; governance/ is its git-committed mirror). Verified: 13/13 coordination+governance tests, 68/68 tests/unit, 252/252 deployment gate, plus a real begin/checkpoint/finish cycle against a scratch control dir.",
       "discovered_subphases": []
     },
     {
       "phase_number": 1,
       "name": "Backup and freeze",
-      "status": "not_started",
+      "status": "complete",
       "dependencies": ["Phase 0"],
       "completion_criteria": "Section 16 backups (raw SPY observations, raw option observations, daily manifests, data catalog) protected before any purge begins.",
+      "completion_evidence": "governance/PHASE1_BACKUP_MANIFEST.json - 2487 files, 1.7GB backed up to backups/phase1-freeze-<ts>/ with per-directory SHA-256 aggregates verified against a fresh re-hash. Live system stopped: 5 scheduled tasks disabled, watchdog-loop.ps1 killed, START-SUPERVISOR.cmd's restart loop exited via its own supervisor-stop.flag switch. Owner explicitly chose permanent stop (not resuming until Phase 3+).",
       "discovered_subphases": []
     },
     {

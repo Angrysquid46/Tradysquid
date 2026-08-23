@@ -1,0 +1,92 @@
+{
+  "schema": "Phase 1 backup-and-freeze manifest (Master Spec Section 19/16). The actual backed-up data (~1.7GB) lives locally, uncommitted, at backup_location - Section 16 forbids committing raw runtime archives. This manifest is the small, git-committed record of what exists there and its integrity hashes.",
+  "source_section": [
+    16,
+    19
+  ],
+  "created_at_utc": "20260823-182101",
+  "git_commit_at_backup": "db54ddf9ef6ddb8ea4906154e507e64a849ec007",
+  "backup_location": "backups/phase1-freeze-20260823-182101/ (local, gitignored, not committed)",
+  "freeze_confirmation": {
+    "scheduled_tasks_disabled": [
+      "Tradysquid Startup",
+      "Tradysquid Evolve Bot Trading Loop",
+      "Tradysquid Evolve Bot Daily Refresh",
+      "Tradysquid Evolve Bot Weekly Review",
+      "Tradysquid Market Memory Collection"
+    ],
+    "watchdog_loop_stopped": "scripts/watchdog-loop.ps1 process killed; its Startup-folder shortcut (Tradysquid Watchdog.lnk) moved to Startup-disabled/, not deleted - reversible",
+    "restart_loop_stopped": "START-SUPERVISOR.cmd batch loop exited cleanly via its own designed stop switch, state/supervisor-stop.flag (created, not a code change)",
+    "verified_stopped": "no discord_command_bot/local_information_engine/run_supervisor_simple/ngrok process running, port 8876 has no listener, confirmed after a 20+ second settle window",
+    "note": "Tradysquids Supervisor.cmd (a separate, older Startup-folder entry) still exists but points at C:\\Users\\strea\\OneDrive\\Desktop\\Tradysquid-main, which no longer exists on disk - dead, harmless, left as-is"
+  },
+  "reversal_path": "Enable-ScheduledTask for the 5 tasks above, remove state/supervisor-stop.flag, move Tradysquid Watchdog.lnk back from Startup-disabled/ to Startup/, then run START.cmd or START-SUPERVISOR.cmd once.",
+  "excluded": "No .env or credential-VALUE files found in any backed-up source tree (checked before backup). state/credential-migration.json and state/post-migration-credentials.json were included - both explicitly record secret_values_written: false and contain only env-var key names, not secret values.",
+  "directories": [
+    {
+      "source": "data",
+      "file_count": 3,
+      "total_bytes": 3055616,
+      "aggregate_sha256": "7f3b35e720682fe813769feb1509bf73fd22eaab3753c25fbbd97d6eb92c6156"
+    },
+    {
+      "source": "state",
+      "file_count": 66,
+      "total_bytes": 1634951993,
+      "aggregate_sha256": "50fea8a4fa175af917c89da9003443c0a79be677420cf4a14f8d065b90bd455b"
+    },
+    {
+      "source": "logs",
+      "file_count": 7,
+      "total_bytes": 2391662,
+      "aggregate_sha256": "5534efba3610d14ac5f8440cb4f874416d34bd5387efdac44814085c6b83c3c8"
+    },
+    {
+      "source": "docs/trade-snapshots",
+      "file_count": 2207,
+      "total_bytes": 177703633,
+      "aggregate_sha256": "f43c0382b85f838b8c3ec141a8a696f1362f6cf67b578db3bda672cfb6e384f1"
+    },
+    {
+      "source": "docs/market-memory",
+      "file_count": 5,
+      "total_bytes": 462531,
+      "aggregate_sha256": "5ba57f73fbe547909b092eb098ea8a3d03cee37631e879007fea50038f19b019"
+    },
+    {
+      "source": "evolve_bot/state",
+      "file_count": 16,
+      "total_bytes": 333813,
+      "aggregate_sha256": "4bdc61b03a19e17e8b48cea8bf10317e46f23abb769ec928dad6c736cc1c69de"
+    },
+    {
+      "source": "evolve_bot/data",
+      "file_count": 140,
+      "total_bytes": 3456926,
+      "aggregate_sha256": "5802355c97700cdb2a9aa53a3f8d2c34b52795e006d392c0360c294d5ed71505"
+    },
+    {
+      "source": "evolve_bot/models",
+      "file_count": 4,
+      "total_bytes": 61503,
+      "aggregate_sha256": "25525a97f848e26fe64226cca307fe4e8e4c0807b189c9c4c257ba741785a59c"
+    },
+    {
+      "source": "evolve_bot/reviews",
+      "file_count": 3,
+      "total_bytes": 12659,
+      "aggregate_sha256": "885ae006c148f4339e46a0c37025c7e5269166a1726c978b942bd435fdd63386"
+    },
+    {
+      "source": "evolve_bot/presentation_output",
+      "file_count": 36,
+      "total_bytes": 1849445,
+      "aggregate_sha256": "9a00a787e40968056b8a53896f7750ee8a6ca45a2fbe4697b447afcd72fe9446"
+    }
+  ],
+  "totals": {
+    "file_count": 2487,
+    "total_bytes": 1824279781,
+    "total_gb": 1.7
+  }
+}
