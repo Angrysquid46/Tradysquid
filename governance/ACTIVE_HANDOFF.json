@@ -1,15 +1,5 @@
 {
   "active": false,
-  "work_id": "9d8ac2b9-6fe9-4881-bb23-f46e5c8a6553",
-  "cleared_at": "2026-08-23T17:02:52.877047-05:00",
-  "actor": "Claude",
-  "task": "Phase 0: governance bootstrap (Section 12)",
-  "method": "new governance/ directory with repo-native state mirror, extend ai_coordination.py to write it, new tests, AGENTS.md checklist update",
-  "started_at": "2026-08-23T16:58:56.278772-05:00",
-  "starting_commit": "6448ba2cdbff6a4ce4c55da419aed6242694b199",
-  "process_id": 20884,
-  "last_checkpoint_at": "2026-08-23T17:05:51.878637-05:00",
-  "last_successful_action": "All verification green: 13/13 new+existing coordination tests, 68/68 tests/unit suite, 252/252 deploy gate, manual scratch CLI cycle proved begin/checkpoint/finish sync governance/. Marked Phase 0 complete in PHASES.json.",
-  "next_safe_action": "Commit, push, open PR, then finish to release the lock",
-  "next_safe_action_if_interrupted": "Commit, push, open PR, then finish to release the lock"
+  "work_id": null,
+  "cleared_at": "2026-08-23T17:11:34.783803-05:00"
 }
