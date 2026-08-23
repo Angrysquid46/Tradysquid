@@ -28,10 +28,23 @@ def test_phases_file_covers_all_seventeen_phases_in_order():
         assert isinstance(phase["discovered_subphases"], list)
 
 
-def test_phase_zero_is_the_only_phase_in_progress_or_complete_before_launch():
+def test_no_phase_is_started_out_of_order():
+    """Section 19's phase list is a build order, not a menu - a phase may only
+    be in_progress/complete if every phase before it already is too, and
+    every phase after the last non-not_started one must still be
+    not_started. Durable across however many phases have actually run,
+    unlike asserting a specific snapshot of which phase number is current."""
     phases = _load("PHASES.json")["phases"]
-    started = [p for p in phases if p["status"] != "not_started"]
-    assert [p["phase_number"] for p in started] == [0]
+    started = [p["phase_number"] for p in phases if p["status"] != "not_started"]
+    assert started == list(range(len(started))), (
+        f"started phases {started} are not a contiguous prefix from 0"
+    )
+    for phase in phases:
+        assert phase["status"] in {"not_started", "in_progress", "complete"}
+        if phase["status"] == "complete":
+            assert phase.get("completion_evidence"), (
+                f"Phase {phase['phase_number']} marked complete with no completion_evidence"
+            )
 
 
 def test_ownership_file_defines_all_five_classes():
