@@ -1,26 +1,38 @@
 # Tradysquid Maintainer Protocol
 
-This repository is maintained by the owner and Claude (Codex is not an active
-collaborator on this checkout). GitHub `main` is the authoritative code
-baseline; OneDrive `Tradysquid-AI-Control` is an audit trail, not a
-coordination gate — there is no second AI actor to coordinate with, so no
-lock-and-wait step is required before editing.
+This repository is maintained by the owner, Claude, and Codex. GitHub `main`
+is the authoritative code baseline. OneDrive `Tradysquid-AI-Control` is the
+shared pre-Phase-0 coordination hub and audit mirror. Claude and Codex must
+both use its exclusive lock; neither may edit while the other owns it.
 
 Before modifying files:
 
-1. Read `CURRENT_STATE.md` and `CHANGELOG.jsonl` in the control folder for
-   recent context.
-2. Inspect Git status and preserve unrelated changes.
+1. Read `TRADYSQUID_2_MASTER_PREBUILD.md`.
+2. Read `CURRENT_STATE.md`, `CHANGELOG.jsonl`, and the relevant handoff in the
+   control folder.
+3. Inspect Git status and preserve unrelated changes.
+4. Run `python ai_coordination.py verify`.
+5. Acquire the shared lock with `python ai_coordination.py begin --actor ...`
+   before the first repository write.
+
+`READY_CLEAR` means a new task may claim the lock. `READY_ACTIVE` means the hub
+is structurally healthy but another task owns the lock; do not edit or call
+`begin` until that task finishes. `BLOCKED` means repair/recovery is required.
 
 After modifying files:
 
 1. Run relevant syntax checks and tests.
 2. Commit only intended files and push normally; never force-push.
 3. Restart only affected services and verify health.
-4. Run `python ai_coordination.py begin --actor Claude --task "..." --method "..."`
-   followed by `python ai_coordination.py finish` with the actor, summary,
-   method, tests, files, and final commit — this just logs the change to
-   `CURRENT_STATE.md`/`CHANGELOG.jsonl`, it's not a permission check.
+4. Run `python ai_coordination.py finish` with the same actor, summary,
+   method, tests, files, and final commit. This writes the handoff and releases
+   the lock. The lock is a permission gate, not merely an audit note.
+
+Until Phase 0 replaces it with repository-native governance, the OneDrive hub
+is the only active-task/lock authority. Do not create separate Claude and Codex
+copies of project truth. Private strategy boundaries remain absolute: Codex
+owns BLACKTIDE-private work, Claude owns Claude-private work, and neither may
+read or change the other's private strategy intelligence.
 
 Never place credentials, conversation transcripts, brokerage data, or private
 Discord content in the shared control folder. Never execute brokerage trades.
