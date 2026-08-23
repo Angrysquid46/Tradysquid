@@ -1,0 +1,529 @@
+{
+  "schema": "Phase 2 final inventory (Master Spec Section 19/2). Every repository path classified PURGE / PRESERVE / EXTRACT_NEUTRALIZE / UNKNOWN per Section 2's survivor criteria, recorded before Phase 3 purge acts on it. Grouped by clear naming pattern rather than one entry per file - most files in a group share one verdict; mixed groups carry explicit sub-breakdowns.",
+  "source_section": 2,
+  "created_at_utc": "2026-08-23T23:41:00Z",
+  "git_commit_at_inventory": "e792ce25c97e691763367932d484c538e513f3ef",
+  "purge": [
+    {
+      "group": "Live strategy logic and its research conclusions",
+      "paths": [
+        "spy_scanner.py",
+        "spy_backtest.py",
+        "spy_backtest_live_strategies.py",
+        "spy_backtest_report.py",
+        "spy_backtest_strategies.py",
+        "spy_backtest_strategies_extended.py",
+        "spy_option_backtest.py",
+        "spy_option_model.py",
+        "spy_option_report.py",
+        "spy_meta_model.py",
+        "spy_meta_report.py",
+        "spy_all_strategies.py",
+        "spy_live_new_strategies.py",
+        "spy_time_stop_study.py",
+        "remeasure_baseline.py",
+        "strategy_rules_doc.py",
+        "docs/STRATEGY_RULES.md",
+        "docs/BACKTEST_RESULTS.md",
+        "docs/META_MODEL_RESULTS.md",
+        "docs/OPTION_RESULTS_ALL.md",
+        "docs/TIME_STOP_STUDY.md",
+        "spy_0dte_opening_range_breakout.pine",
+        "backtest_lab.py",
+        "backtest_record.py"
+      ],
+      "rationale": "The entry/exit/config logic for all 15 live strategies, its backtest results, and its research conclusions. Directly matches Section 2's purge list: 'traders and strategy variants; entries/exits/configs; old strategy research conclusions and generated result reports.'"
+    },
+    {
+      "group": "evolve_bot/ (entire package)",
+      "paths": [
+        "evolve_bot/"
+      ],
+      "rationale": "shadow.py is a literal named 'shadow mode' system; retrain_loop.py/self_tuning.py/logic_proposals.py are self-learning/evolution logic. Section 2 names 'champion/challenger, shadow, evolve, and self-learning systems' by name. Identified before Phase 0 even started."
+    },
+    {
+      "group": "Strategy-specific root tests",
+      "paths": [
+        "test_spy_0dte.py",
+        "test_spy_ratchet.py",
+        "test_ticker_exposure_cap.py",
+        "test_entry_time_window.py",
+        "test_spy_key_levels.py",
+        "test_spy_backtest.py",
+        "test_spy_backtest_extended.py",
+        "test_spy_backtest_live_strategies.py",
+        "test_spy_option_backtest.py",
+        "test_spy_option_model.py",
+        "test_spy_meta_model.py",
+        "test_spy_intraday_features.py",
+        "test_spy_gap_backfill.py",
+        "test_spy_research_data.py",
+        "test_spy_research_refresh.py",
+        "test_spy_live_new_strategies.py",
+        "test_new_strategy_entry_scan.py",
+        "test_new_strategy_candidates_lock_released.py",
+        "test_one_position_per_strategy.py",
+        "test_atr_regime_gate.py",
+        "test_delta_projection.py",
+        "test_stop_overshoot_rollup.py",
+        "test_option_liquidity_volume_floor.py",
+        "test_no_untradeable_entries.py",
+        "test_close_is_terminal.py",
+        "test_close_profitable.py",
+        "test_closing_signals_completeness.py",
+        "test_retired_channel_reporting.py",
+        "test_no_retired_taxonomy.py",
+        "test_strategy_rules_doc.py",
+        "test_market_condition.py",
+        "test_chain_snapshot.py",
+        "test_closed_card_cleanup.py",
+        "test_evolve_audit_duplicates.py",
+        "test_exit_quote_reliability.py",
+        "test_exit_sweep.py",
+        "test_force_sell.py",
+        "test_force_trade.py",
+        "test_intraday_history_timezone.py",
+        "test_live_roster_reporting.py",
+        "test_market_intelligence_bootstrap.py",
+        "test_market_intelligence_visibility.py",
+        "test_pl_rounding_consistency.py",
+        "test_recent_data_integrity.py",
+        "test_refresh_spot_price.py",
+        "test_research_store_refresh_job.py",
+        "test_reset_trading_data.py",
+        "test_scan_candidates_lock_released.py",
+        "test_stale_write_cannot_delete_trades.py",
+        "test_system_digest_job.py",
+        "test_time_stop_survives_a_bad_quote.py",
+        "test_validate_reconciliation_coverage.py",
+        "test_performance_reconciliation.py",
+        "test_backtest_cards.py",
+        "test_backtest_lab.py"
+      ],
+      "rationale": "Section 2: 'tests and compatibility code that exist only for deleted traders.' Exhaustive final list to be confirmed at Phase 3 execution time against whatever the strategy roster looks like then - this is the presumption, not yet the final cut list."
+    },
+    {
+      "group": "Old strategy performance/journal tracking",
+      "paths": [
+        "performance_channel_structure.py",
+        "performance_reconciliation.py",
+        "performance_scorecards.py",
+        "journal_contract.py's runtime data (not the schema module itself - see EXTRACT_NEUTRALIZE)",
+        "data/tradysquid.db",
+        "data/tradysquid.db.pre-repair",
+        "state/backtest_cards.json",
+        "state/backtest_results.json",
+        "state/trade-intelligence.db",
+        "backtest_cards.py"
+      ],
+      "rationale": "Section 2: 'journals, winners, losers, trades, positions, rankings, recommendations, performance history.' Phase 1 already backed this data up (governance/PHASE1_BACKUP_MANIFEST.json) - purge deletes the live copy, not the backup. Per Section 4, money resets and generation history does not carry into the new competition."
+    },
+    {
+      "group": "Self-learning/intelligence modules (presumed, not line-by-line verified)",
+      "paths": [
+        "trade_intelligence.py",
+        "outcome_learning.py",
+        "strict_learning_order.py",
+        "test_trade_intelligence.py",
+        "test_strict_learning_order.py"
+      ],
+      "rationale": "Named exactly like Section 2's 'self-learning systems' purge category. Also listed under UNKNOWN below since content wasn't read line-by-line to rule out a generically reusable piece - presumption is PURGE, confirm at Phase 3."
+    },
+    {
+      "group": "Vestigial multi-ticker infrastructure",
+      "paths": [
+        "dynamic_universe.py"
+      ],
+      "rationale": "Ticker-universe rotation from before the SPY-only pivot (see CLAUDE.md's own history: PR #148 erased multi-ticker scanning). Also listed under UNKNOWN to confirm it isn't secretly still imported anywhere before deletion."
+    },
+    {
+      "group": "Orphaned six-strategy config",
+      "paths": [
+        "config/presets/balanced.json",
+        "config/presets/loose.json",
+        "config/presets/profit-focused.json",
+        "config/presets/tight.json",
+        "config/strategies/bear-call-spread.json",
+        "config/strategies/bull-put-spread.json",
+        "config/strategies/regular-call.json",
+        "config/strategies/regular-put.json",
+        "config/strategies/swing-call.json",
+        "config/strategies/swing-put.json"
+      ],
+      "rationale": "config/strategies/* matches the six strategies from the tradysquid/ package deleted in #279 (regular_call/regular_put/swing_call/swing_put/bull_put_spread/bear_call_spread) - spy_scanner.py reads config/scanner.json, not this. Already orphaned before this inventory."
+    },
+    {
+      "group": "Stale multi-ticker chain snapshots",
+      "paths": [
+        "docs/chain-snapshots/"
+      ],
+      "rationale": "Confirmed in the original pre-build audit: 136 files, non-SPY tickers (AAL/AMC/CCL/CLF/F/LYFT/MARA/NIO/NU), dated 2026-08-06/07 only - dead output from the deleted multi-ticker system, not an SPY 0DTE archive."
+    },
+    {
+      "group": "Strategy-specific manual/batch trigger scripts",
+      "paths": [
+        "run_all_options.py",
+        "run_exit_sweep.py",
+        "run_keylevels.py",
+        "run_own_exits.py",
+        "capture_0dte_chain.py",
+        "exit_sweep.py",
+        "run_market_memory_collection.ps1"
+      ],
+      "rationale": "Manual/scheduled trigger scripts for the current strategies' option sweeps, key-levels checks, and exit handling. capture_0dte_chain.py's underlying capture *mechanism* is separately noted under EXTRACT_NEUTRALIZE - only the current strategy-coupled invocation purges."
+    },
+    {
+      "group": "Old trade-history recovery tool",
+      "paths": [
+        "recover_discord_trade_history.py"
+      ],
+      "rationale": "Tied specifically to recovering the old trade history that itself gets purged."
+    },
+    {
+      "group": "Historical planning drafts",
+      "paths": [
+        "DISCORD_REDESIGN_DRAFT.md",
+        "LOCAL_SYSTEM_DRAFT.md",
+        "PR54_IMPLEMENTATION_SUMMARY.md"
+      ],
+      "rationale": "Point-in-time planning/summary documents for old-system work, not live infrastructure or current design intent (superseded by TRADYSQUID_2_MASTER_PREBUILD.md)."
+    }
+  ],
+  "preserve": [
+    {
+      "group": "Updater/watchdog/rollback stack (AGENTS.md frozen list)",
+      "paths": [
+        "run_supervisor_simple.py",
+        "tradysquid_supervisor.py",
+        "simple_upgrade_runtime.py",
+        "deployment_validation_manifest.py",
+        "runtime_contract.py",
+        "single_owner_runtime.py",
+        "ngrok_process_runtime.py",
+        "run_with_env.py",
+        "START-SUPERVISOR.cmd",
+        "ENSURE-SUPERVISOR.ps1",
+        "stop_tradysquid_processes.ps1",
+        "scripts/watchdog-loop.ps1",
+        "scripts/start-watchdog-loop-hidden.vbs"
+      ],
+      "rationale": "Explicitly frozen in AGENTS.md's nonnegotiable updater freeze. Section 2 survivor category: 'working GitHub/Discord/market-data/broker/env/credential plumbing.' Not touched by this inventory or by Phase 3 without current live evidence of updater failure and explicit owner authorization."
+    },
+    {
+      "group": "Upgrade/diagnostic infrastructure",
+      "paths": [
+        "applied_upgrades.py",
+        "applied_upgrade_status_runtime.py",
+        "github_upgrade_bridge.py",
+        "github_upgrade_bridge_runtime.py",
+        "github_upgrade_patch.py",
+        "upgrade_impact.py",
+        "upgrade_lifecycle_dashboard.py",
+        "shared_upgrade_lifecycle.py",
+        "updater_test_command.py",
+        "diagnostic_nonblocking_runtime.py",
+        "diagnostic_review_runtime.py",
+        "diagnostic_runtime_integration.py",
+        "diagnostic_startup_runtime.py",
+        "diagnostic_state_migration.py",
+        "diagnostic_upgrade_system.py",
+        "supervisor_diagnostic_runtime.py",
+        "scheduler_diagnostic_runtime.py",
+        "discord_command_diagnostics.py",
+        "discord_reconciliation_safety.py",
+        "test_applied_upgrade_status_runtime.py",
+        "test_applied_upgrades.py",
+        "test_applied_upgrades_validate.py",
+        "test_deployment_validation_manifest.py",
+        "test_diagnostic_nonblocking_runtime.py",
+        "test_diagnostic_review_runtime.py",
+        "test_diagnostic_startup_runtime.py",
+        "test_diagnostic_state_migration.py",
+        "test_diagnostic_upgrade_system.py",
+        "test_discord_command_diagnostics.py",
+        "test_discord_reconciliation_safety.py",
+        "test_github_upgrade_bridge.py",
+        "test_github_upgrade_bridge_runtime.py",
+        "test_ngrok_process_runtime.py",
+        "test_runtime_contract.py",
+        "test_scheduler_diagnostic_runtime.py",
+        "test_self_healing_lock_port.py",
+        "test_simple_upgrade_flow.py",
+        "test_single_owner_runtime.py",
+        "test_supervisor_availability.py",
+        "test_supervisor_diagnostic_runtime.py",
+        "test_supervisor_discord_readiness.py",
+        "test_supervisor_entrypoint_diagnostics.py",
+        "test_updater_test_command.py",
+        "test_upgrade_lifecycle_dashboard.py",
+        "test_visible_manual_installer.py",
+        "test_stream_instrumentation.py",
+        "test_tests_cannot_write_live_supervisor_state.py",
+        "test_runtime_state_hygiene.py",
+        "test_outbound_connectivity_runtime.py",
+        "test_market_calendar_runtime.py",
+        "test_automation_acceptance.py",
+        "test_always_on_operations.py"
+      ],
+      "rationale": "Deployment/updater health machinery, generic to whatever code is deployed. upgrade_batch_44*.py is deliberately excluded here - see UNKNOWN."
+    },
+    {
+      "group": "Updater-focused CI workflows",
+      "paths": [
+        ".github/workflows/validate-simple-updater.yml",
+        ".github/workflows/patch-installer-log-lock.yml",
+        ".github/workflows/validate-foreground-worktree-installer.yml",
+        ".github/workflows/validate-visible-rollback.yml",
+        ".github/workflows/validate-runtime-state.yml"
+      ],
+      "rationale": "Validate installer/updater/rollback mechanics, not strategy content."
+    },
+    {
+      "group": "Governance and project identity",
+      "paths": [
+        "governance/",
+        "ai_coordination.py",
+        "AGENTS.md",
+        "AI_COLLABORATION.md",
+        "CLAUDE.md",
+        "TRADYSQUID_2_MASTER_PREBUILD.md",
+        "README.md",
+        "COMMAND_BOT_SETUP.md",
+        "OPENAI_DISCORD_SETUP.md",
+        "REMOTE_CONTROL_SETUP.md",
+        "GITHUB_UPGRADE_BATCH_SETUP.md"
+      ],
+      "rationale": "Section 2 survivor category: 'Tradysquid identity.' Setup docs describe plumbing (Discord/OpenAI/remote-control wiring), not strategy content - content may need review for stale specifics but the docs themselves survive."
+    },
+    {
+      "group": "Generic runtime plumbing",
+      "paths": [
+        "conftest.py",
+        "sitecustomize.py",
+        "network_compat.py",
+        "verify_done.py",
+        "run_ngrok.py",
+        "ensure_tradingview_secret.py",
+        "tests/",
+        "claude_extension/",
+        "scripts/verify_installation.py",
+        "scripts/verify_live.py",
+        "scripts/rollback.ps1",
+        "scripts/setup.ps1",
+        "scripts/setup_entry.ps1",
+        "scripts/auto_install_clean_rebuild.ps1",
+        "scripts/install_clean_rebuild.ps1",
+        "scripts/install_clean_rebuild_body.ps1",
+        "scripts/clean_previous_runtime.ps1",
+        "scripts/installer_helpers.ps1",
+        "scripts/installer_runtime_fixes.ps1",
+        "scripts/fix-scheduled-tasks.ps1",
+        "scripts/update.ps1",
+        "CREATE-DESKTOP-SHORTCUT.cmd",
+        "INSTALL-REMOTE-CONTROL.cmd",
+        "INSTALL-SUPERVISOR-WATCHDOG.ps1",
+        "INSTALL.txt",
+        "ONE-CLICK-TRADYSQUID.cmd",
+        "ONE-CLICK-TRADYSQUID.ps1",
+        "RUN-AUDITED-TRADYSQUID-INSTALL.ps1",
+        "SETUP-AND-START.cmd",
+        "SUPERVISOR-DIAGNOSTICS.ps1",
+        "UNINSTALL-REMOTE-CONTROL.cmd",
+        "UPDATE.cmd",
+        "register-commands.cmd",
+        "start-command-bot.cmd",
+        "start-everything.bat",
+        "START-TRADYSQUID.bat"
+      ],
+      "rationale": "Section 2 survivor: 'minimal generic runtime infrastructure useful without old traders.' scripts/verify_installation.py/verify_live.py check strategy roster count today and will need content updates post-Phase-3, but the verifier mechanism itself survives."
+    },
+    {
+      "group": "Env/dependency shape",
+      "paths": [
+        ".env.example",
+        "config.example.json",
+        "pyproject.toml",
+        "requirements.txt",
+        "requirements-dev.txt",
+        ".gitignore",
+        "config/upgrade-impact.json"
+      ],
+      "rationale": "Section 2 survivor: 'working GitHub/Discord/market-data/broker/env/credential plumbing' - the shape, not any strategy-specific values."
+    },
+    {
+      "group": "Operations/acceptance/connectivity infra",
+      "paths": [
+        "always_on_operations.py",
+        "automation_acceptance.py",
+        "operations_acceptance.py",
+        "outbound_connectivity_runtime.py",
+        "market_calendar_runtime.py",
+        "check_command_setup.py",
+        "check_registered_commands.py"
+      ],
+      "rationale": "Generic operational health/acceptance checks and market-calendar plumbing, not strategy content. check_command_setup.py/check_registered_commands.py verify Discord command registration mechanics, not strategy channels."
+    }
+  ],
+  "extract_neutralize": [
+    {
+      "group": "Market-data streaming and acquisition technique",
+      "paths": [
+        "tradier_stream.py",
+        "spy_research_data.py",
+        "spy_research_refresh.py",
+        "spy_option_data.py",
+        "spy_gap_backfill.py",
+        "spy_intraday_features.py",
+        "capture_0dte_chain.py (capture mechanism only, not its current strategy-coupled invocation)",
+        "market_memory.py",
+        "market_memory_charts.py",
+        "activity_log.py",
+        "local_information_engine.py",
+        "local_information_engine_bootstrap.py",
+        "local_information_engine_public.py",
+        "test_activity_log.py",
+        "test_market_memory.py",
+        "test_market_memory_charts.py",
+        "test_tradier_stream.py",
+        "test_local_information_engine.py"
+      ],
+      "rationale": "Real, proven technique - reconnect handling, EOD/yfinance acquisition (the only multi-year options history in the repo, Tier B per the master spec's own tiers, identified in the original pre-build audit), a periodic chain-snapshot poller matching Section 9's collection requirement. Reusable as a Phase 5 seed; current implementation is coupled to old-system assumptions and needs review, not verbatim reuse."
+    },
+    {
+      "group": "Discord mechanics",
+      "paths": [
+        "discord_cards.py",
+        "sync_discord_structure.py",
+        "sync_discord_structure_public.py",
+        "sync_discord_structure_reports.py",
+        "sync_discord_cards.py",
+        "register_discord_commands.py",
+        "register_discord_commands_public.py",
+        "discord_command_bot.py",
+        "discord_command_bot_public.py",
+        ".github/workflows/register-discord-commands.yml",
+        ".github/workflows/sync-discord-structure.yml",
+        "setup_discord_guide.py",
+        "test_sync_discord_cards.py",
+        "test_discord_card_rate.py",
+        "test_discord_settings_commands.py",
+        "test_clear_chat_history.py"
+      ],
+      "rationale": "Per-channel rate-limit pattern and category/channel-sync engine, already identified as reusable before Phase 0. Keep the mechanism, discard the 15-strategy channel list and old card content."
+    },
+    {
+      "group": "Shared/neutral data candidates",
+      "paths": [
+        "economic_calendar.py",
+        "journal_contract.py",
+        "test_economic_calendar.py",
+        "test_journal_contract.py"
+      ],
+      "rationale": "economic_calendar.py's FRED/Finnhub catalyst check directly matches Section 8's shared-resource list ('calendars, factual event timestamps'). journal_contract.py's schema/contract shape may seed Section 6/8's official immutable trade-record format - the concept of a validated trade-record contract is strategy-neutral even though today it validates old-strategy journal entries."
+    },
+    {
+      "group": "Learning Center material",
+      "paths": [
+        "learning_center/",
+        "learning_center_authored.py",
+        "learning_center_catalog.py",
+        "learning_center_content.py",
+        "learning_center_expansion.py",
+        "learning_question_gaps.py",
+        "learning_application.py",
+        "learning_application_public.py",
+        "learning_search_router.py",
+        "LEARNING_CENTER.md",
+        "sync_learning_center.py",
+        "config/learning-center.json",
+        ".github/workflows/validate-learning-center.yml",
+        "test_learning_center.py"
+      ],
+      "rationale": "Real prose/reference material and a working channel-sync pattern, but structured as a 17-topic curriculum; Section 15 wants a different, 43-chapter structure. Reference material and mechanics reusable, content needs net-new authorship - identified in the original pre-build audit."
+    },
+    {
+      "group": "Provider/schema config shape",
+      "paths": [
+        "config/scanner.json (provider block only - tradier/robinhood_mcp/tradingview sub-objects, not the ~40 strategy-tuning keys)",
+        "config/discord-schema.json",
+        "config/defaults.json"
+      ],
+      "rationale": "Keep the shape (how providers/schemas are declared), strip strategy-specific tuning values."
+    }
+  ],
+  "unknown_needs_review": [
+    {
+      "paths": [
+        "upgrade_batch_44.py",
+        "upgrade_batch_44_live_acceptance.py",
+        "test_upgrade_batch_44.py",
+        "test_upgrade_batch_44_live_acceptance.py"
+      ],
+      "question": "One-time migration/acceptance tooling for a specific historical upgrade batch. Still load-bearing, or already served its purpose and safe to archive?"
+    },
+    {
+      "paths": [
+        "clean_rebuild_auto_handoff.py"
+      ],
+      "question": "Tied to the clean-rebuild installer effort (matches backups/pre-setup-* naming). Same question as upgrade_batch_44 - active or historical?"
+    },
+    {
+      "paths": [
+        "run_supervisor.py",
+        "run_supervisor_resilient.py"
+      ],
+      "question": "Possible superseded alternates to the confirmed-live run_supervisor_simple.py (verified live via START-SUPERVISOR.cmd during Phase 1). Dead code, or an active fallback path?"
+    },
+    {
+      "paths": [
+        "START.cmd",
+        "scripts/start.ps1",
+        "STOP.cmd",
+        "scripts/stop.ps1"
+      ],
+      "question": "CONFIRMED DEAD during Phase 1 verification - both target the deleted tradysquid.app package (deleted in #279) and would fail immediately if run. Distinct from the genuinely-live START-SUPERVISOR.cmd/stop_tradysquid_processes.ps1. Repair to point at the live system, or remove outright?"
+    },
+    {
+      "paths": [
+        "config/tickers.json"
+      ],
+      "question": "Likely vestigial from the pre-SPY-only multi-ticker era, same question as dynamic_universe.py. Confirm nothing still reads it before classifying PURGE."
+    },
+    {
+      "paths": [
+        "openai_discord_assistant.py",
+        "openai_discord_patch.py",
+        "test_openai_discord_assistant.py"
+      ],
+      "question": "Could be reusable for Section 15's human Q&A over the Learning Center, or could be strategy-coupled today. Needs a content read before either PRESERVE/EXTRACT or PURGE."
+    },
+    {
+      "paths": [
+        "trade_intelligence.py",
+        "outcome_learning.py",
+        "strict_learning_order.py"
+      ],
+      "question": "Presumed PURGE by name (self-learning-shaped, matches Section 2's list) but not read line-by-line to rule out something generically reusable inside."
+    },
+    {
+      "paths": [
+        "dynamic_universe.py"
+      ],
+      "question": "Presumed PURGE (vestigial multi-ticker code) but not confirmed nothing currently imports it."
+    },
+    {
+      "paths": [
+        "option_session_inputs.py",
+        "test_option_session_inputs.py"
+      ],
+      "question": "Strategy-adjacent option-session parameter input handling - not read closely enough to tell if it's strategy-coupled (PURGE) or a generic session-input utility (EXTRACT)."
+    }
+  ],
+  "remediation": {
+    "action": "Deleted backups/pre-setup-20260804-022328/ and backups/pre-setup-20260804-030904/",
+    "reason": "Both contained raw .env files with real credentials (DISCORD_BOT_TOKEN, TRADIER_ACCESS_TOKEN, etc.) sitting in plaintext on disk. Found during Phase 2 inventory research. Unrelated to the strategy purge timeline - remediating a live credential-exposure risk now that the repo is public, per explicit owner authorization separate from the Section 2 purge scope.",
+    "scope_confirmation": "Both folders were from scripts/install_clean_rebuild*.ps1 setup flows, predate this session, and are fully superseded by Phase 1's governance/PHASE1_BACKUP_MANIFEST.json-tracked backup (backups/phase1-freeze-20260823-182101/), which does not contain any .env or credential-value files and was left untouched.",
+    "executed_at_utc": "2026-08-23T23:41:30Z"
+  },
+  "coverage_note": "Verified against `git ls-files` for root-level .py files: initial pass covered 127/218 (58%); this fill-gaps pass adds the remaining 91, re-verified to 218/218 covered. Group-level classification, not a claim that every file was read line-by-line - unknown_needs_review lists what still needs that closer look before Phase 3 acts on it."
+}

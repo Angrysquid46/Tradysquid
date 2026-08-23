@@ -23,9 +23,10 @@
     {
       "phase_number": 2,
       "name": "Final inventory",
-      "status": "not_started",
+      "status": "complete",
       "dependencies": ["Phase 1"],
       "completion_criteria": "Every repository path classified PURGE / PRESERVE / EXTRACT-NEUTRALIZE / UNKNOWN per Section 2's survivor criteria, recorded before Phase 3 purge acts on it.",
+      "completion_evidence": "governance/PHASE2_INVENTORY.json - all 218 tracked root .py files covered (verified programmatically, zero gaps), plus config/, scripts/, docs/, .github/workflows/, and directory-level entries. 8 items flagged unknown_needs_review for Codex/owner input before Phase 3 acts on them. Also removed backups/pre-setup-20260804-*/ (two folders with real .env credentials on disk, owner-authorized separately from the purge scope).",
       "discovered_subphases": []
     },
     {
