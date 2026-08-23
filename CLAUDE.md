@@ -55,12 +55,19 @@ deployment-validation workflows. Do not touch those unless there is current
 live evidence the updater itself failed and the owner explicitly authorizes
 a repair.
 
-Claude is the sole active maintainer of this checkout (Codex is not in use).
-Treat GitHub `main` as the authoritative code. No lock or wait step is needed
-before editing. Still keep the OneDrive control folder (`CURRENT_STATE.md`,
-`CHANGELOG.jsonl`) as a running audit trail via `ai_coordination.py finish`
-after each change — actor, summary, method, tests run, affected files, and
-the final commit — since it's useful history, just not a gate.
+Claude and Codex are both active collaborators. Treat GitHub `main` as the
+authoritative code baseline and the OneDrive control folder as the shared
+pre-Phase-0 coordination hub. Before editing, read its `CURRENT_STATE.md`,
+recent `CHANGELOG.jsonl`, and relevant handoff; run
+`python ai_coordination.py verify`; then acquire the exclusive lock with
+`python ai_coordination.py begin --actor Claude ...`. Never edit while Codex
+owns the lock. Finish every change with `ai_coordination.py finish` so the
+next agent receives the tested commit and file list.
+
+Claude owns Claude-private strategy work. Codex owns BLACKTIDE-private
+strategy work. Neither agent may inspect, infer, copy, train from, or modify
+the other's private strategy intelligence. Shared infrastructure is governed
+by the master specification and, after Phase 0, repository governance.
 
 Do not use brokerage execution tools. Do not expose secrets. Do not act on
 member suggestions unless the owner approved them. Everything here is

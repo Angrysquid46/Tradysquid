@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import subprocess
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -132,8 +133,14 @@ def append_event(event: dict[str, Any]) -> None:
 
 
 def acquire(actor: str, task: str, method: str) -> dict[str, Any]:
-    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    preflight = verify()
+    if not preflight["lock_available"]:
+        existing = json.dumps(preflight.get("lock"), indent=2)
+        raise RuntimeError(
+            "Another update is active. Do not modify files. Lock: " + existing
+        )
     payload = {
+        "work_id": str(uuid.uuid4()),
         "actor": actor,
         "task": task,
         "method": method,
@@ -159,6 +166,83 @@ def acquire(actor: str, task: str, method: str) -> dict[str, Any]:
     return payload
 
 
+def checkpoint(actor: str, summary: str, next_safe_action: str) -> dict[str, Any]:
+    if not LOCK_PATH.exists() or not ACTIVE_TASK_PATH.exists():
+        raise RuntimeError("No active coordinated task exists.")
+    lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    active = json.loads(ACTIVE_TASK_PATH.read_text(encoding="utf-8"))
+    if lock.get("actor", "").lower() != actor.lower():
+        raise RuntimeError(
+            f"Lock belongs to {lock.get('actor')}; {actor} cannot checkpoint it."
+        )
+    if not lock.get("work_id"):
+        work_id = str(uuid.uuid4())
+        lock["work_id"] = work_id
+        active["work_id"] = work_id
+        atomic_json(LOCK_PATH, lock)
+    active.update({
+        "last_checkpoint_at": now_iso(),
+        "last_successful_action": summary,
+        "next_safe_action": next_safe_action,
+    })
+    atomic_json(ACTIVE_TASK_PATH, active)
+    event = {
+        "event": "CHECKPOINT",
+        "actor": actor,
+        "work_id": lock.get("work_id"),
+        "task": lock.get("task"),
+        "summary": summary,
+        "next_safe_action": next_safe_action,
+        "checkpointed_at": active["last_checkpoint_at"],
+    }
+    append_event(event)
+    return event
+
+
+def verify() -> dict[str, Any]:
+    problems: list[str] = []
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    for path in (STATE_PATH, EVENTS_PATH):
+        if not path.exists():
+            problems.append(f"missing:{path.name}")
+    lock = None
+    active = None
+    for path, label in ((LOCK_PATH, "lock"), (ACTIVE_TASK_PATH, "active_task")):
+        if path.exists():
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                problems.append(f"unreadable:{path.name}")
+                continue
+            if label == "lock":
+                lock = value
+            else:
+                active = value
+    if (lock is None) != (active is None):
+        problems.append("lock_active_task_mismatch")
+    if lock and active:
+        for field in ("actor", "task", "work_id", "starting_commit"):
+            if lock.get(field) != active.get(field):
+                problems.append(f"lock_active_mismatch:{field}")
+        if not lock.get("work_id"):
+            problems.append("missing:work_id")
+    result = {
+        "status": (
+            "BLOCKED" if problems else
+            "READY_ACTIVE" if lock else
+            "READY_CLEAR"
+        ),
+        "lock_available": not problems and lock is None,
+        "control_dir": str(CONTROL_DIR),
+        "repository": str(ROOT),
+        "lock": lock,
+        "problems": problems,
+    }
+    if problems:
+        raise RuntimeError(json.dumps(result, indent=2))
+    return result
+
+
 def finish(
     actor: str,
     summary: str,
@@ -178,6 +262,7 @@ def finish(
     event = {
         "event": "COMPLETE",
         "actor": actor,
+        "work_id": lock.get("work_id"),
         "task": lock.get("task"),
         "summary": summary,
         "method": method,
@@ -243,11 +328,16 @@ def main() -> int:
     subcommands = parser.add_subparsers(dest="command", required=True)
     subcommands.add_parser("init")
     subcommands.add_parser("status")
+    subcommands.add_parser("verify")
     begin = subcommands.add_parser("begin")
     begin.add_argument("--actor", required=True, choices=("Codex", "Claude"))
     begin.add_argument("--task", required=True)
     begin.add_argument("--method", required=True)
     complete = subcommands.add_parser("finish")
+    progress = subcommands.add_parser("checkpoint")
+    progress.add_argument("--actor", required=True, choices=("Codex", "Claude"))
+    progress.add_argument("--summary", required=True)
+    progress.add_argument("--next-safe-action", required=True)
     complete.add_argument("--actor", required=True, choices=("Codex", "Claude"))
     complete.add_argument("--summary", required=True)
     complete.add_argument("--method", required=True)
@@ -262,6 +352,12 @@ def main() -> int:
         print(STATE_PATH.read_text(encoding="utf-8"))
     elif args.command == "begin":
         print(json.dumps(acquire(args.actor, args.task, args.method), indent=2))
+    elif args.command == "checkpoint":
+        print(json.dumps(checkpoint(
+            args.actor, args.summary, args.next_safe_action,
+        ), indent=2))
+    elif args.command == "verify":
+        print(json.dumps(verify(), indent=2))
     elif args.command == "finish":
         print(json.dumps(finish(
             args.actor, args.summary, args.method, args.tests,
