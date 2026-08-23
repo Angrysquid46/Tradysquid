@@ -1,0 +1,55 @@
+{
+  "schema": "Rules no agent may casually change, transcribed from Master Spec Sections 2-4. Values here are quoted from the master spec, not invented. If the master spec is amended by the owner (Section 24), update this file to match in the same change.",
+  "source_sections": [2, 3, 4],
+  "clean_slate_objective": {
+    "source_section": 2,
+    "rule": "Tradysquid 2.0 is not a refactor or migration of old trader intelligence. No old trader becomes a template. No old strategy result becomes starting knowledge for either new competitor.",
+    "survivor_categories": [
+      "Tradysquid identity",
+      "working GitHub/Discord/market-data/broker/env/credential plumbing",
+      "verified factual historical market data",
+      "strategy-neutral backtesting machinery",
+      "minimal generic runtime infrastructure useful without old traders"
+    ]
+  },
+  "private_competitor_boundary": {
+    "source_section": 3,
+    "competitors": {
+      "BLACKTIDE": {
+        "machine_id": "BLACKTIDE_SPY",
+        "subtitle": "Autonomous SPY Options Evolution Engine",
+        "owner": "ChatGPT/Codex"
+      },
+      "Claude competitor": {
+        "owner": "Claude"
+      }
+    },
+    "rule": "Claude must not request, inspect, infer, copy, modify, or train from BLACKTIDE-private strategy intelligence. ChatGPT/Codex must not modify or consume Claude-private strategy intelligence.",
+    "shared_resources_may_include": [
+      "SPY/option observations", "calendars", "factual event timestamps",
+      "deterministic neutral features", "the backtest engine",
+      "execution simulator", "data-quality infrastructure", "API manager",
+      "market cache", "neutral scorekeeper", "Discord transport"
+    ],
+    "private_resources_include": [
+      "entries", "exits", "learned thresholds/weights", "private models",
+      "private research conclusions", "private evolution logic",
+      "future trade reasoning", "opponent postmortem intelligence"
+    ]
+  },
+  "immutable_competition_rules": {
+    "source_section": 4,
+    "product": "SPY options",
+    "initial_scope": "long 0DTE CALLS and PUTS, buy to open and sell to close",
+    "starting_bankroll_per_generation_usd": 1000,
+    "max_open_trades_per_bot": 1,
+    "same_contract_multiple_count_as_one_trade": true,
+    "no_live_shadow_trading_or_hidden_portfolios": true,
+    "no_lookahead": true,
+    "execution": "realistic paper execution only - no hindsight fills, fake liquidity, or future-aware pricing",
+    "official_completed_trades_immutable": true,
+    "bust_protocol": "freeze the generation, preserve official history and that bot's legitimate learning, record a postmortem/bust, reset bankroll to $1,000, and start a new generation",
+    "money_resets_history_does_not": true,
+    "neither_bot_may_alter_shared_rules_because_it_is_losing": true
+  }
+}

@@ -23,6 +23,19 @@ EVENTS_PATH = CONTROL_DIR / "CHANGELOG.jsonl"
 STATE_PATH = CONTROL_DIR / "CURRENT_STATE.md"
 HISTORY_PATH = CONTROL_DIR / "GIT_HISTORY.md"
 
+# Repository-native mirror (Master Spec Section 12/13). The OneDrive files
+# above remain the real cross-process exclusion lock - git can't provide
+# atomic exclusive-create across two independent working trees the way a
+# synced folder can. These governance/ files are a git-committed, always
+# up to date snapshot of the same state, so a fresh checkout with no
+# OneDrive access can still answer "what's active, what's next" from repo
+# state alone.
+GOVERNANCE_DIR = Path(os.environ.get("AI_GOVERNANCE_DIR", str(ROOT / "governance")))
+GOV_PROJECT_STATE_PATH = GOVERNANCE_DIR / "PROJECT_STATE.json"
+GOV_PHASES_PATH = GOVERNANCE_DIR / "PHASES.json"
+GOV_ACTIVE_HANDOFF_PATH = GOVERNANCE_DIR / "ACTIVE_HANDOFF.json"
+GOV_CHANGELOG_PATH = GOVERNANCE_DIR / "CHANGELOG.jsonl"
+
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat()
@@ -132,7 +145,71 @@ def append_event(event: dict[str, Any]) -> None:
         handle.write(json.dumps(event, separators=(",", ":")) + "\n")
 
 
-def acquire(actor: str, task: str, method: str) -> dict[str, Any]:
+def append_governance_event(event: dict[str, Any]) -> None:
+    GOVERNANCE_DIR.mkdir(parents=True, exist_ok=True)
+    with GOV_CHANGELOG_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, separators=(",", ":")) + "\n")
+
+
+def update_project_state(phase: str | None = None, subphase: str | None = None) -> dict[str, Any]:
+    """Refresh governance/PROJECT_STATE.json - the repo-native mirror of
+    current commit/branch/lock, readable without OneDrive access."""
+    snapshot = repository_snapshot()
+    lock = None
+    if LOCK_PATH.exists():
+        try:
+            lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            lock = None
+    if phase is None or subphase is None:
+        previous_phase, previous_subphase = None, None
+        if GOV_PROJECT_STATE_PATH.exists():
+            try:
+                previous = json.loads(GOV_PROJECT_STATE_PATH.read_text(encoding="utf-8"))
+                previous_phase = previous.get("current_phase")
+                previous_subphase = previous.get("current_subphase")
+            except (json.JSONDecodeError, OSError):
+                pass
+        phase = phase if phase is not None else previous_phase
+        subphase = subphase if subphase is not None else previous_subphase
+    state = {
+        "last_updated": now_iso(),
+        "branch": snapshot["branch"],
+        "current_commit": snapshot["commit"],
+        "commit_subject": snapshot["commit_subject"],
+        "current_phase": phase,
+        "current_subphase": subphase,
+        "active_lock": (
+            None if lock is None else {
+                "actor": lock.get("actor"),
+                "task": lock.get("task"),
+                "work_id": lock.get("work_id"),
+                "started_at": lock.get("started_at"),
+            }
+        ),
+        "notes": (
+            "PROJECT_STATE.current_commit should match the repository state it "
+            "describes. If Git materially changes without a synchronized update, "
+            "treat this file as PROJECT_STATE_STALE."
+        ),
+    }
+    atomic_json(GOV_PROJECT_STATE_PATH, state)
+    return state
+
+
+def update_active_handoff(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """Refresh governance/ACTIVE_HANDOFF.json - the Section 12 step 9
+    STARTED-record fields, or an explicit cleared shape when no task is
+    active."""
+    if payload is None:
+        record: dict[str, Any] = {"active": False, "work_id": None, "cleared_at": now_iso()}
+    else:
+        record = {"active": True, **payload}
+    atomic_json(GOV_ACTIVE_HANDOFF_PATH, record)
+    return record
+
+
+def acquire(actor: str, task: str, method: str, **handoff_fields: Any) -> dict[str, Any]:
     preflight = verify()
     if not preflight["lock_available"]:
         existing = json.dumps(preflight.get("lock"), indent=2)
@@ -163,6 +240,23 @@ def acquire(actor: str, task: str, method: str) -> dict[str, Any]:
     atomic_json(ACTIVE_TASK_PATH, payload)
     append_event({"event": "BEGIN", **payload})
     update_current_state()
+
+    phase = handoff_fields.get("phase")
+    handoff_record = {
+        **payload,
+        "owner_request": handoff_fields.get("reason", ""),
+        "before_state": handoff_fields.get("before_state", ""),
+        "reason": handoff_fields.get("reason", ""),
+        "intended_scope": handoff_fields.get("intended_scope", ""),
+        "expected_effects": handoff_fields.get("expected_effects", ""),
+        "required_tests": handoff_fields.get("required_tests", ""),
+        "risks": handoff_fields.get("risks", ""),
+        "next_safe_action_if_interrupted": handoff_fields.get("next_safe_action", ""),
+        "phase": phase,
+    }
+    update_active_handoff(handoff_record)
+    update_project_state(phase=phase)
+    append_governance_event({"event": "BEGIN", **payload, "phase": phase})
     return payload
 
 
@@ -196,6 +290,21 @@ def checkpoint(actor: str, summary: str, next_safe_action: str) -> dict[str, Any
         "checkpointed_at": active["last_checkpoint_at"],
     }
     append_event(event)
+
+    existing_handoff: dict[str, Any] = {}
+    if GOV_ACTIVE_HANDOFF_PATH.exists():
+        try:
+            existing_handoff = json.loads(GOV_ACTIVE_HANDOFF_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            existing_handoff = {}
+    handoff_record = {
+        **existing_handoff,
+        **active,
+        "next_safe_action_if_interrupted": next_safe_action,
+    }
+    update_active_handoff(handoff_record)
+    update_project_state(phase=existing_handoff.get("phase"))
+    append_governance_event(event)
     return event
 
 
@@ -297,6 +406,10 @@ def finish(
     ACTIVE_TASK_PATH.unlink(missing_ok=True)
     update_git_history()
     update_current_state()
+
+    update_active_handoff(None)
+    update_project_state()
+    append_governance_event(event)
     return event
 
 
@@ -333,6 +446,14 @@ def main() -> int:
     begin.add_argument("--actor", required=True, choices=("Codex", "Claude"))
     begin.add_argument("--task", required=True)
     begin.add_argument("--method", required=True)
+    begin.add_argument("--phase", default=None, help="Section 19 phase this task belongs to, e.g. 'Phase 0'")
+    begin.add_argument("--reason", default="")
+    begin.add_argument("--before-state", default="")
+    begin.add_argument("--intended-scope", default="")
+    begin.add_argument("--expected-effects", default="")
+    begin.add_argument("--required-tests", default="")
+    begin.add_argument("--risks", default="")
+    begin.add_argument("--next-safe-action", default="")
     complete = subcommands.add_parser("finish")
     progress = subcommands.add_parser("checkpoint")
     progress.add_argument("--actor", required=True, choices=("Codex", "Claude"))
@@ -351,7 +472,17 @@ def main() -> int:
         initialize()
         print(STATE_PATH.read_text(encoding="utf-8"))
     elif args.command == "begin":
-        print(json.dumps(acquire(args.actor, args.task, args.method), indent=2))
+        print(json.dumps(acquire(
+            args.actor, args.task, args.method,
+            phase=args.phase,
+            reason=args.reason,
+            before_state=args.before_state,
+            intended_scope=args.intended_scope,
+            expected_effects=args.expected_effects,
+            required_tests=args.required_tests,
+            risks=args.risks,
+            next_safe_action=args.next_safe_action,
+        ), indent=2))
     elif args.command == "checkpoint":
         print(json.dumps(checkpoint(
             args.actor, args.summary, args.next_safe_action,

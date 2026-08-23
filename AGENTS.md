@@ -8,11 +8,15 @@ both use its exclusive lock; neither may edit while the other owns it.
 Before modifying files:
 
 1. Read `TRADYSQUID_2_MASTER_PREBUILD.md`.
-2. Read `CURRENT_STATE.md`, `CHANGELOG.jsonl`, and the relevant handoff in the
+2. Read `governance/PROJECT_STATE.json`, `governance/PHASES.json`, and
+   `governance/ACTIVE_HANDOFF.json` for the current phase/subphase and any
+   task already in flight, readable straight from this checkout with no
+   OneDrive access required.
+3. Read `CURRENT_STATE.md`, `CHANGELOG.jsonl`, and the relevant handoff in the
    control folder.
-3. Inspect Git status and preserve unrelated changes.
-4. Run `python ai_coordination.py verify`.
-5. Acquire the shared lock with `python ai_coordination.py begin --actor ...`
+4. Inspect Git status and preserve unrelated changes.
+5. Run `python ai_coordination.py verify`.
+6. Acquire the shared lock with `python ai_coordination.py begin --actor ...`
    before the first repository write.
 
 `READY_CLEAR` means a new task may claim the lock. `READY_ACTIVE` means the hub
@@ -28,11 +32,18 @@ After modifying files:
    method, tests, files, and final commit. This writes the handoff and releases
    the lock. The lock is a permission gate, not merely an audit note.
 
-Until Phase 0 replaces it with repository-native governance, the OneDrive hub
-is the only active-task/lock authority. Do not create separate Claude and Codex
-copies of project truth. Private strategy boundaries remain absolute: Codex
-owns BLACKTIDE-private work, Claude owns Claude-private work, and neither may
-read or change the other's private strategy intelligence.
+The OneDrive `UPDATE_LOCK.json` remains the real-time cross-agent exclusion
+lock — git cannot provide atomic exclusive-create across two independent
+working trees the way a synced folder can. `governance/` (created by Phase 0)
+is the git-committed mirror of the same state: `PROJECT_STATE.json`,
+`PHASES.json`, `ACTIVE_HANDOFF.json`, and `CHANGELOG.jsonl` are kept in sync
+by `ai_coordination.py`'s `begin`/`checkpoint`/`finish` on every call, so a
+fresh Claude or Codex session with no OneDrive access can still answer
+"what's active, what's next" from repository state alone (Master Spec
+Section 12's immediate-knowability requirement). Do not create separate
+Claude and Codex copies of project truth. Private strategy boundaries remain
+absolute: Codex owns BLACKTIDE-private work, Claude owns Claude-private work,
+and neither may read or change the other's private strategy intelligence.
 
 Never place credentials, conversation transcripts, brokerage data, or private
 Discord content in the shared control folder. Never execute brokerage trades.
