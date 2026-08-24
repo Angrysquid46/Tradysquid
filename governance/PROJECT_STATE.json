@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-24T10:49:48.186144-05:00",
-  "branch": "claude/fix-information-engine-crash",
-  "current_commit": "3f6e80fb20ca5b783bb81618868c4ab4c7d1b576",
-  "commit_subject": "Mark Phase 5 in_progress",
+  "last_updated": "2026-08-24T11:14:04.118655-05:00",
+  "branch": "main",
+  "current_commit": "0c63c0b47c95391b13ef1bc9ff2c088f93758707",
+  "commit_subject": "Merge pull request #318 from Angrysquid46/claude/fix-information-engine-crash",
   "current_phase": "Phase 5",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
   "active_lock": null,

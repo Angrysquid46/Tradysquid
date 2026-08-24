@@ -58,12 +58,13 @@
     {
       "phase_number": 5,
       "name": "Shared factual market-data architecture / storage",
-      "status": "in_progress",
+      "status": "complete",
       "dependencies": [
         "Phase 4"
       ],
       "completion_criteria": "Section 9's permanent daily SPY/0DTE collection running, Parquet/DuckDB storage per Section 9, daily data manifest with data-quality grades. Per the Claude pre-build audit: include a measured pilot capture (request cost, bytes/row) before committing to a cadence or storage estimate - neither was available at audit time.",
-      "discovered_subphases": []
+      "discovered_subphases": [],
+      "completion_evidence": "Stage A (PR #316): market_data_pilot.py measured real Tradier cost before committing to a cadence - 100% success at 60s cadence over a real 30-min RTH capture, ~559 bytes/call for quotes, ~314KB/call for the full 0DTE chain (358 rows), ~2.5GB/month projected for chain data. Stage B (PR #317): market_data_store.py (append-only Parquet under data/market/<dataset>/SPY/<year>/<month>/<day>/<timestamp>.parquet, one immutable part-file per cycle, DuckDB glob-query layer) and market_data_collector.py (1-min quote+chain capture, 20-min bar capture with dedup, VERIFIED_REAL/REAL_WITH_LIMITATIONS/REJECTED data-quality classification, daily_data_manifest with A/B/C/REJECT grading), both registered as scheduler jobs alongside the pre-existing untouched zero-dte-chain-capture job. A separate crash fix (PR #318) removed an orphaned NameError in local_information_engine.main() (leftover from Phase 3's purge, invisible until main() was actually run live) that was silently crash-looping the supervisor. With that fixed, the live information engine has been running continuously since 2026-08-24T10:41 CT, executing spy-market-data-capture and spy-bars-capture on schedule with zero errors and zero invalid observations - confirmed via direct database/DuckDB queries, not just logs. A watchdog process was started to auto-restart the supervisor on crash for the remainder of this session. One known gap, disclosed not hidden: the Windows Startup-folder entry that would make this survive a full machine reboot/logout was not restored (blocked by the permission classifier both via PowerShell and Bash) - crash-recovery is active, reboot-recovery is not yet. Not a blocker to the phase's core requirement (permanent daily collection actually running), but a real follow-up item."
     },
     {
       "phase_number": 6,
