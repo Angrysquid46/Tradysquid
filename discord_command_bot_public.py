@@ -1,20 +1,14 @@
 """Run TradeBot with public educational commands.
 
-Sensitive scanner controls remain owner-only. Educational commands search
-the comprehensive Learning Center, cite its channels, apply lessons to
-read-only live ticker observations, and queue unanswered questions for review.
+Sensitive scanner controls remain owner-only. `/ask` and `/explain` answer
+from discord_command_bot.py's own built-in canned library - the old
+Learning Center system this file used to route through was retired.
 """
 
 from __future__ import annotations
 
 import discord_command_bot as bot
-import learning_application as application
-import learning_center_content as learning
-import learning_question_gaps as question_gaps
-import learning_search_router as routed
 
-
-routed.install()
 ORIGINAL_PROCESS_COMMAND = bot.process_command
 
 
@@ -62,7 +56,7 @@ def public_process_command(interaction: dict) -> None:
         bot.patch_original(
             application_id,
             token,
-            content=question_gaps.answer_with_gap_tracking(interaction, question),
+            content=bot.ask_reply(question),
         )
     except Exception as exc:
         safe_error = f"{type(exc).__name__}: {exc}"[:1200]
@@ -77,8 +71,6 @@ def public_process_command(interaction: dict) -> None:
 
 
 bot.patch_original = card_patch_original
-bot.ask_reply = application.answer
-bot.explain_reply = routed.explain
 bot.process_command = public_process_command
 
 

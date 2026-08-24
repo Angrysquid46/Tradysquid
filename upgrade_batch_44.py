@@ -41,8 +41,6 @@ _PUBLIC: Any | None = None
 _OPERATIONS: Any | None = None
 _ORIGINAL_LEARNING_VERSION = trade_intelligence.learning_version
 _ORIGINAL_TRADE_LEARNING_ANALYSIS: Any | None = None
-_ORIGINAL_LIBRARY_SECTIONS: Any | None = None
-_ORIGINAL_LOAD_LESSONS: Any | None = None
 _UNIVERSE_POLICY_INSTALLED = False
 _LEARNING_INSTALLED = False
 _ENGINE_INSTALLED = False
@@ -196,44 +194,20 @@ def _applied_checklist(row: dict[str, Any], *, closed: bool) -> str:
 
 
 def install_learning_extensions() -> None:
-    """Merge the applied supplement into Discord lessons and search.
+    """Set the trade-journal format version and learning-content hash.
 
     Phase 3 purge, owner-authorized: this used to also patch
     spy_scanner.trade_learning_analysis / spy_scanner.DISCORD_FORMAT_VERSION
     (trade-journal card content) - removed along with spy_scanner.py itself.
-    upgrade_batch_44.py's own UNKNOWN classification is unresolved by this
-    change; only the coupling that would otherwise crash every launch
-    through run_with_env.py was removed."""
+    The old Learning Center's library_sections()/load_lessons() monkeypatch
+    was removed when that system was retired; the coupling that would
+    otherwise crash every launch through run_with_env.py went with it."""
     global _LEARNING_INSTALLED
-    global _ORIGINAL_LIBRARY_SECTIONS, _ORIGINAL_LOAD_LESSONS
     if _LEARNING_INSTALLED:
         return
 
     import journal_contract
-    import learning_center_content as learning
-    import sync_learning_center
 
-    supplements = _supplement_lessons()
-    _ORIGINAL_LIBRARY_SECTIONS = learning.library_sections
-    _ORIGINAL_LOAD_LESSONS = sync_learning_center.load_lessons
-
-    @lru_cache(maxsize=1)
-    def merged_library_sections():
-        sections = list(_ORIGINAL_LIBRARY_SECTIONS())
-        for channel, body in supplements.items():
-            if channel in learning.LESSON_BY_CHANNEL:
-                sections.extend(learning._parse_sections(channel, body))
-        return tuple(sections)
-
-    def merged_load_lessons(path=sync_learning_center.CURRICULUM_PATH):
-        lessons = dict(_ORIGINAL_LOAD_LESSONS(path))
-        for channel, body in supplements.items():
-            if channel in lessons:
-                lessons[channel] = f"{lessons[channel]}\n\n{body}".strip()
-        return lessons
-
-    learning.library_sections = merged_library_sections
-    sync_learning_center.load_lessons = merged_load_lessons
     trade_intelligence.learning_version = _combined_learning_version
     journal_contract.JOURNAL_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
     _LEARNING_INSTALLED = True
@@ -1311,20 +1285,9 @@ approved and merged."""
 
 
 def validate_batch() -> dict[str, Any]:
-    import learning_center_catalog
-
+    # The old Learning Center this batch's supplement targeted was retired;
+    # the channel-coverage check that used to run here went with it.
     supplements = _supplement_lessons()
-    # Batch 44 authored the original 27-channel supplement. Later catalog
-    # expansions validate through learning_center_catalog itself and must not
-    # retroactively make this historical batch validator fail.
-    owned_channels = [
-        lesson.channel
-        for lesson in learning_center_catalog.LESSONS
-        if lesson.number <= 27
-    ]
-    missing = [channel for channel in owned_channels if channel not in supplements]
-    if missing:
-        raise RuntimeError("Applied Learning Center supplement is missing: " + ", ".join(missing))
     sample_summary = {
         "closed_trades": 20,
         "reviewed_trades": 15,

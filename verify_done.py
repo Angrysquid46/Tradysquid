@@ -30,10 +30,8 @@ STATE = ROOT / "state" / "supervisor-state.json"
 KNOWN_FAILURES = {
     "test_automation_acceptance.py",
     "test_exit_quote_reliability.py",
-    "test_learning_center.py",
     "test_pl_rounding_consistency.py",
     "test_stream_instrumentation.py",
-    "test_strict_learning_order.py",
     "test_system_digest_job.py",
     "test_upgrade_batch_44.py",
     "test_validate_reconciliation_coverage.py",

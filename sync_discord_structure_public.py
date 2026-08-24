@@ -1,62 +1,18 @@
-"""Apply Discord structure, public ticker policy, cards, and complete lessons."""
+"""Apply Discord structure, public ticker policy, and cards."""
 
 from __future__ import annotations
 
 import sys
 
 import discord_transport
-import strict_learning_order
-import sync_discord_cards
 import sync_discord_structure as sync
-import sync_learning_center
-from learning_center_catalog import (
-    LEARNING_CHANNEL_ORDER,
-    LEGACY_CHANNEL_ALIASES,
-    LESSONS,
-    ORDERED_CHANNELS,
-)
-
-
-def _learning_specs() -> list[sync.ChannelSpec]:
-    specs = [
-        sync.ChannelSpec(
-            "LEARNING CENTER",
-            "learning-index",
-            "Numbered stock-and-options curriculum, reading path, and subject map.",
-        )
-    ]
-    specs.extend(
-        sync.ChannelSpec("LEARNING CENTER", item.channel, item.topic)
-        for item in LESSONS
-    )
-    specs.extend(
-        [
-            sync.ChannelSpec(
-                "LEARNING CENTER",
-                "ask-tradebot",
-                "Use /ask and /explain for library-grounded answers with lesson citations.",
-            ),
-            sync.ChannelSpec(
-                "LEARNING CENTER",
-                "examples-and-reviews",
-                "Evidence-based paper-trade walkthroughs, outcome causes, and learning records.",
-            ),
-        ]
-    )
-    return specs
 
 
 def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
     rebuilt: list[sync.ChannelSpec] = []
-    inserted_learning = False
     inserted_activity = False
     inserted_diagnostics = False
     for item in sync.CHANNELS:
-        if item.category == "LEARNING CENTER":
-            if not inserted_learning:
-                rebuilt.extend(_learning_specs())
-                inserted_learning = True
-            continue
         if item.name == "scanner-controls":
             item = sync.ChannelSpec(
                 item.category,
@@ -90,8 +46,6 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
                 )
             )
             inserted_diagnostics = True
-    if not inserted_learning:
-        rebuilt.extend(_learning_specs())
     if not inserted_activity:
         rebuilt.append(
             sync.ChannelSpec(
@@ -140,34 +94,6 @@ sync.CHANNEL_STARTERS.update(
     }
 )
 
-# Long-form cards own every numbered lesson. Remove old single-message guides
-# and aliases so the base synchronizer cannot recreate duplicate beginner tabs.
-for lesson_channel in set(ORDERED_CHANNELS) | set(LEGACY_CHANNEL_ALIASES) | set(LEGACY_CHANNEL_ALIASES.values()):
-    sync.GUIDES.pop(lesson_channel, None)
-
-sync.GUIDES["learning-index"] = """# Complete Trading Learning Center
-Read the numbered channels in order or jump to the exact subject you need.
-
-**Stocks and business**
-01 foundations → 02 fundamentals → 03 statements → 04 valuation
-
-**Trading mechanics and analysis**
-05 orders → 06 price action → 07 indicators → 08 volume/breadth →
-09 macro/sectors → 10 stock strategies → 11 shorting/margin → 12 portfolio risk
-
-**Options**
-13 foundations → 14 chains/liquidity → 15 pricing/Greeks → 16 volatility →
-17 directional strategies → 18 income/hedging → 19 multi-leg spreads
-
-**Execution and improvement**
-20 planning/management → 21 expiration/assignment → 22 events/actions →
-23 psychology/journaling → 24 testing/statistics → 25 accounts/taxes →
-26 research/data → 27 scams/security
-
-Every topic contains detailed cards, examples, formulas, failure modes,
-checklists, and review questions. `/ask` and `/explain` search the same library
-and cite the exact channel and section used. Educational information only."""
-
 sync.GUIDES["how-to-use-tradebot"] = """# How to Use TradeBot
 Type `/`, choose a command, complete its fields, and send it.
 
@@ -175,9 +101,7 @@ Type `/`, choose a command, complete its fields, and send it.
 • `/chain`, `/option`, `/setup`, `/risk` — options research and risk examples.
 • `/events`, `/calendar` — timestamped research links.
 • `/performance`, `/why`, `/status`, `/dataage`, `/lastscan` — tracking.
-• `/ask`, `/explain` — detailed answers grounded in Learning Center lessons.
-• Ask `/ask` to **apply** a lesson to `$TICKER` for a read-only walkthrough.
-• Unanswered questions are saved and posted to #upgrade-review for expansion.
+• `/ask`, `/explain` — curated educational answers.
 • `/ticker-add`, `/ticker-remove` — public capped universe management.
 • `/ticker-list`, `/ticker-status` — current universe and capacity.
 • `/filters` — configuration status; guarded changes remain owner-only.
@@ -269,11 +193,9 @@ This owner-control channel receives unanswered TradeBot questions and member
 suggestions that need deliberate review.
 
 Each unanswered-question card includes the exact wording, member, first and last
-seen time, repeat count, closest existing lesson matches, and a stable question
-ID. Repeated wording updates the same card instead of posting duplicates.
+seen time, repeat count, and a stable question ID. Repeated wording updates the
+same card instead of posting duplicates.
 
-To improve an answer, expand the correct Learning Center lesson, add relevant
-aliases and examples, then add the real question wording to the focused tests.
 TradeBot never invents an answer merely to avoid creating a review item."""
 
 
@@ -288,45 +210,13 @@ def _tracker() -> discord_transport.DiscordTracker:
 
 def main() -> int:
     apply = "--apply" in sys.argv
-    tracker: discord_transport.DiscordTracker | None = None
-    renamed = 0
-
-    if apply:
-        tracker = _tracker()
-        renamed = sync_discord_cards.migrate_legacy_learning_channels(tracker)
-
     result = sync.main()
     if result:
         return result
-
     if not apply:
-        counts = sync_learning_center.validate_curriculum()
-        if tuple(counts) != ORDERED_CHANNELS:
-            raise RuntimeError("Dry-run curriculum order does not match the catalog.")
-        print(
-            "Dry run: comprehensive Learning Center would synchronize "
-            f"{len(counts)} channels and {sum(counts.values())} lesson cards in "
-            f"{len(LEARNING_CHANNEL_ORDER)} ordered Learning Center channels."
-        )
-        return 0
-
-    tracker = tracker or _tracker()
-    removed = sync_discord_cards.cleanup_duplicate_learning_channels(tracker)
-    channel_map = sync_discord_cards.write_learning_channel_map(tracker)
-    totals = sync_learning_center.synchronize_curriculum(tracker)
-
-    order_result = strict_learning_order.enforce_learning_channel_order(tracker)
-    migration_pid = sync_discord_cards.launch_background_migration()
-    print(
-        "Discord release complete: "
-        f"always-on activity and automation diagnostics channels synchronized; "
-        f"{renamed} legacy learning channels renamed; {removed} duplicates removed; "
-        f"{order_result['canonical']} canonical learning channels strictly ordered in "
-        f"{order_result['attempts']} attempt(s); {order_result['extras']} extra "
-        f"channels moved after the curriculum; {len(channel_map)} references mapped; "
-        f"{totals['cards']} lesson cards synchronized; historical card migration "
-        f"started as PID {migration_pid}."
-    )
+        print("Dry run: structure synchronized above; no live changes made.")
+    else:
+        print("Discord release complete: structure synchronized.")
     return 0
 
 

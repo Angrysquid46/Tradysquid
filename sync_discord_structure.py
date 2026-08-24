@@ -99,10 +99,6 @@ CHANNELS = [
     ChannelSpec("MARKET INTELLIGENCE", "market-regime", "Broad-market context, trend, and volatility conditions."),
     ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "SPY off-hours screen status and on-demand snapshot."),
     ChannelSpec("MARKET INTELLIGENCE", "spy-technicals", "SPY technical history from the standalone market-memory store: SMA/EMA/VWAP, MACD, RSI, ADX, Bollinger and ATR across intraday, short, medium and long horizons, plus what each tracked pattern is actually worth against the base rate."),
-    ChannelSpec("LEARNING CENTER", "learning-index", "Complete organized curriculum and recommended learning path."),
-    ChannelSpec("LEARNING CENTER", "07-technical-analysis", "Momentum, trend, volume, volatility indicators, confluence, and invalidation."),
-    ChannelSpec("LEARNING CENTER", "ask-tradebot", "Use /ask and /explain for curated educational answers."),
-    ChannelSpec("LEARNING CENTER", "examples-and-reviews", "Paper-trade walkthroughs and post-trade reviews."),
     ChannelSpec("SYSTEM", "scanner-status", "Current scanner run state: cycle phase, last completed pass, and next scheduled run."),
     ChannelSpec("SYSTEM", "api-errors", "Provider and Discord API errors, rate limits, and failed requests."),
     ChannelSpec("SYSTEM", "system-health", "Local service health, freshness, queue depth, and restarts."),
@@ -120,7 +116,6 @@ CHANNELS = [
     # so declaring it would move it.
     ChannelSpec("START HERE", "bot-commands", "Complete TradeBot slash-command reference and ticker-context instructions."),
     ChannelSpec("START HERE", "risk-management", "Options risk disclosures and pre-trade safety checklist."),
-    ChannelSpec("LEARNING CENTER", "learning-start", "Begin here: learning path, definitions, safety, and how to ask TradeBot."),
     ChannelSpec("SYSTEM", "system-activity", "Always-on interval receipts, off-hours SPY research, event sweeps, and data freshness."),
     ChannelSpec("SYSTEM", "automation-diagnostics", "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures."),
     ChannelSpec("OWNER CONTROL", "applied-upgrades", "Verified installed upgrades, affected channels, implementations, and live runtime proof."),
@@ -227,6 +222,27 @@ DELETE_CHANNELS = {
     "strategy-control", "strategy-settings", "strategy-versions",
     "trade-overrides", "strategy-change-log", "strategy-recommendations",
     "strategy-rules", "daily-recap", "weekly-report", "monthly-dashboard",
+    # Retired 2026-08-24 - owner: "I don't want the old one I want this new
+    # stuff to be the current." The old 32-channel Learning Center
+    # (learning_center_catalog.py and friends) was fully retired in favor
+    # of the 43-chapter lc-NN-... curriculum above; these are its channels,
+    # including the 4 static ones that were never part of the catalog.
+    "01-stock-market-foundations", "02-company-fundamentals",
+    "03-financial-statements", "04-valuation-and-quality",
+    "05-market-mechanics-orders", "06-charts-price-action",
+    "07-technical-analysis", "08-volume-breadth-internals",
+    "09-macro-sectors-catalysts", "10-stock-trading-strategies",
+    "11-short-selling-margin", "12-portfolio-risk", "13-options-basics",
+    "14-option-chain-liquidity", "15-option-pricing-greeks", "16-volatility",
+    "17-directional-options", "18-income-and-hedging",
+    "19-spreads-multi-leg", "20-trade-planning-execution",
+    "21-expiration-assignment", "22-events-corporate-actions",
+    "23-psychology-journaling", "24-backtesting-statistics",
+    "25-brokers-accounts-taxes", "26-research-data-tools",
+    "27-scams-security-myths", "32-dealer-gamma-and-hedging",
+    "33-fair-value-and-mean-reversion", "34-the-market-clock",
+    "35-algorithmic-glossary", "36-commodities-and-fixed-income",
+    "learning-index", "ask-tradebot", "examples-and-reviews", "learning-start",
 }
 
 DELETE_CATEGORIES = {
