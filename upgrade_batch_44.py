@@ -1314,11 +1314,15 @@ def validate_batch() -> dict[str, Any]:
     import learning_center_catalog
 
     supplements = _supplement_lessons()
-    missing = [
-        channel
-        for channel in learning_center_catalog.ORDERED_CHANNELS
-        if channel not in supplements
+    # Batch 44 authored the original 27-channel supplement. Later catalog
+    # expansions validate through learning_center_catalog itself and must not
+    # retroactively make this historical batch validator fail.
+    owned_channels = [
+        lesson.channel
+        for lesson in learning_center_catalog.LESSONS
+        if lesson.number <= 27
     ]
+    missing = [channel for channel in owned_channels if channel not in supplements]
     if missing:
         raise RuntimeError("Applied Learning Center supplement is missing: " + ", ".join(missing))
     sample_summary = {
