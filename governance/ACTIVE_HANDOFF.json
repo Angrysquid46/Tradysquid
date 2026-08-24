@@ -1,22 +1,5 @@
 {
-  "active": true,
-  "work_id": "5d1a71f4-cedb-423d-8126-6879d99004e3",
-  "actor": "Claude",
-  "task": "retire-old-learning-center",
-  "method": "delete 9 old modules + learning_center/ dir + 2 test files; fix 8 downstream files that import them (discord bot, runtime overrides, structure sync, acceptance tests)",
-  "started_at": "2026-08-24T16:14:14.094318-05:00",
-  "starting_commit": "bf3d20dcdfacc91657956e00960e25f60a587f9c",
-  "process_id": 24952,
-  "owner_request": "Owner explicit instruction: retire old 32-channel Learning Center, make Phase 10's 43-chapter learning_center_index.py the sole current system",
-  "before_state": "",
-  "reason": "Owner explicit instruction: retire old 32-channel Learning Center, make Phase 10's 43-chapter learning_center_index.py the sole current system",
-  "intended_scope": "9 module deletions, 2 test deletions, 8 file edits, no live Discord --apply",
-  "expected_effects": "/ask and /explain fall back to discord_command_bot.py's built-in canned answers; live discord-structure-sync job stops referencing old modules; every run_with_env.py-launched process keeps starting",
-  "required_tests": "compileall on all touched files; full root+tests/unit suite; grep for dead references; dry-run of sync_discord_structure_public.py; direct import of discord_command_bot_public.py; direct exercise of install_runtime_overrides()",
-  "risks": "live 3-minute scheduled job and every process launch depend on this import chain; verified via direct reads before editing",
-  "next_safe_action_if_interrupted": "commit, push, open PR, watch CI, merge",
-  "phase": "10",
-  "last_checkpoint_at": "2026-08-24T16:42:09.155578-05:00",
-  "last_successful_action": "Deleted 9 old Learning Center modules + learning_center/ dir + 2 orphaned helpers (sync_discord_cards.py, strict_learning_order.py) + 2 old test files; fixed 8 downstream files that imported them; added DELETE_CHANNELS entries for the 36 old channels; fixed a live-crash risk in run_supervisor.py's verify_and_repair_discord_integrity() the original dependency sweep missed; full suite green; live dry-run confirms 36 WOULD DELETE / 44 WOULD CREATE with zero live changes",
-  "next_safe_action": "commit, push, open PR, watch CI, merge"
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-24T16:42:59.190937-05:00"
 }
