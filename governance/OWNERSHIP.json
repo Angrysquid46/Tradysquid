@@ -49,6 +49,14 @@
       "writers": ["Owner", "Codex", "Claude"],
       "protected": true,
       "purpose": "PROJECT_STATE/PHASES/ACTIVE_HANDOFF/CHANGELOG/OWNERSHIP/IMMUTABLE_RULES - the single shared source of project truth per Section 13. Writes should go through ai_coordination.py's begin/checkpoint/finish, not direct edits. Phase 4 landed enforcement: finish() calls enforce_ownership() against this file before releasing the lock, and verify() calls validate_governance_schema()/check_state_freshness() against these files before allowing a new begin()."
+    },
+    {
+      "path": "learning_center_index.py",
+      "owner": "HUMAN_LEARNING_CENTER",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Phase 10 (Section 15): the 43-chapter curriculum's stable structure - chapter list, lc-NN-slug Discord channel naming, LC-XX-YY lesson IDs, and the lesson registry. Both agents may build/maintain the shell and tooling; Section 15 requires autonomous trading code to never import, search, or query this module or its content."
     }
   ],
   "scoped_instructions_convention": "Each BLACKTIDE_ONLY/CLAUDE_ONLY directory (created Phase 11+, e.g. bots/blacktide, bots/claude) must contain its own AGENTS.md scoped to that directory, following the nearest-file convention: an agent reads the root AGENTS.md plus the nearest scoped AGENTS.md above its working path. This file's writers field for that directory's entry is the authoritative machine-readable grant; the scoped AGENTS.md is a human/agent-readable restatement of the same rule, not a separate grant. Root AGENTS.md must not enumerate bot directories in advance of the phase that creates them.",
