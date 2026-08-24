@@ -1,0 +1,37 @@
+name: Validate Governance
+
+on:
+  pull_request:
+    paths:
+      - "governance/**"
+      - "ai_coordination.py"
+      - "AGENTS.md"
+      - "tests/unit/test_governance_phase0.py"
+      - "tests/unit/test_governance_phase4.py"
+      - "tests/unit/test_ai_coordination.py"
+      - ".github/workflows/validate-governance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install pytest
+        run: pip install pytest==8.3.4
+      - name: Run governance and coordination tests
+        run: >-
+          python -m pytest
+          tests/unit/test_governance_phase0.py
+          tests/unit/test_governance_phase4.py
+          tests/unit/test_ai_coordination.py
+          -v

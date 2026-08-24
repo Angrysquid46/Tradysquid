@@ -104,3 +104,39 @@ Every future change must follow the established path:
 Do not claim deployment from GitHub code alone. Distinguish code written, CI
 passed, merged, automatically installed, and live verified. Never change the
 updater to make an application-only test easier.
+
+## Ownership enforcement and scoped instructions
+
+`governance/OWNERSHIP.json` is the machine-readable source for Section 11's
+five ownership classes (`SHARED_CORE`, `SHARED_DATA`, `BLACKTIDE_ONLY`,
+`CLAUDE_ONLY`, `HUMAN_LEARNING_CENTER`). A path with a `protected: true`
+entry may only be written by the actors listed in that entry's `writers`.
+`TRADYSQUID_2_MASTER_PREBUILD.md` is `Owner`-writers-only, for example; no
+agent may edit it regardless of what a task seems to require.
+
+This is now enforced, not just documented: `ai_coordination.py finish`
+calls `enforce_ownership(actor, files)` against `governance/OWNERSHIP.json`
+before releasing the lock, and refuses to complete — no lock release, no
+`COMPLETE` changelog event — if the declared file list includes a protected
+path the declared actor is not a writer for. `ai_coordination.py verify`
+separately calls `validate_governance_schema()` and `check_state_freshness()`
+against every `governance/*.json` file and returns `BLOCKED` if a file is
+malformed or `governance/PROJECT_STATE.json`'s recorded commit has drifted
+from `HEAD` with no lock active to explain it. Both checks reuse `verify()`'s
+and `finish()`'s existing shapes; there is no second lock or second
+coordination script. Check a specific actor/path pair standalone with
+`python ai_coordination.py check-ownership --actor ... --paths ...`.
+
+A path with no `OWNERSHIP.json` entry is not a violation — most of the tree
+is intentionally unassigned until the phase that creates it (see that
+file's `not_yet_assigned` list). Enforcement only ever applies to paths
+that already have an explicit entry.
+
+Each `BLACKTIDE_ONLY`/`CLAUDE_ONLY` directory (created Phase 11+, e.g.
+`bots/blacktide`, `bots/claude`) must contain its own `AGENTS.md` scoped to
+that directory: an agent reads this root file plus the nearest scoped
+`AGENTS.md` above its working path. `governance/OWNERSHIP.json`'s `writers`
+field for that directory's entry is the authoritative grant; the scoped
+file is a readable restatement of the same rule, not a separate grant. This
+root file does not enumerate bot directories in advance of the phase that
+creates them.
