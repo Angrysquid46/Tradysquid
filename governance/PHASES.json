@@ -80,12 +80,13 @@
     {
       "phase_number": 7,
       "name": "Shared runtime / API / cache / events",
-      "status": "not_started",
+      "status": "complete",
       "dependencies": [
         "Phase 5"
       ],
       "completion_criteria": "Section 8's shared API-budget architecture and priority scheme built; one shared factual market service ('one observation, many authorized readers').",
-      "discovered_subphases": []
+      "discovered_subphases": [],
+      "completion_evidence": "market_api_budget.py builds Section 8's priority scheme and API budget gate. Verified live against the real API (not the spec's own provisional 120/min estimate): /markets/quotes then /markets/options/chains back to back returned X-Ratelimit-Allowed: 120 with X-Ratelimit-Used incrementing 1->2 across both calls and the same X-Ratelimit-Expiry window, confirming the limit is exactly 120/min and quotes/chain share one combined bucket - REST limits, shared-vs-separate buckets, and header telemetry are all now VERIFIED, not ASSUMED. Every Tradier call already funneled through market_data.tradier_get() (the \"one shared factual market service\" precondition already existed); this phase added the missing telemetry capture (record_response_headers, one line added to tradier_get) and a real priority-aware gate (request_allowed) consulted by market_data_collector.py's capture jobs before every quote/chain/bars call, not just defined. Priorities 1-3 (open-position safety/exit-critical/entry-critical) always allowed, matching this codebase's existing never-debounce-the-exit-path principle, though nothing calls them yet since no bot exists until Phase 11. Reserve-fraction thresholds (20%/40%) are disclosed as policy, not measurement - today's real usage (~2 calls/minute against 120/min) is nowhere near either floor. Observation caching for concurrent readers explicitly out of scope: PROVIDER_JOB_LOCK already serializes every Tradier-calling job, so no concurrent-reader scenario exists yet to build against. Verified: 35/35 new/extended tests, full pytest suite exit 0, and a real live check - current_state() correctly reflected the actual X-Ratelimit-* headers Tradier returned for a real get_quotes() call made during this session."
     },
     {
       "phase_number": 8,
