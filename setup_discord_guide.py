@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import spy_scanner
+import discord_transport
 
 CATEGORY_NAME = "Start Here"
 CHANNEL_NAME = "bot-commands"
@@ -72,8 +72,8 @@ not professional financial advice or a guarantee of profit."""
 
 
 def main() -> int:
-    tracker = spy_scanner.DiscordTracker(
-        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
+    tracker = discord_transport.DiscordTracker(
+        discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID
     )
     if not tracker.enabled:
         raise SystemExit("Local DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required")
@@ -121,7 +121,7 @@ def main() -> int:
             item
             for item in recent
             if (item.get("author") or {}).get("bot")
-            and GUIDE_MARKER in spy_scanner.message_search_text(item)
+            and GUIDE_MARKER in discord_transport.message_search_text(item)
         ),
         None,
     )
@@ -147,7 +147,7 @@ def main() -> int:
             "PUT", f"/channels/{channel['id']}/pins/{message['id']}"
         )
         print("Pinned the command guide.")
-    except spy_scanner.DiscordError as exc:
+    except discord_transport.DiscordError as exc:
         if "HTTP 403" not in str(exc):
             raise
         print(

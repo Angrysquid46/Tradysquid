@@ -70,9 +70,9 @@ def _rows_from_timesales(bars: list[dict[str, Any]]) -> list[tuple]:
 
 def fetch_recent_bars(calendar_days: int = 20) -> list[tuple]:
     """Imported lazily so the module can be used without provider creds."""
-    import spy_scanner
+    import market_data
 
-    bars = spy_scanner.get_recent_intraday_history("SPY", "1min", calendar_days)
+    bars = market_data.get_recent_intraday_history("SPY", "1min", calendar_days)
     return _rows_from_timesales(bars or [])
 
 

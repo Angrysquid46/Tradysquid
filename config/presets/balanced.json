@@ -1,9 +1,0 @@
-{
-  "schema_version": 1,
-  "name": "balanced",
-  "overrides": {
-    "minimum_open_interest": 100,
-    "maximum_bid_ask_pct": 0.25,
-    "minimum_setup_score": 50
-  }
-}

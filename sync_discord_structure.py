@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-import spy_scanner
+import discord_transport
 from run_with_env import load_env
 
 BOT_CHANNEL_ALLOW = (
@@ -59,7 +59,7 @@ class ChannelSpec:
 # and just have a similar dashboard for the other trader types so the
 # homepage can be clean and we can still see all the results... tabs can
 # stay meaningful and not scattered craziness." Each strategy still gets
-# its own independently-tracked card (see spy_scanner.CHANNEL_NAMES and
+# its own independently-tracked card (see
 # performance_reconciliation.REPORT_ROUTES) - only the real channel every
 # strategy's logical key resolves to changed.
 STRATEGIES_CATEGORY_NAME = "STRATEGIES"
@@ -70,15 +70,20 @@ _OLD_STRATEGY_CATEGORY_NAMES = [
 CATEGORY_ORDER = [
     "START HERE",
     "COMMUNITY",
-    "LIVE TRADING DESK",
     "MARKET INTELLIGENCE",
     "LEARNING CENTER",
-    STRATEGIES_CATEGORY_NAME,
-    "PERFORMANCE",
     "SYSTEM",
-    "STRATEGY CONTROL",
     "OWNER CONTROL",
 ]
+
+# Phase 3 purge (Master Spec Section 2: "trader-specific Discord state/
+# routes/cards/channels"). LIVE TRADING DESK, PERFORMANCE, STRATEGY CONTROL,
+# and STRATEGIES all held only per-strategy or aggregate-trade-output
+# channels (new-positions, wins, losses, trade-journal, backtest-results,
+# strategy-control/settings/versions, daily/weekly/monthly recaps) - nothing
+# in them is generic infrastructure. Added to DELETE_CATEGORIES below so a
+# future, owner-triggered sync run cleans them up on the live server; this
+# pass does not run that sync itself.
 
 CHANNELS = [
     ChannelSpec("START HERE", "welcome", "What Tradysquids is, paper-trading status, and navigation."),
@@ -86,11 +91,6 @@ CHANNELS = [
     ChannelSpec("START HERE", "how-to-use-tradebot", "TradeBot commands, examples, schedules, and data limitations."),
     ChannelSpec("START HERE", "how-trades-are-found", "Transparent scanner discovery, qualification, play-selection, and rejection rules."),
     ChannelSpec("COMMUNITY", "general-chat", "The main member conversation channel."),
-    ChannelSpec("LIVE TRADING DESK", "scanner-feed", "Every scanned ticker, filter result, and data timestamp."),
-    ChannelSpec("LIVE TRADING DESK", "new-positions", "New paper positions that passed all active filters."),
-    ChannelSpec("LIVE TRADING DESK", "wins", "Closed profitable paper positions."),
-    ChannelSpec("LIVE TRADING DESK", "losses", "All other closed paper positions; no scratch outcome."),
-    ChannelSpec("LIVE TRADING DESK", "trade-journal", "One complete lifecycle thread per paper trade.", 15),
     ChannelSpec("MARKET INTELLIGENCE", "premarket", "Premarket universe, gaps, calendars, and scheduled events."),
     ChannelSpec("MARKET INTELLIGENCE", "breaking-alerts", "Deduplicated TradingView and provider events."),
     ChannelSpec("MARKET INTELLIGENCE", "charts-and-levels", "Requested and scheduled charts, support, and resistance."),
@@ -98,9 +98,6 @@ CHANNELS = [
     ChannelSpec("MARKET INTELLIGENCE", "market-regime", "Broad-market context, trend, and volatility conditions."),
     ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "SPY off-hours screen status and on-demand snapshot."),
     ChannelSpec("MARKET INTELLIGENCE", "spy-technicals", "SPY technical history from the standalone market-memory store: SMA/EMA/VWAP, MACD, RSI, ADX, Bollinger and ATR across intraday, short, medium and long horizons, plus what each tracked pattern is actually worth against the base rate."),
-    ChannelSpec("PERFORMANCE", "backtest-results", "One self-updating card per strategy: its own exit rules, its backtest record at those settings, and its live forward record tracked against it. Research surface only - daily, weekly and monthly performance cover the 15 live strategies and are unaffected by this channel."),
-    ChannelSpec("PERFORMANCE", "ticker-results", "Results by underlying, combined across every live SPY strategy."),
-    ChannelSpec("PERFORMANCE", "learning-results", "Evidence summaries that never change filters automatically."),
     ChannelSpec("LEARNING CENTER", "learning-index", "Complete organized curriculum and recommended learning path."),
     ChannelSpec("LEARNING CENTER", "07-technical-analysis", "Momentum, trend, volume, volatility indicators, confluence, and invalidation."),
     ChannelSpec("LEARNING CENTER", "ask-tradebot", "Use /ask and /explain for curated educational answers."),
@@ -110,12 +107,6 @@ CHANNELS = [
     ChannelSpec("SYSTEM", "system-health", "Local service health, freshness, queue depth, and restarts."),
     ChannelSpec("SYSTEM", "update-status", "Deploy checks, current commit, and auto-update outcomes."),
     ChannelSpec("SYSTEM", "provider-status", "Tradier, TradingView, Discord, and read-only MCP status."),
-    ChannelSpec("STRATEGY CONTROL", "strategy-control", "Current status and quick controls for both live SPY 0DTE strategies (1-minute and 5-minute)."),
-    ChannelSpec("STRATEGY CONTROL", "strategy-settings", "Active filters and thresholds per strategy."),
-    ChannelSpec("STRATEGY CONTROL", "strategy-versions", "Version history and configuration hashes per strategy."),
-    ChannelSpec("STRATEGY CONTROL", "trade-overrides", "Owner-issued manual overrides to an in-progress trade."),
-    ChannelSpec("STRATEGY CONTROL", "strategy-change-log", "What changed in a strategy's logic, when, and why."),
-    ChannelSpec("STRATEGY CONTROL", "strategy-recommendations", "Evidence-backed suggestions pending owner review, never auto-applied."),
     ChannelSpec("OWNER CONTROL", "scanner-controls", "Owner-only universe, filter, and schedule controls."),
     ChannelSpec("OWNER CONTROL", "workflow-log", "Release and deployment history."),
     ChannelSpec("OWNER CONTROL", "upgrade-review", "Member suggestions pending owner approval or decline."),
@@ -128,11 +119,7 @@ CHANNELS = [
     # so declaring it would move it.
     ChannelSpec("START HERE", "bot-commands", "Complete TradeBot slash-command reference and ticker-context instructions."),
     ChannelSpec("START HERE", "risk-management", "Options risk disclosures and pre-trade safety checklist."),
-    ChannelSpec("START HERE", "strategy-rules", "Current scanner filters, management baselines, and trade lifecycle."),
     ChannelSpec("LEARNING CENTER", "learning-start", "Begin here: learning path, definitions, safety, and how to ask TradeBot."),
-    ChannelSpec("PERFORMANCE", "daily-recap", "One updating scorecard per trading day with wins, losses, P/L, expectancy, and best/worst."),
-    ChannelSpec("PERFORMANCE", "weekly-report", "One updating scorecard per trading week; a new card begins with each new trading week."),
-    ChannelSpec("PERFORMANCE", "monthly-dashboard", "One updating scorecard per trading month, combined across every live strategy - P/L, wins, losses, expectancy."),
     ChannelSpec("SYSTEM", "system-activity", "Always-on interval receipts, off-hours SPY research, event sweeps, and data freshness."),
     ChannelSpec("SYSTEM", "automation-diagnostics", "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures."),
     ChannelSpec("OWNER CONTROL", "applied-upgrades", "Verified installed upgrades, affected channels, implementations, and live runtime proof."),
@@ -146,24 +133,12 @@ CHANNELS = [
 # Old per-variant channels (10 categories x 2 channels), retired in favor
 # of the shared pair above.
 
-# Imported here rather than further down: DELETE_CHANNELS below needs the
-# retired-slug list, and a later import would leave it silently empty.
-try:
-    import spy_live_new_strategies as _new_strategies
-    _RETIRED_STRATEGY_CHANNELS = tuple(_new_strategies.RETIRED_CHANNEL_SLUGS)
-except Exception as _exc:   # pragma: no cover - import guard only
-    print(f"retired strategy channels unavailable: {_exc}")
-    _RETIRED_STRATEGY_CHANNELS = ()
-
 DELETE_CHANNELS = {
     # Retired 2026-08-17 - owner: "we have performance tab for all this".
     # Every strategy now has its own channel, and period recaps live in
     # PERFORMANCE, so this shared pair duplicated both. The cross-strategy
     # leaderboard moved to #monthly-dashboard rather than being lost.
     "strategies-dashboard", "strategies-results",
-    # Strategy channels whose strategy was removed, or whose rank shifted -
-    # an orphaned channel looks live but never updates again.
-    *_RETIRED_STRATEGY_CHANNELS,
     # entry measured at essentially zero (+0.0004 ATR/trade, t=+0.39), and
     # of them lost $275k against the SPY_0DTE shape's $156k. Only the
     # locked top-15 strategies survive.
@@ -190,11 +165,21 @@ DELETE_CHANNELS = {
     "1m-performance", "1m-results", "5m-performance", "5m-results",
     "key-levels-performance", "key-levels-results",
     "expansion-performance", "expansion-results",
+    # Phase 3 purge: per-strategy and aggregate-trade-output channels that
+    # lived under the now-deleted LIVE TRADING DESK/PERFORMANCE/STRATEGY
+    # CONTROL categories.
+    "scanner-feed", "new-positions", "wins", "losses", "trade-journal",
+    "backtest-results", "ticker-results", "learning-results",
+    "strategy-control", "strategy-settings", "strategy-versions",
+    "trade-overrides", "strategy-change-log", "strategy-recommendations",
+    "strategy-rules", "daily-recap", "weekly-report", "monthly-dashboard",
 }
 
 DELETE_CATEGORIES = {
     "ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE",
+    "LIVE TRADING DESK", "PERFORMANCE", "STRATEGY CONTROL",
     *_OLD_STRATEGY_CATEGORY_NAMES,
+    STRATEGIES_CATEGORY_NAME,
 }
 
 CHANNEL_STARTERS = {
@@ -231,21 +216,6 @@ CHANNEL_STARTERS = {
     "security-log": "Receives rejected requests and configuration warnings.",
 }
 
-
-# One channel per promoted strategy, generated from the registry so the
-# Discord structure cannot drift from the live strategy list. Rank-prefixed
-# (s01-...s15-) because Discord sorts alphabetically within a category, so
-# the category reads best-performer-first with no manual ordering.
-try:
-    import spy_live_new_strategies as _new_strategies
-    for _category, _channel, _description in _new_strategies.channel_specs():
-        CHANNELS.append(ChannelSpec(_category, _channel, _description))
-        CHANNEL_STARTERS[_channel] = (
-            "Updated as this strategy's paper trades open and close - its own "
-            "entry signal and its own exit rules, tracked independently."
-        )
-except Exception as _exc:   # pragma: no cover - import guard only
-    print(f"new-strategy channels unavailable: {_exc}")
 
 
 GUIDES = {
@@ -566,8 +536,8 @@ def normalized(value: str) -> str:
 def main() -> int:
     load_env()
     apply = "--apply" in sys.argv
-    tracker = spy_scanner.DiscordTracker(
-        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
+    tracker = discord_transport.DiscordTracker(
+        discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID
     )
     if not tracker.enabled:
         raise SystemExit("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required")
@@ -642,7 +612,7 @@ def main() -> int:
                         f"/channels/{item['id']}/permissions/{bot_role_id}",
                         {"type": 0, "allow": str(BOT_CHANNEL_ALLOW), "deny": "0"},
                     )
-                except spy_scanner.DiscordError as exc:
+                except discord_transport.DiscordError as exc:
                     warnings.append(f"TradeBot access to {name}: {exc}")
 
     for spec in CHANNELS:
@@ -671,7 +641,7 @@ def main() -> int:
                     f"/channels/{item['id']}/permissions/{bot_role_id}",
                     {"type": 0, "allow": str(BOT_CHANNEL_ALLOW), "deny": "0"},
                 )
-            except spy_scanner.DiscordError as exc:
+            except discord_transport.DiscordError as exc:
                 warnings.append(f"TradeBot access to #{spec.name}: {exc}")
         if category and str(item.get("parent_id") or "") != str(category["id"]):
             changes["parent_id"] = category["id"]
@@ -682,7 +652,7 @@ def main() -> int:
             if apply:
                 try:
                     tracker._request("PATCH", f"/channels/{item['id']}", changes)
-                except spy_scanner.DiscordError as exc:
+                except discord_transport.DiscordError as exc:
                     warnings.append(f"#{spec.name}: {exc}")
 
     # Deletions report what ACTUALLY happened, not what was attempted.
@@ -712,7 +682,7 @@ def main() -> int:
         try:
             tracker._request("DELETE", f"/channels/{item['id']}")
             deleted_ids.append((name, str(item["id"])))
-        except spy_scanner.DiscordError as exc:
+        except discord_transport.DiscordError as exc:
             print(f"DELETE FAILED #{name}: {exc}")
             warnings.append(f"delete #{name}: {exc}")
 
@@ -722,7 +692,7 @@ def main() -> int:
                 str(item["id"])
                 for item in tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
             }
-        except spy_scanner.DiscordError as exc:
+        except discord_transport.DiscordError as exc:
             remaining = set()
             warnings.append(f"could not verify deletions: {exc}")
         for name, channel_id in deleted_ids:
@@ -747,7 +717,7 @@ def main() -> int:
             if apply:
                 try:
                     tracker._request("DELETE", f"/channels/{category['id']}")
-                except spy_scanner.DiscordError as exc:
+                except discord_transport.DiscordError as exc:
                     warnings.append(f"delete category {category_name}: {exc}")
 
     if apply:
@@ -762,7 +732,7 @@ def main() -> int:
                 )
                 if removed:
                     print(f"REMOVED {removed} duplicate guide card(s) from #{channel_name}")
-            except spy_scanner.DiscordError as exc:
+            except discord_transport.DiscordError as exc:
                 warnings.append(f"guide #{channel_name}: {exc}")
 
         for channel_name, schedule in CHANNEL_STARTERS.items():
@@ -786,7 +756,7 @@ def main() -> int:
                     f"/channels/{channel['id']}/messages",
                     {"content": content[:2000], "allowed_mentions": {"parse": []}},
                 )
-            except spy_scanner.DiscordError as exc:
+            except discord_transport.DiscordError as exc:
                 warnings.append(f"starter #{channel_name}: {exc}")
 
     print("Discord structure synchronized." if apply else "Dry run complete; no Discord changes made.")

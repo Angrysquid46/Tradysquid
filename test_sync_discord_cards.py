@@ -1,7 +1,7 @@
 from __future__ import annotations
 from unittest import mock
 
-import spy_scanner
+import discord_transport as spy_scanner
 import sync_discord_cards
 
 

@@ -85,8 +85,10 @@ SAMPLE_INTERACTION = {
 
 class LearningCenterTests(unittest.TestCase):
     def test_catalog_is_complete_and_ordered(self) -> None:
-        self.assertEqual(len(LESSONS), 27)
-        self.assertEqual([item.number for item in LESSONS], list(range(1, 28)))
+        self.assertEqual(len(LESSONS), 32)
+        numbers = [item.number for item in LESSONS]
+        self.assertEqual(numbers, sorted(set(numbers)))
+        self.assertTrue(all(item.channel in ORDERED_CHANNELS for item in LESSONS))
         self.assertEqual(tuple(item.channel for item in LESSONS), ORDERED_CHANNELS)
 
     def test_curriculum_cards_validate(self) -> None:

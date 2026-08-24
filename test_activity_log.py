@@ -104,20 +104,6 @@ def test_it_rotates_instead_of_growing_without_bound(isolated_log, monkeypatch) 
     assert isolated_log.stat().st_size < 4000
 
 
-def test_the_entry_choke_point_is_wired(isolated_log) -> None:
-    """candidate_to_row is the one function every entry path funnels
-    through - the 1-minute scan, SPY_KEY_LEVELS, and every /force-*
-    command. If it stops logging, a forced burst goes unrecorded again."""
-    import inspect
-
-    import spy_scanner
-
-    source = inspect.getsource(spy_scanner.candidate_to_row)
-    assert "activity_log.record" in source
-    assert "trade.open" in source
-    assert "market_condition" in source
-
-
 def test_the_interaction_endpoint_logs_before_it_verifies() -> None:
     """A rejected or replayed request must still leave a line. Logging
     after verification would have recorded nothing for the 12:00:49 burst

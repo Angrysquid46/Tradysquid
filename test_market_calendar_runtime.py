@@ -28,7 +28,7 @@ class MarketCalendarRuntimeTests(unittest.TestCase):
             2,
             10,
             0,
-            tzinfo=diagnostics.spy_scanner.MARKET_TZ,
+            tzinfo=diagnostics.market_data.MARKET_TZ,
         )
         session = market_runtime.official_market_session(
             moment,
@@ -38,8 +38,8 @@ class MarketCalendarRuntimeTests(unittest.TestCase):
         start, end = session
         self.assertEqual((start.hour, start.minute), (8, 30))
         self.assertEqual((end.hour, end.minute), (15, 0))
-        self.assertEqual(start.tzinfo, diagnostics.spy_scanner.MARKET_TZ)
-        self.assertEqual(end.tzinfo, diagnostics.spy_scanner.MARKET_TZ)
+        self.assertEqual(start.tzinfo, diagnostics.market_data.MARKET_TZ)
+        self.assertEqual(end.tzinfo, diagnostics.market_data.MARKET_TZ)
 
     def test_early_close_eastern_converts_to_noon_central(self) -> None:
         moment = datetime(
@@ -48,7 +48,7 @@ class MarketCalendarRuntimeTests(unittest.TestCase):
             2,
             11,
             0,
-            tzinfo=diagnostics.spy_scanner.MARKET_TZ,
+            tzinfo=diagnostics.market_data.MARKET_TZ,
         )
         session = market_runtime.official_market_session(
             moment,
@@ -64,7 +64,7 @@ class MarketCalendarRuntimeTests(unittest.TestCase):
             2,
             10,
             0,
-            tzinfo=diagnostics.spy_scanner.MARKET_TZ,
+            tzinfo=diagnostics.market_data.MARKET_TZ,
         )
         self.assertIsNone(
             market_runtime.official_market_session(
@@ -80,7 +80,7 @@ class MarketCalendarRuntimeTests(unittest.TestCase):
             2,
             10,
             0,
-            tzinfo=diagnostics.spy_scanner.MARKET_TZ,
+            tzinfo=diagnostics.market_data.MARKET_TZ,
         )
         session = market_runtime.official_market_session(
             moment,

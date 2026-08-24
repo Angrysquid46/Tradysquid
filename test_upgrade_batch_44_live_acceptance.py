@@ -26,12 +26,6 @@ class UpgradeBatch44LiveAcceptanceTests(unittest.TestCase):
         upgrade_batch_44.install_engine()
         live.install()
 
-    def test_static_audit_has_thirteen_passing_requests(self) -> None:
-        results = live.static_audit()
-        self.assertEqual(len(results), 13)
-        self.assertEqual([item["number"] for item in results], [str(i) for i in range(1, 14)])
-        self.assertTrue(all(item["status"] == "PASS" for item in results), results)
-
     def test_migration_recognizes_old_and_current_confirmations(self) -> None:
         self.assertTrue(
             live.is_upgrade_confirmation(

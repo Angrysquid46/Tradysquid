@@ -7,7 +7,6 @@ read-only live ticker observations, and queue unanswered questions for review.
 
 from __future__ import annotations
 
-import always_on_operations
 import discord_command_bot as bot
 import learning_application as application
 import learning_center_content as learning
@@ -16,9 +15,7 @@ import learning_search_router as routed
 
 
 routed.install()
-always_on_operations.install()
 ORIGINAL_PROCESS_COMMAND = bot.process_command
-ORIGINAL_STATUS_REPLY = bot.status_reply
 
 
 def card_patch_original(
@@ -51,19 +48,6 @@ def card_patch_original(
     response.raise_for_status()
 
 
-def public_status_reply(ticker: str) -> str:
-    base = ORIGINAL_STATUS_REPLY(ticker)
-    try:
-        operations = always_on_operations.operations_status_summary()
-    except Exception as exc:
-        operations = (
-            "## Automation\nScheduler diagnostics could not be read: "
-            f"`{type(exc).__name__}: {str(exc)[:180]}`. The failure remains visible in "
-            "#automation-diagnostics."
-        )
-    return f"{base}\n\n{operations}"[:3900]
-
-
 def public_process_command(interaction: dict) -> None:
     """Preserve all commands while giving `/ask` full interaction context."""
     name = str(interaction.get("data", {}).get("name") or "")
@@ -93,7 +77,6 @@ def public_process_command(interaction: dict) -> None:
 
 
 bot.patch_original = card_patch_original
-bot.status_reply = public_status_reply
 bot.ask_reply = application.answer
 bot.explain_reply = routed.explain
 bot.process_command = public_process_command

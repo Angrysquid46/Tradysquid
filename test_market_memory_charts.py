@@ -20,7 +20,8 @@ import pytest
 
 import market_memory as mm
 import market_memory_charts as mmc
-import spy_scanner
+import market_data as spy_scanner
+import discord_transport
 
 
 def _build_db(db_path: Path, *, daily: int = 400, sessions: int = 3, with_features: bool = True) -> None:
@@ -219,7 +220,7 @@ def test_renders_when_every_feature_column_is_null():
 def test_card_parses_into_a_discord_embed():
     with _store() as (conn, _out, _db):
         text = mmc.technicals_card_text(mmc.summarize(conn, "SPY"))
-    embed = spy_scanner.discord_card(text, footer_suffix="spy-technicals")
+    embed = discord_transport.discord_card(text, footer_suffix="spy-technicals")
     assert "Technicals" in embed["title"]
     assert embed["fields"]
     for field in embed["fields"]:
@@ -304,20 +305,6 @@ def test_fingerprint_changes_when_render_version_is_bumped():
 # ---------------------------------------------------------------------------
 # Job wiring
 # ---------------------------------------------------------------------------
-
-def test_spy_technicals_job_is_registered_with_the_intended_cadence():
-    import local_information_engine  # noqa: F401  (installers mutate its JOBS)
-    import upgrade_batch_44
-
-    upgrade_batch_44.install_engine()
-    jobs = {job.name: job for job in upgrade_batch_44._engine().JOBS}
-    job = jobs.get("spy-technicals-charts")
-    assert job is not None, "job was never registered"
-    assert job.callback is upgrade_batch_44.spy_technicals_job
-    assert job.background is True
-    # Must NOT contend for the provider lock - it makes no provider calls.
-    assert job.provider_heavy is False
-
 
 def test_spy_technicals_job_skips_discord_when_the_data_is_unchanged():
     """The whole cadence design rests on this: the job ticks every 20

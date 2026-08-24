@@ -67,7 +67,7 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
             patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
             patch.object(diagnostics, "_engine", return_value=engine),
             patch.object(scheduler_runtime, "REQUIRED_JOBS", ("self-diagnostics",)),
-            patch.object(diagnostics.spy_scanner, "market_is_open_now", return_value=(True, "open")),
+            patch.object(diagnostics.market_data, "market_is_open_now", return_value=(True, "open")),
             patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
         ):
             checks = scheduler_runtime.job_checks(connection)
@@ -125,7 +125,7 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
             patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
             patch.object(diagnostics, "_engine", return_value=engine),
             patch.object(scheduler_runtime, "REQUIRED_JOBS", ("market-hours-upgrade-review",)),
-            patch.object(diagnostics.spy_scanner, "market_is_open_now", return_value=(False, "closed")),
+            patch.object(diagnostics.market_data, "market_is_open_now", return_value=(False, "closed")),
             patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
         ):
             check = scheduler_runtime.job_checks(connection)[0]
@@ -152,7 +152,7 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
             patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
             patch.object(diagnostics, "_engine", return_value=engine),
             patch.object(scheduler_runtime, "REQUIRED_JOBS", ()),
-            patch.object(diagnostics.spy_scanner, "market_is_open_now", return_value=(False, "weekend")),
+            patch.object(diagnostics.market_data, "market_is_open_now", return_value=(False, "weekend")),
             patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
         ):
             check = scheduler_runtime.job_checks(connection)[0]
@@ -184,7 +184,7 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
             patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
             patch.object(diagnostics, "_engine", return_value=engine),
             patch.object(scheduler_runtime, "REQUIRED_JOBS", ()),
-            patch.object(diagnostics.spy_scanner, "market_is_open_now", return_value=(True, "open")),
+            patch.object(diagnostics.market_data, "market_is_open_now", return_value=(True, "open")),
             patch.object(scheduler_runtime, "_engine_started_at", return_value=engine_started),
             patch.object(
                 diagnostics,
@@ -226,7 +226,7 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
             patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
             patch.object(diagnostics, "_engine", return_value=engine),
             patch.object(scheduler_runtime, "REQUIRED_JOBS", ()),
-            patch.object(diagnostics.spy_scanner, "market_is_open_now", return_value=(True, "open")),
+            patch.object(diagnostics.market_data, "market_is_open_now", return_value=(True, "open")),
             patch.object(diagnostics, "now", return_value=current),
             patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
         ):
@@ -260,7 +260,7 @@ class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
             patch.object(scheduler_runtime, "_BASE_JOB_CHECKS", return_value=[base]),
             patch.object(diagnostics, "_engine", return_value=engine),
             patch.object(scheduler_runtime, "REQUIRED_JOBS", ()),
-            patch.object(diagnostics.spy_scanner, "market_is_open_now", return_value=(True, "open")),
+            patch.object(diagnostics.market_data, "market_is_open_now", return_value=(True, "open")),
             patch.object(diagnostics, "now", return_value=current),
             patch.object(scheduler_runtime, "_within_startup_grace", return_value=False),
         ):

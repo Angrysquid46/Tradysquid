@@ -308,6 +308,60 @@ def checkpoint(actor: str, summary: str, next_safe_action: str) -> dict[str, Any
     return event
 
 
+def process_is_running(process_id: int) -> bool:
+    """Return whether a recorded coordination owner process is still alive."""
+    if process_id <= 0:
+        return False
+    try:
+        os.kill(process_id, 0)
+    except (OSError, ProcessLookupError):
+        return False
+    return True
+
+
+def takeover(from_actor: str, to_actor: str, reason: str) -> dict[str, Any]:
+    """Transfer an interrupted task without discarding its work or identity."""
+    if not LOCK_PATH.exists() or not ACTIVE_TASK_PATH.exists():
+        raise RuntimeError("No active coordinated task exists to take over.")
+    lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    active = json.loads(ACTIVE_TASK_PATH.read_text(encoding="utf-8"))
+    if lock.get("actor", "").lower() != from_actor.lower():
+        raise RuntimeError(f"Lock belongs to {lock.get('actor')}, not {from_actor}.")
+    process_id = int(lock.get("process_id") or 0)
+    if process_is_running(process_id):
+        raise RuntimeError(
+            f"Recorded {from_actor} process {process_id} is still running; refusing takeover."
+        )
+    transferred_at = now_iso()
+    previous_process_id = process_id
+    for record in (lock, active):
+        record["actor"] = to_actor
+        record["process_id"] = os.getpid()
+        record["taken_over_from"] = from_actor
+        record["previous_process_id"] = previous_process_id
+        record["takeover_reason"] = reason
+        record["taken_over_at"] = transferred_at
+    atomic_json(LOCK_PATH, lock)
+    atomic_json(ACTIVE_TASK_PATH, active)
+    event = {
+        "event": "TAKEOVER",
+        "actor": to_actor,
+        "from_actor": from_actor,
+        "work_id": lock.get("work_id"),
+        "task": lock.get("task"),
+        "previous_process_id": previous_process_id,
+        "reason": reason,
+        "taken_over_at": transferred_at,
+    }
+    append_event(event)
+    append_governance_event(event)
+    existing_handoff = json.loads(GOV_ACTIVE_HANDOFF_PATH.read_text(encoding="utf-8"))
+    update_active_handoff({**existing_handoff, **active})
+    update_current_state()
+    update_project_state(phase=existing_handoff.get("phase"))
+    return event
+
+
 def verify() -> dict[str, Any]:
     problems: list[str] = []
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
@@ -442,6 +496,10 @@ def main() -> int:
     subcommands.add_parser("init")
     subcommands.add_parser("status")
     subcommands.add_parser("verify")
+    transfer = subcommands.add_parser("takeover")
+    transfer.add_argument("--from-actor", required=True, choices=("Codex", "Claude"))
+    transfer.add_argument("--to-actor", required=True, choices=("Codex", "Claude"))
+    transfer.add_argument("--reason", required=True)
     begin = subcommands.add_parser("begin")
     begin.add_argument("--actor", required=True, choices=("Codex", "Claude"))
     begin.add_argument("--task", required=True)
@@ -489,6 +547,10 @@ def main() -> int:
         ), indent=2))
     elif args.command == "verify":
         print(json.dumps(verify(), indent=2))
+    elif args.command == "takeover":
+        print(json.dumps(takeover(
+            args.from_actor, args.to_actor, args.reason,
+        ), indent=2))
     elif args.command == "finish":
         print(json.dumps(finish(
             args.actor, args.summary, args.method, args.tests,

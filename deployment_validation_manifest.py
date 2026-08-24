@@ -5,10 +5,13 @@ from __future__ import annotations
 # Historical modules remain compiled so stale code cannot silently rot, but only
 # the modules installed by run_with_env.py participate in the live runtime.
 COMPILE_MODULES = (
-    "spy_scanner.py",
+    # spy_scanner.py removed - Phase 3 purge, owner-authorized (deleted along
+    # with the old 15-strategy roster it implemented).
     "discord_command_bot_public.py",
     "local_information_engine_bootstrap.py",
-    "local_information_engine_public.py",
+    # local_information_engine_public.py removed - Phase 3 purge, same basis
+    # as spy_scanner.py above: its Discord-dashboard visibility layer required
+    # discover()-based channel resolution that was purged with spy_scanner.py.
     "run_with_env.py",
     "runtime_contract.py",
     "single_owner_runtime.py",
@@ -74,7 +77,6 @@ def validate_manifest() -> dict[str, object]:
     if len(FOCUSED_TEST_MODULES) != len(set(FOCUSED_TEST_MODULES)):
         raise RuntimeError("Deployment test manifest contains duplicates")
     required_modules = {
-        "spy_scanner.py",
         "run_with_env.py",
         "runtime_contract.py",
         "single_owner_runtime.py",

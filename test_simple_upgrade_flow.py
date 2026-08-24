@@ -10,7 +10,9 @@ import github_upgrade_bridge
 # The laptop updater already runs this module. Importing these TestCase classes
 # makes the same one-supervisor/runtime-contract checks part of local deployment
 # validation, not CI-only decoration.
-from test_discord_reconciliation_safety import DiscordReconciliationSafetyTests  # noqa: F401
+# test_discord_reconciliation_safety - Phase 3 purged along with
+# discord_reconciliation_safety.py (old performance-scorecard reconciliation,
+# strategy-specific).
 from test_ngrok_process_runtime import NgrokProcessRuntimeTests  # noqa: F401
 from test_runtime_contract import RuntimeContractTests  # noqa: F401
 from test_scheduler_diagnostic_runtime import SchedulerDiagnosticRuntimeTests  # noqa: F401

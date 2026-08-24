@@ -15,27 +15,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-import discord_reconciliation_safety
-import journal_contract
-import performance_scorecards
-import trade_intelligence
-
-journal_contract.install()
-journal_contract.validate_contract()
-performance_scorecards.install()
-discord_reconciliation_safety.install()
-discord_reconciliation_safety.validate_contract()
-performance_scorecards.validate_reconciliation()
-
-import local_information_engine_public as public
+import local_information_engine as public
 
 
 ROOT = Path(__file__).resolve().parent
 ACCEPTANCE_PATH = ROOT / "state" / "market-intelligence-startup.json"
+# Phase 3 purge: "premarket-visibility" and "discord-reporting" were old-
+# strategy Discord reporting jobs, removed along with the strategies they
+# reported on. Only provider-event-queue survives as a required startup job.
 REQUIRED_STARTUP_JOBS = (
     "provider-event-queue",
-    "premarket-visibility",
-    "discord-reporting",
 )
 STARTUP_INITIAL_DELAY_SECONDS = max(
     0,
@@ -55,7 +44,7 @@ def _write_acceptance(payload: dict[str, Any]) -> None:
 
 
 def _required_job(name: str):
-    job = next((item for item in public.engine.JOBS if item.name == name), None)
+    job = next((item for item in public.JOBS if item.name == name), None)
     if job is None:
         raise RuntimeError(f"Required startup job is missing: {name}")
     return job
@@ -75,13 +64,18 @@ def _latest_run(connection, name: str):
 
 
 def run_required_startup_jobs() -> dict[str, Any]:
-    """Publish and verify required Discord output without owning process health."""
-    connection = public.engine.connect_db()
+    """Publish and verify required Discord output without owning process health.
+
+    Phase 3 purge: this used to also verify performance-scorecard and trade-
+    journal completeness against spy_scanner's trade log - all removed along
+    with the old strategy roster. Now only confirms the surviving required
+    jobs actually ran."""
+    connection = public.connect_db()
     results: dict[str, Any] = {}
     try:
         for name in REQUIRED_STARTUP_JOBS:
             job = _required_job(name)
-            public.engine.run_job(connection, job)
+            public.run_job(connection, job)
             row = _latest_run(connection, name)
             if row is None or str(row["status"]) != "OK":
                 detail = str(row["detail"] if row is not None else "no job receipt")
@@ -92,102 +86,13 @@ def run_required_startup_jobs() -> dict[str, Any]:
                 "detail": str(row["detail"] or ""),
             }
 
-        report_state = public.spy_scanner.read_report_state()
-        performance_version = str(
-            report_state.get("performance_reconciliation_version") or ""
-        )
-        if performance_version != performance_scorecards.REPORT_VERSION:
-            raise RuntimeError(
-                "discord-reporting did not persist the required performance "
-                f"scorecard version: {performance_version or 'missing'}"
-            )
-        if not report_state.get("performance_reconciliation_scorecard_only"):
-            raise RuntimeError("discord-reporting did not confirm scorecard-only mode")
-        history_pages = int(
-            report_state.get("performance_reconciliation_history_pages", -1)
-        )
-        if history_pages != 0:
-            raise RuntimeError(
-                f"performance channels still contain history-page output: {history_pages}"
-            )
-
-        trade_rows = public.spy_scanner.read_log()
-        journal_result = {
-            "created": 0,
-            "refreshed": 0,
-            "closed_reviews": 0,
-            "verified": 0,
-            "entry_snapshots": 0,
-            "pending": 0,
-        }
-        if trade_rows:
-            journal_tracker = public.spy_scanner.DiscordTracker(
-                public.spy_scanner.DISCORD_BOT_TOKEN,
-                public.spy_scanner.DISCORD_GUILD_ID,
-            )
-            if not journal_tracker.ready:
-                raise RuntimeError("Discord tracker is unavailable for journal verification")
-            journal_result = public.spy_scanner.sync_all_trade_journals(
-                trade_rows, journal_tracker
-            )
-            public.spy_scanner.write_log(trade_rows)
-
-        open_unverified = [
-            str(row.get("trade_id") or "unknown")
-            for row in trade_rows
-            if str(row.get("outcome") or "OPEN") == "OPEN"
-            and (
-                str(row.get("discord_format_version") or "")
-                != journal_contract.JOURNAL_FORMAT_VERSION
-                or trade_intelligence.needs_sync(row, "journal-contract")
-            )
-        ]
-        if open_unverified:
-            raise RuntimeError(
-                "Current open journals did not pass the complete entry contract: "
-                + ", ".join(open_unverified[:8])
-            )
-
         payload = {
             "status": "PASSED",
-            "verified_at": public.engine.iso_now(),
+            "verified_at": public.iso_now(),
             "required_jobs": results,
-            "performance_reconciliation": {
-                "version": performance_version,
-                "canonical_closed_trades": report_state.get(
-                    "performance_reconciliation_closed_trades", 0
-                ),
-                "daily_scorecards": report_state.get(
-                    "performance_reconciliation_daily_reports", 0
-                ),
-                "weekly_scorecards": report_state.get(
-                    "performance_reconciliation_weekly_reports", 0
-                ),
-                "monthly_scorecards": report_state.get(
-                    "performance_reconciliation_monthly_reports", 0
-                ),
-                "strategy_scorecards": report_state.get(
-                    "performance_reconciliation_strategy_groups", 0
-                ),
-                "history_pages": history_pages,
-            },
-            "journal_contract": {
-                "format_version": journal_contract.JOURNAL_FORMAT_VERSION,
-                "canonical_trades": len(trade_rows),
-                "verified_this_startup": journal_result.get("verified", 0),
-                "entry_snapshots_found": journal_result.get("entry_snapshots", 0),
-                "historical_journals_pending_batched_refresh": journal_result.get(
-                    "pending", 0
-                ),
-                "all_open_journals_verified": True,
-            },
-            "discord_reconciliation": discord_reconciliation_safety.validate_contract(),
             "contract": (
-                "#breaking-alerts heartbeat, #premarket session card, daily/weekly/"
-                "monthly scorecards, one scorecard per play type, and the complete "
-                "entry checklist for every open journal were acknowledged; the engine "
-                "health listener remains available while existing Discord report cards "
-                "are preserved and replacements use non-destructive upserts"
+                "The engine health listener remains available while required "
+                "startup jobs are verified."
             ),
         }
         _write_acceptance(payload)
@@ -195,7 +100,7 @@ def run_required_startup_jobs() -> dict[str, Any]:
     except Exception as exc:
         payload = {
             "status": "FAILED",
-            "verified_at": public.engine.iso_now(),
+            "verified_at": public.iso_now(),
             "required_jobs": results,
             "error": f"{type(exc).__name__}: {exc}",
         }
@@ -223,7 +128,7 @@ def startup_acceptance_worker() -> None:
             _write_acceptance(
                 {
                     "status": "RETRYING",
-                    "verified_at": public.engine.iso_now(),
+                    "verified_at": public.iso_now(),
                     "attempt": attempt,
                     "next_retry_seconds": STARTUP_RETRY_SECONDS,
                     "error": f"{type(exc).__name__}: {exc}",
@@ -255,7 +160,7 @@ def main() -> int:
     _write_acceptance(
         {
             "status": "STARTING",
-            "verified_at": public.engine.iso_now(),
+            "verified_at": public.iso_now(),
             "next_retry_seconds": STARTUP_INITIAL_DELAY_SECONDS,
             "contract": (
                 "The health listener opens immediately; required Discord publications "
@@ -264,7 +169,7 @@ def main() -> int:
         }
     )
     start_acceptance_retry_worker()
-    return public.engine.main()
+    return public.main()
 
 
 if __name__ == "__main__":

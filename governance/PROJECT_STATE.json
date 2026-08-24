@@ -1,10 +1,15 @@
 {
-  "last_updated": "2026-08-23T18:45:46.213564-05:00",
-  "branch": "claude/phase2-final-inventory",
-  "current_commit": "e792ce25c97e691763367932d484c538e513f3ef",
-  "commit_subject": "Merge pull request #311 from Angrysquid46/claude/phase1-backup-and-freeze",
-  "current_phase": "Phase 2",
+  "last_updated": "2026-08-23T20:42:05.037361-05:00",
+  "branch": "claude/phase3-legacy-purge",
+  "current_commit": "1aa730c22d8a532c7d7542a4c55c56899c999248",
+  "commit_subject": "Merge pull request #312 from Angrysquid46/claude/phase2-final-inventory",
+  "current_phase": "Phase 3",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
-  "active_lock": null,
+  "active_lock": {
+    "actor": "Codex",
+    "task": "Phase 3: legacy purge (Section 19/2)",
+    "work_id": "e9da390c-19d8-4061-81c4-48438fc509d9",
+    "started_at": "2026-08-23T19:00:16.464524-05:00"
+  },
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."
 }

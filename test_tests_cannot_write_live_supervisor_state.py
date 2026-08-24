@@ -70,6 +70,7 @@ def test_the_fake_service_scenario_does_not_touch_the_live_file() -> None:
     # file, so it is the one worth pinning.
     simple = importlib.import_module("run_supervisor_simple")
 
+    live_before = _live_text()
     process = Mock()
     process.pid = 40001
     process.poll.return_value = None  # alive
@@ -86,10 +87,8 @@ def test_the_fake_service_scenario_does_not_touch_the_live_file() -> None:
         supervisor.SERVICES = original_services
         supervisor.PROCESSES = original_processes
 
-    live = _live_text()
-    assert "fake-service" not in live, (
-        "the fake service reached the live supervisor state file"
-    )
+    live_after = _live_text()
+    assert live_after == live_before, "the fake service changed the live supervisor state file"
     assert json.loads(supervisor.DEPLOY_STATE_PATH.read_text(encoding="utf-8"))[
         "service_health"
     ] == {"fake-service": True}

@@ -90,23 +90,18 @@ def main() -> int:
              and "docs/" not in l and ".claude" not in l and "pytest_cache" not in l]
     r.check("no uncommitted source", not dirty, f"{len(dirty)} file(s)" if dirty else "clean")
 
-    # 3. live system healthy
+    # 3. Phase 3 clean-slate runtime: no inherited trader is installed.
     probe = _run([str(PY), "-c",
-        "import spy_scanner as s, performance_reconciliation as pr;"
-        "op=[r for r in s.read_log() if (r.get('outcome') or '')=='OPEN'];"
-        "today=s.now_ct().date().isoformat();"
-        "bad=[r for r in op if str(r.get('expiration') or '')<=today and not s.market_is_open_now()[0]];"
-        "print(len(pr.live_play_types()), len(op), len(bad),"
-        " all(s.held_channel_key(r.get('play_type','')) for r in op))"], timeout=300)
+        "from pathlib import Path;"
+        "root=Path.cwd();"
+        "purged=['spy_scanner.py','performance_reconciliation.py','performance_scorecards.py','evolve_bot'];"
+        "remaining=[p for p in purged if (root/p).exists()];"
+        "print(len(remaining), *remaining)"], timeout=300)
     parts = probe.stdout.split()
-    if len(parts) == 4:
-        strategies, open_n, untradeable, routed = parts
-        r.check("15 live strategies", strategies == "15", f"{strategies} enabled")
-        r.check("no untradeable OPEN rows", untradeable == "0",
-                f"{untradeable} expired/after-hours, {open_n} open")
-        r.check("every open position routed", routed == "True", "")
+    if parts:
+        r.check("legacy trader runtime absent", parts[0] == "0", " ".join(parts[1:]))
     else:
-        r.check("live system probe", False, (probe.stderr or probe.stdout)[-70:])
+        r.check("clean-slate probe", False, (probe.stderr or probe.stdout)[-70:])
 
     # 4. deploy gate
     mods = _run([str(PY), "-c",
@@ -114,7 +109,7 @@ def main() -> int:
         timeout=120).stdout.split()
     if mods:
         gate = _run([str(PY), "-m", "unittest", "-q", *mods], timeout=900)
-        r.check("deploy gate (252 tests)", gate.returncode == 0,
+        r.check("deploy gate", gate.returncode == 0,
                 gate.stderr.strip().splitlines()[-1][:60] if gate.returncode else "OK")
     else:
         r.check("deploy gate", False, "could not read FOCUSED_TEST_MODULES")
