@@ -1,9 +1,9 @@
 {
-  "last_updated": "2026-08-24T12:59:40.324330-05:00",
-  "branch": "claude/phase7-api-budget",
-  "current_commit": "5dcc7413a5cb7d3c788037bb1ef86e1f19b06818",
-  "commit_subject": "Merge pull request #319 from Angrysquid46/claude/phase6-backtest-lab",
-  "current_phase": "Phase 7",
+  "last_updated": "2026-08-24T14:43:16.785911-05:00",
+  "branch": "claude/phase8-scoreboard",
+  "current_commit": "e73defb1a4b7c76fc9cfda408a62b4a9888f370f",
+  "commit_subject": "Merge pull request #320 from Angrysquid46/claude/phase7-api-budget",
+  "current_phase": "Phase 8",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
   "active_lock": null,
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."

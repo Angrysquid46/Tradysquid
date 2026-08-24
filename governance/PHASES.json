@@ -91,12 +91,13 @@
     {
       "phase_number": 8,
       "name": "Neutral competition scorekeeper",
-      "status": "not_started",
+      "status": "complete",
       "dependencies": [
         "Phase 4"
       ],
       "completion_criteria": "Section 6's authoritative competition accounting built outside both private traders, consuming only immutable official trade records; neither trader can modify results.",
-      "discovered_subphases": []
+      "discovered_subphases": [],
+      "completion_evidence": "scoreboard.py builds Section 6's neutral competition accounting: state/scoreboard.db with official_trades (immutable once closed - record_trade_close only succeeds via an UPDATE guarded by closed_at IS NULL, so a trade transitions open->closed exactly once and never again) and generation_events tables, both written only through record_trade_open/record_trade_close/record_generation_event. max_open_trades_per_bot=1 (Section 4/IMMUTABLE_RULES.json) is enforced as a real data-integrity check in record_trade_open, not just documented. Every metric Section 6 names is implemented and derived purely from official_trades: current bankroll, generation/lifetime P&L, trade counts, win rate, profit factor, expectancy, average/largest winner and loser, max/current drawdown (equity-curve peak-to-trough), bust count, current streak, best/worst generation, generation-over-generation improvement, current position status, current leader - bundled into scoreboard_snapshot(bot) plus a separate current_leader(). No governance/OWNERSHIP.json edit needed: the data file is a gitignored runtime SQLite DB, so the commit-time write-guard doesn't apply to it - immutability is enforced by the module's own API surface never exposing an update/delete path for a closed trade. Verified: 24/24 new tests, every metric checked against a hand-calculated synthetic 5-trade example (win rate 0.6, profit factor 4.75, expectancy 60, max drawdown -50, etc., all matching hand arithmetic exactly), a full bust/new-generation scenario confirmed bankroll resets to $1,000 while lifetime P&L keeps the busted generation's history, full pytest suite exit 0. No live check possible this phase - no real trades exist yet since no bot exists until Phase 11; disclosed, not hidden, matching Phase 6/7's own disclosed scope gaps."
     },
     {
       "phase_number": 9,
