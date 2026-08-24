@@ -9,7 +9,7 @@ import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_CONTROL_DIR = (
@@ -35,6 +35,10 @@ GOV_PROJECT_STATE_PATH = GOVERNANCE_DIR / "PROJECT_STATE.json"
 GOV_PHASES_PATH = GOVERNANCE_DIR / "PHASES.json"
 GOV_ACTIVE_HANDOFF_PATH = GOVERNANCE_DIR / "ACTIVE_HANDOFF.json"
 GOV_CHANGELOG_PATH = GOVERNANCE_DIR / "CHANGELOG.jsonl"
+GOV_OWNERSHIP_PATH = GOVERNANCE_DIR / "OWNERSHIP.json"
+GOV_IMMUTABLE_RULES_PATH = GOVERNANCE_DIR / "IMMUTABLE_RULES.json"
+
+PHASE_STATUSES = {"not_started", "in_progress", "complete"}
 
 
 def now_iso() -> str:
@@ -61,6 +65,196 @@ def atomic_json(path: Path, value: Any) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, indent=2), encoding="utf-8")
     temporary.replace(path)
+
+
+def _load_json_file(path: Path, problems: list[str]) -> dict[str, Any] | None:
+    if not path.exists():
+        # A missing governance file is not itself a schema violation - most
+        # test fixtures and partial checkouts never populate every governance
+        # file, only the ones a given acquire()/checkpoint()/finish() call
+        # actually writes. Schema validation only judges the shape of
+        # content that is present.
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        problems.append(f"schema:{path.name}:unreadable")
+        return None
+    if not isinstance(value, dict):
+        problems.append(f"schema:{path.name}:not_an_object")
+        return None
+    return value
+
+
+def validate_governance_schema() -> list[str]:
+    """Plain shape/type checks on the governance/ files - Phase 4 (Section 19).
+
+    Same checks tests/unit/test_governance_phase0.py already encodes as
+    one-off assertions, pulled into runtime code so a malformed file is
+    caught by verify() and not only by CI. Deliberately plain dict/
+    isinstance checks, not jsonschema/pydantic - nothing else in this repo
+    uses either.
+    """
+    problems: list[str] = []
+
+    state = _load_json_file(GOV_PROJECT_STATE_PATH, problems)
+    if state is not None:
+        for key, expected in (
+            ("current_commit", str), ("branch", str), ("last_updated", str),
+        ):
+            if not isinstance(state.get(key), expected):
+                problems.append(f"schema:PROJECT_STATE.json:missing_key:{key}")
+        if "active_lock" not in state:
+            problems.append("schema:PROJECT_STATE.json:missing_key:active_lock")
+        if "current_phase" not in state:
+            problems.append("schema:PROJECT_STATE.json:missing_key:current_phase")
+
+    phases_doc = _load_json_file(GOV_PHASES_PATH, problems)
+    if phases_doc is not None:
+        phases = phases_doc.get("phases")
+        if not isinstance(phases, list):
+            problems.append("schema:PHASES.json:missing_key:phases")
+        else:
+            for entry in phases:
+                if not isinstance(entry, dict):
+                    problems.append("schema:PHASES.json:phase_not_an_object")
+                    continue
+                if not isinstance(entry.get("phase_number"), int):
+                    problems.append("schema:PHASES.json:phase_number_not_int")
+                if not isinstance(entry.get("name"), str):
+                    problems.append("schema:PHASES.json:name_not_str")
+                if entry.get("status") not in PHASE_STATUSES:
+                    problems.append("schema:PHASES.json:status_not_in_enum")
+                if not isinstance(entry.get("discovered_subphases"), list):
+                    problems.append("schema:PHASES.json:discovered_subphases_not_list")
+
+    handoff = _load_json_file(GOV_ACTIVE_HANDOFF_PATH, problems)
+    if handoff is not None:
+        if not isinstance(handoff.get("active"), bool):
+            problems.append("schema:ACTIVE_HANDOFF.json:active_not_bool")
+        elif handoff["active"]:
+            for key in ("work_id", "actor", "task"):
+                if not handoff.get(key):
+                    problems.append(f"schema:ACTIVE_HANDOFF.json:missing_key:{key}")
+
+    ownership = _load_json_file(GOV_OWNERSHIP_PATH, problems)
+    if ownership is not None:
+        classes = ownership.get("ownership_classes")
+        if not isinstance(classes, list) or not classes:
+            problems.append("schema:OWNERSHIP.json:missing_key:ownership_classes")
+            classes = []
+        entries = ownership.get("entries")
+        if not isinstance(entries, list):
+            problems.append("schema:OWNERSHIP.json:missing_key:entries")
+        else:
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    problems.append("schema:OWNERSHIP.json:entry_not_an_object")
+                    continue
+                for key in ("path", "owner", "readers", "writers", "protected"):
+                    if key not in entry:
+                        problems.append(f"schema:OWNERSHIP.json:entry_missing_key:{key}")
+                if entry.get("owner") is not None and classes and entry.get("owner") not in classes:
+                    problems.append(f"schema:OWNERSHIP.json:unknown_owner:{entry.get('path')}")
+
+    rules = _load_json_file(GOV_IMMUTABLE_RULES_PATH, problems)
+    if rules is not None:
+        for key in ("immutable_competition_rules", "private_competitor_boundary"):
+            if not isinstance(rules.get(key), dict):
+                problems.append(f"schema:IMMUTABLE_RULES.json:missing_key:{key}")
+
+    return problems
+
+
+def check_state_freshness() -> dict[str, Any]:
+    """Detect governance/PROJECT_STATE.json going stale (Section 13's
+    PROJECT_STATE_STALE convention, previously only prose in a notes
+    field). A lock being active means a task is legitimately mid-flight -
+    that is not staleness, it is normal, and must not be flagged."""
+    result: dict[str, Any] = {
+        "stale": False,
+        "recorded_commit": None,
+        "actual_commit": None,
+        "reason": None,
+    }
+    if not GOV_PROJECT_STATE_PATH.exists():
+        return result
+    try:
+        state = json.loads(GOV_PROJECT_STATE_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return result
+    try:
+        actual_commit = git("rev-parse", "HEAD")
+    except RuntimeError:
+        return result
+    recorded_commit = state.get("current_commit")
+    result["recorded_commit"] = recorded_commit
+    result["actual_commit"] = actual_commit
+    if recorded_commit == actual_commit:
+        return result
+    if LOCK_PATH.exists():
+        return result
+    result["stale"] = True
+    result["reason"] = "PROJECT_STATE_STALE"
+    return result
+
+
+def load_ownership() -> dict[str, Any]:
+    if not GOV_OWNERSHIP_PATH.exists():
+        return {"ownership_classes": [], "entries": []}
+    try:
+        return json.loads(GOV_OWNERSHIP_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"ownership_classes": [], "entries": []}
+
+
+def _ownership_entry_for(path: str, entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    normalized = path.replace("\\", "/")
+    best: dict[str, Any] | None = None
+    best_length = -1
+    for entry in entries:
+        entry_path = str(entry.get("path") or "")
+        if not entry_path:
+            continue
+        if entry_path.endswith("/"):
+            matches = normalized == entry_path.rstrip("/") or normalized.startswith(entry_path)
+        else:
+            matches = normalized == entry_path
+        if matches and len(entry_path) > best_length:
+            best = entry
+            best_length = len(entry_path)
+    return best
+
+
+def check_ownership(actor: str, paths: Iterable[str]) -> list[str]:
+    """Section 11 write-guard: which of `paths` is `actor` not authorized to
+    write, per governance/OWNERSHIP.json. A path with no matching entry is
+    NOT a violation - most of the tree is intentionally unassigned until
+    later phases create it (OWNERSHIP.json's own not_yet_assigned list);
+    enforcement only ever applies to paths that already have an explicit,
+    protected entry."""
+    ownership = load_ownership()
+    entries = ownership.get("entries") or []
+    violations: list[str] = []
+    for path in paths:
+        entry = _ownership_entry_for(path, entries)
+        if entry is None or not entry.get("protected"):
+            continue
+        writers = entry.get("writers") or []
+        if actor not in writers:
+            violations.append(
+                f"ownership:{path}:owner={entry.get('owner')}:writers={writers}:actor={actor}"
+            )
+    return violations
+
+
+def enforce_ownership(actor: str, paths: Iterable[str]) -> None:
+    violations = check_ownership(actor, paths)
+    if violations:
+        raise RuntimeError(
+            "Ownership write-guard rejected this finish (Section 11): "
+            + "; ".join(violations)
+        )
 
 
 def repository_snapshot() -> dict[str, Any]:
@@ -389,6 +583,10 @@ def verify() -> dict[str, Any]:
                 problems.append(f"lock_active_mismatch:{field}")
         if not lock.get("work_id"):
             problems.append("missing:work_id")
+    problems.extend(validate_governance_schema())
+    freshness = check_state_freshness()
+    if freshness["stale"]:
+        problems.append("state_stale:commit_mismatch")
     result = {
         "status": (
             "BLOCKED" if problems else
@@ -421,6 +619,7 @@ def finish(
         raise RuntimeError(
             f"Lock belongs to {lock.get('actor')}; {actor} cannot release it."
         )
+    enforce_ownership(actor, files)
     commit = git("rev-parse", commit or "HEAD")
     event = {
         "event": "COMPLETE",
@@ -465,6 +664,50 @@ def finish(
     update_project_state()
     append_governance_event(event)
     return event
+
+
+def mark_phase_status(
+    phase_number: int,
+    status: str,
+    completion_evidence: str | None = None,
+) -> dict[str, Any]:
+    """Atomic, validated governance/PHASES.json status transition (Section
+    19). Every phase so far has been hand-edited directly; this is the one
+    governance file that update_project_state()/update_active_handoff()
+    don't already write through atomic_json(). Enforces the same invariants
+    tests/unit/test_governance_phase0.py already checks: status is a known
+    value, started phases stay a contiguous prefix from 0, and a phase
+    cannot be marked complete without non-empty completion_evidence."""
+    if status not in PHASE_STATUSES:
+        raise ValueError(f"Unknown phase status: {status!r}")
+    if status == "complete" and not (completion_evidence or "").strip():
+        raise ValueError("completion_evidence is required to mark a phase complete")
+    if not GOV_PHASES_PATH.exists():
+        raise RuntimeError(f"{GOV_PHASES_PATH} does not exist")
+    data = json.loads(GOV_PHASES_PATH.read_text(encoding="utf-8"))
+    phases = data.get("phases") or []
+    target = next((p for p in phases if p.get("phase_number") == phase_number), None)
+    if target is None:
+        raise ValueError(f"No phase {phase_number} in {GOV_PHASES_PATH}")
+
+    projected = [
+        (status if p.get("phase_number") == phase_number else p.get("status"))
+        for p in phases
+    ]
+    started = [
+        p["phase_number"] for p, s in zip(phases, projected) if s != "not_started"
+    ]
+    if started != list(range(len(started))):
+        raise ValueError(
+            f"Marking phase {phase_number} as {status!r} would break the "
+            f"contiguous-prefix invariant: started phases would be {started}"
+        )
+
+    target["status"] = status
+    if completion_evidence is not None:
+        target["completion_evidence"] = completion_evidence
+    atomic_json(GOV_PHASES_PATH, data)
+    return target
 
 
 def initialize() -> None:
@@ -523,6 +766,15 @@ def main() -> int:
     complete.add_argument("--tests", required=True)
     complete.add_argument("--files", nargs="*", default=[])
     complete.add_argument("--commit", default="")
+    ownership_check = subcommands.add_parser("check-ownership")
+    ownership_check.add_argument(
+        "--actor", required=True, choices=("Codex", "Claude", "Owner")
+    )
+    ownership_check.add_argument("--paths", nargs="*", default=[])
+    phase_status = subcommands.add_parser("set-phase-status")
+    phase_status.add_argument("--phase-number", required=True, type=int)
+    phase_status.add_argument("--status", required=True, choices=sorted(PHASE_STATUSES))
+    phase_status.add_argument("--completion-evidence", default=None)
     args = parser.parse_args()
     if args.command == "init":
         initialize()
@@ -555,6 +807,15 @@ def main() -> int:
         print(json.dumps(finish(
             args.actor, args.summary, args.method, args.tests,
             args.files, args.commit,
+        ), indent=2))
+    elif args.command == "check-ownership":
+        violations = check_ownership(args.actor, args.paths)
+        print(json.dumps({"actor": args.actor, "paths": args.paths, "violations": violations}, indent=2))
+        if violations:
+            return 1
+    elif args.command == "set-phase-status":
+        print(json.dumps(mark_phase_status(
+            args.phase_number, args.status, args.completion_evidence,
         ), indent=2))
     return 0
 

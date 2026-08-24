@@ -15,7 +15,9 @@
       "phase_number": 1,
       "name": "Backup and freeze",
       "status": "complete",
-      "dependencies": ["Phase 0"],
+      "dependencies": [
+        "Phase 0"
+      ],
       "completion_criteria": "Section 16 backups (raw SPY observations, raw option observations, daily manifests, data catalog) protected before any purge begins.",
       "completion_evidence": "governance/PHASE1_BACKUP_MANIFEST.json - 2487 files, 1.7GB backed up to backups/phase1-freeze-<ts>/ with per-directory SHA-256 aggregates verified against a fresh re-hash. Live system stopped: 5 scheduled tasks disabled, watchdog-loop.ps1 killed, START-SUPERVISOR.cmd's restart loop exited via its own supervisor-stop.flag switch. Owner explicitly chose permanent stop (not resuming until Phase 3+).",
       "discovered_subphases": []
@@ -24,7 +26,9 @@
       "phase_number": 2,
       "name": "Final inventory",
       "status": "complete",
-      "dependencies": ["Phase 1"],
+      "dependencies": [
+        "Phase 1"
+      ],
       "completion_criteria": "Every repository path classified PURGE / PRESERVE / EXTRACT-NEUTRALIZE / UNKNOWN per Section 2's survivor criteria, recorded before Phase 3 purge acts on it.",
       "completion_evidence": "governance/PHASE2_INVENTORY.json - all 218 tracked root .py files covered (verified programmatically, zero gaps), plus config/, scripts/, docs/, .github/workflows/, and directory-level entries. 8 items flagged unknown_needs_review for Codex/owner input before Phase 3 acts on them. Also removed backups/pre-setup-20260804-*/ (two folders with real .env credentials on disk, owner-authorized separately from the purge scope).",
       "discovered_subphases": []
@@ -33,7 +37,9 @@
       "phase_number": 3,
       "name": "Legacy purge",
       "status": "complete",
-      "dependencies": ["Phase 2"],
+      "dependencies": [
+        "Phase 2"
+      ],
       "completion_criteria": "Section 2's purge list removed (old traders/strategies, entries/exits/configs, learned thresholds/models, champion/challenger/shadow/evolve/self-learning systems, journals/trades/positions/rankings/performance history, old research conclusions, trader-specific Discord state, dead-trader-only tests). No old trader becomes a template.",
       "completion_evidence": "Phase 2 PURGE inventory audit reports 0 remaining targets after documented survivor reclassifications. Legacy strategy/runtime modules, evolve_bot, strategy configs/results, runtime ledgers, and dead-trader-only tests removed. Generic Discord REST and market-data/math plumbing extracted into discord_transport.py and market_data.py. Zero surviving Python imports of the purged runtime. Full pytest suite passed; 248-test deployment manifest gate passed; scripts.verify_installation passed with strategy_count=0; compileall and git diff check passed.",
       "discovered_subphases": []
@@ -41,16 +47,21 @@
     {
       "phase_number": 4,
       "name": "Governance hardening",
-      "status": "not_started",
-      "dependencies": ["Phase 3"],
+      "status": "complete",
+      "dependencies": [
+        "Phase 3"
+      ],
       "completion_criteria": "Schemas, write guards, ownership enforcement (Section 11's SHARED_CORE/SHARED_DATA/BLACKTIDE_ONLY/CLAUDE_ONLY/HUMAN_LEARNING_CENTER machine-readable ownership), stale-state detection, atomic state updates, concurrency prevention, scoped agent instructions, continuity/CI enforcement in place. Must not recreate competing copies of the Phase 0 state files.",
-      "discovered_subphases": []
+      "discovered_subphases": [],
+      "completion_evidence": "ai_coordination.py: added validate_governance_schema() (plain dict/isinstance shape checks on PROJECT_STATE/PHASES/ACTIVE_HANDOFF/OWNERSHIP/IMMUTABLE_RULES.json) and check_state_freshness() (flags PROJECT_STATE_STALE only when commit differs from HEAD AND no lock is active), both wired into verify()'s existing problems list. Added load_ownership/check_ownership/enforce_ownership (Section 11 write-guard by longest-prefix match against OWNERSHIP.json entries; unassigned paths are never violations), enforce_ownership wired into finish() before any write. Added mark_phase_status() (the one governance file - PHASES.json - not yet going through atomic_json; validates status enum, contiguous-prefix invariant, non-empty completion_evidence on complete). Added check-ownership and set-phase-status CLI subcommands. governance/OWNERSHIP.json: purpose text updated from future-tense to reflect live enforcement; added scoped_instructions_convention key documenting the Phase 11+ scoped-AGENTS.md mechanism without creating bot directories early. AGENTS.md: new Ownership enforcement and scoped instructions section. New tests/unit/test_governance_phase4.py (19 tests: schema pass/fail cases against real and synthetic files, ownership permit/reject/unassigned cases, finish() rejecting an unauthorized file list without mutating state, staleness detection including the active-lock exemption, mark_phase_status validation). New .github/workflows/validate-governance.yml running the governance+coordination test files on every relevant PR. Verified: 19/19 new tests, 13/13 existing governance+coordination tests unchanged (both via --basetemp to route around the known pre-existing Windows pytest tmp_path permission issue), full root+tests/unit pytest suite exit 0, 248/248 deployment gate via unittest, check-ownership CLI manually exercised for both a permitted and a rejected real path. Concurrency prevention and atomic updates were already mostly done by Phase 0 (OneDrive lock, atomic_json) - this phase closed the one real gap (PHASES.json) and routed the new checks through the existing lock lifecycle rather than adding a second mechanism. Scoped agent instruction FILES for bots/blacktide, bots/claude intentionally not created - those directories do not exist until Phase 11."
     },
     {
       "phase_number": 5,
       "name": "Shared factual market-data architecture / storage",
       "status": "not_started",
-      "dependencies": ["Phase 4"],
+      "dependencies": [
+        "Phase 4"
+      ],
       "completion_criteria": "Section 9's permanent daily SPY/0DTE collection running, Parquet/DuckDB storage per Section 9, daily data manifest with data-quality grades. Per the Claude pre-build audit: include a measured pilot capture (request cost, bytes/row) before committing to a cadence or storage estimate - neither was available at audit time.",
       "discovered_subphases": []
     },
@@ -58,7 +69,9 @@
       "phase_number": 6,
       "name": "Neutral point-in-time backtest laboratory",
       "status": "not_started",
-      "dependencies": ["Phase 5"],
+      "dependencies": [
+        "Phase 5"
+      ],
       "completion_criteria": "Section 10's market.as_of(timestamp)/options.as_of(timestamp)/events.as_of(timestamp) interface built, Tier A/B/C evidence labeling enforced, formal backtests reproducible from recorded inputs.",
       "discovered_subphases": []
     },
@@ -66,7 +79,9 @@
       "phase_number": 7,
       "name": "Shared runtime / API / cache / events",
       "status": "not_started",
-      "dependencies": ["Phase 5"],
+      "dependencies": [
+        "Phase 5"
+      ],
       "completion_criteria": "Section 8's shared API-budget architecture and priority scheme built; one shared factual market service ('one observation, many authorized readers').",
       "discovered_subphases": []
     },
@@ -74,7 +89,9 @@
       "phase_number": 8,
       "name": "Neutral competition scorekeeper",
       "status": "not_started",
-      "dependencies": ["Phase 4"],
+      "dependencies": [
+        "Phase 4"
+      ],
       "completion_criteria": "Section 6's authoritative competition accounting built outside both private traders, consuming only immutable official trade records; neither trader can modify results.",
       "discovered_subphases": []
     },
@@ -82,7 +99,9 @@
       "phase_number": 9,
       "name": "Discord rebuild",
       "status": "not_started",
-      "dependencies": ["Phase 8"],
+      "dependencies": [
+        "Phase 8"
+      ],
       "completion_criteria": "Section 14 synchronized surfaces/dashboards/scoreboards; Section 7 rivalry channel/personas/memory with the trading brain unable to read rivalry messages; Section 14 health/reconciliation states implemented.",
       "discovered_subphases": []
     },
@@ -90,7 +109,9 @@
       "phase_number": 10,
       "name": "Learning Center shell",
       "status": "not_started",
-      "dependencies": ["Phase 9"],
+      "dependencies": [
+        "Phase 9"
+      ],
       "completion_criteria": "Section 15 category, #learning-index, and all 43 chapter channels (#01 through #43) exist as a shell with an indexing/search structure; content population is Phase 16.",
       "discovered_subphases": []
     },
@@ -98,7 +119,9 @@
       "phase_number": 11,
       "name": "Independent bot ownership areas",
       "status": "not_started",
-      "dependencies": ["Phase 4"],
+      "dependencies": [
+        "Phase 4"
+      ],
       "completion_criteria": "bots/blacktide and bots/claude ownership areas exist per Section 11, with protected-write enforcement between them active before either trader is implemented.",
       "discovered_subphases": []
     },
@@ -106,7 +129,11 @@
       "phase_number": 12,
       "name": "BLACKTIDE implementation",
       "status": "not_started",
-      "dependencies": ["Phase 6", "Phase 7", "Phase 11"],
+      "dependencies": [
+        "Phase 6",
+        "Phase 7",
+        "Phase 11"
+      ],
       "completion_criteria": "Codex-owned private trader built under Section 4's immutable competition rules, using only shared/approved resources per Section 3.",
       "discovered_subphases": []
     },
@@ -114,7 +141,11 @@
       "phase_number": 13,
       "name": "Claude competitor implementation",
       "status": "not_started",
-      "dependencies": ["Phase 6", "Phase 7", "Phase 11"],
+      "dependencies": [
+        "Phase 6",
+        "Phase 7",
+        "Phase 11"
+      ],
       "completion_criteria": "Claude-owned private trader built under Section 4's immutable competition rules, using only shared/approved resources per Section 3.",
       "discovered_subphases": []
     },
@@ -122,7 +153,10 @@
       "phase_number": 14,
       "name": "Full validation",
       "status": "not_started",
-      "dependencies": ["Phase 12", "Phase 13"],
+      "dependencies": [
+        "Phase 12",
+        "Phase 13"
+      ],
       "completion_criteria": "Section 20's BUILD COMPLETE bar met: every known phase/subphase complete, no unresolved blocker, no orphaned integration, no stale/unowned Discord surface, project state and Git synchronized, required tests pass, and both Claude and Codex independently find no additional phase required.",
       "discovered_subphases": []
     },
@@ -130,7 +164,9 @@
       "phase_number": 15,
       "name": "Competition launch",
       "status": "not_started",
-      "dependencies": ["Phase 14"],
+      "dependencies": [
+        "Phase 14"
+      ],
       "completion_criteria": "Both bots launched at Section 4's starting bankroll ($1,000) with 0 inherited trades.",
       "discovered_subphases": []
     },
@@ -138,7 +174,9 @@
       "phase_number": 16,
       "name": "Full Learning Center population",
       "status": "not_started",
-      "dependencies": ["Phase 10"],
+      "dependencies": [
+        "Phase 10"
+      ],
       "completion_criteria": "Section 15's full 43-chapter curriculum authored (comprehensive original explanations, not skimmed), every lesson carries a stable ID, human Q&A can search and link directly to lessons.",
       "discovered_subphases": []
     }
