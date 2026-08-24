@@ -73,6 +73,7 @@ CATEGORY_ORDER = [
     "MARKET INTELLIGENCE",
     "LEARNING CENTER",
     "SYSTEM",
+    "RIVALRY",
     "OWNER CONTROL",
 ]
 
@@ -124,6 +125,11 @@ CHANNELS = [
     ChannelSpec("SYSTEM", "automation-diagnostics", "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures."),
     ChannelSpec("OWNER CONTROL", "applied-upgrades", "Verified installed upgrades, affected channels, implementations, and live runtime proof."),
     ChannelSpec("OWNER CONTROL", "upgrade-requests", "Owner-submitted upgrade batches mirrored from any Discord channel."),
+    # Phase 9 (Master Spec Section 7): official head-to-head results, lead
+    # changes, busts, milestones, and bounded bot-to-bot trash talk -
+    # separate from operational trade channels. No persona/response logic
+    # exists yet (Phase 11+); this is the channel that work will post into.
+    ChannelSpec("RIVALRY", "blacktide-vs-claude", "Official head-to-head competition results, lead changes, busts, milestones, and bounded bot-to-bot rivalry."),
 ]
 
 
