@@ -25,6 +25,8 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+import market_api_budget
+
 REPO_ROOT = Path(__file__).resolve().parent
 STATE_DIR = REPO_ROOT / "state"
 REPORT_STATE_PATH = STATE_DIR / "discord-report-state.json"
@@ -90,6 +92,7 @@ def tradier_get(path: str, params: dict[str, Any] | None = None) -> dict[str, An
     if not response.ok:
         body = response.text[:500].replace(TRADIER_TOKEN, "[REDACTED]")
         raise TradierError(f"Tradier HTTP {response.status_code} for {path}: {body}")
+    market_api_budget.record_response_headers(response)
     try:
         return response.json()
     except ValueError as exc:

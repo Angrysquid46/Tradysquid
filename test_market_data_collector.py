@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import local_information_engine as engine
+import market_api_budget
 import market_data_collector as collector
 import market_data_store as store
 
@@ -246,6 +247,81 @@ def test_capture_cycle_job_counts_provider_failure_as_api_error_not_crash(
         "SELECT api_errors FROM daily_data_manifest WHERE trading_day=?", ("2026-08-24",)
     ).fetchone()
     assert row[0] == 1
+
+
+def test_capture_cycle_job_skips_quote_call_and_records_error_when_budget_gate_blocks(
+    manifest_db, monkeypatch, scratch_data_root
+):
+    monkeypatch.setattr(collector.market_data, "TICKER", "SPY")
+    monkeypatch.setattr(
+        collector.market_data, "now_ct", lambda: datetime(2026, 8, 24, 9, 31)
+    )
+
+    def boom_if_called(*args, **kwargs):
+        raise AssertionError("get_quotes should not be called while the budget gate blocks")
+
+    monkeypatch.setattr(collector.market_data, "get_quotes", boom_if_called)
+    monkeypatch.setattr(collector.market_data, "get_expirations", lambda symbol: [])
+    monkeypatch.setattr(market_api_budget, "request_allowed", lambda priority: False)
+
+    summary = collector.capture_cycle_job(manifest_db)
+    assert "quote=MISS" in summary
+    assert "errors=1" in summary
+    row = manifest_db.execute(
+        "SELECT api_errors FROM daily_data_manifest WHERE trading_day=?", ("2026-08-24",)
+    ).fetchone()
+    assert row[0] == 1
+
+
+def test_capture_cycle_job_skips_chain_call_when_options_gate_blocks(
+    manifest_db, monkeypatch, scratch_data_root
+):
+    """Expiration lookup is real (not gated) so the block below is
+    isolated to the chain-specific gate check, not incidental exception
+    swallowing inside find_zero_dte_expiration."""
+    monkeypatch.setattr(collector.market_data, "TICKER", "SPY")
+    monkeypatch.setattr(
+        collector.market_data, "now_ct", lambda: datetime(2026, 8, 24, 9, 31)
+    )
+    monkeypatch.setattr(
+        collector.market_data, "get_quotes",
+        lambda symbols, include_greeks=True: {"SPY": {
+            "symbol": "SPY", "bid": 763.0, "ask": 763.05, "bid_date": 1, "ask_date": 2,
+        }},
+    )
+    monkeypatch.setattr(
+        collector.market_data, "get_expirations", lambda symbol: ["2026-08-24"]
+    )
+
+    def boom_if_called(*args, **kwargs):
+        raise AssertionError("get_chain should not be called while the budget gate blocks")
+
+    monkeypatch.setattr(collector.market_data, "get_chain", boom_if_called)
+    monkeypatch.setattr(
+        market_api_budget, "request_allowed",
+        lambda priority: priority != market_api_budget.PRIORITY_SHARED_OPTIONS_COLLECTION,
+    )
+
+    summary = collector.capture_cycle_job(manifest_db)
+    assert "quote=OK" in summary
+    assert "chain=MISS" in summary
+    assert "errors=1" in summary
+
+
+def test_bars_capture_job_skipped_when_budget_gate_blocks(monkeypatch, scratch_data_root):
+    monkeypatch.setattr(collector.market_data, "TICKER", "SPY")
+    monkeypatch.setattr(
+        collector.market_data, "now_ct", lambda: datetime(2026, 8, 24, 9, 33)
+    )
+
+    def boom_if_called(*args, **kwargs):
+        raise AssertionError("Tradier should not be called while the budget gate blocks")
+
+    monkeypatch.setattr(collector.market_data, "get_recent_intraday_history", boom_if_called)
+    monkeypatch.setattr(market_api_budget, "request_allowed", lambda priority: False)
+
+    summary = collector.bars_capture_job(None)
+    assert "skipped" in summary
 
 
 def test_bars_capture_job_dedupes_against_already_written_bars(monkeypatch, scratch_data_root):

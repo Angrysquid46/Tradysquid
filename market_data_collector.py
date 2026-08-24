@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+import market_api_budget
 import market_data
 import market_data_store
 
@@ -231,10 +232,13 @@ def capture_cycle_job(connection) -> str:
     invalid = 0
     raw_quote: dict[str, Any] | None = None
 
-    try:
-        quotes = market_data.get_quotes([symbol], include_greeks=False)
-        raw_quote = quotes.get(symbol)
-    except Exception:
+    if market_api_budget.request_allowed(market_api_budget.PRIORITY_SHARED_SPY_OBSERVATIONS):
+        try:
+            quotes = market_data.get_quotes([symbol], include_greeks=False)
+            raw_quote = quotes.get(symbol)
+        except Exception:
+            api_errors += 1
+    else:
         api_errors += 1
 
     if raw_quote:
@@ -249,20 +253,23 @@ def capture_cycle_job(connection) -> str:
 
     expiration = find_zero_dte_expiration(symbol)
     if expiration:
-        try:
-            contracts = market_data.get_chain(symbol, expiration)
-        except Exception:
-            api_errors += 1
+        if market_api_budget.request_allowed(market_api_budget.PRIORITY_SHARED_OPTIONS_COLLECTION):
+            try:
+                contracts = market_data.get_chain(symbol, expiration)
+            except Exception:
+                api_errors += 1
+            else:
+                rows = []
+                for contract in contracts:
+                    row, cls = classify_chain_row(contract, raw_quote or {}, now)
+                    if cls == REJECTED:
+                        invalid += 1
+                        continue
+                    rows.append(row)
+                path = market_data_store.write_chain_snapshot(symbol, trading_day, now, rows)
+                chain_written = path is not None
         else:
-            rows = []
-            for contract in contracts:
-                row, cls = classify_chain_row(contract, raw_quote or {}, now)
-                if cls == REJECTED:
-                    invalid += 1
-                    continue
-                rows.append(row)
-            path = market_data_store.write_chain_snapshot(symbol, trading_day, now, rows)
-            chain_written = path is not None
+            api_errors += 1
 
     record_cycle_result(
         connection,
@@ -297,6 +304,9 @@ def bars_capture_job(connection) -> str:
         )
         if rows and rows[0].get("max_ts") is not None:
             last_timestamp = int(rows[0]["max_ts"])
+
+    if not market_api_budget.request_allowed(market_api_budget.PRIORITY_SHARED_SPY_OBSERVATIONS):
+        return "bars capture skipped: budget gate blocked shared SPY observations"
 
     try:
         bars = market_data.get_recent_intraday_history(symbol, "1min", calendar_days=1)
