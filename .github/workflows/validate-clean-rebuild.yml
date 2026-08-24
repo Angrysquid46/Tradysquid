@@ -77,6 +77,7 @@ jobs:
       - name: Compile installed source
         shell: pwsh
         run: |
+          Copy-Item -LiteralPath '.env.example' -Destination '.env' -Force
           $Python = Join-Path (Get-Location) '.venv-tradysquid\Scripts\python.exe'
           & $Python -m compileall -q tradysquid scripts tests
           if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
