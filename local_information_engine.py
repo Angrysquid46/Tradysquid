@@ -31,7 +31,6 @@ import capture_0dte_chain
 import market_data_collector
 import diagnostic_upgrade_system as diagnostics
 import requests
-import tradier_stream
 import trade_intelligence
 from run_with_env import load_env
 
@@ -59,107 +58,13 @@ MANUAL_SCAN_LOCK = threading.Lock()
 PROVIDER_JOB_LOCK = threading.Lock()
 RUNNING_JOBS: set[str] = set()
 RUNNING_JOBS_LOCK = threading.Lock()
-STREAM_QUOTES: dict[str, dict[str, Any]] = {}
-STREAM_LAST_WRITTEN: dict[str, float] = {}
-# P/L last actually rendered onto each card, so a position that moves hard
-# can jump the debounce queue instead of sitting stale behind it.
-STREAM_LAST_CARD_PL: dict[str, float] = {}
-# Card-refresh pacing. These are DISPLAY controls only: evaluate_open_row
-# and the close path run on every single tick regardless, so widening them
-# can never delay an exit - it only slows how often the visible card is
-# redrawn.
-#
-# Why they exist: a 0DTE option's P/L is never still, so the "content
-# unchanged" fast path in upsert_channel_message almost never fires and
-# nearly every push became a real PATCH. At the old flat 2s-per-trade
-# debounce, six open positions produced ~3 edits/sec into a single
-# channel. Discord allows on the order of one edit per second per channel,
-# so the channel sat permanently rate-limited - and an exhausted 429 retry
-# raises DiscordError, which is what used to tear down the market-data
-# websocket.
-#
-# The interval therefore has to scale with how many cards share the
-# channel, not stay flat per card.
-# Floor: the fastest a single card may redraw. Each strategy owns its held
-# channel now, so a card normally sits alone in its bucket and this floor
-# is what it actually runs at. Kept at 2s rather than 1s because the exit
-# post and the 60s position-tracker sweep also write to that channel - at
-# 1s there is no headroom left for them and the 429s come back.
-STREAM_CARD_MIN_SECONDS = float(os.environ.get("STREAM_CARD_MIN_SECONDS", "2"))
-STREAM_CARD_SECONDS_PER_POSITION = float(
-    os.environ.get("STREAM_CARD_SECONDS_PER_POSITION", "2")
-)
-# A move this large (in P/L percentage points) since the last redraw is
-# worth showing sooner, but never faster than STREAM_CARD_MIN_SECONDS.
-STREAM_CARD_FORCE_PL_MOVE = float(os.environ.get("STREAM_CARD_FORCE_PL_MOVE", "10"))
-
-
-def _card_push_interval(open_position_count: int) -> float:
-    """Seconds a single card must wait between redraws.
-
-    Scales with the number of open positions because they all edit the same
-    Discord channel and share its rate limit.
-    """
-    return max(
-        STREAM_CARD_MIN_SECONDS,
-        max(open_position_count, 1) * STREAM_CARD_SECONDS_PER_POSITION,
-    )
-# monotonic time.time() each symbol's STREAM_QUOTES entry was last
-# refreshed (by a real stream tick OR the active refetch in
-# _stream_quote_event) - see STREAM_QUOTE_STALE_SECONDS.
-STREAM_QUOTE_RECEIVED_AT: dict[str, float] = {}
-# A 0DTE option's own quote can print far less often than SPY's own
-# underlying ticks do. _stream_quote_event used to only re-evaluate a
-# position when its OWN option symbol ticked - real bug caught live: a
-# a trade peaked at +29%, but its option hadn't ticked again
-# by the time price reversed, so it didn't get re-checked until it had
-# already fallen to +6% (a 23-point overshoot past where the floor
-# should have locked it in). Now, on ANY tick relevant to an open row
-# (its own option OR its underlying), a quote older than this many
-# seconds gets actively refetched via REST before evaluating, instead of
-# passively waiting for the option to tick again on its own.
-#
-# Started at 2.0s; caught live still leaving a real gap - a $0.16, high-
-# theta 0DTE put peaked +31% and closed -25% (target was -15%, a 10-point
-# overshoot) even through this fixed path, because the whole swing
-# happened inside one 2-second staleness window. Tightened to 0.5s: this
-# doesn't guarantee zero overshoot (no discrete-interval check can, in a
-# continuously moving market - a violent enough move inside even a
-# sub-second window would still slip through), but it bounds the worst
-# case to a quarter of what it was, not eliminates the concept.
-STREAM_QUOTE_STALE_SECONDS = 0.5
-
-# Counters for the live exit path, so its cost and latency can be measured
-# instead of estimated. Flushed by position_tracker_job. Plain ints
-# incremented on the hot path - no locking, since an occasional lost
-# increment does not change what these are for, and contention here would
-# slow the very path being measured.
-STREAM_STATS: dict[str, float] = {
-    "ticks": 0.0,           # stream events received
-    "relevant_ticks": 0.0,  # events touching an open position
-    "evaluations": 0.0,     # exit checks actually run
-    "refetches": 0.0,       # REST calls forced by a stale option quote
-    "closes": 0.0,          # exits fired from the stream path
-    "card_pushes": 0.0,     # Discord updates (2s-debounced display branch)
-    "eval_seconds": 0.0,    # cumulative time in evaluation
-    "projection_skips": 0.0,  # refetches avoided by the delta projection
-    "drift_refetches": 0.0,   # forced because SPY outran the projection
-}
-
-POSITION_STREAM: tradier_stream.TradierPositionStream | None = None
-# SPY's own spot price for Key-Levels' underlying-level stop/target check
-# (see _stream_quote_event) - cached rather than fetched on every option
-# tick, since ticks can arrive many times a second. Staleness bound
-# shares STREAM_QUOTE_STALE_SECONDS (not a separate hardcoded value) as
-# of 2026-08-13 - this cache used to allow up to 2s of staleness, four
-# times looser than the 0.5s bound the option-quote path was tightened
-# to on 2026-08-11 (PR #173) after a real overshoot got caught live.
-# Real evidence this second gap existed too, not just a theoretical
-# inconsistency: SPY_KEY_LEVELS trades kept overshooting by 20+ points
-# (2026-08-12 14:35, well after the #173 fix) while 0DTE trades'
-# overshoot shrank as intended - Key-Levels' stop/target check runs off
-# THIS cache, which the #173 fix never touched.
-_SPY_SPOT_CACHE: tuple[float | None, float] = (None, 0.0)
+# Phase 3 purge: the live Tradier position-quote stream and its card-
+# debounce/staleness machinery (STREAM_QUOTES, STREAM_CARD_*,
+# STREAM_QUOTE_*, STREAM_STATS, POSITION_STREAM, _SPY_SPOT_CACHE, and the
+# _position_symbols/_stream_quote_event callables main() used to build the
+# stream from) existed to re-evaluate open paper positions in real time -
+# removed along with the old strategy roster and its positions. Nothing
+# in the surviving job set has an open position to stream.
 
 
 def utc_now() -> datetime:
@@ -1070,7 +975,6 @@ def run_once() -> int:
 
 
 def main() -> int:
-    global POSITION_STREAM
     load_env()
     if "--once" in sys.argv:
         return run_once()
@@ -1087,21 +991,6 @@ def main() -> int:
         name="engine-health-listener",
         daemon=True,
     ).start()
-    POSITION_STREAM = tradier_stream.TradierPositionStream(
-        market_data.TRADIER_TOKEN,
-        market_data.TRADIER_BASE_URL,
-        _position_symbols,
-        _stream_quote_event,
-    )
-    threading.Thread(
-        target=POSITION_STREAM.run_forever,
-        name="tradier-position-stream",
-        daemon=True,
-    ).start()
-    print(
-        "Open paper positions use one live Tradier quote stream; "
-        "REST checks are a one-minute safety fallback."
-    )
     connection = connect_db()
     try:
         recovered = recover_interrupted_jobs(connection)
