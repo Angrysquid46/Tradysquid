@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import spy_scanner
+import market_data
 import trade_intelligence
 
 ROOT = Path(__file__).resolve().parent

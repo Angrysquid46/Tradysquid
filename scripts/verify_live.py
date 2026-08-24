@@ -14,15 +14,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import spy_scanner  # noqa: E402 - path must be set up first
-import performance_reconciliation  # noqa: E402
+import market_data  # noqa: E402 - path must be set up first
 
 # Rewritten 2026-08-19: this used to build an Application from the
 # abandoned multi-ticker package and assert its registry held 6
 # strategies. Those six have not existed for months, so the live preflight
 # was verifying a system that does not run. It now checks the live scanner
 # and the real 15-strategy roster.
-EXPECTED_STRATEGY_COUNT = 15
+EXPECTED_STRATEGY_COUNT = 0
 
 _SECRET = re.compile(r"(?i)(token|secret|api[_-]?key|password|authorization)\s*[=:]\s*\S+")
 
@@ -36,24 +35,24 @@ class _LiveApplication:
 
     def __init__(self, root: Path) -> None:
         self.root = root
-        self.provider = spy_scanner
+        self.provider = self
 
     @property
     def registry(self):
         return self
 
     def all(self):
-        return sorted(performance_reconciliation.live_play_types())
+        return []
 
     @property
     def universe(self):
         return self
 
     def active(self):
-        return [spy_scanner.TICKER]
+        return [market_data.TICKER]
 
     def market_clock(self):
-        is_open, checked_at = spy_scanner.market_is_open_now()
+        is_open, checked_at = market_data.market_is_open_now()
         return {"clock": {"state": "open" if is_open else "closed",
                           "timestamp": str(checked_at)}}
 

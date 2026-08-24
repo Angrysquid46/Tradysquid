@@ -22,7 +22,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import dynamic_universe
-import spy_scanner
+import market_data
+import discord_transport
 import outcome_learning
 import trade_intelligence
 
@@ -195,10 +196,16 @@ def _applied_checklist(row: dict[str, Any], *, closed: bool) -> str:
 
 
 def install_learning_extensions() -> None:
-    """Merge the applied supplement into Discord lessons, search, and journals."""
+    """Merge the applied supplement into Discord lessons and search.
+
+    Phase 3 purge, owner-authorized: this used to also patch
+    spy_scanner.trade_learning_analysis / spy_scanner.DISCORD_FORMAT_VERSION
+    (trade-journal card content) - removed along with spy_scanner.py itself.
+    upgrade_batch_44.py's own UNKNOWN classification is unresolved by this
+    change; only the coupling that would otherwise crash every launch
+    through run_with_env.py was removed."""
     global _LEARNING_INSTALLED
     global _ORIGINAL_LIBRARY_SECTIONS, _ORIGINAL_LOAD_LESSONS
-    global _ORIGINAL_TRADE_LEARNING_ANALYSIS
     if _LEARNING_INSTALLED:
         return
 
@@ -209,7 +216,6 @@ def install_learning_extensions() -> None:
     supplements = _supplement_lessons()
     _ORIGINAL_LIBRARY_SECTIONS = learning.library_sections
     _ORIGINAL_LOAD_LESSONS = sync_learning_center.load_lessons
-    _ORIGINAL_TRADE_LEARNING_ANALYSIS = spy_scanner.trade_learning_analysis
 
     @lru_cache(maxsize=1)
     def merged_library_sections():
@@ -226,28 +232,10 @@ def install_learning_extensions() -> None:
                 lessons[channel] = f"{lessons[channel]}\n\n{body}".strip()
         return lessons
 
-    def enhanced_trade_learning_analysis(row: dict[str, Any], *, closed: bool = False) -> str:
-        base = _ORIGINAL_TRADE_LEARNING_ANALYSIS(row, closed=closed)
-        marker = "### Applied Decision Checklist"
-        if marker in base:
-            return base
-        return f"{base}\n{_applied_checklist(row, closed=closed)}"
-
     learning.library_sections = merged_library_sections
     sync_learning_center.load_lessons = merged_load_lessons
     trade_intelligence.learning_version = _combined_learning_version
-    spy_scanner.trade_learning_analysis = enhanced_trade_learning_analysis
     journal_contract.JOURNAL_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
-    # NOT added to REQUIRED_ENTRY_MARKERS: create_trade_thread/refresh_trade_thread
-    # post entry_alert_text(row, summary_only=True) (the "1 card" trim - Position/
-    # Entry Plan/Risk only), which returns before ever calling
-    # trade_learning_analysis, so an open trade's journal thread can never contain
-    # "### Applied Decision Checklist". Requiring it here made journal-contract
-    # verification fail permanently for every open trade that needed a refresh,
-    # which was erroring the live options scanner every cycle. Closed trades still
-    # get this section via close_alert_text(row, closed=True) and are unaffected -
-    # only REQUIRED_ENTRY_MARKERS (open trades) had this stale requirement.
-    spy_scanner.DISCORD_FORMAT_VERSION = JOURNAL_FORMAT_VERSION
     _LEARNING_INSTALLED = True
 
 
@@ -276,11 +264,11 @@ def _set_state_json(connection: Any, key: str, payload: dict[str, Any]) -> None:
 
 def _quote_change(quote: dict[str, Any]) -> float | None:
     for key in ("change_percentage", "change_pct", "percent_change"):
-        value = spy_scanner.as_float(quote.get(key))
+        value = market_data.as_float(quote.get(key))
         if value is not None:
             return value
-    last = spy_scanner.as_float(quote.get("last"))
-    previous = spy_scanner.as_float(quote.get("prevclose") or quote.get("previous_close"))
+    last = market_data.as_float(quote.get("last"))
+    previous = market_data.as_float(quote.get("prevclose") or quote.get("previous_close"))
     if last is not None and previous:
         return (last / previous - 1) * 100
     return None
@@ -349,7 +337,7 @@ def _cleanup_dashboard_cards(
         if message_id:
             try:
                 tracker._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
-            except spy_scanner.DiscordError as exc:
+            except discord_transport.DiscordError as exc:
                 if "HTTP 404" not in str(exc):
                     raise
         messages.pop(state_key, None)
@@ -370,25 +358,25 @@ def _require_dashboard(
 
 
 def _fmt_price(value: Any) -> str:
-    number = spy_scanner.as_float(value)
+    number = market_data.as_float(value)
     return "unavailable" if number is None else f"${number:.2f}"
 
 
 def _fmt_change(value: Any) -> str:
-    number = spy_scanner.as_float(value)
+    number = market_data.as_float(value)
     return "change unavailable" if number is None else f"{number:+.2f}%"
 
 
 def _fmt_number(value: Any, digits: int = 1, suffix: str = "") -> str:
-    number = spy_scanner.as_float(value)
+    number = market_data.as_float(value)
     return "unavailable" if number is None else f"{number:.{digits}f}{suffix}"
 
 
 def active_premarket_job(connection: Any) -> str:
     symbols = dynamic_universe.active_symbols()
-    quotes = spy_scanner.get_quotes(symbols, include_greeks=False) if symbols else {}
+    quotes = market_data.get_quotes(symbols, include_greeks=False) if symbols else {}
     rows = _universe_rows()
-    session = _PUBLIC._session_label(spy_scanner.now_ct(), bool(spy_scanner.market_is_open_now()[0]))
+    session = _PUBLIC._session_label(market_data.now_ct(), bool(market_data.market_is_open_now()[0]))
     ranked = sorted(
         symbols,
         key=lambda symbol: abs(_quote_change(quotes.get(symbol) or {}) or 0.0),
@@ -396,7 +384,7 @@ def active_premarket_job(connection: Any) -> str:
     )
     overview = [
         "## Active-Universe Session Scanner",
-        f"**Session:** {session} · **Ticker:** {', '.join(symbols) or spy_scanner.TICKER}",
+        f"**Session:** {session} · **Ticker:** {', '.join(symbols) or market_data.TICKER}",
         "Cards below are generated only for the current universe and disappear when a ticker rotates out.",
         "### Largest current moves",
     ]
@@ -405,7 +393,7 @@ def active_premarket_job(connection: Any) -> str:
         overview.append(
             f"• **{symbol}** · {_fmt_price(quote.get('last'))} · "
             f"{_fmt_change(_quote_change(quote))} · volume "
-            f"{int(spy_scanner.as_float(quote.get('volume'), 0) or 0):,}"
+            f"{int(market_data.as_float(quote.get('volume'), 0) or 0):,}"
         )
     overview.append(f"Updated **{_engine().iso_now()}**. Last/closed quotes may be stale outside market hours.")
     _require_dashboard(connection, "premarket", "premarket-active-overview", "\n".join(overview))
@@ -420,12 +408,12 @@ def active_premarket_job(connection: Any) -> str:
             metadata = rows.get(symbol) or {}
             items = news.get("items") if isinstance(news.get("items"), list) else []
             headline = str((items[0] if items else {}).get("title") or "No recent headline recorded.")
-            volume = int(spy_scanner.as_float(quote.get("volume"), 0) or 0)
-            average_volume = spy_scanner.as_float(metadata.get("average_volume"))
+            volume = int(market_data.as_float(quote.get("volume"), 0) or 0)
+            average_volume = market_data.as_float(metadata.get("average_volume"))
             relative_volume = (
                 volume / average_volume
                 if average_volume and average_volume > 0
-                else spy_scanner.as_float(snapshot.get("relative_volume"))
+                else market_data.as_float(snapshot.get("relative_volume"))
             )
             content = "\n".join(
                 [
@@ -592,7 +580,7 @@ def _snapshot_direction(snapshot: dict[str, Any], change: float | None) -> str:
 
 def market_regime_summary_job(connection: Any) -> str:
     symbols = dynamic_universe.active_symbols()
-    quotes = spy_scanner.get_quotes(symbols, include_greeks=False) if symbols else {}
+    quotes = market_data.get_quotes(symbols, include_greeks=False) if symbols else {}
     groups: dict[str, list[str]] = {"BULLISH": [], "BEARISH": [], "RANGE": [], "OTHER": []}
     records: list[dict[str, Any]] = []
 
@@ -606,8 +594,8 @@ def market_regime_summary_job(connection: Any) -> str:
         records.append(
             {
                 "symbol": symbol,
-                "price": spy_scanner.as_float(quote.get("last") or snapshot.get("price")),
-                "change": change if change is not None else spy_scanner.as_float(snapshot.get("change_pct")),
+                "price": market_data.as_float(quote.get("last") or snapshot.get("price")),
+                "change": change if change is not None else market_data.as_float(snapshot.get("change_pct")),
                 "direction": direction,
                 "regime": snapshot.get("regime") or "awaiting refresh",
                 "rsi": snapshot.get("rsi14"),
@@ -687,7 +675,7 @@ def _render_intraday_chart(symbol: str, bars: list[dict[str, Any]], output: Path
 
     points: list[tuple[str, float]] = []
     for bar in bars:
-        value = spy_scanner.as_float(bar.get("close") or bar.get("price"))
+        value = market_data.as_float(bar.get("close") or bar.get("price"))
         if value is None:
             continue
         label = str(bar.get("time") or bar.get("timestamp") or bar.get("date") or "")
@@ -793,7 +781,7 @@ def _replace_chart_message(
     if old_id and old_id != new_id and channel_id:
         try:
             tracker._request("DELETE", f"/channels/{channel_id}/messages/{old_id}")
-        except spy_scanner.DiscordError as exc:
+        except discord_transport.DiscordError as exc:
             if "HTTP 404" not in str(exc):
                 raise
     state[symbol] = new_id
@@ -881,7 +869,7 @@ def _cleanup_chart_messages(connection: Any, active: set[str]) -> int:
         if message_id and channel_id:
             try:
                 tracker._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
-            except spy_scanner.DiscordError as exc:
+            except discord_transport.DiscordError as exc:
                 if "HTTP 404" not in str(exc):
                     raise
         state.pop(symbol, None)
@@ -898,10 +886,10 @@ def intraday_chart_job(connection: Any) -> str:
     keep = {f"local-engine:intraday-levels:{symbol}" for symbol in symbols}
     for symbol in batch:
         try:
-            bars = spy_scanner.get_intraday_history(symbol)
+            bars = market_data.get_intraday_history(symbol)
             timeframe = "5-minute session"
             if len(bars) < 2:
-                bars = spy_scanner.get_daily_history(symbol, days=45)[-30:]
+                bars = market_data.get_daily_history(symbol, days=45)[-30:]
                 timeframe = "30-session fallback"
             output = CHART_DIR / f"{symbol.lower()}-active-session.png"
             metrics = _render_intraday_chart(symbol, bars, output)
@@ -983,8 +971,8 @@ def enhanced_activity_card(connection: Any, rows: list[dict[str, Any]]) -> str:
     ]
     lines = [
         "## Live Tradysquids System Activity",
-        f"**Market:** {'OPEN' if spy_scanner.market_is_open_now()[0] else 'CLOSED'} · "
-        f"**Ticker:** {', '.join(active) or spy_scanner.TICKER}",
+        f"**Market:** {'OPEN' if market_data.market_is_open_now()[0] else 'CLOSED'} · "
+        f"**Ticker:** {', '.join(active) or market_data.TICKER}",
         f"**Needs attention:** {len(attention)} scheduled job(s)",
         "### What actually happened",
     ]
@@ -1077,8 +1065,8 @@ def learning_results_text(summary: dict[str, Any]) -> str:
         lines.extend(
             f"• **{item['feature']} = {item['value']}** · {item['samples']} trades · "
             f"{item['win_rate_pct']:.0f}% wins · avg "
-            f"{spy_scanner.fmt_money(item['average_pl_dollars'])} · total "
-            f"{spy_scanner.fmt_money(item['total_pl_dollars'])}"
+            f"{market_data.fmt_money(item['average_pl_dollars'])} · total "
+            f"{market_data.fmt_money(item['total_pl_dollars'])}"
             for item in positive[:6]
         )
     else:
@@ -1088,7 +1076,7 @@ def learning_results_text(summary: dict[str, Any]) -> str:
         lines.extend(
             f"• **{item['feature']} = {item['value']}** · {item['samples']} trades · "
             f"{item['win_rate_pct']:.0f}% wins · avg "
-            f"{spy_scanner.fmt_money(item['average_pl_dollars'])} · "
+            f"{market_data.fmt_money(item['average_pl_dollars'])} · "
             f"MAE {_fmt_number(item.get('average_mae_pct'), 1, '%')}"
             for item in negative[:6]
         )
@@ -1129,8 +1117,8 @@ def style_evidence_text(
         f"**Sample:** {samples}/{minimum_sample} · **Confidence:** {confidence}",
         "### Aggregate evidence",
         f"Win rate **{float(group.get('win_rate_pct') or 0):.1f}%** · "
-        f"average P/L **{spy_scanner.fmt_money(group.get('average_pl_dollars'))}** · "
-        f"total P/L **{spy_scanner.fmt_money(group.get('total_pl_dollars'))}**",
+        f"average P/L **{market_data.fmt_money(group.get('average_pl_dollars'))}** · "
+        f"total P/L **{market_data.fmt_money(group.get('total_pl_dollars'))}**",
         f"Profit factor **{group.get('profit_factor') if group.get('profit_factor') is not None else 'unavailable'}** · "
         f"average MFE **{_fmt_number(group.get('average_mfe_pct'), 1, '%')}** · "
         f"average MAE **{_fmt_number(group.get('average_mae_pct'), 1, '%')}**",
@@ -1164,7 +1152,7 @@ def enhanced_outcome_learning_job(connection: Any) -> str:
     )
     tracker = _tracker()
     if tracker:
-        report_state = spy_scanner.read_report_state()
+        report_state = market_data.read_report_state()
         tracker.upsert_channel_message(
             "learning_results",
             report_state,
@@ -1172,7 +1160,7 @@ def enhanced_outcome_learning_job(connection: Any) -> str:
             learning_results_text(summary),
             search_token="Learning Results · Evidence Dashboard",
         )
-        spy_scanner.write_report_state(report_state)
+        market_data.write_report_state(report_state)
     return (
         f"{summary['closed_trades']} closed trades; "
         f"{len(summary['evidence_ready_groups'])} evidence-ready groups; "
@@ -1214,14 +1202,14 @@ def upgrade_request_migration_job(connection: Any) -> str:
             continue
         try:
             messages = tracker._request("GET", f"/channels/{channel_id}/messages?limit=100")
-        except spy_scanner.DiscordError:
+        except discord_transport.DiscordError:
             continue
         for message in messages if isinstance(messages, list) else []:
             scanned += 1
             author = message.get("author") or {}
             if not author.get("bot"):
                 continue
-            text = spy_scanner.message_search_text(message)
+            text = discord_transport.message_search_text(message)
             if (
                 "Upgrade request" not in text
                 or ("uploaded" not in text and "Batch issue" not in text)
@@ -1258,111 +1246,24 @@ def _clone_job(job: Any, callback: Any | None = None, **changes: Any) -> Any:
 
 
 def install_engine() -> None:
-    """Replace weak Discord jobs with active-universe implementations."""
-    global _ENGINE_INSTALLED, _ENGINE, _PUBLIC, _OPERATIONS
+    """Point the module's engine handle at the surviving scheduler.
+
+    Phase 3 purge: this used to replace jobs on local_information_engine_public
+    / always_on_operations with "active universe" versions and add several new
+    background jobs - all of it wired into the old Discord dashboard/
+    discover()-based visibility layer, which was deleted along with
+    spy_scanner.py. Both modules are gone and the replaced job names no longer
+    exist in local_information_engine.JOBS. Reduced to just setting _ENGINE so
+    _engine() (used by runtime_contract.dedupe_and_retire_jobs and the report-
+    state helpers below) keeps working; owner-authorized, same basis as the
+    other spy_scanner-coupling fixes in this file.
+    """
+    global _ENGINE_INSTALLED, _ENGINE
     if _ENGINE_INSTALLED:
         return
-    import always_on_operations as operations
-    import local_information_engine_public as public
+    import local_information_engine
 
-    _PUBLIC = public
-    _ENGINE = public.engine
-    _OPERATIONS = operations
-    operations.activity_card = enhanced_activity_card
-
-    replacements = {
-        "premarket-visibility": (
-            active_premarket_job,
-            {
-                "interval": timedelta(minutes=15),
-                "after_hours_interval": timedelta(minutes=45),
-                "retry_interval": timedelta(minutes=2),
-            },
-        ),
-        "managed-ticker-news": (
-            active_news_job,
-            {
-                "interval": timedelta(minutes=30),
-                "after_hours_interval": timedelta(hours=1),
-                "retry_interval": timedelta(minutes=5),
-            },
-        ),
-        "managed-ticker-information": (
-            active_market_information_job,
-            {
-                "interval": timedelta(minutes=15),
-                "after_hours_interval": timedelta(hours=1),
-                "retry_interval": timedelta(minutes=5),
-            },
-        ),
-        "outcome-learning": (
-            enhanced_outcome_learning_job,
-            {
-                "interval": timedelta(hours=3),
-                "retry_interval": timedelta(minutes=10),
-            },
-        ),
-        "system-activity": (
-            operations.system_activity_job,
-            {"interval": timedelta(minutes=5), "retry_interval": timedelta(minutes=2)},
-        ),
-    }
-    jobs: list[Any] = []
-    found: set[str] = set()
-    for job in _ENGINE.JOBS:
-        replacement = replacements.get(job.name)
-        if replacement:
-            callback, changes = replacement
-            jobs.append(_clone_job(job, callback, **changes))
-            found.add(job.name)
-        else:
-            jobs.append(job)
-    missing = sorted(set(replacements) - found)
-    if missing:
-        raise RuntimeError("Upgrade batch could not replace jobs: " + ", ".join(missing))
-
-    additions = [
-        _ENGINE.Job(
-            "active-market-regime",
-            timedelta(minutes=15),
-            market_regime_summary_job,
-            after_hours_interval=timedelta(hours=1),
-            background=True,
-            retry_interval=timedelta(minutes=5),
-        ),
-        _ENGINE.Job(
-            "intraday-chart-refresh",
-            timedelta(minutes=10),
-            intraday_chart_job,
-            after_hours_interval=timedelta(hours=2),
-            background=True,
-            provider_heavy=True,
-            retry_interval=timedelta(minutes=5),
-        ),
-        _ENGINE.Job(
-            "upgrade-request-migration",
-            timedelta(minutes=10),
-            upgrade_request_migration_job,
-            background=True,
-            retry_interval=timedelta(minutes=5),
-        ),
-        # Short interval so a once-daily data refresh is picked up
-        # promptly and the overdue-job health window stays tight; the
-        # job's own fingerprint guard means it only does real work when
-        # the store actually changed. Deliberately NOT provider_heavy -
-        # it makes zero provider calls and must not contend for the
-        # provider lock with the live scanner.
-        _ENGINE.Job(
-            "spy-technicals-charts",
-            timedelta(minutes=20),
-            spy_technicals_job,
-            background=True,
-            retry_interval=timedelta(minutes=5),
-        ),
-    ]
-    existing = {job.name for job in jobs}
-    jobs.extend(job for job in additions if job.name not in existing)
-    _ENGINE.JOBS = jobs
+    _ENGINE = local_information_engine
     _ENGINE_INSTALLED = True
 
 
@@ -1413,11 +1314,15 @@ def validate_batch() -> dict[str, Any]:
     import learning_center_catalog
 
     supplements = _supplement_lessons()
-    missing = [
-        channel
-        for channel in learning_center_catalog.ORDERED_CHANNELS
-        if channel not in supplements
+    # Batch 44 authored the original 27-channel supplement. Later catalog
+    # expansions validate through learning_center_catalog itself and must not
+    # retroactively make this historical batch validator fail.
+    owned_channels = [
+        lesson.channel
+        for lesson in learning_center_catalog.LESSONS
+        if lesson.number <= 27
     ]
+    missing = [channel for channel in owned_channels if channel not in supplements]
     if missing:
         raise RuntimeError("Applied Learning Center supplement is missing: " + ", ".join(missing))
     sample_summary = {

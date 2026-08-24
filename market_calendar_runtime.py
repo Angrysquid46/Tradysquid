@@ -22,14 +22,14 @@ def official_market_session(
     *,
     calendar_payload: dict[str, Any] | None = None,
 ):
-    local_moment = (moment or datetime.now(diagnostics.spy_scanner.MARKET_TZ)).astimezone(
-        diagnostics.spy_scanner.MARKET_TZ
+    local_moment = (moment or datetime.now(diagnostics.market_data.MARKET_TZ)).astimezone(
+        diagnostics.market_data.MARKET_TZ
     )
     eastern_moment = local_moment.astimezone(EASTERN)
     payload = calendar_payload
     if payload is None:
         try:
-            payload = diagnostics.spy_scanner.tradier_get(
+            payload = diagnostics.market_data.tradier_get(
                 "/markets/calendar",
                 {"month": eastern_moment.month, "year": eastern_moment.year},
             )
@@ -58,18 +58,18 @@ def official_market_session(
                 eastern_moment.date(), end_clock, tzinfo=EASTERN
             )
             return (
-                start_eastern.astimezone(diagnostics.spy_scanner.MARKET_TZ),
-                end_eastern.astimezone(diagnostics.spy_scanner.MARKET_TZ),
+                start_eastern.astimezone(diagnostics.market_data.MARKET_TZ),
+                end_eastern.astimezone(diagnostics.market_data.MARKET_TZ),
             )
     fallback = diagnostics.fallback_market_session(local_moment.date())
     if not fallback:
         return None
     return (
         datetime.combine(
-            local_moment.date(), fallback[0], tzinfo=diagnostics.spy_scanner.MARKET_TZ
+            local_moment.date(), fallback[0], tzinfo=diagnostics.market_data.MARKET_TZ
         ),
         datetime.combine(
-            local_moment.date(), fallback[1], tzinfo=diagnostics.spy_scanner.MARKET_TZ
+            local_moment.date(), fallback[1], tzinfo=diagnostics.market_data.MARKET_TZ
         ),
     )
 

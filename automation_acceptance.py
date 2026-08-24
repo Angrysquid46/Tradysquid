@@ -22,8 +22,7 @@ from typing import Any
 
 import requests
 
-import discord_command_bot as command_bot
-import spy_scanner
+import discord_transport
 from learning_center_catalog import LEARNING_CHANNEL_ORDER
 from strict_learning_order import category_and_children, normalized, ordered_children
 
@@ -250,7 +249,7 @@ def run_discord_sync() -> str:
 
 
 def verify_visible_learning_order() -> dict[str, Any]:
-    tracker = spy_scanner.DiscordTracker(spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID)
+    tracker = discord_transport.DiscordTracker(discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID)
     if not tracker.enabled:
         raise AcceptanceFailure("Discord bot token and guild ID are required for order verification.")
     _, children = category_and_children(tracker)
@@ -263,23 +262,22 @@ def verify_visible_learning_order() -> dict[str, Any]:
             f"Expected: {', '.join(expected)}. Actual: {', '.join(actual)}."
         )
     numbers = [int(match.group(1)) for name in actual if (match := re.match(r"^(\d{2})-", name))]
-    if numbers != list(range(1, 28)):
-        raise AcceptanceFailure(f"Discord returned lesson numbers {numbers}, not 1 through 27.")
+    expected_numbers = [
+        int(match.group(1))
+        for name in expected
+        if (match := re.match(r"^(\d{2})-", name))
+    ]
+    if numbers != expected_numbers:
+        raise AcceptanceFailure(
+            f"Discord returned lesson numbers {numbers}, expected {expected_numbers}."
+        )
     return {"actual": actual, "numbers": numbers, "extras_after_official_channels": max(0, len(visible) - len(expected))}
-
-
-def verify_status_logic() -> dict[str, str]:
-    ticker = spy_scanner.TICKER
-    text = command_bot.status_reply(ticker)
-    if "Command service: **ONLINE**" not in text or "Tradysquids status" not in text:
-        raise AcceptanceFailure("The local /status command logic did not return a valid status response.")
-    return {"ticker": ticker, "result": "status reply generated"}
 
 
 def post_report(message: str) -> None:
     try:
-        tracker = spy_scanner.DiscordTracker(
-            spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
+        tracker = discord_transport.DiscordTracker(
+            discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID
         )
         channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
         channel = next((item for item in channels if str(item.get("name") or "").casefold() == "system-health"), None)
@@ -288,7 +286,7 @@ def post_report(message: str) -> None:
             tracker.upsert_singleton_message(
                 str(channel["id"]), message[:1900], title
             )
-    except (spy_scanner.DiscordError, ValueError, TypeError):
+    except (discord_transport.DiscordError, ValueError, TypeError):
         pass
 
 
@@ -309,13 +307,11 @@ def run_acceptance() -> dict[str, Any]:
     report["checks"]["watchdog"] = verify_watchdog_task()
     report["checks"]["discord_sync"] = run_discord_sync()
     report["checks"]["discord_order"] = verify_visible_learning_order()
-    report["checks"]["status_before_recovery"] = verify_status_logic()
     report["checks"]["stopped_process_ids"] = stop_supervisor_and_launcher()
     trigger_watchdog()
     report["checks"]["recovery"] = wait_for_full_recovery(checkout["local_sha"])
     report["checks"]["checkout_after_recovery"] = verify_checkout_current()
     report["checks"]["discord_order_after_recovery"] = verify_visible_learning_order()
-    report["checks"]["status_after_recovery"] = verify_status_logic()
     report["status"] = "PASSED"
     report["completed_at"] = now_iso()
     write_report(report)

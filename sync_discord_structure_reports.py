@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import applied_upgrades
-import performance_channel_structure
 import sync_discord_structure as sync
 import upgrade_batch_44
 
-performance_channel_structure.install(sync)
-performance_channel_structure.validate(sync)
+# performance_channel_structure.install()/validate() removed - Phase 3 purge
+# (old strategy performance-channel structure, deleted with the roster).
 
 import sync_discord_structure_public as public  # noqa: E402
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-import spy_scanner
+import discord_transport
 import strict_learning_order
 import sync_discord_cards
 import sync_discord_structure as sync
@@ -277,9 +277,9 @@ aliases and examples, then add the real question wording to the focused tests.
 TradeBot never invents an answer merely to avoid creating a review item."""
 
 
-def _tracker() -> spy_scanner.DiscordTracker:
-    tracker = spy_scanner.DiscordTracker(
-        spy_scanner.DISCORD_BOT_TOKEN, spy_scanner.DISCORD_GUILD_ID
+def _tracker() -> discord_transport.DiscordTracker:
+    tracker = discord_transport.DiscordTracker(
+        discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID
     )
     if not tracker.enabled:
         raise RuntimeError("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required.")
@@ -288,7 +288,7 @@ def _tracker() -> spy_scanner.DiscordTracker:
 
 def main() -> int:
     apply = "--apply" in sys.argv
-    tracker: spy_scanner.DiscordTracker | None = None
+    tracker: discord_transport.DiscordTracker | None = None
     renamed = 0
 
     if apply:

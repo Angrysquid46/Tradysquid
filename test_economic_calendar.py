@@ -8,7 +8,7 @@ Fed-speaker headline in the live feed."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -27,7 +27,7 @@ def _disable_finnhub_by_default(monkeypatch):
 
 
 def _release(release_name: str, days_from_today: int) -> dict:
-    when = date.today() + timedelta(days=days_from_today)
+    when = datetime.now(ec.MARKET_TZ).date() + timedelta(days=days_from_today)
     return {"release_id": 1, "release_name": release_name, "date": when.isoformat()}
 
 

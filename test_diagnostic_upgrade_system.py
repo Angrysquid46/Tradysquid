@@ -335,7 +335,7 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
         self.assertEqual(payload["permission_overwrites"][0]["deny"], "1024")
 
     def test_weekend_has_no_market_session(self) -> None:
-        saturday = datetime(2026, 8, 1, 10, 0, tzinfo=diagnostics.spy_scanner.MARKET_TZ)
+        saturday = datetime(2026, 8, 1, 10, 0, tzinfo=diagnostics.market_data.MARKET_TZ)
         self.assertIsNone(diagnostics.official_market_session(saturday, calendar_payload={}))
 
     def test_market_holiday_is_skipped(self) -> None:
@@ -347,7 +347,7 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
         self.assertEqual(session[1].hour, 12)
 
     def test_provider_calendar_controls_early_close(self) -> None:
-        moment = datetime(2026, 7, 2, 11, 0, tzinfo=diagnostics.spy_scanner.MARKET_TZ)
+        moment = datetime(2026, 7, 2, 11, 0, tzinfo=diagnostics.market_data.MARKET_TZ)
         payload = {
             "calendar": {
                 "days": {
@@ -365,7 +365,7 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
     def test_market_review_requires_two_hours(self) -> None:
         engine = FakeEngine()
         connection = sqlite3.connect(":memory:")
-        moment = datetime(2026, 7, 2, 10, 0, tzinfo=diagnostics.spy_scanner.MARKET_TZ)
+        moment = datetime(2026, 7, 2, 10, 0, tzinfo=diagnostics.market_data.MARKET_TZ)
         payload = {
             "calendar": {
                 "days": {
@@ -450,6 +450,7 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
         self.assertNotIn("merge --ff-only", text)
 
     def test_install_registers_each_diagnostic_job_once(self) -> None:
+        upgrade_batch_44.install_engine()
         engine = upgrade_batch_44._engine()
         original = list(engine.JOBS)
         try:

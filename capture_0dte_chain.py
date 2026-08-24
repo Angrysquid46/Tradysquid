@@ -151,7 +151,7 @@ def store(rows: list[tuple], quote_date: str, conn: sqlite3.Connection | None = 
 
 def capture(session: str | None = None) -> dict[str, Any]:
     """Fetch and store today's 0DTE chain. Returns a small receipt."""
-    import spy_scanner as ss
+    import market_data as ss
 
     session = session or date.today().isoformat()
     quote = ss.get_quote(SYMBOL) or {}

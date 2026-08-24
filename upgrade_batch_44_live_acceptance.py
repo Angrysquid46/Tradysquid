@@ -22,7 +22,8 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
-import spy_scanner
+import market_data
+import discord_transport
 import github_upgrade_patch
 import journal_contract
 import upgrade_batch_44
@@ -123,7 +124,7 @@ def is_upgrade_confirmation(message: dict[str, Any]) -> bool:
     author = message.get("author") or {}
     if not author.get("bot"):
         return False
-    text = " ".join(spy_scanner.message_search_text(message).split()).casefold()
+    text = " ".join(discord_transport.message_search_text(message).split()).casefold()
     if "upgrade request" not in text:
         return False
     return any(
@@ -178,7 +179,7 @@ def _migration_text(message: dict[str, Any], source_channel_id: str) -> str:
         if line.strip()
     ).strip()
     if not original:
-        original = spy_scanner.message_search_text(message).strip()
+        original = discord_transport.message_search_text(message).strip()
     original = original[:1400] or "Upgrade confirmation contained no readable text."
     return "\n".join(
         [
@@ -242,7 +243,7 @@ def _upsert_plain_receipt(
                 payload,
             )
             return message_id
-        except spy_scanner.DiscordError as exc:
+        except discord_transport.DiscordError as exc:
             if "HTTP 404" not in str(exc):
                 raise
     created = tracker._request("POST", f"/channels/{channel_id}/messages", payload)
@@ -424,9 +425,10 @@ def static_audit() -> list[dict[str, str]]:
         result(
             12,
             "Expanded Learning Center and journals",
+            # trade_learning_analysis override check removed - Phase 3 purge
+            # dropped that monkeypatch along with spy_scanner.py itself.
             len(supplements) == 27
-            and journal_contract.JOURNAL_FORMAT_VERSION == "16"
-            and spy_scanner.trade_learning_analysis is not upgrade_batch_44._ORIGINAL_TRADE_LEARNING_ANALYSIS,
+            and journal_contract.JOURNAL_FORMAT_VERSION == "16",
             f"{len(supplements)}/27 supplements; journal format {journal_contract.JOURNAL_FORMAT_VERSION}",
         ),
         result(13, "Historical upgrade migration", "upgrade-request-migration" in jobs and jobs["upgrade-request-migration"].callback is reliable_upgrade_migration_job, "paginated copy-then-delete migration installed"),

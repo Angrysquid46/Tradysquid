@@ -74,7 +74,7 @@ from datetime import date, datetime, time as dt_time, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-import spy_scanner as s
+import market_data as s
 
 # MACD periods. These were previously read from another module's
 # constants, which coupled a generic indicator to one strategy's config - and

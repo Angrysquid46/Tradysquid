@@ -1,9 +1,0 @@
-{
-  "schema_version": 1,
-  "name": "tight",
-  "overrides": {
-    "minimum_open_interest": 250,
-    "maximum_bid_ask_pct": 0.18,
-    "minimum_setup_score": 65
-  }
-}

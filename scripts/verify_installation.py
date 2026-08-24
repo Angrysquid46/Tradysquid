@@ -16,7 +16,6 @@ surface.
 
 from __future__ import annotations
 
-import inspect
 import json
 import os
 import re
@@ -28,15 +27,21 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import spy_scanner  # noqa: E402 - path must be set up first
-import performance_reconciliation  # noqa: E402
+import market_data  # noqa: E402 - path must be set up first
 
 # Anything that looks like a credential, so a failure receipt is safe to print.
 _SECRET = re.compile(
     r"(?i)(token|secret|api[_-]?key|password|authorization)\s*[=:]\s*\S+"
 )
 
-EXPECTED_STRATEGY_COUNT = 15
+PURGED_RUNTIME_PATHS = (
+    "spy_scanner.py",
+    "performance_reconciliation.py",
+    "performance_scorecards.py",
+    "backtest_cards.py",
+    "local_information_engine_public.py",
+    "evolve_bot",
+)
 
 
 def redact(text: str) -> str:
@@ -67,6 +72,16 @@ def _expected_python(root: Path) -> Path:
     return (root / ".venv-tradysquid" / relative).resolve()
 
 
+def _write_receipt(path: Path, result: dict[str, Any]) -> None:
+    """Write the local receipt when the checkout permits runtime state writes."""
+    try:
+        path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    except PermissionError:
+        # Read-only/deployment-validation checkouts still need a truthful exit
+        # result; stdout remains the machine-readable receipt in that case.
+        pass
+
+
 def main() -> int:
     root = ROOT
     state_path = root / "state" / "install-verification.json"
@@ -80,10 +95,10 @@ def main() -> int:
     }
 
     try:
-        scanner_path = Path(spy_scanner.__file__ or "").resolve()
+        scanner_path = Path(market_data.__file__ or "").resolve()
         _require(
             checks,
-            "scanner-import",
+            "market-data-import",
             scanner_path.is_file() and scanner_path.is_relative_to(root.resolve()),
             {"scanner_path": str(scanner_path)},
         )
@@ -120,54 +135,12 @@ def main() -> int:
             {"config_path": str(config_path)},
         )
 
-        risk_cap = float(spy_scanner.configured("max_risk_per_trade", 500.0))
+        remaining = [path for path in PURGED_RUNTIME_PATHS if (root / path).exists()]
         _require(
             checks,
-            "risk-cap",
-            0 < risk_cap <= 500.0,
-            {"max_risk_per_trade": risk_cap},
-        )
-
-        live = sorted(performance_reconciliation.live_play_types())
-        _require(
-            checks,
-            "strategy-roster",
-            len(live) == EXPECTED_STRATEGY_COUNT,
-            {"strategy_count": len(live), "strategies": live},
-        )
-
-        # Every live strategy must resolve a held-position channel, or its
-        # card silently goes nowhere.
-        unrouted = [p for p in live if not spy_scanner.held_channel_key(p)]
-        _require(
-            checks,
-            "strategy-channel-routing",
-            not unrouted,
-            {"unrouted": unrouted},
-        )
-
-        log_path = Path(spy_scanner.LOG_PATH).resolve()
-        _require(
-            checks,
-            "trade-log-path",
-            log_path.parent.is_dir(),
-            {"trade_log": str(log_path), "exists": log_path.is_file()},
-        )
-
-        # Paper trading only: the scanner must expose no order-placing surface.
-        forbidden_terms = ("place_order", "submit_order", "cancel_order",
-                           "preview_order", "replace_order", "modify_order")
-        forbidden = sorted(
-            name
-            for name, _ in inspect.getmembers(spy_scanner, callable)
-            if not name.startswith("_")
-            and any(term in name.lower() for term in forbidden_terms)
-        )
-        _require(
-            checks,
-            "read-only-scanner",
-            not forbidden,
-            {"forbidden_methods": forbidden},
+            "legacy-runtime-absent",
+            not remaining,
+            {"remaining": remaining},
         )
 
         result.update(
@@ -176,11 +149,10 @@ def main() -> int:
                 "python_executable": str(running_python),
                 "virtual_environment": str(running_prefix),
                 "scanner_path": str(scanner_path),
-                "trade_log": str(log_path),
-                "strategy_count": len(live),
+                "strategy_count": 0,
             }
         )
-        state_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+        _write_receipt(state_path, result)
         print(json.dumps(result, sort_keys=True))
         return 0
     except VerificationFailure as exc:
@@ -202,7 +174,7 @@ def main() -> int:
             }
         )
 
-    state_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    _write_receipt(state_path, result)
     print(json.dumps(result, sort_keys=True))
     return 1
 

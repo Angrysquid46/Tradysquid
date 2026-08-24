@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
-import spy_scanner
+import market_data
 import learning_center_content as learning
 import local_information_engine as info_engine
 
@@ -147,10 +147,10 @@ def _candidate_symbols(question: str) -> list[tuple[str, bool]]:
 
 def _verify_symbol(symbol: str) -> bool:
     try:
-        quote = spy_scanner.get_quote(symbol) or {}
+        quote = market_data.get_quote(symbol) or {}
     except Exception:
         return False
-    return spy_scanner.as_float(quote.get("last")) is not None
+    return market_data.as_float(quote.get("last")) is not None
 
 
 def parse_application_request(question: str) -> ApplicationRequest | None:
@@ -167,19 +167,19 @@ def parse_application_request(question: str) -> ApplicationRequest | None:
 
 
 def _number(value: Any, digits: int = 2, suffix: str = "") -> str:
-    number = spy_scanner.as_float(value)
+    number = market_data.as_float(value)
     if number is None:
         return "unavailable"
     return f"{number:.{digits}f}{suffix}"
 
 
 def _money(value: Any) -> str:
-    number = spy_scanner.as_float(value)
+    number = market_data.as_float(value)
     return f"${number:.2f}" if number is not None else "unavailable"
 
 
 def _pct(value: Any, digits: int = 1) -> str:
-    number = spy_scanner.as_float(value)
+    number = market_data.as_float(value)
     return f"{number:.{digits}f}%" if number is not None else "unavailable"
 
 
@@ -190,17 +190,17 @@ def _distance_pct(price: float | None, level: float | None) -> float | None:
 
 
 def _price_context(snapshot: dict[str, Any]) -> list[str]:
-    price = spy_scanner.as_float(snapshot.get("price"))
-    sma20 = spy_scanner.as_float(snapshot.get("sma20"))
-    sma50 = spy_scanner.as_float(snapshot.get("sma50"))
-    sma200 = spy_scanner.as_float(snapshot.get("sma200"))
-    rsi = spy_scanner.as_float(snapshot.get("rsi14"))
-    macd = spy_scanner.as_float(snapshot.get("macd"))
-    atr = spy_scanner.as_float(snapshot.get("atr14"))
-    support = spy_scanner.as_float(snapshot.get("support20"))
-    resistance = spy_scanner.as_float(snapshot.get("resistance20"))
-    vwap = spy_scanner.as_float(snapshot.get("intraday_vwap"))
-    relative_volume = spy_scanner.as_float(snapshot.get("relative_volume"))
+    price = market_data.as_float(snapshot.get("price"))
+    sma20 = market_data.as_float(snapshot.get("sma20"))
+    sma50 = market_data.as_float(snapshot.get("sma50"))
+    sma200 = market_data.as_float(snapshot.get("sma200"))
+    rsi = market_data.as_float(snapshot.get("rsi14"))
+    macd = market_data.as_float(snapshot.get("macd"))
+    atr = market_data.as_float(snapshot.get("atr14"))
+    support = market_data.as_float(snapshot.get("support20"))
+    resistance = market_data.as_float(snapshot.get("resistance20"))
+    vwap = market_data.as_float(snapshot.get("intraday_vwap"))
+    relative_volume = market_data.as_float(snapshot.get("relative_volume"))
 
     observations = [
         (
@@ -221,24 +221,24 @@ def _price_context(snapshot: dict[str, Any]) -> list[str]:
         ),
         (
             f"Intraday VWAP **{_money(vwap)}** · relative volume **{_number(relative_volume, 2)}x** · "
-            f"bid/ask spread **{_pct((spy_scanner.as_float(snapshot.get('spread_pct')) or 0) * 100, 2)}**"
+            f"bid/ask spread **{_pct((market_data.as_float(snapshot.get('spread_pct')) or 0) * 100, 2)}**"
         ),
     ]
     return observations
 
 
 def _technical_interpretation(snapshot: dict[str, Any]) -> list[str]:
-    price = spy_scanner.as_float(snapshot.get("price"))
-    sma20 = spy_scanner.as_float(snapshot.get("sma20"))
-    sma50 = spy_scanner.as_float(snapshot.get("sma50"))
-    sma200 = spy_scanner.as_float(snapshot.get("sma200"))
-    rsi = spy_scanner.as_float(snapshot.get("rsi14"))
-    macd = spy_scanner.as_float(snapshot.get("macd"))
-    atr = spy_scanner.as_float(snapshot.get("atr14"))
-    support = spy_scanner.as_float(snapshot.get("support20"))
-    resistance = spy_scanner.as_float(snapshot.get("resistance20"))
-    relative_volume = spy_scanner.as_float(snapshot.get("relative_volume"))
-    vwap = spy_scanner.as_float(snapshot.get("intraday_vwap"))
+    price = market_data.as_float(snapshot.get("price"))
+    sma20 = market_data.as_float(snapshot.get("sma20"))
+    sma50 = market_data.as_float(snapshot.get("sma50"))
+    sma200 = market_data.as_float(snapshot.get("sma200"))
+    rsi = market_data.as_float(snapshot.get("rsi14"))
+    macd = market_data.as_float(snapshot.get("macd"))
+    atr = market_data.as_float(snapshot.get("atr14"))
+    support = market_data.as_float(snapshot.get("support20"))
+    resistance = market_data.as_float(snapshot.get("resistance20"))
+    relative_volume = market_data.as_float(snapshot.get("relative_volume"))
+    vwap = market_data.as_float(snapshot.get("intraday_vwap"))
     notes: list[str] = []
 
     if price is not None and sma20 is not None and sma50 is not None:
@@ -310,8 +310,8 @@ def _option_rows(ticker: str, side: str | None) -> tuple[list[str], list[str]]:
             continue
         observations.append(f"**Highest-ranked {option_side}s for study**")
         for item in ranked:
-            width_pct = spy_scanner.as_float(item.get("width_pct"))
-            iv = spy_scanner.as_float(item.get("iv"))
+            width_pct = market_data.as_float(item.get("width_pct"))
+            iv = market_data.as_float(item.get("iv"))
             observations.append(
                 "• `{}' · exp {} · strike {} · bid/ask {}/{} · Δ {} · θ {} · IV {} · OI {:,} · vol {:,} · width {} · {}".format(
                     item.get("symbol") or "unknown",

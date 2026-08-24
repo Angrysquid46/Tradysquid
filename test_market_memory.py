@@ -15,7 +15,7 @@ from datetime import datetime as real_datetime
 from pathlib import Path
 from unittest import mock
 
-import spy_scanner
+import market_data as spy_scanner
 import market_memory as mm
 
 

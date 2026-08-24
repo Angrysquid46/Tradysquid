@@ -49,23 +49,23 @@ def install_runtime_overrides(
     include_information_engine: bool = False,
     include_supervisor_guard: bool = False,
 ) -> None:
-    import spy_scanner
     import github_upgrade_bridge
     import github_upgrade_bridge_runtime
-    import journal_contract
     import network_compat
     import openai_discord_patch
-    import performance_scorecards
     import runtime_contract
     import shared_upgrade_lifecycle
     import upgrade_batch_44
 
     network_compat.install()
-    runtime_contract.install_safe_intraday_history(spy_scanner)
+    # install_safe_intraday_history/journal_contract.install()/
+    # performance_scorecards.install() removed in the Phase 3 purge - all
+    # three patched spy_scanner.py, which no longer exists. Owner-authorized
+    # frozen-file edit (same basis as the deployment_validation_manifest.py
+    # COMPILE_MODULES change): this launcher runs unconditionally for every
+    # script, so it has to survive spy_scanner.py's deletion.
     runtime_contract.install_recovery_bridge(github_upgrade_bridge)
     github_upgrade_bridge_runtime.install()
-    journal_contract.install()
-    performance_scorecards.install()
     upgrade_batch_44.install_universe_policy()
     upgrade_batch_44.install_learning_extensions()
     shared_upgrade_lifecycle.install()

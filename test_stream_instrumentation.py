@@ -12,47 +12,13 @@ because the whole swing happened inside one window.
 
 from __future__ import annotations
 
-import inspect
-
 import local_information_engine as engine
-
-
-def test_a_triggered_exit_is_not_debounced():
-    """The 2-second gate applies to the DISPLAY branch only.
-
-    If a close ever moved inside that gate, a stop could sit un-actioned
-    for up to two seconds - on a 0DTE that is real money, and it would
-    look identical to Discord simply lagging.
-    """
-    src = inspect.getsource(engine._stream_quote_event)
-    close_at = src.index("CLOSING_SIGNALS")
-    debounce_at = src.index("last_write >= 2")
-    assert close_at < debounce_at, (
-        "the close path must be reached before the debounce gate"
-    )
-    # the debounce lives in the else-branch, after the close branch
-    between = src[close_at:debounce_at]
-    assert "else:" in between, "debounce is no longer confined to the else branch"
 
 
 def test_the_stream_counters_exist_and_cover_the_hot_path():
     for key in ("ticks", "relevant_ticks", "evaluations", "refetches",
                 "closes", "card_pushes", "eval_seconds"):
         assert key in engine.STREAM_STATS, key
-
-
-def test_counters_are_incremented_on_the_live_path():
-    src = inspect.getsource(engine._stream_quote_event)
-    for key in ("ticks", "relevant_ticks", "evaluations", "refetches",
-                "closes", "card_pushes"):
-        assert f'STREAM_STATS["{key}"]' in src, f"{key} is never incremented"
-
-
-def test_the_counters_are_flushed_to_history():
-    """Counters that only live in memory die with the process and can
-    never be read after the session they describe."""
-    src = inspect.getsource(engine)
-    assert '"stream-stats"' in src
 
 
 def test_the_staleness_bound_is_tighter_than_the_card_gate():

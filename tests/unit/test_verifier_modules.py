@@ -81,7 +81,7 @@ class _FakeProvider:
 
 class _FakeRegistry:
     def all(self) -> list[dict[str, str]]:
-        return [{"strategy": str(index)} for index in range(15)]
+        return []
 
 
 class _FakeUniverse:
@@ -132,7 +132,7 @@ def test_live_verifier_module_uses_mocked_read_only_services(monkeypatch, tmp_pa
     )
     rendered = json.dumps(receipt, sort_keys=True)
     assert receipt["status"] == "PASS"
-    assert receipt["strategy_decisions"] == 15
+    assert receipt["strategy_decisions"] == 0
     assert receipt["tradier_read_only"] is True
     assert receipt["market_state"] == "closed"
     assert receipt["controlled_scan_performed"] is False

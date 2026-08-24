@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-import spy_scanner
+import market_data as spy_scanner
 import runtime_contract
 
 

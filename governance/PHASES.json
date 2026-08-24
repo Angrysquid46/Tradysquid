@@ -32,9 +32,10 @@
     {
       "phase_number": 3,
       "name": "Legacy purge",
-      "status": "not_started",
+      "status": "complete",
       "dependencies": ["Phase 2"],
       "completion_criteria": "Section 2's purge list removed (old traders/strategies, entries/exits/configs, learned thresholds/models, champion/challenger/shadow/evolve/self-learning systems, journals/trades/positions/rankings/performance history, old research conclusions, trader-specific Discord state, dead-trader-only tests). No old trader becomes a template.",
+      "completion_evidence": "Phase 2 PURGE inventory audit reports 0 remaining targets after documented survivor reclassifications. Legacy strategy/runtime modules, evolve_bot, strategy configs/results, runtime ledgers, and dead-trader-only tests removed. Generic Discord REST and market-data/math plumbing extracted into discord_transport.py and market_data.py. Zero surviving Python imports of the purged runtime. Full pytest suite passed; 248-test deployment manifest gate passed; scripts.verify_installation passed with strategy_count=0; compileall and git diff check passed.",
       "discovered_subphases": []
     },
     {

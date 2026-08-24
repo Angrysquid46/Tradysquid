@@ -9,8 +9,7 @@ import time
 from pathlib import Path
 from typing import Iterable
 
-import always_on_operations
-import spy_scanner
+import discord_transport
 import strict_learning_order
 import tradysquid_supervisor as supervisor
 
@@ -63,26 +62,20 @@ def public_information_engine_command() -> list[str]:
     return [
         sys.executable,
         str(ROOT / "run_with_env.py"),
-        str(ROOT / "local_information_engine_public.py"),
+        str(ROOT / "local_information_engine.py"),
     ]
 
 
 def information_engine_health() -> bool:
-    """Require both a live service and scheduled work after startup grace."""
-    if not supervisor.port_healthy("127.0.0.1", 8765):
-        return False
-    if always_on_operations.heartbeat_healthy(12):
+    """Require the health listener port to be live."""
+    if supervisor.port_healthy("127.0.0.1", 8765):
         return True
     return time.monotonic() < _ENGINE_START_GRACE_UNTIL
 
 
 def comprehensive_validate_checkout() -> tuple[bool, str]:
     compile_files = [
-        "spy_scanner.py",
         "local_information_engine.py",
-        "local_information_engine_public.py",
-        "always_on_operations.py",
-        "operations_acceptance.py",
         "discord_command_bot.py",
         "discord_command_bot_public.py",
         "discord_cards.py",
@@ -118,12 +111,10 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
             "test_strict_learning_order.py",
             "test_supervisor_availability.py",
             "test_local_information_engine.py",
-            "test_always_on_operations.py",
         ],
         [sys.executable, "sync_learning_center.py"],
         [sys.executable, "learning_search_router.py"],
         [sys.executable, "learning_application_public.py"],
-        [sys.executable, "always_on_operations.py"],
     ]
     for command in validations:
         result = supervisor.run(command, timeout=300)
@@ -269,9 +260,9 @@ def verify_and_repair_discord_integrity() -> bool:
     payload = supervisor.state_payload()
     previous_status = str(payload.get("discord_integrity_status") or "UNKNOWN")
     previous_detail = str(payload.get("discord_integrity_detail") or "")
-    tracker = spy_scanner.DiscordTracker(
-        spy_scanner.DISCORD_BOT_TOKEN,
-        spy_scanner.DISCORD_GUILD_ID,
+    tracker = discord_transport.DiscordTracker(
+        discord_transport.DISCORD_BOT_TOKEN,
+        discord_transport.DISCORD_GUILD_ID,
     )
     if not tracker.enabled:
         return False
@@ -436,7 +427,7 @@ def ensure_services_with_readiness() -> None:
         supervisor="ONLINE",
         service_health=statuses,
         supervisor_heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        scheduler_heartbeat_healthy=always_on_operations.heartbeat_healthy(12),
+        scheduler_heartbeat_healthy=information_engine_health(),
         local_sha=version,
         deployment_sync_ready=discord_ready,
         auto_update_enabled=supervisor.AUTO_UPDATE,

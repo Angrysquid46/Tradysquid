@@ -12,7 +12,7 @@ import re
 import time
 from typing import Any
 
-import spy_scanner
+import discord_transport
 from learning_center_catalog import LEARNING_CHANNEL_ORDER
 
 LEARNING_CATEGORY = "LEARNING CENTER"
@@ -24,7 +24,7 @@ def normalized(value: str) -> str:
 
 
 def category_and_children(
-    tracker: spy_scanner.DiscordTracker,
+    tracker: discord_transport.DiscordTracker,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
     category = next(
@@ -100,7 +100,7 @@ def _result(desired: list[dict[str, Any]], *, attempts: int, changed: bool) -> d
 
 
 def enforce_learning_channel_order(
-    tracker: spy_scanner.DiscordTracker,
+    tracker: discord_transport.DiscordTracker,
     *,
     attempts: int = MAX_ORDER_ATTEMPTS,
     retry_delay_seconds: float = 1.0,
