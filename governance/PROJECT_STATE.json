@@ -1,9 +1,9 @@
 {
-  "last_updated": "2026-08-24T05:05:51.394150-05:00",
-  "branch": "claude/phase4-staleness-fix",
-  "current_commit": "57eb57abb1b727d9755fcc4a6913050dac078a98",
-  "commit_subject": "Resync governance/PROJECT_STATE.json after Phase 4 merge",
-  "current_phase": "Phase 4",
+  "last_updated": "2026-08-24T05:36:52.621850-05:00",
+  "branch": "claude/phase5-market-data-pilot",
+  "current_commit": "8be8af60b9b1269f15c67258c44e66cec9211a81",
+  "commit_subject": "Merge pull request #315 from Angrysquid46/claude/phase4-staleness-fix",
+  "current_phase": "Phase 5",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
   "active_lock": null,
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."
