@@ -28,6 +28,7 @@ import discord_transport
 import activity_log
 import ai_coordination
 import capture_0dte_chain
+import market_data_collector
 import diagnostic_upgrade_system as diagnostics
 import requests
 import tradier_stream
@@ -206,6 +207,20 @@ def connect_db() -> sqlite3.Connection:
             content_hash TEXT NOT NULL,
             last_sent_at TEXT NOT NULL,
             content TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS daily_data_manifest (
+            trading_day TEXT PRIMARY KEY,
+            expected_minutes INTEGER NOT NULL,
+            received_quote_minutes INTEGER NOT NULL DEFAULT 0,
+            received_chain_snapshots INTEGER NOT NULL DEFAULT 0,
+            missing_periods_json TEXT NOT NULL DEFAULT '[]',
+            api_errors INTEGER NOT NULL DEFAULT 0,
+            duplicates INTEGER NOT NULL DEFAULT 0,
+            invalid_observations INTEGER NOT NULL DEFAULT 0,
+            collector_version TEXT NOT NULL DEFAULT '',
+            grade TEXT NOT NULL DEFAULT '',
+            graded_at TEXT NOT NULL DEFAULT ''
         );
         """
     )
@@ -865,6 +880,27 @@ JOBS = [
         background=True,
         provider_heavy=True,
         retry_interval=timedelta(minutes=15),
+    ),
+    # Phase 5 Stage B (Section 9): permanent, append-only Parquet capture,
+    # separate from zero-dte-chain-capture's hourly SQLite archive above -
+    # both run; retiring the older job is a later decision, not this one.
+    Job(
+        "spy-market-data-capture",
+        timedelta(minutes=1),
+        market_data_collector.capture_cycle_job,
+        market_hours_only=True,
+        background=True,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=1),
+    ),
+    Job(
+        "spy-bars-capture",
+        timedelta(minutes=20),
+        market_data_collector.bars_capture_job,
+        market_hours_only=True,
+        background=True,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=5),
     ),
 ]
 

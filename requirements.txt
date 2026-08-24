@@ -5,3 +5,8 @@ Flask>=3.1,<4
 PyNaCl>=1.5,<2
 websocket-client>=1.8,<2
 openai>=2.45,<3
+
+# Phase 5 Stage B: permanent Parquet market-data storage (Section 9) and
+# DuckDB query layer over it (Section 9/10).
+pyarrow==25.0.1
+duckdb==1.5.5
