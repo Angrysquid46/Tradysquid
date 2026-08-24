@@ -121,22 +121,78 @@ def test_check_state_freshness_not_stale_when_commit_matches(control):
     assert result["recorded_commit"] == result["actual_commit"] == "abc123"
 
 
-def test_check_state_freshness_stale_when_commit_differs_and_no_lock(control):
+def _dispatching_git_stub(rev_parse_result, is_ancestor, distance):
+    """A commit can never record its own SHA - finish()/a manual resync
+    always leaves PROJECT_STATE.json a few commits behind the commit that
+    carries it. This stub lets tests exercise the resulting ancestor+
+    distance logic precisely instead of the fixture's blanket 'abc123'
+    stand-in, which can't distinguish git subcommands."""
+    def git_stub(*args):
+        if args[:2] == ("rev-parse", "HEAD"):
+            return rev_parse_result
+        if args[:2] == ("merge-base", "--is-ancestor"):
+            if is_ancestor:
+                return ""
+            raise RuntimeError("not an ancestor")
+        if args[:2] == ("rev-list", "--count"):
+            return str(distance)
+        raise AssertionError(f"unexpected git call: {args}")
+    return git_stub
+
+
+def test_check_state_freshness_not_stale_when_recorded_commit_is_a_few_behind(control, monkeypatch):
+    """finish() necessarily leaves PROJECT_STATE.json recording the commit
+    before the one that carries it - a 1-2 commit gap is normal, not
+    staleness."""
     gov_dir = control / "governance"
     gov_dir.mkdir(parents=True, exist_ok=True)
     (gov_dir / "PROJECT_STATE.json").write_text(
-        json.dumps({"current_commit": "stale-sha-000"}), encoding="utf-8"
+        json.dumps({"current_commit": "older-sha"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        coordination, "git", _dispatching_git_stub("newer-sha", is_ancestor=True, distance=2)
+    )
+    result = coordination.check_state_freshness()
+    assert result["stale"] is False
+
+
+def test_check_state_freshness_stale_when_recorded_commit_is_far_behind(control, monkeypatch):
+    gov_dir = control / "governance"
+    gov_dir.mkdir(parents=True, exist_ok=True)
+    (gov_dir / "PROJECT_STATE.json").write_text(
+        json.dumps({"current_commit": "ancient-sha"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        coordination, "git", _dispatching_git_stub("newer-sha", is_ancestor=True, distance=50)
     )
     result = coordination.check_state_freshness()
     assert result["stale"] is True
     assert result["reason"] == "PROJECT_STATE_STALE"
 
 
-def test_check_state_freshness_not_stale_when_lock_active_despite_commit_mismatch(control):
+def test_check_state_freshness_stale_when_recorded_commit_is_not_an_ancestor(control, monkeypatch):
+    """Recorded commit missing from history entirely (rebase, hard reset,
+    wrong branch) - always stale regardless of distance."""
+    gov_dir = control / "governance"
+    gov_dir.mkdir(parents=True, exist_ok=True)
+    (gov_dir / "PROJECT_STATE.json").write_text(
+        json.dumps({"current_commit": "orphaned-sha"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        coordination, "git", _dispatching_git_stub("newer-sha", is_ancestor=False, distance=0)
+    )
+    result = coordination.check_state_freshness()
+    assert result["stale"] is True
+
+
+def test_check_state_freshness_not_stale_when_lock_active_despite_commit_mismatch(control, monkeypatch):
     coordination.acquire("Codex", "shared work", "test")
     gov_dir = control / "governance"
     (gov_dir / "PROJECT_STATE.json").write_text(
         json.dumps({"current_commit": "stale-sha-000"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        coordination, "git", _dispatching_git_stub("abc123", is_ancestor=False, distance=0)
     )
     result = coordination.check_state_freshness()
     assert result["stale"] is False

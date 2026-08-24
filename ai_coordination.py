@@ -40,6 +40,15 @@ GOV_IMMUTABLE_RULES_PATH = GOVERNANCE_DIR / "IMMUTABLE_RULES.json"
 
 PHASE_STATUSES = {"not_started", "in_progress", "complete"}
 
+# A committed state file can never record its own commit's SHA - writing it
+# and committing it are necessarily two different operations. Every finish()
+# (or a manual resync) leaves PROJECT_STATE.json exactly one commit behind
+# the commit that carries it, and that commit is itself one behind the next.
+# Treating any mismatch as stale makes verify() permanently BLOCKED. Only
+# flag staleness once the recorded commit is missing entirely from history,
+# or is more than this many commits behind - a real, unexplained drift.
+STALE_COMMIT_DISTANCE = 5
+
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat()
@@ -190,10 +199,22 @@ def check_state_freshness() -> dict[str, Any]:
     recorded_commit = state.get("current_commit")
     result["recorded_commit"] = recorded_commit
     result["actual_commit"] = actual_commit
-    if recorded_commit == actual_commit:
+    if not recorded_commit or recorded_commit == actual_commit:
         return result
     if LOCK_PATH.exists():
         return result
+    try:
+        git("merge-base", "--is-ancestor", recorded_commit, actual_commit)
+        is_ancestor = True
+    except RuntimeError:
+        is_ancestor = False
+    if is_ancestor:
+        try:
+            distance = int(git("rev-list", "--count", f"{recorded_commit}..{actual_commit}"))
+        except (RuntimeError, ValueError):
+            distance = STALE_COMMIT_DISTANCE + 1
+        if distance <= STALE_COMMIT_DISTANCE:
+            return result
     result["stale"] = True
     result["reason"] = "PROJECT_STATE_STALE"
     return result
