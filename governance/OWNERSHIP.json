@@ -55,7 +55,7 @@
   "not_yet_assigned": [
     "bots/blacktide (BLACKTIDE_ONLY, created Phase 11)",
     "bots/claude (CLAUDE_ONLY, created Phase 11)",
-    "shared/ market/options/backtest/features/execution/api_budget/competition/events/discord (SHARED_CORE or SHARED_DATA, created Phases 5-9)",
+    "market/options/backtest/features/execution/api_budget/competition/events/discord (SHARED_CORE) - Phases 5-9 shipped these as flat root modules (market_data_store.py, market_data_collector.py, backtest_lab.py, market_api_budget.py, scoreboard.py, discord_surface_manifest.py, rivalry.py, etc.), matching this repo's existing convention, not the shared/ package originally anticipated here. Individual entries for these files are still owed to this list - noted, not yet added, so as not to expand this phase's scope beyond correcting this note.",
     "learning/ catalog/lessons/search/references (HUMAN_LEARNING_CENTER, created Phase 10)"
   ]
 }
