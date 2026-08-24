@@ -1,9 +1,9 @@
 {
-  "last_updated": "2026-08-24T11:14:04.118655-05:00",
-  "branch": "main",
-  "current_commit": "0c63c0b47c95391b13ef1bc9ff2c088f93758707",
-  "commit_subject": "Merge pull request #318 from Angrysquid46/claude/fix-information-engine-crash",
-  "current_phase": "Phase 5",
+  "last_updated": "2026-08-24T11:36:31.476889-05:00",
+  "branch": "claude/phase6-backtest-lab",
+  "current_commit": "368ea53fcaba0d9298b810b10f1c4bd864635271",
+  "commit_subject": "Mark Phase 5 complete",
+  "current_phase": "Phase 6",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
   "active_lock": null,
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."
