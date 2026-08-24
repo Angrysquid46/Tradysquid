@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Iterable
 
 import discord_transport
-import strict_learning_order
 import tradysquid_supervisor as supervisor
 
 
@@ -79,15 +78,6 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
         "discord_command_bot.py",
         "discord_command_bot_public.py",
         "discord_cards.py",
-        "learning_center_catalog.py",
-        "learning_center_content.py",
-        "learning_search_router.py",
-        "learning_application.py",
-        "learning_application_public.py",
-        "learning_question_gaps.py",
-        "strict_learning_order.py",
-        "sync_learning_center.py",
-        "sync_discord_cards.py",
         "sync_discord_structure.py",
         "sync_discord_structure_public.py",
         "register_discord_commands.py",
@@ -107,14 +97,9 @@ def comprehensive_validate_checkout() -> tuple[bool, str]:
             "-m",
             "unittest",
             "-q",
-            "test_learning_center.py",
-            "test_strict_learning_order.py",
             "test_supervisor_availability.py",
             "test_local_information_engine.py",
         ],
-        [sys.executable, "sync_learning_center.py"],
-        [sys.executable, "learning_search_router.py"],
-        [sys.executable, "learning_application_public.py"],
     ]
     for command in validations:
         result = supervisor.run(command, timeout=300)
@@ -255,56 +240,14 @@ def retry_pending_discord_configuration() -> bool:
 
 
 def verify_and_repair_discord_integrity() -> bool:
-    if not supervisor.AUTO_DISCORD_SYNC:
-        return False
-    payload = supervisor.state_payload()
-    previous_status = str(payload.get("discord_integrity_status") or "UNKNOWN")
-    previous_detail = str(payload.get("discord_integrity_detail") or "")
-    tracker = discord_transport.DiscordTracker(
-        discord_transport.DISCORD_BOT_TOKEN,
-        discord_transport.DISCORD_GUILD_ID,
-    )
-    if not tracker.enabled:
-        return False
-    try:
-        result = strict_learning_order.enforce_learning_channel_order(
-            tracker,
-            attempts=3,
-            retry_delay_seconds=1.0,
-        )
-    except Exception as exc:
-        detail = f"{type(exc).__name__}: {exc}"[-1800:]
-        supervisor.write_state(
-            discord_integrity_status="FAILED",
-            discord_integrity_detail=detail,
-            discord_integrity_checked_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        )
-        if detail != previous_detail:
-            supervisor.discord_post(
-                "⚠️ **Tradysquids Discord integrity repair failed**\n"
-                f"```{detail[:1400]}```\n"
-                "The supervisor will retry automatically.",
-                "workflow-log",
-            )
-        return False
-
-    changed = bool(result.get("changed"))
-    detail = (
-        f"Verified {result['canonical']} official channels in ascending order; "
-        f"extras={result['extras']}; changed={changed}; attempts={result['attempts']}"
-    )
-    supervisor.write_state(
-        discord_integrity_status="OK",
-        discord_integrity_detail=detail,
-        discord_integrity_checked_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-    )
-    if changed or previous_status == "FAILED":
-        supervisor.discord_post(
-            "✅ **Tradysquids Discord integrity recovered**\n"
-            "Learning Center verified in ascending `01 → 27` order.",
-            "workflow-log",
-        )
-    return True
+    """No-op: used to enforce the old Learning Center's ascending channel
+    order via strict_learning_order.py. That system was retired and this
+    enforcement was not ported - the new Learning Center's channels display
+    in the order sync_discord_structure.py declares them (already
+    lc-01..lc-43 ascending), which needs no separate enforcement step.
+    Kept as a callable no-op so low_downtime_deploy_if_needed's call site
+    and existing tests don't need restructuring."""
+    return False
 
 
 def monitored_fetch_remote_sha() -> str:

@@ -15,7 +15,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
-import learning_center_catalog
 import network_compat
 import upgrade_batch_44
 import upgrade_batch_44_live_acceptance as live
@@ -164,7 +163,44 @@ BATCH_SPECS = (
         "Expanded Learning Center and journals",
         "Adds applied frameworks, evidence checklists, failure modes, drills, and journal-linked decision fields.",
         "27 lesson supplements + journal contract v16",
-        tuple(learning_center_catalog.ORDERED_CHANNELS) + ("trade-journal",),
+        # Frozen literal: the old Learning Center's ORDERED_CHANNELS at the
+        # time this upgrade shipped. That system was retired; this card is a
+        # historical record of an already-applied upgrade, not a live query.
+        (
+            "01-stock-market-foundations",
+            "02-company-fundamentals",
+            "03-financial-statements",
+            "04-valuation-and-quality",
+            "05-market-mechanics-orders",
+            "06-charts-price-action",
+            "07-technical-analysis",
+            "08-volume-breadth-internals",
+            "09-macro-sectors-catalysts",
+            "10-stock-trading-strategies",
+            "11-short-selling-margin",
+            "12-portfolio-risk",
+            "13-options-basics",
+            "14-option-chain-liquidity",
+            "15-option-pricing-greeks",
+            "16-volatility",
+            "17-directional-options",
+            "18-income-and-hedging",
+            "19-spreads-multi-leg",
+            "20-trade-planning-execution",
+            "21-expiration-assignment",
+            "22-events-corporate-actions",
+            "23-psychology-journaling",
+            "24-backtesting-statistics",
+            "25-brokers-accounts-taxes",
+            "26-research-data-tools",
+            "27-scams-security-myths",
+            "32-dealer-gamma-and-hedging",
+            "33-fair-value-and-mean-reversion",
+            "34-the-market-clock",
+            "35-algorithmic-glossary",
+            "36-commodities-and-fixed-income",
+            "trade-journal",
+        ),
         12,
         "Learning Center 01–27 + #trade-journal",
     ),

@@ -83,45 +83,10 @@ class SupervisorAvailabilityTests(unittest.TestCase):
         retry.assert_called_once_with()
         integrity.assert_called_once_with()
 
-    def test_integrity_repair_records_and_reports_changed_order(self) -> None:
-        tracker = Mock(enabled=True)
+    def test_integrity_repair_is_a_no_op_since_old_ordering_was_retired(self) -> None:
         write_state = Mock()
         post = Mock()
         with (
-            patch.object(run_supervisor.discord_transport, "DiscordTracker", return_value=tracker),
-            patch.object(
-                run_supervisor.strict_learning_order,
-                "enforce_learning_channel_order",
-                return_value={
-                    "canonical": 30,
-                    "extras": 1,
-                    "attempts": 1,
-                    "changed": True,
-                },
-            ) as enforce,
-            patch.object(supervisor, "state_payload", return_value={}),
-            patch.object(supervisor, "write_state", write_state),
-            patch.object(supervisor, "discord_post", post),
-        ):
-            result = run_supervisor.verify_and_repair_discord_integrity()
-
-        self.assertTrue(result)
-        enforce.assert_called_once()
-        self.assertEqual(write_state.call_args.kwargs["discord_integrity_status"], "OK")
-        post.assert_called_once()
-        self.assertIn("01 → 27", post.call_args.args[0])
-
-    def test_integrity_failure_is_saved_for_future_retry(self) -> None:
-        tracker = Mock(enabled=True)
-        write_state = Mock()
-        post = Mock()
-        with (
-            patch.object(run_supervisor.discord_transport, "DiscordTracker", return_value=tracker),
-            patch.object(
-                run_supervisor.strict_learning_order,
-                "enforce_learning_channel_order",
-                side_effect=RuntimeError("Discord refused order"),
-            ),
             patch.object(supervisor, "state_payload", return_value={}),
             patch.object(supervisor, "write_state", write_state),
             patch.object(supervisor, "discord_post", post),
@@ -129,9 +94,8 @@ class SupervisorAvailabilityTests(unittest.TestCase):
             result = run_supervisor.verify_and_repair_discord_integrity()
 
         self.assertFalse(result)
-        self.assertEqual(write_state.call_args.kwargs["discord_integrity_status"], "FAILED")
-        post.assert_called_once()
-        self.assertIn("will retry automatically", post.call_args.args[0])
+        write_state.assert_not_called()
+        post.assert_not_called()
 
     def test_readiness_posts_once_when_every_service_is_verified_online(self) -> None:
         ready = {service.name: True for service in supervisor.SERVICES}

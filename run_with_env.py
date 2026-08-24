@@ -52,7 +52,6 @@ def install_runtime_overrides(
     import github_upgrade_bridge
     import github_upgrade_bridge_runtime
     import network_compat
-    import openai_discord_patch
     import runtime_contract
     import shared_upgrade_lifecycle
     import upgrade_batch_44
@@ -69,7 +68,6 @@ def install_runtime_overrides(
     upgrade_batch_44.install_universe_policy()
     upgrade_batch_44.install_learning_extensions()
     shared_upgrade_lifecycle.install()
-    openai_discord_patch.install()
 
     if include_supervisor_guard:
         import ngrok_process_runtime

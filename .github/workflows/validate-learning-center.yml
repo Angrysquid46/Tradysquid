@@ -3,13 +3,7 @@ name: Validate Tradysquids Automation
 on:
   pull_request:
     paths:
-      - "learning_center/**"
-      - "learning_center_catalog.py"
-      - "learning_center_content.py"
-      - "learning_search_router.py"
-      - "learning_application.py"
-      - "learning_application_public.py"
-      - "learning_question_gaps.py"
+      - "learning_center_index.py"
       - "performance_reconciliation.py"
       - "performance_scorecards.py"
       - "performance_channel_structure.py"
@@ -37,9 +31,6 @@ on:
       - "github_upgrade_patch.py"
       - "upgrade_batch_44.py"
       - "upgrade_batch_44_live_acceptance.py"
-      - "strict_learning_order.py"
-      - "sync_learning_center.py"
-      - "sync_discord_cards.py"
       - "sync_discord_structure.py"
       - "sync_discord_structure_public.py"
       - "sync_discord_structure_reports.py"
@@ -56,8 +47,6 @@ on:
       - "START-SUPERVISOR.cmd"
       - "stop_tradysquid_processes.ps1"
       - ".gitignore"
-      - "test_learning_center.py"
-      - "test_strict_learning_order.py"
       - "test_supervisor_availability.py"
       - "test_supervisor_discord_readiness.py"
       - "test_supervisor_entrypoint_diagnostics.py"
@@ -112,11 +101,8 @@ jobs:
       - name: Compile deployment modules
         run: python -c "import py_compile, deployment_validation_manifest as m; [py_compile.compile(path, doraise=True) for path in m.COMPILE_MODULES]"
 
-      - name: Validate curriculum and operations engine
+      - name: Validate operations engine
         run: |
-          python sync_learning_center.py
-          python learning_search_router.py
-          python learning_application_public.py
           python journal_contract.py
           python upgrade_batch_44.py
           python applied_upgrades.py

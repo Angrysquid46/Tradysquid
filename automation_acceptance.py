@@ -3,8 +3,8 @@
 The installer calls this through run_with_env.py and fails unless every check
 passes. The test deliberately stops the supervisor and launcher, triggers the
 independent Windows watchdog, waits for the entire managed stack to recover,
-then verifies Git state, service health, the local status command, Discord sync,
-and the visible ascending Learning Center order.
+then verifies Git state, service health, the local status command, and
+Discord sync.
 """
 
 from __future__ import annotations
@@ -23,8 +23,6 @@ from typing import Any
 import requests
 
 import discord_transport
-from learning_center_catalog import LEARNING_CHANNEL_ORDER
-from strict_learning_order import category_and_children, normalized, ordered_children
 
 ROOT = Path(__file__).resolve().parent
 STATE_DIR = ROOT / "state"
@@ -243,35 +241,9 @@ def run_discord_sync() -> str:
         check=True,
     )
     output = (result.stdout or "").strip()
-    if "strictly ordered" not in output.casefold():
-        raise AcceptanceFailure("Discord sync returned success without strict order verification.")
+    if "structure synchronized" not in output.casefold():
+        raise AcceptanceFailure("Discord sync did not report success.")
     return output[-3500:]
-
-
-def verify_visible_learning_order() -> dict[str, Any]:
-    tracker = discord_transport.DiscordTracker(discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID)
-    if not tracker.enabled:
-        raise AcceptanceFailure("Discord bot token and guild ID are required for order verification.")
-    _, children = category_and_children(tracker)
-    visible = [normalized(item.get("name") or "") for item in ordered_children(children)]
-    expected = list(LEARNING_CHANNEL_ORDER)
-    actual = visible[: len(expected)]
-    if actual != expected:
-        raise AcceptanceFailure(
-            "Discord returned the wrong Learning Center order. "
-            f"Expected: {', '.join(expected)}. Actual: {', '.join(actual)}."
-        )
-    numbers = [int(match.group(1)) for name in actual if (match := re.match(r"^(\d{2})-", name))]
-    expected_numbers = [
-        int(match.group(1))
-        for name in expected
-        if (match := re.match(r"^(\d{2})-", name))
-    ]
-    if numbers != expected_numbers:
-        raise AcceptanceFailure(
-            f"Discord returned lesson numbers {numbers}, expected {expected_numbers}."
-        )
-    return {"actual": actual, "numbers": numbers, "extras_after_official_channels": max(0, len(visible) - len(expected))}
 
 
 def post_report(message: str) -> None:
@@ -306,12 +278,10 @@ def run_acceptance() -> dict[str, Any]:
     report["checks"]["checkout"] = checkout
     report["checks"]["watchdog"] = verify_watchdog_task()
     report["checks"]["discord_sync"] = run_discord_sync()
-    report["checks"]["discord_order"] = verify_visible_learning_order()
     report["checks"]["stopped_process_ids"] = stop_supervisor_and_launcher()
     trigger_watchdog()
     report["checks"]["recovery"] = wait_for_full_recovery(checkout["local_sha"])
     report["checks"]["checkout_after_recovery"] = verify_checkout_current()
-    report["checks"]["discord_order_after_recovery"] = verify_visible_learning_order()
     report["status"] = "PASSED"
     report["completed_at"] = now_iso()
     write_report(report)
@@ -322,7 +292,7 @@ def run_acceptance() -> dict[str, Any]:
         "• Supervisor deliberately stopped and automatically restored\n"
         "• command-bot, information-engine, and ngrok verified healthy\n"
         "• local status response verified\n"
-        "• Discord Learning Center verified in ascending 01 → 27 order"
+        "• Discord structure sync verified"
     )
     return report
 
