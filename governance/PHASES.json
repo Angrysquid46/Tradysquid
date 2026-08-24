@@ -69,12 +69,13 @@
     {
       "phase_number": 6,
       "name": "Neutral point-in-time backtest laboratory",
-      "status": "not_started",
+      "status": "complete",
       "dependencies": [
         "Phase 5"
       ],
       "completion_criteria": "Section 10's market.as_of(timestamp)/options.as_of(timestamp)/events.as_of(timestamp) interface built, Tier A/B/C evidence labeling enforced, formal backtests reproducible from recorded inputs.",
-      "discovered_subphases": []
+      "discovered_subphases": [],
+      "completion_evidence": "backtest_lab.py builds Section 10's shared, strategy-neutral MarketView interface over Phase 5's Parquet data: market_as_of/options_as_of/events_as_of/bars_as_of, every method structurally no-lookahead (captured_at/bar_timestamp <= timestamp is the only filter shape used anywhere - no code path can read a future row). Evidence tiers: A (real, fresh, VERIFIED_REAL data), B (real chain data present but classified REAL_WITH_LIMITATIONS - the classification exists, no modeled-pricing fallback implemented, disclosed as future work), C/INSUFFICIENT_DATA (no data, stale data, or the always-Tier-C events_as_of since no events dataset exists yet - honest, not fabricated). compute_features() reuses market_memory.compute_features_for_window directly rather than reimplementing ATR/RSI/MACD/Bollinger/ADX/etc, verified to produce identical output to a direct call. dataset_fingerprint() (sha256 of engine version + per-dataset row-count/max-timestamp) and record_backtest()/load_backtest_records() (append-only JSONL, one file per day) give the reproducibility mechanism Section 10 requires - no actual strategy backtest exists to run through it yet since no bot exists until Phase 11. Verified: 17/17 new tests (including the core no-lookahead guarantee tested directly with two real Parquet snapshots straddling a query timestamp), full pytest suite green, and a real end-to-end smoke test against today's actual live-collected data - Tier A quote and 358-contract Tier A chain snapshot returned correctly, Tier C correctly returned for a pre-data timestamp, real compute_features() output over 115 real bars."
     },
     {
       "phase_number": 7,
