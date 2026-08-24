@@ -1,9 +1,9 @@
 {
-  "last_updated": "2026-08-24T15:08:54.224003-05:00",
-  "branch": "claude/phase9-discord-rebuild",
-  "current_commit": "ae68165831c72315329fbd6b60dfe020520e3736",
-  "commit_subject": "Merge pull request #321 from Angrysquid46/claude/phase8-scoreboard",
-  "current_phase": "Phase 9",
+  "last_updated": "2026-08-24T15:35:12.100994-05:00",
+  "branch": "claude/phase10-learning-center-shell",
+  "current_commit": "e5af904db8ae7328ca981dc7543d9d2d96cdba68",
+  "commit_subject": "Merge pull request #322 from Angrysquid46/claude/phase9-discord-rebuild",
+  "current_phase": "Phase 10",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
   "active_lock": null,
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."

@@ -113,12 +113,13 @@
     {
       "phase_number": 10,
       "name": "Learning Center shell",
-      "status": "not_started",
+      "status": "complete",
       "dependencies": [
         "Phase 9"
       ],
       "completion_criteria": "Section 15 category, #learning-index, and all 43 chapter channels (#01 through #43) exist as a shell with an indexing/search structure; content population is Phase 16.",
-      "discovered_subphases": []
+      "discovered_subphases": [],
+      "completion_evidence": "learning_center_index.py builds Section 15's 43-chapter curriculum shell as a fresh module, deliberately not extending the existing narrower Learning Center system (learning_center_catalog.py etc, 32 freeform topic channels, confirmed via research to have no LC-XX-YY scheme, no channel-creation capability, and zero overlap with the McMillan-style curriculum) - per explicit owner direction. All 43 CHAPTERS present with exact spec titles, chapter_channel_name() produces collision-free lc-NN-slug Discord channel names (verified against sync_discord_structure.py's full existing declared-channel list, not just in isolation), lesson_id() produces the LC-XX-YY stable-ID format, register_lesson/lessons_for_chapter/search_lessons form the registry and read API content population (Phase 16) will use. sync_discord_structure.py got all 43 chapter ChannelSpecs added (LEARNING CENTER category, already existed) - confirmed via a real dry-run against the live guild: all 43 report WOULD CREATE, \"Dry run complete; no Discord changes made\". governance/OWNERSHIP.json got a real HUMAN_LEARNING_CENTER entry for learning_center_index.py, closing a gap that file's own not_yet_assigned list already flagged for this phase. Verified: 14/14 new tests (including a static source-scan confirming zero import of learning_center_index by any trading-relevant module built this session - backtest_lab.py/scoreboard.py/rivalry.py/market_data_collector.py), full pytest suite exit 0, real dry-run confirmation. No lesson content this phase (Phase 16). No changes to the existing narrower Learning Center system, left alone per explicit instruction. No live channel creation."
     },
     {
       "phase_number": 11,
