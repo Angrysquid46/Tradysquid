@@ -1,10 +1,15 @@
 {
-  "last_updated": "2026-08-25T04:03:32.333894-05:00",
-  "branch": "claude/phase11-bot-ownership-areas",
-  "current_commit": "33c55cd7d97bf44f93ab8bec305c6fb33dfb2f3c",
-  "commit_subject": "Phase 11: independent bot ownership areas (Master Spec Section 11)",
-  "current_phase": "11",
-  "current_subphase": "static governance files authored; extending ai_coordination.py",
-  "active_lock": null,
+  "last_updated": "2026-08-25T05:44:27.965057-05:00",
+  "branch": "codex/phase12-blacktide",
+  "current_commit": "1c3c2a9e7c3e889785a377f99c9f8342b60a093c",
+  "commit_subject": "Merge pull request #327 from Angrysquid46/claude/fix-stale-scanner-controls",
+  "current_phase": "Phase 12",
+  "current_subphase": "Phase 11 complete; Phase 12 ready",
+  "active_lock": {
+    "actor": "Codex",
+    "task": "Phase 12: BLACKTIDE implementation",
+    "work_id": "1e2cbe55-117b-4a0b-a88d-27f7fa0b0ebe",
+    "started_at": "2026-08-25T05:41:30.406266-05:00"
+  },
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."
 }

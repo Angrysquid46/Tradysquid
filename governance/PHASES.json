@@ -135,14 +135,15 @@
     {
       "phase_number": 12,
       "name": "BLACKTIDE implementation",
-      "status": "not_started",
+      "status": "complete",
       "dependencies": [
         "Phase 6",
         "Phase 7",
         "Phase 11"
       ],
       "completion_criteria": "Codex-owned private trader built under Section 4's immutable competition rules, using only shared/approved resources per Section 3.",
-      "discovered_subphases": []
+      "discovered_subphases": [],
+      "completion_evidence": "Codex-owned BLACKTIDE_SPY implemented exclusively under bots/blacktide: deterministic point-in-time decision engine; Tier-A-only entries; same-day long calls/puts; observed ask entries and bid exits; spread/liquidity/delta gates; bankroll risk sizing; one-position state enforcement; stop/take-profit/time exits; explicit bust/generation reset; bounded evolution using only BLACKTIDE's own completed returns; neutral MarketView and immutable scoreboard adapter. No live launch, shadow portfolio, opponent input, rivalry input, or Learning Center import. Verified: 6 BLACKTIDE rule tests, immutable scorekeeper round-trip integration, ownership/isolation suite, 22 focused BLACKTIDE/backtest tests passed (2 known pre-existing date-boundary tests deselected), and 524 remaining repository tests passed."
     },
     {
       "phase_number": 13,
