@@ -32,8 +32,36 @@ def test_check_ownership_ignores_paths_with_no_ownership_entry():
     """Most of the tree is intentionally unassigned until the phase that
     creates it (OWNERSHIP.json's own not_yet_assigned list) - enforcement
     only applies to paths that already have an explicit entry."""
-    assert coordination.check_ownership("Codex", ["bots/blacktide/strategy.py"]) == []
+    assert coordination.check_ownership("Codex", ["some_random_new_file.py"]) == []
     assert coordination.check_ownership("Claude", ["some_random_new_file.py"]) == []
+
+
+def test_check_ownership_enforces_the_bot_directory_boundary_both_ways():
+    """Phase 11: bots/blacktide/ (writers=[Codex]) and bots/claude/
+    (writers=[Claude]) are real, protected, directory-prefix entries now -
+    each actor may write its own directory, neither may write the other's."""
+    assert coordination.check_ownership("Codex", ["bots/blacktide/strategy.py"]) == []
+    assert coordination.check_ownership("Claude", ["bots/claude/strategy.py"]) == []
+
+    blacktide_violation = coordination.check_ownership("Claude", ["bots/blacktide/strategy.py"])
+    assert blacktide_violation
+    assert "bots/blacktide/strategy.py" in blacktide_violation[0]
+
+    claude_violation = coordination.check_ownership("Codex", ["bots/claude/strategy.py"])
+    assert claude_violation
+    assert "bots/claude/strategy.py" in claude_violation[0]
+
+
+def test_check_ownership_bot_directory_boundary_covers_nested_paths():
+    """Same nested-path coverage already proven for governance/ - a deeper
+    path under bots/blacktide/ still matches the directory-prefix entry."""
+    assert coordination.check_ownership(
+        "Codex", ["bots/blacktide/strategy/entries.py"]
+    ) == []
+    violation = coordination.check_ownership(
+        "Claude", ["bots/blacktide/strategy/entries.py"]
+    )
+    assert violation
 
 
 def test_enforce_ownership_raises_for_violation_and_not_for_permitted():
@@ -250,6 +278,52 @@ def test_finish_rejects_when_files_include_a_path_actor_cannot_write(control):
     assert coordination.LOCK_PATH.exists()
     events = coordination.EVENTS_PATH.read_text(encoding="utf-8").splitlines()
     assert not any(json.loads(line)["event"] == "COMPLETE" for line in events)
+
+
+def test_finish_rejects_claude_writing_into_blacktides_directory(control):
+    """Mirror of the above in the other direction: bots/blacktide/
+    (writers=[Codex]) rejects a Claude finish()."""
+    gov_dir = control / "governance"
+    gov_dir.mkdir(parents=True, exist_ok=True)
+    (gov_dir / "OWNERSHIP.json").write_text(
+        json.dumps({
+            "ownership_classes": ["BLACKTIDE_ONLY"],
+            "entries": [{
+                "path": "bots/blacktide/strategy.py", "owner": "BLACKTIDE_ONLY",
+                "readers": ["Codex"], "writers": ["Codex"],
+                "protected": True, "purpose": "test",
+            }],
+        }),
+        encoding="utf-8",
+    )
+    coordination.acquire("Claude", "shared work", "test")
+    with pytest.raises(RuntimeError, match="Ownership write-guard"):
+        coordination.finish("Claude", "done", "test", "n/a", ["bots/blacktide/strategy.py"])
+    assert coordination.LOCK_PATH.exists()
+    events = coordination.EVENTS_PATH.read_text(encoding="utf-8").splitlines()
+    assert not any(json.loads(line)["event"] == "COMPLETE" for line in events)
+
+
+def test_finish_succeeds_when_bot_writes_within_its_own_directory(control):
+    gov_dir = control / "governance"
+    gov_dir.mkdir(parents=True, exist_ok=True)
+    (gov_dir / "OWNERSHIP.json").write_text(
+        json.dumps({
+            "ownership_classes": ["BLACKTIDE_ONLY"],
+            "entries": [{
+                "path": "bots/blacktide/", "owner": "BLACKTIDE_ONLY",
+                "readers": ["Codex"], "writers": ["Codex"],
+                "protected": True, "purpose": "test",
+            }],
+        }),
+        encoding="utf-8",
+    )
+    coordination.acquire("Codex", "shared work", "test")
+    event = coordination.finish(
+        "Codex", "done", "test", "n/a", ["bots/blacktide/strategy.py"]
+    )
+    assert event["event"] == "COMPLETE"
+    assert not coordination.LOCK_PATH.exists()
 
 
 # --- mark_phase_status ------------------------------------------------------
