@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-25T16:46:06.634495-05:00",
-  "branch": "codex/phase14-final-reconciliation",
-  "observed_head_at_write": "ae5e1aee51c9fe96da36e0e8e0daec347ec2c18e",
-  "commit_subject": "Finish Phase 14 adversarial launch hardening",
+  "last_updated": "2026-08-25T17:35:36.806272-05:00",
+  "branch": "main",
+  "observed_head_at_write": "d17b39ef362c9467992bba67ac46fd1433ee8f3c",
+  "commit_subject": "Reconcile completed Phase 14 governance state",
   "current_phase": "Phase 14",
   "current_subphase": "Phase 14 complete after PR #332 and final governance reconciliation. Phase 15 is not started and requires explicit owner launch authorization.",
   "active_lock": null,
