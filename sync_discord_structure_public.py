@@ -20,13 +20,6 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
                 "Public ticker add/remove status plus owner-only filters, pauses, and manual scans.",
                 item.channel_type,
             )
-        elif item.name == "upgrade-review":
-            item = sync.ChannelSpec(
-                item.category,
-                item.name,
-                "Unanswered TradeBot questions, member suggestions, and curriculum gaps awaiting owner review.",
-                item.channel_type,
-            )
         rebuilt.append(item)
         if item.name == "universe-watch" and not inserted_activity:
             rebuilt.append(
@@ -86,10 +79,6 @@ sync.CHANNEL_STARTERS.update(
         ),
         "automation-diagnostics": (
             "Lists jobs that failed, never fired, became stale, or ran overdue, plus every automatic repair attempt and unresolved retry limit."
-        ),
-        "upgrade-review": (
-            "Unanswered `/ask` questions are deduplicated here with closest lesson matches, "
-            "ask counts, and the information needed to expand TradeBot safely."
         ),
     }
 )
@@ -187,17 +176,6 @@ all gates pass. Outside regular hours and on weekends, the system continues
 research-only stock screening, chart and level refreshes, news and event checks,
 learning reviews, reporting, diagnostics, and repairs. No brokerage order is ever
 placed by Tradysquids."""
-
-sync.GUIDES["upgrade-review"] = """# Learning and Upgrade Review Queue
-This owner-control channel receives unanswered TradeBot questions and member
-suggestions that need deliberate review.
-
-Each unanswered-question card includes the exact wording, member, first and last
-seen time, repeat count, and a stable question ID. Repeated wording updates the
-same card instead of posting duplicates.
-
-TradeBot never invents an answer merely to avoid creating a review item."""
-
 
 def _tracker() -> discord_transport.DiscordTracker:
     tracker = discord_transport.DiscordTracker(

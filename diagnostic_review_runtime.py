@@ -1,38 +1,28 @@
-"""Keep #upgrade-review actionable instead of publishing every raw health check.
+"""Canonicalize and deduplicate diagnostic findings before local storage.
 
-This runtime is installed after the complete diagnostic chain. It preserves local
-receipts for every check, but only publishes an individual Discord card after the
-normal repair threshold is reached. Temporary failures are summarized in one
-stable card. Network symptoms sharing one root cause are grouped, historical log
-content is not replayed on first startup, and old non-actionable diagnostic cards
-are removed automatically.
+#upgrade-review was retired along with the rest of the old upgrade-batch
+Discord system; this runtime no longer publishes anything there. It keeps
+the local classification/dedup logic (grouping shared-root-cause network
+symptoms, canonical log categories) that other live modules' retry and
+escalation decisions still depend on.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
-import re
 from dataclasses import replace
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-import applied_upgrades as dashboard
 import diagnostic_startup_runtime as startup
 import diagnostic_upgrade_system as diagnostics
 
 VERSION = "diagnostic-review-runtime-v2"
-SUMMARY_MESSAGE_KEY = f"{VERSION}:summary-message-id"
-SUMMARY_HASH_KEY = f"{VERSION}:summary-content-hash"
-CLEANUP_META_KEY = f"{VERSION}:legacy-card-cleanup"
 
 _INSTALLED = False
 _BASE_RECORD_FAILURE: Callable[..., dict[str, Any]] | None = None
 _BASE_RECORD_RECOVERY: Callable[..., dict[str, Any] | None] | None = None
 _BASE_LOG_CHECKS: Callable[[Any], list[diagnostics.HealthCheck]] | None = None
 _BASE_CYCLE: Callable[[Any], str] | None = None
-_BASE_DASHBOARD_JOB: Callable[[Any], str] | None = None
 
 _DISCORD_KEYS = {
     "discord-connectivity",
@@ -153,56 +143,6 @@ def _with_store(connection: Any | None):
     return connection or diagnostics.connect_store()
 
 
-def _delete_record_message(
-    record: dict[str, Any],
-    *,
-    connection: Any | None = None,
-) -> None:
-    message_id = str(record.get("discord_message_id") or "")
-    if not message_id:
-        return
-    own = connection is None
-    store = _with_store(connection)
-    try:
-        try:
-            tracker, channel_id = diagnostics.ensure_owner_channel(
-                diagnostics.REVIEW_CHANNEL,
-                "Owner review queue for actionable upgrades, persistent diagnostics, deployment, and live acceptance.",
-            )
-            if tracker and channel_id:
-                tracker._request(
-                    "DELETE",
-                    f"/channels/{channel_id}/messages/{message_id}",
-                )
-        except Exception:
-            pass
-        store.execute(
-            "UPDATE diagnostics SET discord_message_id='' WHERE signature=?",
-            (record["signature"],),
-        )
-        store.commit()
-    finally:
-        if own:
-            store.close()
-
-
-def _sync_actionable(
-    record: dict[str, Any],
-    *,
-    connection: Any | None = None,
-) -> None:
-    own = connection is None
-    store = _with_store(connection)
-    try:
-        if _actionable(record):
-            diagnostics._sync_discord(store, record)
-        else:
-            _delete_record_message(record, connection=store)
-    finally:
-        if own:
-            store.close()
-
-
 def record_failure(
     check: diagnostics.HealthCheck,
     *,
@@ -213,15 +153,17 @@ def record_failure(
     if _BASE_RECORD_FAILURE is None:
         raise RuntimeError("Diagnostic review runtime was not installed")
     canonical = _canonical_check(check)
-    record = _BASE_RECORD_FAILURE(
+    # sync/connection kept in the signature for call-site compatibility;
+    # Discord posting was removed with #upgrade-review's retirement, so
+    # there is nothing left to sync - local tracking (_BASE_RECORD_FAILURE)
+    # still runs, which is what other live modules' retry/escalation logic
+    # actually depends on.
+    return _BASE_RECORD_FAILURE(
         canonical,
         exception_type=exception_type,
         connection=connection,
         sync=False,
     )
-    if sync:
-        _sync_actionable(record, connection=connection)
-    return record
 
 
 def record_recovery(
@@ -234,19 +176,13 @@ def record_recovery(
 ) -> dict[str, Any] | None:
     if _BASE_RECORD_RECOVERY is None:
         raise RuntimeError("Diagnostic review runtime was not installed")
-    record = _BASE_RECORD_RECOVERY(
+    return _BASE_RECORD_RECOVERY(
         _canonical_key(signature_key),
         detail,
         verified=verified,
         connection=connection,
         sync=False,
     )
-    if record and sync:
-        if record.get("github_request_number"):
-            _sync_actionable(record, connection=connection)
-        else:
-            _delete_record_message(record, connection=connection)
-    return record
 
 
 def _log_category(lines: list[str]) -> str:
@@ -360,297 +296,16 @@ def diagnostics_summary() -> dict[str, Any]:
         connection.close()
 
 
-def _summary_content() -> str:
-    summary = diagnostics_summary()
-    actionable = summary["actionable"]
-    transient = summary["transient"]
-    if actionable:
-        state = "ACTION REQUIRED"
-        icon = "❌"
-        next_action = "Review the diagnostic-generated requests below and mark the shared batch ready when the requested repairs are complete."
-    elif transient:
-        state = "OBSERVING"
-        icon = "⚠️"
-        next_action = "No owner action yet. Automatic retries continue; a repair request is created only after the persistence threshold."
-    else:
-        state = "HEALTHY"
-        icon = "✅"
-        next_action = "No diagnostic repair action is currently required."
-
-    grouped: dict[str, int] = {}
-    for item in transient:
-        component = str(item.get("component") or "unknown")
-        grouped[component] = grouped.get(component, 0) + 1
-    lines = [
-        f"# {icon} Diagnostic Review Summary",
-        f"**State:** {state}",
-        f"**Actionable repairs:** {len(actionable)} · **Transient observations:** {len(transient)}",
-        f"**Last complete cycle:** {summary.get('last_cycle') or 'pending'}",
-        f"**Exact next action:** {next_action}",
-    ]
-    if actionable:
-        lines.append("## Actionable")
-        for item in actionable[:6]:
-            lines.append(
-                f"• **{item.get('diagnostic_id')} · {item.get('component')}** · {item.get('operation')} · "
-                f"{item.get('consecutive_failures')} consecutive · batch #{item.get('github_issue_number') or 'pending'} request {item.get('github_request_number') or 'pending'}"
-            )
-    if grouped:
-        lines.append(
-            "**Observed only:** "
-            + " · ".join(f"{name} {count}" for name, count in sorted(grouped.items()))
-        )
-    lines.extend(
-        [
-            "First and second occurrences stay local. One underlying Discord or GitHub outage is grouped into one incident.",
-            f"Updated **{diagnostics.iso_now()}**.",
-        ]
-    )
-    return "\n".join(lines)[:1900]
-
-
-def _publish_summary(engine_connection: Any) -> str:
-    tracker, channel_id = diagnostics.ensure_owner_channel(
-        diagnostics.REVIEW_CHANNEL,
-        "Owner review queue for actionable upgrades, persistent diagnostics, deployment, and live acceptance.",
-    )
-    if not tracker or not channel_id:
-        raise RuntimeError("#upgrade-review is unavailable")
-    return diagnostics._upsert_message(
-        engine_connection,
-        tracker,
-        channel_id,
-        SUMMARY_MESSAGE_KEY,
-        SUMMARY_HASH_KEY,
-        _summary_content(),
-    )
-
-
-def _cleanup_legacy_cards() -> int:
-    store = diagnostics.connect_store()
-    try:
-        if diagnostics._meta(store, CLEANUP_META_KEY, ""):
-            return 0
-        records = [dict(row) for row in store.execute("SELECT * FROM diagnostics").fetchall()]
-        keep_ids = {
-            str(record.get("discord_message_id") or "")
-            for record in records
-            if _actionable(record) and record.get("discord_message_id")
-        }
-        tracker, channel_id = diagnostics.ensure_owner_channel(
-            diagnostics.REVIEW_CHANNEL,
-            "Owner review queue for actionable upgrades, persistent diagnostics, deployment, and live acceptance.",
-        )
-        if not tracker or not channel_id:
-            return 0
-        deleted = 0
-        before = ""
-        for _ in range(5):
-            suffix = f"?limit=100&before={before}" if before else "?limit=100"
-            payload = tracker._request("GET", f"/channels/{channel_id}/messages{suffix}")
-            messages = [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
-            if not messages:
-                break
-            for message in messages:
-                content = str(message.get("content") or "")
-                message_id = str(message.get("id") or "")
-                author = message.get("author") if isinstance(message.get("author"), dict) else {}
-                if not author.get("bot") or not re.search(r"DIA-[A-F0-9]{12}", content):
-                    continue
-                if message_id in keep_ids:
-                    continue
-                try:
-                    tracker._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
-                    deleted += 1
-                except Exception:
-                    pass
-            before = str(messages[-1].get("id") or "")
-            if len(messages) < 100 or not before:
-                break
-        store.execute(
-            "UPDATE diagnostics SET discord_message_id='' WHERE COALESCE(github_request_number,0)=0 AND consecutive_failures < 3"
-        )
-        store.commit()
-        diagnostics._set_meta(store, CLEANUP_META_KEY, diagnostics.iso_now())
-        return deleted
-    finally:
-        store.close()
-
-
-def _latest_job(connection: Any, name: str) -> dict[str, Any] | None:
-    row = connection.execute(
-        """
-        SELECT status, started_at, COALESCE(finished_at, '') AS finished_at, detail
-        FROM job_runs WHERE job_name=? ORDER BY id DESC LIMIT 1
-        """,
-        (name,),
-    ).fetchone()
-    return dict(row) if row else None
-
-
-def _latest_applied_counts(connection: Any) -> dict[str, int]:
-    row = connection.execute(
-        """
-        SELECT payload_json FROM observations
-        WHERE kind=? ORDER BY id DESC LIMIT 1
-        """,
-        (dashboard.JOB_NAME,),
-    ).fetchone()
-    if not row:
-        return {}
-    try:
-        payload = json.loads(str(row["payload_json"] or "{}"))
-    except (ValueError, TypeError, json.JSONDecodeError):
-        return {}
-    counts = payload.get("counts") if isinstance(payload, dict) else {}
-    return {
-        str(key).upper(): int(value or 0)
-        for key, value in counts.items()
-    } if isinstance(counts, dict) else {}
-
-
-def _status_line(status: str, title: str, detail: str) -> str:
-    icon = {"PASS": "✅", "PENDING": "⏳", "FAIL": "❌"}[status]
-    return f"{icon} **{status} · {title}** · {detail}"
-
-
-def acceptance_content(
-    checks: list[diagnostics.HealthCheck],
-    channels: dict[str, dict[str, Any]],
-) -> str:
-    state = diagnostics._read_json(diagnostics.SUPERVISOR_STATE_PATH)
-    by_key = {check.key: check for check in checks}
-    engine_connection = diagnostics._engine().connect_db()
-    try:
-        self_receipt = _latest_job(engine_connection, diagnostics.DIAGNOSTIC_JOB)
-        dashboard_receipt = _latest_job(engine_connection, dashboard.JOB_NAME)
-        applied_counts = _latest_applied_counts(engine_connection)
-    finally:
-        engine_connection.close()
-
-    store = diagnostics.connect_store()
-    try:
-        stable = bool(
-            diagnostics._meta(
-                store,
-                f"{startup.SELF_TEST_META_PREFIX}{diagnostics._current_sha()}",
-                "",
-            )
-        )
-    finally:
-        store.close()
-
-    summary = diagnostics_summary()
-    discord_related = [
-        check
-        for check in checks
-        if check.key in {
-            "discord-connectivity",
-            "discord-command-registry-connectivity",
-            "discord-command-registry-match",
-        }
-    ]
-    discord_network_failed = any(
-        not check.passed and check.severity.upper() == "WARNING"
-        for check in discord_related
-    )
-    command_match = by_key.get("discord-command-registry-match")
-    command_connect = by_key.get("discord-command-registry-connectivity")
-    if command_match and command_match.passed:
-        command_status, command_detail = "PASS", "live guild command set matches the expected registry"
-    elif command_connect and not command_connect.passed:
-        command_status, command_detail = "PENDING", "Discord command verification is waiting on connectivity"
-    else:
-        command_status, command_detail = "FAIL", "live guild command set does not match the expected registry"
-
-    self_status = str((self_receipt or {}).get("status") or "MISSING").upper()
-    scheduler_status = "PASS" if self_status == "OK" else "PENDING" if self_status in {"MISSING", "RUNNING"} else "FAIL"
-    dash_status = str((dashboard_receipt or {}).get("status") or "MISSING").upper()
-    publish_status = "PASS" if dash_status == "OK" else "PENDING" if dash_status in {"MISSING", "RUNNING"} else "FAIL"
-    failed_count = applied_counts.get("FAILED", 0)
-    pending_count = applied_counts.get("PENDING", 0) + applied_counts.get("INSTALLED", 0)
-    if failed_count:
-        proof_status, proof_detail = "FAIL", f"{failed_count} upgrade proof item(s) are failed"
-    elif pending_count:
-        proof_status, proof_detail = "PENDING", f"{pending_count} upgrade proof item(s) are still pending or installed-only"
-    elif applied_counts:
-        proof_status, proof_detail = "PASS", "all reported upgrade proofs are active or intentionally superseded"
-    else:
-        proof_status, proof_detail = "PENDING", "the first applied-upgrade observation has not completed"
-
-    restart = by_key.get("service-restart-loop")
-    installed = by_key.get("installed-deployed-commit")
-    hooks = by_key.get("upgrade-command-hooks")
-    scheduler_modules = (
-        "supervisor-process-ownership" in by_key
-        and any(key.startswith("required-job-") or key == "scheduler-unique-jobs" for key in by_key)
-    )
-
-    items = [
-        (
-            "PASS" if str(state.get("supervisor_mode") or "") == "SIMPLE_TWO_MINUTE_UPDATER" else "FAIL",
-            "Simple two-minute updater",
-            str(state.get("supervisor_mode") or "missing"),
-        ),
-        ("PASS" if diagnostics._tcp_open(8080) else "FAIL", "Command bot online", "127.0.0.1:8080"),
-        ("PASS" if diagnostics._tcp_open(8765) else "FAIL", "Information engine online", "127.0.0.1:8765"),
-        ("PASS" if scheduler_modules else "FAIL", "Complete runtime diagnostics attached", "supervisor and scheduler checks are installed" if scheduler_modules else "one or more validated runtime modules are not attached"),
-        (scheduler_status, "Scheduler diagnostic heartbeat", f"self-diagnostics receipt={self_status}"),
-        ("PENDING" if discord_network_failed else "PASS", "Discord API connectivity", "automatic retry pending" if discord_network_failed else "guild and command reads are reachable"),
-        ("PASS" if diagnostics.REQUEST_CHANNEL in channels and diagnostics.REVIEW_CHANNEL in channels and diagnostics.APPLIED_CHANNEL in channels else "FAIL", "Owner upgrade channels", "upgrade-requests, upgrade-review, and applied-upgrades"),
-        ("PASS" if hooks and hooks.passed else "FAIL", "Upgrade command hooks", "four owner command hooks are attached"),
-        (command_status, "Live Discord command registry", command_detail),
-        ("PASS" if stable else "PENDING", "Diagnostic stable reporting", "local create/recover proof completed without a visible synthetic card" if stable else "startup proof has not completed"),
-        (publish_status, "Applied-upgrades dashboard publishing", f"scheduler receipt={dash_status}"),
-        (proof_status, "Applied upgrades verified", proof_detail),
-        ("PASS" if restart and restart.passed else "FAIL", "No detected restart loop", restart.detail if restart else "restart-loop diagnostic is not attached"),
-        ("PASS" if installed and installed.passed else "FAIL", "Installed equals deployed", installed.detail if installed else "commit consistency check is missing"),
-        ("PASS" if not summary["actionable"] else "FAIL", "No unresolved actionable diagnostic", f"{len(summary['actionable'])} actionable repair(s)"),
-    ]
-    lines = [
-        "# Tradysquid Live Acceptance",
-        f"**Deployed commit:** `{diagnostics._current_sha()}`",
-        "PASS means live proof passed. PENDING means a bounded retry or first receipt is still due. FAIL means owner or maintainer action is required.",
-    ]
-    lines.extend(_status_line(*item) for item in items)
-    lines.append(f"Checked **{diagnostics.iso_now()}**.")
-    return "\n".join(lines)[:1900]
-
-
 def diagnostic_cycle_job(engine_connection: Any) -> str:
     if _BASE_CYCLE is None:
         raise RuntimeError("Diagnostic review runtime was not installed")
-    detail = _BASE_CYCLE(engine_connection)
-    extras: list[str] = []
-    try:
-        deleted = _cleanup_legacy_cards()
-        if deleted:
-            extras.append(f"removed {deleted} legacy diagnostic card(s)")
-    except Exception as exc:
-        extras.append(f"legacy cleanup pending: {type(exc).__name__}")
-    try:
-        _publish_summary(engine_connection)
-    except Exception as exc:
-        extras.append(f"summary publication pending: {type(exc).__name__}")
-    return detail + ("; " + "; ".join(extras) if extras else "; actionable summary updated")
-
-
-def dashboard_job(connection: Any) -> str:
-    if _BASE_DASHBOARD_JOB is None:
-        raise RuntimeError("Applied-upgrade reporting runtime was not installed")
-    try:
-        return _BASE_DASHBOARD_JOB(connection)
-    except RuntimeError as exc:
-        text = str(exc)
-        if "applied-upgrades verification found" not in text:
-            raise
-        return "Dashboard published successfully; " + text
+    return _BASE_CYCLE(engine_connection)
 
 
 def install() -> None:
     global _INSTALLED
     global _BASE_RECORD_FAILURE, _BASE_RECORD_RECOVERY, _BASE_LOG_CHECKS
-    global _BASE_CYCLE, _BASE_DASHBOARD_JOB
+    global _BASE_CYCLE
     if _INSTALLED:
         return
 
@@ -658,15 +313,12 @@ def install() -> None:
     _BASE_RECORD_RECOVERY = diagnostics.record_recovery
     _BASE_LOG_CHECKS = diagnostics._log_checks
     _BASE_CYCLE = diagnostics.diagnostic_cycle_job
-    _BASE_DASHBOARD_JOB = dashboard.dashboard_job
 
     diagnostics.record_failure = record_failure
     diagnostics.record_recovery = record_recovery
     diagnostics._log_checks = log_checks
     diagnostics.diagnostics_summary = diagnostics_summary
-    diagnostics._acceptance_content = acceptance_content
     diagnostics.diagnostic_cycle_job = diagnostic_cycle_job
-    dashboard.dashboard_job = dashboard_job
 
     engine = diagnostics._engine()
     rebuilt = []

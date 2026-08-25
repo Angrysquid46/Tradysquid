@@ -284,55 +284,13 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
             reopened.close()
         self.assertEqual(row["diagnostic_id"], created["diagnostic_id"])
 
-    def test_discord_report_is_created_then_updated(self) -> None:
-        tracker = FakeTracker(
-            [
-                {
-                    "id": "review",
-                    "name": "upgrade-review",
-                    "type": 0,
-                    "permission_overwrites": [],
-                }
-            ]
-        )
-        engine = FakeEngine(tracker)
-        with patch.object(diagnostics, "_engine", return_value=engine):
-            connection = diagnostics.connect_store()
-            try:
-                first = diagnostics.record_failure(
-                    self.check(), connection=connection, sync=True
-                )
-                second = diagnostics.record_failure(
-                    self.check(), connection=connection, sync=True
-                )
-            finally:
-                connection.close()
-        methods = [call[0] for call in tracker.calls]
-        self.assertIn("POST", methods)
-        self.assertIn("PATCH", methods)
-        self.assertEqual(first["signature"], second["signature"])
-
-    def test_channel_bootstrap_copies_owner_permissions(self) -> None:
-        tracker = FakeTracker(
-            [
-                {
-                    "id": "requests",
-                    "name": "upgrade-requests",
-                    "type": 0,
-                    "parent_id": "owner-category",
-                    "permission_overwrites": [{"id": "guild", "deny": "1024"}],
-                }
-            ]
-        )
-        engine = FakeEngine(tracker)
-        with patch.object(diagnostics, "_engine", return_value=engine):
-            _, channel_id = diagnostics.ensure_owner_channel(
-                "upgrade-review", "review diagnostics"
-            )
-        self.assertTrue(channel_id)
-        payload = next(call[2] for call in tracker.calls if call[0] == "POST")
-        self.assertEqual(payload["parent_id"], "owner-category")
-        self.assertEqual(payload["permission_overwrites"][0]["deny"], "1024")
+    def test_sync_discord_is_a_no_op_since_upgrade_review_was_retired(self) -> None:
+        connection = diagnostics.connect_store()
+        try:
+            record = diagnostics.record_failure(self.check(), connection=connection, sync=True)
+            self.assertFalse(diagnostics._sync_discord(connection, record))
+        finally:
+            connection.close()
 
     def test_weekend_has_no_market_session(self) -> None:
         saturday = datetime(2026, 8, 1, 10, 0, tzinfo=diagnostics.market_data.MARKET_TZ)
@@ -362,87 +320,6 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
         session = diagnostics.official_market_session(moment, calendar_payload=payload)
         self.assertEqual(session[1].hour, 12)
 
-    def test_market_review_requires_two_hours(self) -> None:
-        engine = FakeEngine()
-        connection = sqlite3.connect(":memory:")
-        moment = datetime(2026, 7, 2, 10, 0, tzinfo=diagnostics.market_data.MARKET_TZ)
-        payload = {
-            "calendar": {
-                "days": {
-                    "day": {
-                        "date": "2026-07-02",
-                        "status": "open",
-                        "open": {"start": "08:30", "end": "15:00"},
-                    }
-                }
-            }
-        }
-        with patch.object(diagnostics, "_engine", return_value=engine):
-            self.assertTrue(
-                diagnostics.market_review_due(
-                    connection, moment, calendar_payload=payload
-                )
-            )
-            engine.state[diagnostics.MARKET_REVIEW_LAST_KEY] = (
-                moment - timedelta(hours=1)
-            ).isoformat()
-            self.assertFalse(
-                diagnostics.market_review_due(
-                    connection, moment, calendar_payload=payload
-                )
-            )
-            engine.state[diagnostics.MARKET_REVIEW_LAST_KEY] = (
-                moment - timedelta(hours=2, minutes=1)
-            ).isoformat()
-            self.assertTrue(
-                diagnostics.market_review_due(
-                    connection, moment, calendar_payload=payload
-                )
-            )
-
-    def test_empty_market_review_does_not_post(self) -> None:
-        engine = FakeEngine()
-        connection = sqlite3.connect(":memory:")
-        with (
-            patch.object(diagnostics, "_engine", return_value=engine),
-            patch.object(diagnostics, "market_review_due", return_value=True),
-            patch.object(
-                bridge,
-                "batch_status",
-                return_value={"state": "NONE", "request_count": 0, "requests": []},
-            ),
-            patch.object(bridge, "pull_request_queue", return_value=[]),
-            patch.object(diagnostics, "_read_json", return_value={}),
-            patch.object(diagnostics, "ensure_owner_channel") as ensure,
-        ):
-            detail = diagnostics.market_upgrade_review_job(connection)
-        self.assertIn("empty", detail)
-        ensure.assert_not_called()
-
-    def test_queue_content_contains_exact_next_actions(self) -> None:
-        content = diagnostics._queue_content(
-            {
-                "issue_number": 44,
-                "state": "OPEN",
-                "request_count": 1,
-                "requests": [
-                    {
-                        "request_number": 1,
-                        "source": "AUTOMATIC DIAGNOSTIC",
-                        "status": "PENDING BATCH REVIEW",
-                        "summary": "Repair updater",
-                        "next_action": "Use /upgrade-ready.",
-                        "updated_at": "",
-                    }
-                ],
-            },
-            [],
-            {},
-        )
-        self.assertIn("AUTOMATIC DIAGNOSTIC", content)
-        self.assertIn("Next:", content)
-        self.assertIn("Use /upgrade-ready", content)
-
     def test_diagnostics_source_never_stops_or_deploys_services(self) -> None:
         text = (Path(diagnostics.__file__).read_text(encoding="utf-8"))
         self.assertNotIn("stop_all_services(", text)
@@ -461,7 +338,6 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
                 diagnostics.install()
             names = [job.name for job in engine.JOBS]
             self.assertEqual(names.count(diagnostics.DIAGNOSTIC_JOB), 1)
-            self.assertEqual(names.count(diagnostics.MARKET_REVIEW_JOB), 1)
             self.assertEqual(
                 int(
                     next(
@@ -471,16 +347,6 @@ class DiagnosticUpgradeSystemTests(unittest.TestCase):
                     )
                 ),
                 300,
-            )
-            self.assertEqual(
-                int(
-                    next(
-                        job.interval.total_seconds()
-                        for job in engine.JOBS
-                        if job.name == diagnostics.MARKET_REVIEW_JOB
-                    )
-                ),
-                7200,
             )
         finally:
             engine.JOBS = original

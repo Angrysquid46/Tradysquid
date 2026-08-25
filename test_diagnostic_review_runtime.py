@@ -68,7 +68,9 @@ class DiagnosticReviewRuntimeTests(unittest.TestCase):
         sync.assert_not_called()
         github.assert_not_called()
 
-    def test_third_failure_escalates_and_publishes_one_card(self) -> None:
+    def test_third_failure_escalates_via_github_without_any_discord_post(self) -> None:
+        """#upgrade-review was retired - escalation still reaches GitHub,
+        but nothing posts to Discord anymore, even for actionable failures."""
         github_result = {
             "issue_number": 77,
             "request_number": 4,
@@ -86,7 +88,7 @@ class DiagnosticReviewRuntimeTests(unittest.TestCase):
             review.record_failure(self.check(), sync=True)
             third = review.record_failure(self.check(), sync=True)
         github.assert_called_once()
-        sync.assert_called_once()
+        sync.assert_not_called()
         self.assertEqual(third["github_issue_number"], 77)
         self.assertEqual(third["github_request_number"], 4)
 
@@ -197,20 +199,6 @@ class DiagnosticReviewRuntimeTests(unittest.TestCase):
         self.assertEqual(len(summary["transient"]), 1)
         self.assertEqual(len(summary["actionable"]), 1)
         self.assertEqual(summary["open"], summary["actionable"])
-
-    def test_dashboard_publisher_does_not_fail_because_feature_proof_failed(self) -> None:
-        original = review._BASE_DASHBOARD_JOB
-        review._BASE_DASHBOARD_JOB = Mock(
-            side_effect=RuntimeError(
-                "applied-upgrades verification found 2 failed item(s)"
-            )
-        )
-        try:
-            detail = review.dashboard_job(sqlite3.connect(":memory:"))
-        finally:
-            review._BASE_DASHBOARD_JOB = original
-        self.assertIn("Dashboard published successfully", detail)
-        self.assertIn("2 failed item", detail)
 
     def test_runtime_contract_contains_only_current_layers_in_order(self) -> None:
         root = Path(__file__).resolve().parent

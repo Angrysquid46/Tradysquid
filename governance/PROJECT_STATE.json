@@ -1,10 +1,15 @@
 {
-  "last_updated": "2026-08-24T16:42:59.377145-05:00",
-  "branch": "claude/retire-old-learning-center",
-  "current_commit": "6ab94a748bc2c6bbe9e5ba8259a967b0ffdd8dd0",
-  "commit_subject": "Fix downstream files after retiring the old Learning Center",
+  "last_updated": "2026-08-24T19:07:58.965172-05:00",
+  "branch": "main",
+  "current_commit": "e428af0c5e3c7b5ff565d515bb5c2dd550297c47",
+  "commit_subject": "Merge pull request #324 from Angrysquid46/claude/retire-old-learning-center",
   "current_phase": "10",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
-  "active_lock": null,
+  "active_lock": {
+    "actor": "Claude",
+    "task": "retire-old-upgrade-diagnostic-system",
+    "work_id": "cea30be7-82c2-47d7-85e3-0181203a74ef",
+    "started_at": "2026-08-24T19:07:58.543889-05:00"
+  },
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."
 }
