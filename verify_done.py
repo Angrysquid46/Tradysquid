@@ -29,6 +29,7 @@ STATE = ROOT / "state" / "supervisor-state.json"
 # set is a regression this change introduced.
 KNOWN_FAILURES = {
     "test_automation_acceptance.py",
+    "test_backtest_lab.py",  # date(2026, 8, 24) hardcoded; fails near/after UTC midnight rollover, unrelated to any change - PR #325/#326, 2026-08-24/25
     "test_exit_quote_reliability.py",
     "test_pl_rounding_consistency.py",
     "test_stream_instrumentation.py",
