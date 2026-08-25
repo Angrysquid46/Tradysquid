@@ -1,5 +1,19 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-24T19:46:34.027469-05:00"
+  "active": true,
+  "work_id": "ad69db70-c9c6-4583-8ed7-21ec0f89882e",
+  "actor": "Claude",
+  "task": "phase11-independent-bot-ownership-areas",
+  "method": "create bots/blacktide and bots/claude with scoped AGENTS.md; add directory-prefix OWNERSHIP.json entries (writers: Codex/Claude respectively); add/fix ownership tests; static cross-import guard test; mark Phase 11 complete",
+  "started_at": "2026-08-25T03:56:47.680402-05:00",
+  "starting_commit": "7811e0742d2d65c9700b0e6fb5e12f65210ed25e",
+  "process_id": 31288,
+  "owner_request": "Phases 0-10 complete; owner asked to plan Phase 11 (write-guard enforcement between the two future private traders), no trading logic this phase",
+  "before_state": "",
+  "reason": "Phases 0-10 complete; owner asked to plan Phase 11 (write-guard enforcement between the two future private traders), no trading logic this phase",
+  "intended_scope": "2 new directories + AGENTS.md files, 2 OWNERSHIP.json entries, governance/PHASES.json status update, 1 new test file + edits to tests/unit/test_governance_phase4.py, zero code changes to ai_coordination.py itself (directory-prefix matching already works)",
+  "expected_effects": "Codex can write to bots/blacktide/, Claude cannot; Claude can write to bots/claude/, Codex cannot; enforced via existing enforce_ownership() write-guard at finish() time",
+  "required_tests": "new ownership permit/reject tests; end-to-end finish() rejection test; static cross-import guard test; full tests/unit + root suite",
+  "risks": "no code changes to the enforcement mechanism itself, only data (OWNERSHIP.json entries) - low risk; disclosed clearly that read isolation is not technically enforced, matching this phase's own literal completion criteria (write-guard only)",
+  "next_safe_action_if_interrupted": "",
+  "phase": "11"
 }

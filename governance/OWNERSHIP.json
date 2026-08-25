@@ -57,12 +57,26 @@
       "writers": ["Owner", "Codex", "Claude"],
       "protected": false,
       "purpose": "Phase 10 (Section 15): the 43-chapter curriculum's stable structure - chapter list, lc-NN-slug Discord channel naming, LC-XX-YY lesson IDs, and the lesson registry. Both agents may build/maintain the shell and tooling; Section 15 requires autonomous trading code to never import, search, or query this module or its content."
+    },
+    {
+      "path": "bots/blacktide/",
+      "owner": "BLACKTIDE_ONLY",
+      "readers": ["Owner", "Codex"],
+      "writers": ["Codex"],
+      "protected": true,
+      "purpose": "Phase 11 (Section 11): BLACKTIDE's private trader, built in Phase 12. Only Codex may write here. Claude must not request, inspect, infer, copy, modify, or train from anything under this path (Section 3's private-competitor boundary) - this entry enforces the write side; the read-side boundary is convention (this directory's own AGENTS.md), not a technical sandbox."
+    },
+    {
+      "path": "bots/claude/",
+      "owner": "CLAUDE_ONLY",
+      "readers": ["Owner", "Claude"],
+      "writers": ["Claude"],
+      "protected": true,
+      "purpose": "Phase 11 (Section 11): Claude's private trader, built in Phase 13. Only Claude may write here. ChatGPT/Codex must not modify or consume Claude-private strategy intelligence (Section 3's private-competitor boundary) - this entry enforces the write side; the read-side boundary is convention (this directory's own AGENTS.md), not a technical sandbox."
     }
   ],
   "scoped_instructions_convention": "Each BLACKTIDE_ONLY/CLAUDE_ONLY directory (created Phase 11+, e.g. bots/blacktide, bots/claude) must contain its own AGENTS.md scoped to that directory, following the nearest-file convention: an agent reads the root AGENTS.md plus the nearest scoped AGENTS.md above its working path. This file's writers field for that directory's entry is the authoritative machine-readable grant; the scoped AGENTS.md is a human/agent-readable restatement of the same rule, not a separate grant. Root AGENTS.md must not enumerate bot directories in advance of the phase that creates them.",
   "not_yet_assigned": [
-    "bots/blacktide (BLACKTIDE_ONLY, created Phase 11)",
-    "bots/claude (CLAUDE_ONLY, created Phase 11)",
     "market/options/backtest/features/execution/api_budget/competition/events/discord (SHARED_CORE) - Phases 5-9 shipped these as flat root modules (market_data_store.py, market_data_collector.py, backtest_lab.py, market_api_budget.py, scoreboard.py, discord_surface_manifest.py, rivalry.py, etc.), matching this repo's existing convention, not the shared/ package originally anticipated here. Individual entries for these files are still owed to this list - noted, not yet added, so as not to expand this phase's scope beyond correcting this note.",
     "learning/ catalog/lessons/search/references (HUMAN_LEARNING_CENTER, created Phase 10)"
   ]

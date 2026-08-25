@@ -124,12 +124,13 @@
     {
       "phase_number": 11,
       "name": "Independent bot ownership areas",
-      "status": "not_started",
+      "status": "complete",
       "dependencies": [
         "Phase 4"
       ],
       "completion_criteria": "bots/blacktide and bots/claude ownership areas exist per Section 11, with protected-write enforcement between them active before either trader is implemented.",
-      "discovered_subphases": []
+      "discovered_subphases": [],
+      "completion_evidence": "bots/blacktide/ and bots/claude/ created with scoped AGENTS.md each (per the nearest-file convention governance/OWNERSHIP.json and root AGENTS.md already stated). Two new directory-prefix OWNERSHIP.json entries added (writers: [Codex] for bots/blacktide/, [Claude] for bots/claude/), using the same prefix-match mechanism already proven live by the governance/ entry - zero code changes needed to ai_coordination.py itself. Verified via real CLI exercise (check-ownership) in all 4 directions: Codex permitted on bots/blacktide/, rejected on bots/claude/; Claude permitted on bots/claude/, rejected on bots/blacktide/. New tests: 3 direct-function ownership tests (both-directions permit/reject, nested-path coverage), 2 end-to-end finish() tests (reject Claude writing bots/blacktide/, permit Codex writing bots/blacktide/) alongside the existing Phase-4-authored finish()-rejection test for the bots/claude/ direction, plus a new static source-scan test_bot_ownership_isolation.py (matching the Phase 9/rivalry.py and Phase 10/learning_center_index.py pattern) guarding against cross-imports once Phase 12/13 add real code. Disclosed, not solved this phase: only write isolation is technically enforced (matching this phase's own literal completion criteria) - read isolation between the two directories is AGENTS.md convention text, not a code sandbox. Verified: full root + tests/unit suite green (2 known pre-existing unrelated date-boundary failures in test_backtest_lab.py, confirmed via git blame/diff to predate this branch)."
     },
     {
       "phase_number": 12,

@@ -1,10 +1,15 @@
 {
-  "last_updated": "2026-08-24T19:46:34.215453-05:00",
+  "last_updated": "2026-08-25T03:56:48.075515-05:00",
   "branch": "main",
-  "current_commit": "a9c78e0bd7ef5901df9fdf0cbe86e31918b8d0cc",
-  "commit_subject": "Merge pull request #325 from Angrysquid46/claude/retire-old-upgrade-diagnostic-system",
-  "current_phase": "10",
+  "current_commit": "7811e0742d2d65c9700b0e6fb5e12f65210ed25e",
+  "commit_subject": "Update governance bookkeeping after retiring the old upgrade system",
+  "current_phase": "11",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
-  "active_lock": null,
+  "active_lock": {
+    "actor": "Claude",
+    "task": "phase11-independent-bot-ownership-areas",
+    "work_id": "ad69db70-c9c6-4583-8ed7-21ec0f89882e",
+    "started_at": "2026-08-25T03:56:47.680402-05:00"
+  },
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."
 }
