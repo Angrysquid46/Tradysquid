@@ -16,6 +16,11 @@ and quotes/chain share one combined bucket, not separate ones.
 
 from __future__ import annotations
 
+import sqlite3
+import time
+import os
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 # Section 8's priority order, exactly as listed. Only 4 and 5 have a
@@ -56,7 +61,29 @@ _RESERVE_FRACTION = {
     PRIORITY_RIVALRY_PRESENTATION: 0.40,
 }
 
-_STATE: dict[str, int] | None = None
+DB_PATH = Path(os.environ.get(
+    "TRADYSQUID_API_BUDGET_DB",
+    str(Path(__file__).resolve().parent / "state" / "market-api-budget.db"),
+))
+
+
+def _connect() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(DB_PATH, timeout=10, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA busy_timeout=10000")
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("CREATE TABLE IF NOT EXISTS quota (id INTEGER PRIMARY KEY CHECK(id=1), allowed INTEGER NOT NULL, used INTEGER NOT NULL, available INTEGER NOT NULL, expiry INTEGER NOT NULL, reservations INTEGER NOT NULL DEFAULT 0, updated_at REAL NOT NULL)")
+    return db
+
+
+@contextmanager
+def _database():
+    db = _connect()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def record_response_headers(response: Any) -> dict[str, int] | None:
@@ -64,7 +91,6 @@ def record_response_headers(response: Any) -> dict[str, int] | None:
     shared state. Silently no-ops (returns None) if the headers aren't
     present - not every provider/endpoint is guaranteed to send them, and
     a missing header is not itself an error worth raising over."""
-    global _STATE
     headers = getattr(response, "headers", None)
     if headers is None:
         return None
@@ -75,15 +101,26 @@ def record_response_headers(response: Any) -> dict[str, int] | None:
         expiry = int(headers["X-Ratelimit-Expiry"])
     except (KeyError, TypeError, ValueError):
         return None
-    _STATE = {
+    state = {
         "allowed": allowed, "used": used,
         "available": available, "expiry": expiry,
     }
-    return dict(_STATE)
+    with _database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        prior = db.execute("SELECT expiry, reservations FROM quota WHERE id=1").fetchone()
+        reservations = max(0, int(prior["reservations"]) - 1) if prior and int(prior["expiry"]) == expiry else 0
+        db.execute(
+            "INSERT INTO quota(id,allowed,used,available,expiry,reservations,updated_at) VALUES(1,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET allowed=excluded.allowed,used=excluded.used,available=excluded.available,expiry=excluded.expiry,reservations=excluded.reservations,updated_at=excluded.updated_at",
+            (allowed, used, available, expiry, reservations, time.time()),
+        )
+        db.commit()
+    return state
 
 
 def current_state() -> dict[str, int] | None:
-    return dict(_STATE) if _STATE is not None else None
+    with _database() as db:
+        row = db.execute("SELECT allowed,used,available,expiry FROM quota WHERE id=1").fetchone()
+    return dict(row) if row else None
 
 
 def request_allowed(priority: int) -> bool:
@@ -93,17 +130,45 @@ def request_allowed(priority: int) -> bool:
     every caller before the first real response arrives would be worse
     than the rare case where an early burst goes ungated for one cycle.
     """
-    if priority in _ALWAYS_ALLOWED:
-        return True
-    if _STATE is None:
-        return True
-    reserve_fraction = _RESERVE_FRACTION.get(priority, 0.0)
-    allowed = _STATE["allowed"]
-    if allowed <= 0:
-        return True
-    return (_STATE["available"] / allowed) >= reserve_fraction
+    with _database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM quota WHERE id=1").fetchone()
+        if row is None:
+            # Conservative bootstrapping against the verified combined limit.
+            now = int(time.time())
+            db.execute("INSERT INTO quota VALUES(1,120,0,120,?,0,?)", (now + 60, time.time()))
+            row = db.execute("SELECT * FROM quota WHERE id=1").fetchone()
+        expiry = int(row["expiry"])
+        now_value = int(time.time())
+        reservations = int(row["reservations"])
+        available = int(row["available"])
+        if expiry < 10_000_000_000 and expiry <= now_value:
+            reservations, available, expiry = 0, int(row["allowed"]), now_value + 60
+            db.execute("UPDATE quota SET used=0,available=?,expiry=?,reservations=0,updated_at=? WHERE id=1", (available, expiry, time.time()))
+        effective = max(0, available - reservations)
+        reserve = 0 if priority in _ALWAYS_ALLOWED else int(int(row["allowed"]) * _RESERVE_FRACTION.get(priority, 0.0))
+        permitted = effective > reserve
+        if permitted:
+            db.execute("UPDATE quota SET reservations=reservations+1,updated_at=? WHERE id=1", (time.time(),))
+        db.commit()
+        return permitted
+
+
+def release_reservation() -> None:
+    """Release an in-flight reservation when no usable response arrived."""
+    with _database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            "UPDATE quota SET reservations=MAX(0,reservations-1),updated_at=? WHERE id=1",
+            (time.time(),),
+        )
+        db.commit()
 
 
 def reset_for_test() -> None:
-    global _STATE
-    _STATE = None
+    for suffix in ("", "-shm", "-wal"):
+        path = Path(str(DB_PATH) + suffix)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass

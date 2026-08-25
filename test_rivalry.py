@@ -206,3 +206,28 @@ def test_never_open_position_chat_flag_is_false():
     assert rivalry.RIVALRY_OPEN_POSITION_CHAT is False
     assert rivalry.RIVALRY_CAN_INFLUENCE_TRADING is False
     assert rivalry.RIVALRY_PRIVATE_STRATEGY_ACCESS is False
+
+
+def test_rejects_detailed_live_position_snapshot(db):
+    with pytest.raises(ValueError, match="OPEN or FLAT"):
+        rivalry.record_rivalry_event(
+            db, rivalry_event_id="leak", event_group_id="g", trigger="SESSION_OPEN",
+            speaker="BLACKTIDE", message="no", now=BASE,
+            public_score_snapshot={"current_position_status": {"symbol": "SECRET"}},
+        )
+
+
+def test_reply_chain_is_finite_and_sequential(db):
+    _record(db, "root", now=BASE)
+    rivalry.record_rivalry_event(
+        db, rivalry_event_id="reply", event_group_id="g1", trigger="TRADE_CLOSED_WIN",
+        speaker="AXIOM", message="reply", public_score_snapshot={}, target="BLACKTIDE",
+        reply_to_id="root", conversation_round=1, now=BASE + timedelta(seconds=20),
+    )
+    with pytest.raises(rivalry.RivalryLimitExceeded, match="finite reply-chain"):
+        rivalry.record_rivalry_event(
+            db, rivalry_event_id="too-deep", event_group_id="g1", trigger="TRADE_CLOSED_WIN",
+            speaker="BLACKTIDE", message="deep", public_score_snapshot={}, target="AXIOM",
+            reply_to_id="reply", conversation_round=rivalry.RIVALRY_MAX_CONVERSATION_ROUNDS,
+            now=BASE + timedelta(seconds=40),
+        )

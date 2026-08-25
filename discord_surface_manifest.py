@@ -47,6 +47,30 @@ EVENT_TYPES = ("EVENT", "UPDATE", "PUBLISH", "ERROR")
 
 SURFACE_STATUSES = ("UPDATED", "VERIFIED_UNAFFECTED", "RETIRED", DESYNCHRONIZED, MISCONFIGURED)
 
+# The complete dynamic competition presentation inventory.  Operational
+# channels that contain ordinary stream messages are not singleton/dynamic
+# surfaces.  Every competition card has one stable owner and producer here.
+CANONICAL_COMPETITION_SURFACES = (
+    {
+        "surface_id": "competition-scoreboard-card", "category": "RIVALRY",
+        "channel": "blacktide-vs-claude", "owner": "Shared",
+        "purpose": "Public redacted competition scoreboard",
+        "producer": "rivalry_presentation.publish_competition_surfaces",
+        "publisher": "discord_transport.DiscordTracker", "update_mode": UPDATE_MODE_PERIODIC,
+        "expected_silence": False, "max_silence_minutes": 5,
+        "event_types": ("SCOREBOARD",), "schema_version": "phase14-v1",
+    },
+    {
+        "surface_id": "competition-rivalry-card", "category": "RIVALRY",
+        "channel": "blacktide-vs-claude", "owner": "Shared",
+        "purpose": "Bounded public rivalry history",
+        "producer": "rivalry_presentation.publish_competition_surfaces",
+        "publisher": "discord_transport.DiscordTracker", "update_mode": UPDATE_MODE_EVENT_DRIVEN,
+        "expected_silence": True, "event_types": ("RIVALRY",),
+        "schema_version": "phase14-v1",
+    },
+)
+
 
 def connect_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -142,6 +166,31 @@ def register_surface(
         ),
     )
     connection.commit()
+
+
+def reconcile_canonical_competition_surfaces(connection: sqlite3.Connection) -> tuple[str, ...]:
+    """Upsert the authoritative competition cards and retire obsolete ones.
+
+    This is idempotent and local.  Live Discord comparison/publishing is done
+    by rivalry_presentation so an outage cannot corrupt manifest ownership.
+    """
+    active_ids = {item["surface_id"] for item in CANONICAL_COMPETITION_SURFACES}
+    for item in CANONICAL_COMPETITION_SURFACES:
+        register_surface(connection, **item)
+    rows = connection.execute(
+        "SELECT surface_id FROM surfaces WHERE category='RIVALRY'"
+    ).fetchall()
+    retired: list[str] = []
+    for row in rows:
+        surface_id = row["surface_id"]
+        if surface_id not in active_ids:
+            connection.execute(
+                "UPDATE surfaces SET enabled=0, status='RETIRED' WHERE surface_id=?",
+                (surface_id,),
+            )
+            retired.append(surface_id)
+    connection.commit()
+    return tuple(retired)
 
 
 def record_surface_event(

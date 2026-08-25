@@ -45,7 +45,7 @@ def _open_and_close(sb, trade_id, pnl_usd, generation=1):
         sb, trade_id=trade_id, bot="AXIOM", generation=generation,
         opened_at="2026-08-25T09:30:00", side="CALL",
         contract_symbol=f"SPY-{trade_id}", entry_price=4.0, contracts=1,
-        entry_bankroll=1000.0,
+        entry_bankroll=scoreboard.current_bankroll(sb, "AXIOM"),
     )
     scoreboard.record_trade_close(
         sb, trade_id=trade_id, closed_at="2026-08-25T10:00:00",

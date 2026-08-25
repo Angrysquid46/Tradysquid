@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import pytest
 
 import market_api_budget as budget
 
 
 @pytest.fixture(autouse=True)
-def reset_state():
+def reset_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(budget, "DB_PATH", tmp_path / "budget.db")
     budget.reset_for_test()
     yield
     budget.reset_for_test()
@@ -72,10 +76,10 @@ def _set_available_fraction(fraction: float) -> None:
     }))
 
 
-def test_priorities_one_through_three_always_allowed_regardless_of_budget():
+def test_priorities_one_through_three_cannot_fabricate_provider_capacity():
     _set_available_fraction(0.0)
     for priority in ALWAYS_ALLOWED_PRIORITIES:
-        assert budget.request_allowed(priority) is True
+        assert budget.request_allowed(priority) is False
 
 
 def test_all_priorities_allowed_when_no_telemetry_recorded_yet():
@@ -95,9 +99,9 @@ def test_shared_observation_priorities_blocked_below_twenty_percent():
     assert budget.request_allowed(budget.PRIORITY_SHARED_OPTIONS_COLLECTION) is False
 
 
-def test_shared_observation_priorities_allowed_right_at_twenty_percent():
+def test_shared_observation_priorities_preserve_final_twenty_percent():
     _set_available_fraction(0.20)
-    assert budget.request_allowed(budget.PRIORITY_SHARED_SPY_OBSERVATIONS) is True
+    assert budget.request_allowed(budget.PRIORITY_SHARED_SPY_OBSERVATIONS) is False
 
 
 def test_secondary_priorities_blocked_below_forty_percent_but_shared_observations_still_allowed():
@@ -108,11 +112,40 @@ def test_secondary_priorities_blocked_below_forty_percent_but_shared_observation
     assert budget.request_allowed(budget.PRIORITY_RIVALRY_PRESENTATION) is False
 
 
-def test_secondary_priorities_allowed_right_at_forty_percent():
+def test_secondary_priorities_preserve_final_forty_percent():
     _set_available_fraction(0.40)
     for priority in (
         budget.PRIORITY_SECONDARY_CONTEXT,
         budget.PRIORITY_NONESSENTIAL_RESEARCH,
         budget.PRIORITY_RIVALRY_PRESENTATION,
     ):
-        assert budget.request_allowed(priority) is True
+        assert budget.request_allowed(priority) is False
+
+
+def test_cross_process_reservations_are_atomic(tmp_path):
+    shared = tmp_path / "cross-process.db"
+    monkey_headers = FakeResponse({
+        "X-Ratelimit-Allowed": "10", "X-Ratelimit-Used": "0",
+        "X-Ratelimit-Available": "10", "X-Ratelimit-Expiry": "1787593740000",
+    })
+    original = budget.DB_PATH
+    budget.DB_PATH = shared
+    try:
+        budget.record_response_headers(monkey_headers)
+    finally:
+        budget.DB_PATH = original
+    code = (
+        "import market_api_budget as b; "
+        "print(sum(b.request_allowed(b.PRIORITY_OPEN_POSITION_SAFETY) for _ in range(8)))"
+    )
+    env = dict(os.environ, TRADYSQUID_API_BUDGET_DB=str(shared))
+    processes = [subprocess.Popen(
+        [sys.executable, "-c", code], cwd=os.getcwd(),
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    ) for _ in range(2)]
+    totals = []
+    for process in processes:
+        stdout, stderr = process.communicate(timeout=20)
+        assert process.returncode == 0, stderr
+        totals.append(int(stdout.strip()))
+    assert sum(totals) == 10

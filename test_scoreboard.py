@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -48,8 +49,15 @@ def test_record_trade_open_rejects_second_open_trade_in_a_different_generation(d
     able to hold an open trade in one generation while opening another in
     the next."""
     _open(db, "t1", generation=1, entry_bankroll=1000)
-    with pytest.raises(ValueError, match="already has an open trade"):
+    with pytest.raises(ValueError, match="not authoritative"):
         _open(db, "t2", generation=2, entry_bankroll=1000)
+
+
+def test_record_trade_open_rejects_generation_jump_and_fake_bankroll(db):
+    with pytest.raises(ValueError, match="not authoritative"):
+        _open(db, "jump", generation=999, entry_bankroll=1000)
+    with pytest.raises(ValueError, match="referee bankroll"):
+        _open(db, "fake", generation=1, entry_bankroll=5000)
 
 
 def test_record_trade_close_rejects_pnl_that_does_not_match_the_math(db):
@@ -97,6 +105,31 @@ def test_record_generation_event_rejects_unknown_bot_and_event(db):
         sb.record_generation_event(db, bot="AXIOM", generation=1, event="WHATEVER")
 
 
+def test_generation_transitions_are_sequential_and_referee_enforced(db):
+    with pytest.raises(ValueError, match="positive-bankroll bust"):
+        sb.record_generation_event(db, bot="AXIOM", generation=1, event="BUSTED")
+    sb.record_generation_event(
+        db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1001,
+    )
+    with pytest.raises(ValueError, match="duplicate"):
+        sb.record_generation_event(
+            db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1001,
+        )
+    with pytest.raises(ValueError, match="advance exactly one"):
+        sb.record_generation_event(db, bot="AXIOM", generation=999, event="STARTED")
+    sb.record_generation_event(db, bot="AXIOM", generation=2, event="STARTED")
+    with pytest.raises(ValueError, match="advance exactly one"):
+        sb.record_generation_event(db, bot="AXIOM", generation=2, event="STARTED")
+
+
+def test_generation_transition_rejected_while_position_open(db):
+    _open(db, "open", entry_bankroll=1000)
+    with pytest.raises(ValueError, match="position is open"):
+        sb.record_generation_event(
+            db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1001,
+        )
+
+
 # --- hand-calculated metrics ---------------------------------------------------
 
 @pytest.fixture
@@ -117,6 +150,15 @@ def test_scoreboard_snapshot_keys_constant_matches_the_real_return_shape(five_tr
     changes without updating SCOREBOARD_SNAPSHOT_KEYS, this must fail."""
     snapshot = sb.scoreboard_snapshot(five_trade_generation, "AXIOM")
     assert set(snapshot.keys()) == sb.SCOREBOARD_SNAPSHOT_KEYS
+
+
+def test_public_snapshot_redacts_live_position_details(db):
+    _open(db, "secret-live", entry_bankroll=1000)
+    snapshot = sb.scoreboard_snapshot(db, "AXIOM")
+    assert snapshot["current_position_status"] == "OPEN"
+    serialized = json.dumps(snapshot)
+    assert "SPY260824C00500000" not in serialized
+    assert "entry_price" not in serialized
 
 
 def test_trade_count_and_total_pnl(five_trade_generation):
@@ -175,7 +217,7 @@ def test_metrics_none_for_bot_with_no_trades(db):
 
 def test_bust_and_new_generation_resets_bankroll_but_keeps_lifetime_history(five_trade_generation):
     db = five_trade_generation
-    sb.record_generation_event(db, bot="AXIOM", generation=1, event="BUSTED")
+    sb.record_generation_event(db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1301)
     sb.record_generation_event(db, bot="AXIOM", generation=2, event="STARTED")
     _open(db, "t5", bot="AXIOM", generation=2, entry_bankroll=1000, opened_at="2026-08-24T10:00:00")
     _close(db, "t5", -200, closed_at="2026-08-24T10:05:00")
@@ -188,7 +230,7 @@ def test_bust_and_new_generation_resets_bankroll_but_keeps_lifetime_history(five
 
 def test_best_worst_generation_and_generation_over_generation_improvement(five_trade_generation):
     db = five_trade_generation
-    sb.record_generation_event(db, bot="AXIOM", generation=1, event="BUSTED")
+    sb.record_generation_event(db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1301)
     sb.record_generation_event(db, bot="AXIOM", generation=2, event="STARTED")
     _open(db, "t5", bot="AXIOM", generation=2, entry_bankroll=1000, opened_at="2026-08-24T10:00:00")
     _close(db, "t5", -200, closed_at="2026-08-24T10:05:00")
@@ -219,7 +261,7 @@ def test_scoreboard_snapshot_bundles_every_metric(five_trade_generation):
     assert snapshot["current_bankroll"] == pytest.approx(1300)
     assert snapshot["lifetime_pnl"] == pytest.approx(300)
     assert snapshot["win_rate"] == pytest.approx(0.6)
-    assert snapshot["current_position_status"] is None
+    assert snapshot["current_position_status"] == "FLAT"
 
 
 def test_current_leader_none_when_no_trades_exist(db):

@@ -9,12 +9,16 @@ NOW = datetime(2026, 8, 25, 10, 0)
 
 
 def bars(up=True):
-    return [{"close": 500 + (i * .2 if up else -i * .2)} for i in range(25)]
+    return [{"close": 500 + (i * .35 if up else -i * .35),
+             "high": 500.2 + (i * .35 if up else -i * .35),
+             "low": 499.8 + (i * .35 if up else -i * .35),
+             "volume": 1000 + i * 30} for i in range(60)]
 
 
 def option(side="call", expiration="2026-08-25", bid=1.00, ask=1.05):
     return {"option_symbol": "SPY_TEST", "side": side, "expiration": expiration,
             "bid": bid, "ask": ask, "delta": .5 if side == "call" else -.5,
+            "gamma": .01, "theta": -.05, "iv": .2, "data_class": "VERIFIED_REAL",
             "volume": 100, "open_interest": 100}
 
 
@@ -61,7 +65,25 @@ def test_bust_reset_preserves_parameters_and_advances_generation():
     assert bot.generation == 2 and bot.parameters == original
 
 
+def test_risk_fraction_is_not_bankruptcy_when_one_contract_is_affordable():
+    bot = BLACKTIDE()
+    result = bot.decide(
+        as_of=NOW, bankroll=110, market={"tier": "A"},
+        options={"tier": "A", "contracts": [option(bid=1.0, ask=1.05)]}, bars=bars(),
+    )
+    assert result.action == "NO_ACTION"
+    assert "risk allocation" in result.reason
+
+
+def test_bust_only_when_no_qualifying_contract_is_affordable():
+    result = BLACKTIDE().decide(
+        as_of=NOW, bankroll=100, market={"tier": "A"},
+        options={"tier": "A", "contracts": [option(bid=1.0, ask=1.05)]}, bars=bars(),
+    )
+    assert result.action == "BUST"
+
+
 def test_evolution_is_bounded_and_requires_own_completed_sample():
     bot = BLACKTIDE()
-    assert bot.evolve([1.0] * 7).min_move_pct == .0012
-    assert bot.evolve([-1.0] * 8).min_move_pct == .0013
+    assert bot.evolve([1.0] * 7).opportunity_threshold == .43
+    assert bot.evolve([-1.0] * 8).opportunity_threshold == .44

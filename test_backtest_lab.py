@@ -74,6 +74,12 @@ def test_market_as_of_returns_tier_c_when_stale_beyond_tolerance(scratch):
     assert result["tier"] == lab.TIER_C
 
 
+def test_limited_underlying_quote_is_never_promoted_to_tier_a(scratch):
+    now = datetime(2026, 8, 24, 9, 31, 0)
+    store.write_quote("SPY", now.date(), now, [_quote_row(now, data_class=store.REAL_WITH_LIMITATIONS)])
+    assert lab.MarketView("SPY").market_as_of(now)["tier"] == lab.TIER_C
+
+
 # --- options_as_of -------------------------------------------------------------
 
 def test_options_as_of_returns_tier_a_for_clean_snapshot(scratch):
@@ -108,6 +114,15 @@ def test_options_as_of_tier_b_when_only_limited_data(scratch):
     )
     result = lab.MarketView("SPY").options_as_of(now + timedelta(seconds=10))
     assert result["tier"] == lab.TIER_B
+
+
+def test_mixed_quality_chain_is_not_labeled_tier_a(scratch):
+    now = datetime(2026, 8, 24, 9, 31, 0)
+    store.write_chain_snapshot("SPY", now.date(), now, [
+        _chain_row(now, "CLEAN"),
+        _chain_row(now, "LIMITED", data_class=store.REAL_WITH_LIMITATIONS),
+    ])
+    assert lab.MarketView("SPY").options_as_of(now)["tier"] == lab.TIER_B
 
 
 def test_options_as_of_tier_c_with_no_snapshot(scratch):
@@ -202,10 +217,23 @@ def test_dataset_fingerprint_changes_after_new_data_appended(scratch):
     assert before != after
 
 
+def test_dataset_fingerprint_changes_when_existing_content_mutates(scratch):
+    now = datetime(2026, 8, 24, 9, 31, 0)
+    store.write_quote("SPY", now.date(), now, [_quote_row(now)])
+    day = now.date()
+    before = lab.dataset_fingerprint("SPY", day, day)
+    path = next(store.partition_dir(store.QUOTES_DATASET, "SPY", day).glob("*.parquet"))
+    payload = bytearray(path.read_bytes())
+    payload[-1] ^= 1
+    path.write_bytes(payload)
+    after = lab.dataset_fingerprint("SPY", day, day)
+    assert before != after
+
+
 def test_dataset_fingerprint_handles_no_data_at_all(scratch):
     day = date(2026, 8, 24)
     result = lab.dataset_fingerprint("SPY", day, day)
-    assert isinstance(result, str) and len(result) == 16
+    assert isinstance(result, str) and len(result) == 64
 
 
 # --- record_backtest / load_backtest_records --------------------------------------

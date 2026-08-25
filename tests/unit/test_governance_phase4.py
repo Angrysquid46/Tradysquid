@@ -146,52 +146,41 @@ def test_check_state_freshness_not_stale_when_commit_matches(control):
     coordination.finish("Codex", "done", "test", "n/a", [])
     result = coordination.check_state_freshness()
     assert result["stale"] is False
-    assert result["recorded_commit"] == result["actual_commit"] == "abc123"
+    assert result["actual_commit"] == "abc123"
+    assert result["state_record_commit"] == "abc123"
 
 
-def _dispatching_git_stub(rev_parse_result, is_ancestor, distance):
-    """A commit can never record its own SHA - finish()/a manual resync
-    always leaves PROJECT_STATE.json a few commits behind the commit that
-    carries it. This stub lets tests exercise the resulting ancestor+
-    distance logic precisely instead of the fixture's blanket 'abc123'
-    stand-in, which can't distinguish git subcommands."""
+def _dispatching_git_stub(rev_parse_result, state_commit):
     def git_stub(*args):
         if args[:2] == ("rev-parse", "HEAD"):
             return rev_parse_result
-        if args[:2] == ("merge-base", "--is-ancestor"):
-            if is_ancestor:
-                return ""
-            raise RuntimeError("not an ancestor")
-        if args[:2] == ("rev-list", "--count"):
-            return str(distance)
+        if args[:3] == ("log", "-1", "--format=%H"):
+            return state_commit
         raise AssertionError(f"unexpected git call: {args}")
     return git_stub
 
 
-def test_check_state_freshness_not_stale_when_recorded_commit_is_a_few_behind(control, monkeypatch):
-    """finish() necessarily leaves PROJECT_STATE.json recording the commit
-    before the one that carries it - a 1-2 commit gap is normal, not
-    staleness."""
+def test_check_state_freshness_stale_on_even_one_unreconciled_commit(control, monkeypatch):
     gov_dir = control / "governance"
     gov_dir.mkdir(parents=True, exist_ok=True)
     (gov_dir / "PROJECT_STATE.json").write_text(
-        json.dumps({"current_commit": "older-sha"}), encoding="utf-8"
+        json.dumps({"observed_head_at_write": "older-sha"}), encoding="utf-8"
     )
     monkeypatch.setattr(
-        coordination, "git", _dispatching_git_stub("newer-sha", is_ancestor=True, distance=2)
+        coordination, "git", _dispatching_git_stub("newer-sha", "older-sha")
     )
     result = coordination.check_state_freshness()
-    assert result["stale"] is False
+    assert result["stale"] is True
 
 
 def test_check_state_freshness_stale_when_recorded_commit_is_far_behind(control, monkeypatch):
     gov_dir = control / "governance"
     gov_dir.mkdir(parents=True, exist_ok=True)
     (gov_dir / "PROJECT_STATE.json").write_text(
-        json.dumps({"current_commit": "ancient-sha"}), encoding="utf-8"
+        json.dumps({"observed_head_at_write": "ancient-sha"}), encoding="utf-8"
     )
     monkeypatch.setattr(
-        coordination, "git", _dispatching_git_stub("newer-sha", is_ancestor=True, distance=50)
+        coordination, "git", _dispatching_git_stub("newer-sha", "ancient-sha")
     )
     result = coordination.check_state_freshness()
     assert result["stale"] is True
@@ -204,10 +193,10 @@ def test_check_state_freshness_stale_when_recorded_commit_is_not_an_ancestor(con
     gov_dir = control / "governance"
     gov_dir.mkdir(parents=True, exist_ok=True)
     (gov_dir / "PROJECT_STATE.json").write_text(
-        json.dumps({"current_commit": "orphaned-sha"}), encoding="utf-8"
+        json.dumps({"observed_head_at_write": "orphaned-sha"}), encoding="utf-8"
     )
     monkeypatch.setattr(
-        coordination, "git", _dispatching_git_stub("newer-sha", is_ancestor=False, distance=0)
+        coordination, "git", _dispatching_git_stub("newer-sha", "orphaned-sha")
     )
     result = coordination.check_state_freshness()
     assert result["stale"] is True
@@ -217,10 +206,10 @@ def test_check_state_freshness_not_stale_when_lock_active_despite_commit_mismatc
     coordination.acquire("Codex", "shared work", "test")
     gov_dir = control / "governance"
     (gov_dir / "PROJECT_STATE.json").write_text(
-        json.dumps({"current_commit": "stale-sha-000"}), encoding="utf-8"
+        json.dumps({"observed_head_at_write": "stale-sha-000"}), encoding="utf-8"
     )
     monkeypatch.setattr(
-        coordination, "git", _dispatching_git_stub("abc123", is_ancestor=False, distance=0)
+        coordination, "git", _dispatching_git_stub("abc123", "stale-sha-000")
     )
     result = coordination.check_state_freshness()
     assert result["stale"] is False

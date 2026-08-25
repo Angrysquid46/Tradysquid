@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 
@@ -610,7 +611,8 @@ def main() -> int:
     load_env()
     apply = "--apply" in sys.argv
     tracker = discord_transport.DiscordTracker(
-        discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID
+        os.environ.get("DISCORD_BOT_TOKEN", "").strip(),
+        os.environ.get("DISCORD_GUILD_ID", "").strip(),
     )
     if not tracker.enabled:
         raise SystemExit("DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are required")
