@@ -1,5 +1,22 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-25T17:35:36.634620-05:00"
+  "active": true,
+  "work_id": "d76f2014-02c0-4b07-808a-0e710aa74572",
+  "actor": "Codex",
+  "task": "Phase 15: launch BLACKTIDE for tomorrow paper competition",
+  "method": "Owner-authorized BLACKTIDE-only launch readiness and standalone activation: verify clean referee state/deployed baseline, implement any required private env/preflight/single-instance runtime wiring under bots/blacktide, test restart/market-closed fail-safe behavior, merge via PR/CI/updater, then start one BLACKTIDE process overnight without touching AXIOM or frozen updater.",
+  "started_at": "2026-08-25T18:02:34.092114-05:00",
+  "starting_commit": "309ead5f903af04cfeb9effce18f8b0e9182e6f7",
+  "process_id": 25344,
+  "owner_request": "Explicit owner authorization: Claude's bot is live; make BLACKTIDE live so it can trade tomorrow.",
+  "before_state": "main 309ead5 deployed; Phase 14 complete/Phase 15 not_started; AXIOM reportedly standalone-live; BLACKTIDE Gen1  0 trades FLAT expected; unrelated docs/.claude/test-temp changes preserved.",
+  "reason": "Explicit owner authorization: Claude's bot is live; make BLACKTIDE live so it can trade tomorrow.",
+  "intended_scope": "bots/blacktide private files/tests plus required governance records only; shared files only if a proven BLACKTIDE integration blocker requires them. Never inspect/edit bots/claude. Never touch frozen updater. No brokerage trades.",
+  "expected_effects": "Exactly one restart-safe BLACKTIDE standalone paper scheduler running overnight, market-closed inert, ready to evaluate completed causal data during tomorrow's session through shared MarketView/referee.",
+  "required_tests": "BLACKTIDE private/runtime/scheduler/preflight/restart/single-instance tests, ownership/isolation, relevant shared integration tests, CI, deployed receipt, live process/closed-market no-trade verification.",
+  "risks": "Duplicate process, missing env due import order, premature after-hours decision, stale data, hidden state, interaction with shared quota/referee. Fail closed and preserve official ledger.",
+  "next_safe_action_if_interrupted": "Commit only BLACKTIDE launch files/tests/governance mirror, push PR, wait full CI, merge, allow updater deployment, run live preflight for 2026-08-26, then start exactly one hidden standalone BLACKTIDE process and verify closed-market inert/official ledger unchanged.",
+  "phase": "Phase 15",
+  "last_checkpoint_at": "2026-08-25T18:05:55.932360-05:00",
+  "last_successful_action": "BLACKTIDE Phase 15 launch wiring complete in working tree: private env bootstrap before shared imports; fail-closed deployed/official-state/provider/target-expiration/single-instance preflight; one-process TCP lock; standalone launch entrypoint; market-closed/weekend gating; no new entries after 14:20 CT; official open-position exit management through 15:05 CT. BLACKTIDE focused/ownership 27 passed and shared integration 99 passed.",
+  "next_safe_action": "Commit only BLACKTIDE launch files/tests/governance mirror, push PR, wait full CI, merge, allow updater deployment, run live preflight for 2026-08-26, then start exactly one hidden standalone BLACKTIDE process and verify closed-market inert/official ledger unchanged."
 }
