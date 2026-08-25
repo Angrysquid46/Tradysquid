@@ -38,8 +38,8 @@ import market_data
 import rivalry
 import scoreboard
 
-from bots.claude import backtest_runner, contract_selection, execution, exits, signal, sizing
-from bots.claude.parameters import DEFAULT_PARAMETERS
+from bots.claude import backtest_runner, contract_selection, evolution, execution, exits, signal, sizing
+from bots.claude.parameters import HYPOTHESIS_DEFAULTS
 from bots.claude.scheduler import Job, acquire_instance_lock, connect_db, due, get_state, run_job, set_state
 
 BOT = "AXIOM"
@@ -109,18 +109,22 @@ def entry_scan_job(connection) -> str:
     now = market_data.now_ct()
     view = backtest_lab.MarketView("SPY")
     bars = view.bars_as_of(now, lookback_minutes=16 * 60)
-    regime = signal.compute_regime_features(bars)
+    if not bars:
+        return "no bars available"
+    current_price = bars[-1]["close"]
     causal = backtest_lab.compute_features(bars)
-    decision = signal.entry_decision(regime, causal, DEFAULT_PARAMETERS)
-    if not decision.should_enter:
-        return f"no entry: {decision.rationale}"
+
+    evo_conn = evolution.connect_db()
+    selected = signal.entry_decision(evo_conn, current_price, causal or {})
+    if selected is None:
+        return "no hypothesis fired"
 
     snapshot = view.options_as_of(now)
     contract = contract_selection.select_contract(
-        snapshot["contracts"], decision.side, now.date(), DEFAULT_PARAMETERS
+        snapshot["contracts"], selected.decision.side, now.date(), selected.params
     )
     if contract is None:
-        return f"signal fired ({decision.side}) but no eligible contract"
+        return f"{selected.name} fired ({selected.decision.side}) but no eligible contract"
 
     if not market_api_budget.request_allowed(market_api_budget.PRIORITY_ENTRY_CRITICAL_DATA):
         return "budget gate declined final entry safety check, retrying next cycle"
@@ -129,7 +133,7 @@ def entry_scan_job(connection) -> str:
         return "final safety quote unavailable, skipping this cycle"
 
     bankroll = scoreboard.current_bankroll(sb, BOT)
-    contracts_count = sizing.position_size(bankroll, contract["ask"], DEFAULT_PARAMETERS)
+    contracts_count = sizing.position_size(bankroll, contract["ask"], selected.params)
     if contracts_count <= 0:
         return f"bankroll ${bankroll:.2f} insufficient for ask ${contract['ask']:.2f}"
 
@@ -141,22 +145,25 @@ def entry_scan_job(connection) -> str:
         bot=BOT,
         generation=generation,
         opened_at=now.isoformat(),
-        side=decision.side,
+        side=selected.decision.side,
         contract_symbol=contract["option_symbol"],
         entry_price=execution.entry_fill_price(contract),
         contracts=contracts_count,
         entry_bankroll=bankroll,
     )
+    evolution.record_trade_attribution(
+        evo_conn, trade_id=trade_id, hypothesis_name=selected.name, generation=generation
+    )
     _ensure_surface(connection)
     discord_surface_manifest.record_surface_event(
         connection, surface_id=SURFACE_ID, event_type="EVENT",
-        detail=f"opened {decision.side} {contract['option_symbol']} x{contracts_count}",
+        detail=f"opened {selected.decision.side} {contract['option_symbol']} x{contracts_count} via {selected.name}",
     )
     _post(
-        f"**AXIOM entered {decision.side}**\n{contract['option_symbol']} x{contracts_count}\n"
-        f"{decision.rationale}"
+        f"**AXIOM entered {selected.decision.side}** ({selected.name})\n"
+        f"{contract['option_symbol']} x{contracts_count}\n{selected.decision.rationale}"
     )
-    return f"opened {decision.side} {contract['option_symbol']} x{contracts_count}"
+    return f"opened {selected.decision.side} {contract['option_symbol']} x{contracts_count} via {selected.name}"
 
 
 def position_monitor_job(connection) -> str:
@@ -164,6 +171,18 @@ def position_monitor_job(connection) -> str:
     trade = scoreboard.current_position_status(sb, BOT)
     if not trade:
         return "no open position"
+
+    evo_conn = evolution.connect_db()
+    hypothesis_name = evolution.get_attribution(evo_conn, trade["trade_id"])
+    if hypothesis_name:
+        params = evolution.get_hypothesis_params(evo_conn, hypothesis_name)
+    else:
+        # Defensive only - attribution is written right after
+        # scoreboard.record_trade_open in entry_scan_job, so this means a
+        # crash happened in that exact window. Falls back to the
+        # trend_continuation defaults rather than failing to monitor a
+        # real open position at all.
+        params = dict(HYPOTHESIS_DEFAULTS["trend_continuation"])
 
     now = market_data.now_ct()
     view = backtest_lab.MarketView("SPY")
@@ -174,7 +193,7 @@ def position_monitor_job(connection) -> str:
     if contract is None:
         return "no current quote for held contract"
 
-    decision = exits.should_exit(trade, contract, now, DEFAULT_PARAMETERS)
+    decision = exits.should_exit(trade, contract, now, params)
     if not decision.should_exit:
         return f"holding, pnl_pct={decision.pnl_pct}"
 
@@ -272,6 +291,20 @@ def bust_check_job(connection) -> str:
     return f"generation {generation} busted, postmortem written, generation {generation + 1} started"
 
 
+def evolve_job(connection) -> str:
+    """Re-judges every enabled hypothesis against its OWN attributed real
+    closed trades (scoreboard.py, the official ledger) and deterministically
+    tightens/retires underperformers. No live Tradier calls - reads only
+    already-recorded scoreboard/attribution data."""
+    evo_conn = evolution.connect_db()
+    applied = evolution.update_fitness_and_evolve(evo_conn)
+    if not applied:
+        return "no hypothesis had enough sample/negative fitness to evolve"
+    return f"{len(applied)} hypothesis evolution step(s) applied: " + ", ".join(
+        f"{e['hypothesis']}:{e['event']}" for e in applied
+    )
+
+
 def backtest_refresh_job(connection) -> str:
     """Off the live-trading path, no live Tradier calls - reads only
     already-captured data via MarketView. Keeps re-measuring
@@ -290,6 +323,8 @@ JOBS = [
         market_hours_only=True, retry_interval=timedelta(seconds=15)),
     Job("axiom-bust-check", timedelta(minutes=5), bust_check_job,
         retry_interval=timedelta(minutes=1)),
+    Job("axiom-evolve", timedelta(hours=1), evolve_job,
+        retry_interval=timedelta(minutes=15)),
     Job("axiom-backtest-refresh", timedelta(hours=24), backtest_refresh_job,
         retry_interval=timedelta(hours=1)),
 ]

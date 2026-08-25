@@ -7,9 +7,9 @@ from datetime import date
 import market_data_store as store
 
 from bots.claude.contract_selection import select_contract
-from bots.claude.parameters import Parameters
+from bots.claude.parameters import HYPOTHESIS_DEFAULTS
 
-PARAMS = Parameters()
+PARAMS = dict(HYPOTHESIS_DEFAULTS["trend_continuation"])
 TODAY = date(2026, 8, 25)
 
 

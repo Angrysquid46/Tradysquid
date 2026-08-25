@@ -1,61 +1,111 @@
-"""Phase 13: AXIOM's tunable parameters - the only place a bare threshold
-is allowed to live. Every other module in this package reads a named
-field from here, never a literal.
+"""Phase 13 v2: per-hypothesis mutable parameters, plus the mutation
+specs that drive bots/claude/evolution.py's deterministic tightening.
 
-Per the owner's direct instruction (2026-08-25): AXIOM is not gated behind
-a data-measurement threshold before it can trade - only ~2 trading days of
-real captured SPY data exist right now, nowhere near enough to statistically
-derive entry/exit thresholds, and waiting on that was the wrong call. These
-values are AXIOM's initial working defaults: reasoned from options/market
-structure, not copied from the old purged system (spy_scanner.py's
-0.40-0.60 delta / $500 cap / +50%/-50% exit would violate the master
-spec's clean-slate objective - "no old strategy result becomes starting
-knowledge"), and not backtest-measured yet either. bots/claude/backtest_runner.py
-keeps re-evaluating them against the growing real dataset and can propose
-refinements later; nothing here is final.
+v1 had one global, fixed Parameters object. That was a fair criticism:
+a trend-continuation trade and a mean-reversion trade have no principled
+reason to share one delta band or one exit shape, and hand-picked
+constants that never change aren't "adaptive." Every hypothesis in
+HYPOTHESIS_DEFAULTS now owns its own entry thresholds AND its own
+position mechanics (delta band, premium cap, profit target, stop), and
+MUTATION_SPECS defines, for each tunable field, which direction is
+"tighter/more selective" and where the bound is - evolution.py applies
+these deterministically (never randomly) when a hypothesis's measured
+fitness goes negative.
+
+Every starting value here is a reasoned default, not a measured one -
+labeled that way throughout, same basis as market_api_budget.py's
+reserve fractions and rivalry.py's rate limits. bots/claude/backtest_runner.py
+keeps re-measuring against real data as it accrues; evolution.py is what
+actually revises these once real attributed trade outcomes exist.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+# --- shared/global - safety and data-quality mechanics, not edge params ---
 
+MAX_SPREAD_PCT = 0.15
+FORCE_CLOSE_HOUR = 14
+FORCE_CLOSE_MINUTE = 45
+# How many of a hypothesis's OWN attributed closed trades must exist
+# before its fitness is judged and it becomes eligible for an evolution
+# step. Policy default, not a measured value - gates when a hypothesis is
+# old enough to judge, does not block launch.
+MIN_SAMPLE_BEFORE_EVOLVE = 10
 
-@dataclass(frozen=True)
-class Parameters:
-    # --- signal.py: entry regime/confirmation thresholds ---
-    opening_range_minutes: int = 30
-    # Bottom-third ATR-percentile regime - the "coiled spring" precondition.
-    # Reasoned, not measured: a compressed range preceding a real breakout
-    # is a structurally different bet than trading every range crossing.
-    compression_atr_percentile_max: float = 35.0
-    # 20% above the trailing 20-bar average - a modest, not extreme,
-    # participation bar for treating a breakout as real.
-    relative_volume_min: float = 1.2
+# --- per-hypothesis starting parameters ---
+# Every hypothesis carries the same shared position-mechanics fields
+# (delta_min/delta_max/premium_cap_usd/profit_target_pct/stop_loss_pct)
+# plus its own entry-specific fields.
 
-    # --- contract_selection.py ---
-    delta_min: float = 0.35
-    delta_max: float = 0.55
-    # Leaves buffer under the $1,000 bankroll cap rather than spending it
-    # entirely on one contract's spread risk.
-    premium_cap_usd: float = 450.0
+HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
+    "trend_continuation": {
+        # Wilder's ADX convention already bucketed by market_memory.py's
+        # own trend_strength field (0=NONE,1=EMERGING,2=STRONG,3=VERY_STRONG).
+        # 2 = requires STRONG or better to start.
+        "min_trend_strength_level": 2,
+        "relative_volume_min": 1.2,
+        "delta_min": 0.35,
+        "delta_max": 0.55,
+        "premium_cap_usd": 450.0,
+        "profit_target_pct": 0.40,
+        "stop_loss_pct": -0.35,
+    },
+    "mean_reversion_extreme": {
+        "rsi_extreme_low": 30.0,
+        "rsi_extreme_high": 70.0,
+        # Opposite precondition of trend_continuation: only fires in a
+        # genuinely choppy/non-trending regime. 1 = NONE or EMERGING only.
+        "max_trend_strength_level": 1,
+        "delta_min": 0.35,
+        "delta_max": 0.55,
+        "premium_cap_usd": 450.0,
+        "profit_target_pct": 0.40,
+        "stop_loss_pct": -0.35,
+    },
+    "momentum_acceleration": {
+        # market_memory.py's trend_run_length: signed consecutive-bar
+        # structural run. A FRESH short run is treated as an inflection
+        # in progress, distinct from trend_continuation's "already
+        # established, any length" bet.
+        "max_run_length": 3,
+        "relative_volume_min": 1.3,
+        "delta_min": 0.35,
+        "delta_max": 0.55,
+        "premium_cap_usd": 450.0,
+        "profit_target_pct": 0.40,
+        "stop_loss_pct": -0.35,
+    },
+}
 
-    # --- execution.py ---
-    # Liquidity/data-quality sanity bound, not an edge parameter.
-    max_spread_pct: float = 0.15
+# --- mutation specs: (step, min_bound, max_bound) ---
+# `step` is signed in the direction that makes the hypothesis STRICTER
+# (fewer, higher-quality signals). Applying `step` and clamping to
+# [min_bound, max_bound] is evolution.py's entire mutation mechanism -
+# deterministic, reproducible, no randomness.
 
-    # --- exits.py ---
-    # Deliberately not +50/-50 - docs/STRATEGY_RULES.md documents that
-    # exact default as a repeated mistake pattern in this codebase.
-    # Asymmetric to account for 0DTE's fast theta decay working against a
-    # held loser.
-    profit_target_pct: float = 0.40
-    stop_loss_pct: float = -0.35
-    # 0DTE settles same day, but late-day quotes thin out - an operational
-    # safety margin, not an edge parameter. 15 minutes before
-    # market_data.MARKET_CLOSE (15:00 Central) - times here are Central,
-    # matching market_data.MARKET_TZ, the convention this whole repo uses.
-    force_close_hour: int = 14
-    force_close_minute: int = 45
+_SHARED_POSITION_SPECS: dict[str, tuple[float, float, float]] = {
+    "delta_min": (0.02, 0.30, 0.45),
+    "delta_max": (-0.02, 0.45, 0.55),
+    "premium_cap_usd": (-25.0, 150.0, 450.0),
+    "profit_target_pct": (0.05, 0.40, 0.80),
+    "stop_loss_pct": (0.03, -0.35, -0.15),
+}
 
-
-DEFAULT_PARAMETERS = Parameters()
+MUTATION_SPECS: dict[str, dict[str, tuple[float, float, float]]] = {
+    "trend_continuation": {
+        "min_trend_strength_level": (1, 2, 3),
+        "relative_volume_min": (0.2, 1.2, 3.0),
+        **_SHARED_POSITION_SPECS,
+    },
+    "mean_reversion_extreme": {
+        "rsi_extreme_low": (-5.0, 10.0, 30.0),
+        "rsi_extreme_high": (5.0, 70.0, 90.0),
+        "max_trend_strength_level": (-1, 0, 1),
+        **_SHARED_POSITION_SPECS,
+    },
+    "momentum_acceleration": {
+        "max_run_length": (-1, 1, 3),
+        "relative_volume_min": (0.2, 1.3, 3.0),
+        **_SHARED_POSITION_SPECS,
+    },
+}
