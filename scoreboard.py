@@ -1,6 +1,6 @@
 """Phase 8: neutral competition scorekeeper (Master Spec Section 6).
 
-Authoritative accounting for the BLACKTIDE-vs-Claude competition, kept
+Authoritative accounting for the BLACKTIDE-vs-AXIOM competition, kept
 outside both private traders. Consumes only official trade records this
 module itself writes through two narrow entry points - no bot exists yet
 (Phase 11+), so this waits idle until one calls record_trade_open/close.
@@ -31,7 +31,7 @@ DB_PATH = ROOT / "state" / "scoreboard.db"
 STARTING_BANKROLL_USD = 1000.0
 MAX_OPEN_TRADES_PER_BOT = 1
 
-BOTS = ("BLACKTIDE", "Claude")
+BOTS = ("BLACKTIDE", "AXIOM")
 
 
 def connect_db() -> sqlite3.Connection:

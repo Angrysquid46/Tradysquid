@@ -22,6 +22,8 @@ BLACKTIDE_DIR = ROOT / "bots" / "blacktide"
 CLAUDE_DIR = ROOT / "bots" / "claude"
 
 _CROSS_REFERENCE_RE = re.compile(r"bots[./\\]blacktide|bots[./\\]claude")
+_BLACKTIDE_PATH_RE = re.compile(r"bots[./\\]blacktide")
+_CLAUDE_PATH_RE = re.compile(r"bots[./\\]claude")
 
 
 def _python_files(directory: Path) -> list[Path]:
@@ -36,18 +38,27 @@ def test_bot_directories_exist():
 
 
 def test_claude_directory_never_references_blacktide():
+    """Catches a stray import/path reference into the other bot's private
+    directory - NOT a bare mention of "BLACKTIDE" the competitor's public
+    rivalry name, which is legitimate (rivalry.py itself, a shared module
+    both competitors use, contains that name freely - trash talk aimed at
+    a named opponent is the whole point of Section 7's rivalry system).
+    Checks only for a reference to the OTHER bot's path - a file under
+    bots/claude/ legitimately references its own "bots.claude" package
+    constantly (every import in it does), so the check must be
+    directional, not a check against both names."""
     for path in _python_files(CLAUDE_DIR):
         text = path.read_text(encoding="utf-8")
-        assert "blacktide" not in text.casefold(), (
-            f"{path.relative_to(ROOT)} must never reference bots/blacktide"
+        assert not _BLACKTIDE_PATH_RE.search(text), (
+            f"{path.relative_to(ROOT)} must never reference the bots/blacktide path"
         )
 
 
 def test_blacktide_directory_never_references_claude():
     for path in _python_files(BLACKTIDE_DIR):
         text = path.read_text(encoding="utf-8")
-        assert "claude" not in text.casefold(), (
-            f"{path.relative_to(ROOT)} must never reference bots/claude"
+        assert not _CLAUDE_PATH_RE.search(text), (
+            f"{path.relative_to(ROOT)} must never reference the bots/claude path"
         )
 
 
