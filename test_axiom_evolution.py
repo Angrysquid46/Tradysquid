@@ -6,6 +6,7 @@ disabling once every tunable parameter is already at its bound."""
 
 from __future__ import annotations
 
+import pytest
 import scoreboard
 
 import bots.claude.evolution as evolution
@@ -130,7 +131,10 @@ def test_hypothesis_fitness_computed_at_minimum_sample(tmp_path, monkeypatch):
 
     fitness, sample_size = evolution.hypothesis_fitness(conn, "trend_continuation")
     assert sample_size == MIN_SAMPLE_BEFORE_EVOLVE
-    assert fitness == -10.0
+    # scoreboard.py now computes pnl_usd itself from entry/exit/contracts
+    # rather than storing the test's exact pre-rounded value, so a tiny
+    # float round-trip difference is expected, not a bug.
+    assert fitness == pytest.approx(-10.0)
 
 
 # --- update_fitness_and_evolve: deterministic tightening / disabling ---

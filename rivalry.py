@@ -35,7 +35,7 @@ RIVALRY_PRIVATE_STRATEGY_ACCESS = False
 RIVALRY_CAN_INFLUENCE_TRADING = False
 
 TRIGGERS = (
-    "SESSION_OPEN", "FIRST_WIN_OF_DAY", "FIRST_LOSS_OF_DAY",
+    "SESSION_OPEN", "SESSION_CLOSE", "FIRST_WIN_OF_DAY", "FIRST_LOSS_OF_DAY",
     "TRADE_CLOSED_WIN", "TRADE_CLOSED_LOSS", "NEW_COMPETITION_LEADER",
     "LEAD_EXTENDED", "LEAD_LOST", "BANKROLL_MILESTONE", "NEW_BEST_TRADE",
     "NEW_WORST_TRADE", "WINNING_STREAK", "LOSING_STREAK",
@@ -44,7 +44,29 @@ TRIGGERS = (
     "LIFETIME_LEADER_CHANGE",
 )
 
+# Each bot gets exactly one SESSION_OPEN and one SESSION_CLOSE post per
+# day (Phase 14 audit finding - nothing previously enforced this).
+_ONCE_PER_DAY_TRIGGERS = ("SESSION_OPEN", "SESSION_CLOSE")
+
 BOTS = ("BLACKTIDE", "AXIOM")
+
+# scoreboard.scoreboard_snapshot()'s own public key set, duplicated here
+# rather than pulled in from that module directly - rivalry.py must stay
+# structurally incapable of touching the scoreboard, enforced by
+# test_module_has_no_reference_to_scoreboard_write_functions banning any
+# reference to it at all. test_rivalry.py cross-checks this literal
+# against the real one so drift between the two gets caught, without
+# rivalry.py ever depending on that module. Phase 14 audit finding:
+# public_score_snapshot was unstructured dict[str, Any] - nothing stopped
+# an unexpected/private key from riding along.
+ALLOWED_PUBLIC_SNAPSHOT_KEYS = frozenset({
+    "bot", "generation", "current_bankroll", "generation_pnl", "lifetime_pnl",
+    "trade_count_generation", "trade_count_lifetime", "win_rate", "profit_factor",
+    "expectancy", "average_winner", "average_loser", "largest_winner", "largest_loser",
+    "max_drawdown", "current_drawdown", "bust_count", "current_streak",
+    "best_generation", "worst_generation", "generation_over_generation_improvement",
+    "current_position_status",
+})
 
 
 class RivalryLimitExceeded(Exception):
@@ -99,13 +121,13 @@ def check_rivalry_limits(
     *,
     speaker: str,
     event_group_id: str,
+    trigger: str | None = None,
     now: datetime | None = None,
 ) -> None:
     """Raises RivalryLimitExceeded if a new message from `speaker` would
-    violate any of the four bounded-chain limits. Called by
-    record_rivalry_event before writing - never bypassable by a caller
-    that skips straight to a raw INSERT, since this module owns the only
-    write path."""
+    violate any of the bounded-chain limits. Called by record_rivalry_event
+    before writing - never bypassable by a caller that skips straight to a
+    raw INSERT, since this module owns the only write path."""
     now = now or datetime.now().astimezone()
 
     per_event = connection.execute(
@@ -128,6 +150,17 @@ def check_rivalry_limits(
             f"{speaker} already sent {per_day} messages today "
             f"(max {RIVALRY_MAX_MESSAGES_PER_BOT_PER_DAY})"
         )
+
+    if trigger in _ONCE_PER_DAY_TRIGGERS:
+        same_trigger_today = connection.execute(
+            "SELECT COUNT(*) AS n FROM rivalry_events "
+            "WHERE speaker=? AND trigger=? AND timestamp LIKE ?",
+            (speaker, trigger, f"{today}%"),
+        ).fetchone()["n"]
+        if same_trigger_today >= 1:
+            raise RivalryLimitExceeded(
+                f"{speaker} already posted {trigger} today (once per day only)"
+            )
 
     one_minute_ago = (now - timedelta(minutes=1)).isoformat()
     total_last_minute = connection.execute(
@@ -176,13 +209,22 @@ def record_rivalry_event(
         raise ValueError(f"Unknown trigger: {trigger!r}")
     if speaker not in BOTS:
         raise ValueError(f"Unknown speaker: {speaker!r}")
+    unexpected_keys = set(public_score_snapshot) - ALLOWED_PUBLIC_SNAPSHOT_KEYS
+    if unexpected_keys:
+        raise ValueError(
+            f"public_score_snapshot has unrecognized key(s) {sorted(unexpected_keys)!r} - "
+            "only scoreboard.scoreboard_snapshot()'s own public fields are allowed, so a "
+            "private value can't accidentally hitch a ride into rivalry memory"
+        )
     existing = connection.execute(
         "SELECT 1 FROM rivalry_events WHERE rivalry_event_id=?", (rivalry_event_id,)
     ).fetchone()
     if existing:
         raise ValueError(f"rivalry_event_id {rivalry_event_id!r} already recorded")
 
-    check_rivalry_limits(connection, speaker=speaker, event_group_id=event_group_id, now=now)
+    check_rivalry_limits(
+        connection, speaker=speaker, event_group_id=event_group_id, trigger=trigger, now=now
+    )
 
     timestamp = (now or datetime.now().astimezone()).isoformat(timespec="seconds")
     connection.execute(

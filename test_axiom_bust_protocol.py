@@ -25,9 +25,12 @@ def _bust_generation_1(sb) -> None:
     scoreboard.record_trade_open(
         sb, trade_id="t1", bot="AXIOM", generation=1,
         opened_at="2026-08-25T09:30:00", side="CALL",
-        contract_symbol="SPY260825C00500000", entry_price=4.0,
+        contract_symbol="SPY260825C00500000", entry_price=5.0,
         contracts=2, entry_bankroll=1000.0,
     )
+    # (0.0 - 5.0) * 100 * 2 = -1000.0 - scoreboard.py now computes pnl_usd
+    # itself from entry/exit/contracts rather than trusting the caller, so
+    # this must be real, matching math, not an arbitrary round number.
     scoreboard.record_trade_close(
         sb, trade_id="t1", closed_at="2026-08-25T10:00:00",
         exit_price=0.0, pnl_usd=-1000.0,

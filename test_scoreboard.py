@@ -42,6 +42,36 @@ def test_record_trade_open_rejects_second_concurrent_open_trade(db):
         _open(db, "t2", entry_bankroll=1000)
 
 
+def test_record_trade_open_rejects_second_open_trade_in_a_different_generation(db):
+    """Phase 14 audit finding: max_open_trades_per_bot is global per bot
+    (IMMUTABLE_RULES.json has no generation qualifier) - a bot must not be
+    able to hold an open trade in one generation while opening another in
+    the next."""
+    _open(db, "t1", generation=1, entry_bankroll=1000)
+    with pytest.raises(ValueError, match="already has an open trade"):
+        _open(db, "t2", generation=2, entry_bankroll=1000)
+
+
+def test_record_trade_close_rejects_pnl_that_does_not_match_the_math(db):
+    """Phase 14 audit finding: the referee must compute P&L itself, not
+    trust whatever the calling trader announces."""
+    _open(db, "t1", entry_bankroll=1000)  # entry_price=1.0, contracts=1
+    with pytest.raises(ValueError, match="does not match"):
+        sb.record_trade_close(
+            db, trade_id="t1", closed_at="2026-08-24T09:05:00",
+            exit_price=1.5, pnl_usd=9999.0,  # real math is (1.5-1.0)*100=50
+        )
+
+
+def test_record_trade_close_stores_the_computed_pnl_not_the_caller_value(db):
+    _open(db, "t1", entry_bankroll=1000)  # entry_price=1.0, contracts=1
+    sb.record_trade_close(
+        db, trade_id="t1", closed_at="2026-08-24T09:05:00",
+        exit_price=1.5, pnl_usd=50.0,
+    )
+    assert sb.total_pnl(db, "AXIOM") == pytest.approx(50.0)
+
+
 def test_record_trade_open_allows_new_trade_after_prior_one_closes(db):
     _open(db, "t1", entry_bankroll=1000)
     _close(db, "t1", 50)
@@ -79,6 +109,14 @@ def five_trade_generation(db):
         _close(db, f"t{i}", pnl, closed_at=f"2026-08-24T09:0{i}:30")
         bankroll += pnl
     return db
+
+
+def test_scoreboard_snapshot_keys_constant_matches_the_real_return_shape(five_trade_generation):
+    """rivalry.py's public_score_snapshot schema check trusts this
+    constant to match reality - if scoreboard_snapshot()'s shape ever
+    changes without updating SCOREBOARD_SNAPSHOT_KEYS, this must fail."""
+    snapshot = sb.scoreboard_snapshot(five_trade_generation, "AXIOM")
+    assert set(snapshot.keys()) == sb.SCOREBOARD_SNAPSHOT_KEYS
 
 
 def test_trade_count_and_total_pnl(five_trade_generation):

@@ -161,12 +161,12 @@
     {
       "phase_number": 14,
       "name": "Full validation",
-      "status": "not_started",
+      "status": "in_progress",
       "dependencies": [
         "Phase 12",
         "Phase 13"
       ],
-      "completion_criteria": "Section 20's BUILD COMPLETE bar met: every known phase/subphase complete, no unresolved blocker, no orphaned integration, no stale/unowned Discord surface, project state and Git synchronized, required tests pass, and both Claude and Codex independently find no additional phase required.",
+      "completion_criteria": "Section 20's BUILD COMPLETE bar met for everything THROUGH this phase's own scope: Phases 0-13 complete, no unresolved blocker, no orphaned integration, no stale/unowned Discord surface, project state and Git synchronized, required tests pass, and both Claude and Codex independently find no additional phase required before Phase 15 can begin. (Corrected during this phase's own audit: the original wording said 'every known phase/subphase complete' with no qualifier, which is self-referentially impossible since Phase 15/16 depend ON Phase 14 and are necessarily not_started while Phase 14 is being evaluated. BUILD COMPLETE overall, across all phases including 15/16, is Section 20's separate, later bar - not this phase's.)",
       "discovered_subphases": []
     },
     {

@@ -159,11 +159,16 @@ class MarketView:
         glob = store.dataset_glob(store.BARS_DATASET, self.symbol, trading_day)
         cutoff = int(timestamp.timestamp())
         earliest = cutoff - lookback_minutes * 60
+        # captured_at <= timestamp too, not just bar_timestamp - a bar
+        # FOR an in-window time that was only captured/backfilled later
+        # must not appear "as of" a moment before it was actually known
+        # (Phase 14 audit finding: only bar_timestamp was checked, unlike
+        # market_as_of/options_as_of which both already enforce this).
         return store.query(
             f"SELECT * FROM read_parquet('{glob}') "
-            "WHERE bar_timestamp <= ? AND bar_timestamp >= ? "
+            "WHERE bar_timestamp <= ? AND bar_timestamp >= ? AND captured_at <= ? "
             "ORDER BY bar_timestamp ASC",
-            [cutoff, earliest],
+            [cutoff, earliest, _iso(timestamp)],
         )
 
 

@@ -24,7 +24,7 @@ BASE = datetime(2026, 8, 24, 12, 0, 0)
 def _record(db, event_id, *, speaker="AXIOM", event_group_id="g1", trigger="TRADE_CLOSED_WIN", now):
     return rivalry.record_rivalry_event(
         db, rivalry_event_id=event_id, event_group_id=event_group_id, trigger=trigger,
-        speaker=speaker, message="gg", public_score_snapshot={"lead": speaker},
+        speaker=speaker, message="gg", public_score_snapshot={"bot": speaker},
         conversation_round=0, now=now,
     )
 
@@ -36,7 +36,7 @@ def test_record_rivalry_event_succeeds_and_round_trips(db):
     history = rivalry.public_rivalry_history(db)
     assert len(history) == 1
     assert history[0]["rivalry_event_id"] == "e1"
-    assert history[0]["public_score_snapshot"] == {"lead": "AXIOM"}
+    assert history[0]["public_score_snapshot"] == {"bot": "AXIOM"}
 
 
 def test_record_rivalry_event_rejects_unknown_trigger(db):
@@ -117,6 +117,62 @@ def test_min_gap_limit_clears_after_enough_time(db):
         db, "e2", speaker="AXIOM", event_group_id="g2",
         now=BASE + timedelta(seconds=rivalry.RIVALRY_MIN_MESSAGE_GAP_SECONDS),
     )  # exactly at the boundary - does not raise
+
+
+# --- SESSION_OPEN/SESSION_CLOSE: once per speaker per day -----------------------
+
+def test_session_open_blocks_a_second_one_the_same_day(db):
+    _record(db, "e1", trigger="SESSION_OPEN", event_group_id="g1", now=BASE)
+    with pytest.raises(rivalry.RivalryLimitExceeded, match="once per day"):
+        _record(
+            db, "e2", trigger="SESSION_OPEN", event_group_id="g2",
+            now=BASE + timedelta(minutes=5),
+        )
+
+
+def test_session_close_blocks_a_second_one_the_same_day(db):
+    _record(db, "e1", trigger="SESSION_CLOSE", event_group_id="g1", now=BASE)
+    with pytest.raises(rivalry.RivalryLimitExceeded, match="once per day"):
+        _record(
+            db, "e2", trigger="SESSION_CLOSE", event_group_id="g2",
+            now=BASE + timedelta(minutes=5),
+        )
+
+
+def test_session_open_and_session_close_both_allowed_same_day(db):
+    _record(db, "e1", trigger="SESSION_OPEN", event_group_id="g1", now=BASE)
+    _record(
+        db, "e2", trigger="SESSION_CLOSE", event_group_id="g2",
+        now=BASE + timedelta(minutes=5),
+    )  # different triggers - does not raise
+
+
+def test_session_open_allowed_again_the_next_day(db):
+    _record(db, "e1", trigger="SESSION_OPEN", event_group_id="g1", now=BASE)
+    _record(
+        db, "e2", trigger="SESSION_OPEN", event_group_id="g2",
+        now=BASE + timedelta(days=1),
+    )  # does not raise
+
+
+# --- public_score_snapshot schema ------------------------------------------------
+
+def test_record_rivalry_event_rejects_an_unrecognized_snapshot_key(db):
+    with pytest.raises(ValueError, match="unrecognized key"):
+        rivalry.record_rivalry_event(
+            db, rivalry_event_id="e1", event_group_id="g1", trigger="TRADE_CLOSED_WIN",
+            speaker="AXIOM", message="x",
+            public_score_snapshot={"bot": "AXIOM", "private_hypothesis_name": "trend_continuation"},
+            now=BASE,
+        )
+
+
+def test_allowed_public_snapshot_keys_matches_scoreboard_real_shape():
+    """rivalry.py can't import scoreboard.py (architectural isolation,
+    enforced below), so its allowlist is a duplicated literal - this test
+    is what catches drift between the two instead."""
+    import scoreboard
+    assert rivalry.ALLOWED_PUBLIC_SNAPSHOT_KEYS == scoreboard.SCOREBOARD_SNAPSHOT_KEYS
 
 
 # --- public_rivalry_history -----------------------------------------------------

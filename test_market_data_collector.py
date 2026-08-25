@@ -345,3 +345,61 @@ def test_bars_capture_job_dedupes_against_already_written_bars(monkeypatch, scra
     # both should be deduped against what is already on disk.
     second = collector.bars_capture_job(None)
     assert "0 new bars written" in second
+
+
+# --- expected_session_minutes (Phase 14 audit finding) -----------------------
+
+def test_expected_session_minutes_full_day(monkeypatch):
+    payload = {
+        "calendar": {"days": {"day": [
+            {"date": "2026-08-24", "status": "open",
+             "open": {"start": "08:30", "end": "15:00"}},
+        ]}}
+    }
+    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params: payload)
+    assert collector.expected_session_minutes(date(2026, 8, 24)) == 390
+
+
+def test_expected_session_minutes_early_close(monkeypatch):
+    payload = {
+        "calendar": {"days": {"day": [
+            {"date": "2026-11-27", "status": "early-close",
+             "open": {"start": "08:30", "end": "12:00"}},
+        ]}}
+    }
+    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params: payload)
+    assert collector.expected_session_minutes(date(2026, 11, 27)) == 210
+
+
+def test_expected_session_minutes_falls_back_on_fetch_failure(monkeypatch):
+    def _boom(path, params):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(collector.market_data, "tradier_get", _boom)
+    assert collector.expected_session_minutes(date(2026, 8, 24)) == collector.EXPECTED_RTH_MINUTES
+
+
+def test_expected_session_minutes_falls_back_when_day_not_found(monkeypatch):
+    payload = {"calendar": {"days": {"day": [{"date": "2026-08-25", "status": "open"}]}}}
+    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params: payload)
+    assert collector.expected_session_minutes(date(2026, 8, 24)) == collector.EXPECTED_RTH_MINUTES
+
+
+def test_expected_session_minutes_falls_back_on_closed_day(monkeypatch):
+    payload = {"calendar": {"days": {"day": [{"date": "2026-12-25", "status": "closed"}]}}}
+    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params: payload)
+    assert collector.expected_session_minutes(date(2026, 12, 25)) == collector.EXPECTED_RTH_MINUTES
+
+
+def test_ensure_manifest_row_uses_expected_session_minutes(monkeypatch, tmp_path):
+    monkeypatch.setattr(engine, "DB_PATH", tmp_path / "engine.db")
+    connection = engine.connect_db()
+    monkeypatch.setattr(
+        collector, "expected_session_minutes", lambda trading_day: 210
+    )
+    collector.ensure_manifest_row(connection, "2026-11-27")
+    row = connection.execute(
+        "SELECT expected_minutes FROM daily_data_manifest WHERE trading_day=?",
+        ("2026-11-27",),
+    ).fetchone()
+    assert row[0] == 210
