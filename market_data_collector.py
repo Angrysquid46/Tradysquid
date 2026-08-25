@@ -15,7 +15,8 @@ increments it.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+import re
+from datetime import date, datetime, time
 from typing import Any
 
 import market_api_budget
@@ -23,7 +24,57 @@ import market_data
 import market_data_store
 
 COLLECTOR_VERSION = "market-data-collector-v1"
+# Fallback only - a full regular-hours session. expected_session_minutes()
+# below is the real answer for a specific trading day; this is what it
+# falls back to if the calendar lookup fails, not the primary source.
 EXPECTED_RTH_MINUTES = 390
+
+
+def _calendar_days(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    value: Any = payload
+    for key in ("calendar", "days", "day"):
+        if isinstance(value, dict) and key in value:
+            value = value[key]
+    if isinstance(value, dict):
+        value = [value]
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _parse_clock(value: Any, default: time) -> time:
+    text = str(value or "")
+    match = re.search(r"(\d{1,2}):(\d{2})", text)
+    if not match:
+        return default
+    return time(int(match.group(1)), int(match.group(2)))
+
+
+def expected_session_minutes(trading_day: date) -> int:
+    """Real expected regular-trading-hours duration for a specific day,
+    including early closes (half-days) - queries Tradier's own
+    /markets/calendar rather than assuming every session is a full 390
+    minutes (Phase 14 audit finding: a hardcoded 390 misgrades legitimate
+    shortened sessions as incomplete). Falls back to EXPECTED_RTH_MINUTES
+    on any failure - fetch error, missing day, or a closed/holiday day
+    this function was never asked about - matching this repo's existing
+    fail-open convention for non-critical grading data."""
+    try:
+        payload = market_data.tradier_get(
+            "/markets/calendar", {"month": trading_day.month, "year": trading_day.year}
+        )
+    except Exception:
+        return EXPECTED_RTH_MINUTES
+    for item in _calendar_days(payload):
+        if str(item.get("date") or "") != trading_day.isoformat():
+            continue
+        status = str(item.get("status") or "").casefold()
+        if status not in {"open", "early-close", "early_close"}:
+            return EXPECTED_RTH_MINUTES
+        open_data = item.get("open") if isinstance(item.get("open"), dict) else {}
+        start = _parse_clock(open_data.get("start") or item.get("open_time"), time(8, 30))
+        end = _parse_clock(open_data.get("end") or item.get("close_time"), time(15, 0))
+        minutes = (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)
+        return minutes if minutes > 0 else EXPECTED_RTH_MINUTES
+    return EXPECTED_RTH_MINUTES
 
 VERIFIED_REAL = market_data_store.VERIFIED_REAL
 REAL_WITH_LIMITATIONS = market_data_store.REAL_WITH_LIMITATIONS
@@ -140,6 +191,7 @@ def classify_bar_row(
 
 
 def ensure_manifest_row(connection, trading_day: str) -> None:
+    expected_minutes = expected_session_minutes(date.fromisoformat(trading_day))
     connection.execute(
         """
         INSERT INTO daily_data_manifest (
@@ -149,7 +201,7 @@ def ensure_manifest_row(connection, trading_day: str) -> None:
         ) VALUES (?, ?, 0, 0, '[]', 0, 0, 0, ?, '', '')
         ON CONFLICT(trading_day) DO NOTHING
         """,
-        (trading_day, EXPECTED_RTH_MINUTES, COLLECTOR_VERSION),
+        (trading_day, expected_minutes, COLLECTOR_VERSION),
     )
     connection.commit()
 

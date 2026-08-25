@@ -140,6 +140,26 @@ def test_bars_as_of_only_returns_bars_at_or_before_timestamp(scratch):
     assert timestamps == [anchor - 120, anchor - 60]
 
 
+def test_bars_as_of_excludes_a_bar_captured_after_the_query_timestamp(scratch):
+    """Phase 14 audit finding: bars_as_of only filtered on bar_timestamp,
+    not captured_at - a bar for an in-window time that was actually
+    backfilled/captured LATER must still not appear "as of" a moment
+    before it was really known, matching market_as_of/options_as_of's
+    own no-lookahead discipline."""
+    now = datetime(2026, 8, 24, 9, 31, 0)
+    anchor = int(now.timestamp())
+    backfilled = _bar_row("2026-08-24T09:30:00", anchor - 60, 101.0)
+    backfilled["captured_at"] = "2026-08-24T10:00:00"  # captured AFTER `now`
+    bars = [
+        _bar_row("2026-08-24T09:29:00", anchor - 120, 100.0),
+        backfilled,
+    ]
+    store.write_bars("SPY", now.date(), now, bars)
+    result = lab.MarketView("SPY").bars_as_of(now, lookback_minutes=120)
+    timestamps = [row["bar_timestamp"] for row in result]
+    assert timestamps == [anchor - 120]  # the backfilled bar is excluded
+
+
 def test_compute_features_returns_none_for_empty_bars():
     assert lab.compute_features([]) is None
 

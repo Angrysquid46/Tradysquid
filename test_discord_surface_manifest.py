@@ -133,6 +133,17 @@ def test_set_surface_status_round_trips(db):
     assert row["status"] == "VERIFIED_UNAFFECTED"
 
 
+def test_set_surface_status_accepts_desynchronized_and_misconfigured(db):
+    """Phase 14 audit finding: HEALTH_STATES declares these two and the
+    module's own docstring says set_surface_status is the manual route to
+    record them, but SURFACE_STATUSES didn't actually include them."""
+    _register(db)
+    manifest.set_surface_status(db, "scoreboard-card", manifest.DESYNCHRONIZED)
+    assert manifest.surface_snapshot(db, "scoreboard-card")["status"] == manifest.DESYNCHRONIZED
+    manifest.set_surface_status(db, "scoreboard-card", manifest.MISCONFIGURED)
+    assert manifest.surface_snapshot(db, "scoreboard-card")["status"] == manifest.MISCONFIGURED
+
+
 def test_set_surface_status_rejects_unknown_status(db):
     _register(db)
     with pytest.raises(ValueError, match="Unknown surface status"):

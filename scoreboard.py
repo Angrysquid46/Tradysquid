@@ -102,14 +102,17 @@ def record_trade_open(
     ).fetchone()
     if existing:
         raise ValueError(f"trade_id {trade_id!r} already recorded")
+    # Global per bot, not per generation - IMMUTABLE_RULES.json's
+    # max_open_trades_per_bot has no generation qualifier. A generation-
+    # scoped check would let a bot hold an open trade in one generation
+    # while opening another in the next (Phase 14 audit finding).
     open_count = connection.execute(
-        "SELECT COUNT(*) FROM official_trades "
-        "WHERE bot=? AND generation=? AND closed_at IS NULL",
-        (bot, generation),
+        "SELECT COUNT(*) FROM official_trades WHERE bot=? AND closed_at IS NULL",
+        (bot,),
     ).fetchone()[0]
     if open_count >= MAX_OPEN_TRADES_PER_BOT:
         raise ValueError(
-            f"{bot} already has an open trade in generation {generation} "
+            f"{bot} already has an open trade "
             f"(max_open_trades_per_bot={MAX_OPEN_TRADES_PER_BOT})"
         )
     connection.execute(
@@ -142,21 +145,37 @@ def record_trade_close(
     """The one allowed UPDATE - guarded by closed_at IS NULL so a trade
     can transition open -> closed exactly once. Raises if the trade
     doesn't exist or is already closed - what makes 'official completed
-    trades immutable' real rather than merely documented."""
+    trades immutable' real rather than merely documented.
+
+    The referee computes P&L itself from the row's own stored
+    entry_price/contracts and the given exit_price, rather than trusting
+    the caller's pnl_usd outright (Phase 14 audit finding - a competitor
+    should never get to just announce its own P&L). `pnl_usd` stays a
+    required parameter for every existing caller's benefit (an honest
+    caller already does this exact math before calling), but is now
+    validated against the referee's own computation rather than written
+    as-is; a mismatch beyond simple float rounding raises."""
     row = connection.execute(
-        "SELECT closed_at FROM official_trades WHERE trade_id=?", (trade_id,)
+        "SELECT closed_at, entry_price, contracts FROM official_trades WHERE trade_id=?",
+        (trade_id,),
     ).fetchone()
     if row is None:
         raise ValueError(f"trade_id {trade_id!r} was never opened")
     if row["closed_at"] is not None:
         raise ValueError(f"trade_id {trade_id!r} is already closed and immutable")
+    computed_pnl_usd = (exit_price - row["entry_price"]) * 100 * row["contracts"]
+    if abs(computed_pnl_usd - pnl_usd) > 0.01:
+        raise ValueError(
+            f"trade_id {trade_id!r}: supplied pnl_usd={pnl_usd!r} does not match "
+            f"entry_price/exit_price/contracts (computed {computed_pnl_usd!r})"
+        )
     cursor = connection.execute(
         """
         UPDATE official_trades
         SET closed_at=?, exit_price=?, pnl_usd=?, max_favorable_pct=?, max_adverse_pct=?
         WHERE trade_id=? AND closed_at IS NULL
         """,
-        (closed_at, exit_price, pnl_usd, max_favorable_pct, max_adverse_pct, trade_id),
+        (closed_at, exit_price, computed_pnl_usd, max_favorable_pct, max_adverse_pct, trade_id),
     )
     if cursor.rowcount == 0:
         raise ValueError(f"trade_id {trade_id!r} closed concurrently; refusing to overwrite")
@@ -366,6 +385,19 @@ def current_position_status(connection: sqlite3.Connection, bot: str) -> dict[st
 
 def lifetime_pnl(connection: sqlite3.Connection, bot: str) -> float:
     return total_pnl(connection, bot, generation=None)
+
+
+# The exact key set scoreboard_snapshot() returns - exported so other
+# modules (rivalry.py's public_score_snapshot schema check) can validate
+# against the real public shape instead of duplicating/guessing it.
+SCOREBOARD_SNAPSHOT_KEYS = frozenset({
+    "bot", "generation", "current_bankroll", "generation_pnl", "lifetime_pnl",
+    "trade_count_generation", "trade_count_lifetime", "win_rate", "profit_factor",
+    "expectancy", "average_winner", "average_loser", "largest_winner", "largest_loser",
+    "max_drawdown", "current_drawdown", "bust_count", "current_streak",
+    "best_generation", "worst_generation", "generation_over_generation_improvement",
+    "current_position_status",
+})
 
 
 def scoreboard_snapshot(connection: sqlite3.Connection, bot: str) -> dict[str, Any]:
