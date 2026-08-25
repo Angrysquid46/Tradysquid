@@ -14,9 +14,9 @@
   "expected_effects": "Exactly one restart-safe BLACKTIDE standalone paper scheduler running overnight, market-closed inert, ready to evaluate completed causal data during tomorrow's session through shared MarketView/referee.",
   "required_tests": "BLACKTIDE private/runtime/scheduler/preflight/restart/single-instance tests, ownership/isolation, relevant shared integration tests, CI, deployed receipt, live process/closed-market no-trade verification.",
   "risks": "Duplicate process, missing env due import order, premature after-hours decision, stale data, hidden state, interaction with shared quota/referee. Fail closed and preserve official ledger.",
-  "next_safe_action_if_interrupted": "Commit only BLACKTIDE launch files/tests/governance mirror, push PR, wait full CI, merge, allow updater deployment, run live preflight for 2026-08-26, then start exactly one hidden standalone BLACKTIDE process and verify closed-market inert/official ledger unchanged.",
+  "next_safe_action_if_interrupted": "Commit/push env-order fix, pass CI, merge/deploy, rerun all-five live preflight, start one hidden BLACKTIDE launch process, verify port/PID and after-hours ledger immutability, then finish governance.",
   "phase": "Phase 15",
-  "last_checkpoint_at": "2026-08-25T18:05:55.932360-05:00",
-  "last_successful_action": "BLACKTIDE Phase 15 launch wiring complete in working tree: private env bootstrap before shared imports; fail-closed deployed/official-state/provider/target-expiration/single-instance preflight; one-process TCP lock; standalone launch entrypoint; market-closed/weekend gating; no new entries after 14:20 CT; official open-position exit management through 15:05 CT. BLACKTIDE focused/ownership 27 passed and shared integration 99 passed.",
-  "next_safe_action": "Commit only BLACKTIDE launch files/tests/governance mirror, push PR, wait full CI, merge, allow updater deployment, run live preflight for 2026-08-26, then start exactly one hidden standalone BLACKTIDE process and verify closed-market inert/official ledger unchanged."
+  "last_checkpoint_at": "2026-08-25T18:19:28.208636-05:00",
+  "last_successful_action": "Live BLACKTIDE preflight found and fixed package import-order env binding: bots.blacktide.__init__ now bootstraps .env before runtime/backtest/market_data imports. 9 focused tests pass. Live preflight now passes all five checks: deployed 302a3d9, instance port free, Gen1//0 trades/FLAT, live SPY quote, and 2026-08-26 expiration listed.",
+  "next_safe_action": "Commit/push env-order fix, pass CI, merge/deploy, rerun all-five live preflight, start one hidden BLACKTIDE launch process, verify port/PID and after-hours ledger immutability, then finish governance."
 }
