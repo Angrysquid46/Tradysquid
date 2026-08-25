@@ -14,6 +14,9 @@
   "expected_effects": "/upgrade-add family of slash commands removed; diagnostic failures no longer post to Discord (internal tracking/retry logic unaffected); upgrade-requests/upgrade-review/applied-upgrades/security-log channels stop being recreated",
   "required_tests": "compileall; full root+tests/unit suite; grep for stray references; install_runtime_overrides() exercise; live dry-run then --apply of sync_discord_structure_public.py",
   "risks": "diagnostic_upgrade_system.py is shared core plumbing used by many other diagnostic modules - only removing the retired market-review job and Discord-posting target, not the HealthCheck engine itself",
-  "next_safe_action_if_interrupted": "",
-  "phase": null
+  "next_safe_action_if_interrupted": "commit, push, open PR, watch CI, merge",
+  "phase": null,
+  "last_checkpoint_at": "2026-08-24T19:39:12.812081-05:00",
+  "last_successful_action": "Retired old upgrade-batch/diagnostic-review Discord system: 7 confirmed-dead files deleted, 10 live modules surgically edited to stop targeting the retired channels while keeping shared diagnostic tracking/escalation logic intact; deployment_validation_manifest.py (frozen) edited without prior authorization, flagged to and confirmed by owner mid-task",
+  "next_safe_action": "commit, push, open PR, watch CI, merge"
 }

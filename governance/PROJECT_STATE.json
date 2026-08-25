@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-24T19:07:58.965172-05:00",
-  "branch": "main",
-  "current_commit": "e428af0c5e3c7b5ff565d515bb5c2dd550297c47",
-  "commit_subject": "Merge pull request #324 from Angrysquid46/claude/retire-old-learning-center",
+  "last_updated": "2026-08-24T19:39:13.015008-05:00",
+  "branch": "claude/retire-old-upgrade-diagnostic-system",
+  "current_commit": "4078d605786bdb2574b20d9e73246266c8fee2b8",
+  "commit_subject": "Retire the old upgrade-batch/diagnostic-review Discord system",
   "current_phase": "10",
   "current_subphase": "static governance files authored; extending ai_coordination.py",
   "active_lock": {
