@@ -1,16 +1,11 @@
 {
-  "last_updated": "2026-08-25T18:19:28.553737-05:00",
-  "branch": "codex/phase15-blacktide-env-order",
-  "observed_head_at_write": "302a3d9902c15b23cfc33570f74fcbbf9c3ccd31",
-  "commit_subject": "Prepare BLACKTIDE Phase 15 standalone launch",
+  "last_updated": "2026-08-25T18:29:40.534639-05:00",
+  "branch": "main",
+  "observed_head_at_write": "61e398d87a6b97583e8f2a9659760d8d50a3c24f",
+  "commit_subject": "Bootstrap BLACKTIDE env before shared imports",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 14 complete after PR #332 and final governance reconciliation. Phase 15 is not started and requires explicit owner launch authorization.",
-  "active_lock": {
-    "actor": "Codex",
-    "task": "Phase 15: launch BLACKTIDE for tomorrow paper competition",
-    "work_id": "d76f2014-02c0-4b07-808a-0e710aa74572",
-    "started_at": "2026-08-25T18:02:34.092114-05:00"
-  },
+  "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
 }
