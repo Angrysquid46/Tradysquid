@@ -1,11 +1,16 @@
 {
-  "last_updated": "2026-08-25T17:35:36.806272-05:00",
-  "branch": "main",
-  "observed_head_at_write": "d17b39ef362c9467992bba67ac46fd1433ee8f3c",
-  "commit_subject": "Reconcile completed Phase 14 governance state",
-  "current_phase": "Phase 14",
+  "last_updated": "2026-08-25T18:05:56.317073-05:00",
+  "branch": "codex/phase15-blacktide-launch",
+  "observed_head_at_write": "309ead5f903af04cfeb9effce18f8b0e9182e6f7",
+  "commit_subject": "Sync governance coordination state (Phase 15 AXIOM launch-prep begin/complete)",
+  "current_phase": "Phase 15",
   "current_subphase": "Phase 14 complete after PR #332 and final governance reconciliation. Phase 15 is not started and requires explicit owner launch authorization.",
-  "active_lock": null,
+  "active_lock": {
+    "actor": "Codex",
+    "task": "Phase 15: launch BLACKTIDE for tomorrow paper competition",
+    "work_id": "d76f2014-02c0-4b07-808a-0e710aa74572",
+    "started_at": "2026-08-25T18:02:34.092114-05:00"
+  },
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
 }
