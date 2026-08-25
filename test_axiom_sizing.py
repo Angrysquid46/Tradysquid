@@ -3,10 +3,10 @@ premium cap, no separate fractional-risk parameter."""
 
 from __future__ import annotations
 
-from bots.claude.parameters import Parameters
+from bots.claude.parameters import HYPOTHESIS_DEFAULTS
 from bots.claude.sizing import position_size
 
-PARAMS = Parameters()
+PARAMS = dict(HYPOTHESIS_DEFAULTS["trend_continuation"])
 
 
 def test_sizes_one_contract_when_bankroll_covers_exactly_one():

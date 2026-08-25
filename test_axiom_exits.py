@@ -6,9 +6,9 @@ from __future__ import annotations
 from datetime import datetime
 
 from bots.claude.exits import PROFIT_TARGET, STOP_LOSS, TIME_FORCE_CLOSE, should_exit
-from bots.claude.parameters import Parameters
+from bots.claude.parameters import HYPOTHESIS_DEFAULTS
 
-PARAMS = Parameters()
+PARAMS = dict(HYPOTHESIS_DEFAULTS["trend_continuation"])
 MID_DAY = datetime(2026, 8, 25, 12, 0, 0)
 
 

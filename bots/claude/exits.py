@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from bots.claude.execution import exit_fill_price
-from bots.claude.parameters import Parameters
+from bots.claude.parameters import FORCE_CLOSE_HOUR, FORCE_CLOSE_MINUTE
 
 PROFIT_TARGET = "PROFIT_TARGET"
 STOP_LOSS = "STOP_LOSS"
@@ -29,16 +29,17 @@ def should_exit(
     open_trade: dict[str, Any],
     current_contract: dict[str, Any],
     now: datetime,
-    parameters: Parameters,
+    params: dict[str, float],
 ) -> ExitDecision:
     """`open_trade` is scoreboard.current_position_status()'s shape.
     `current_contract` is a chain row for the held contract_symbol
-    (backtest_lab.MarketView.options_as_of()'s per-row shape)."""
+    (backtest_lab.MarketView.options_as_of()'s per-row shape). `params`
+    is the hypothesis that opened this trade's own parameter dict -
+    profit_target_pct/stop_loss_pct belong to that hypothesis, not one
+    global constant. The force-close time is the one exception: a shared
+    safety backstop under whatever target/stop is currently active."""
     force_close_at = now.replace(
-        hour=parameters.force_close_hour,
-        minute=parameters.force_close_minute,
-        second=0,
-        microsecond=0,
+        hour=FORCE_CLOSE_HOUR, minute=FORCE_CLOSE_MINUTE, second=0, microsecond=0,
     )
     if now >= force_close_at:
         return ExitDecision(True, TIME_FORCE_CLOSE)
@@ -47,8 +48,8 @@ def should_exit(
     exit_price = exit_fill_price(current_contract)
     pnl_pct = (exit_price - entry_price) / entry_price if entry_price else 0.0
 
-    if pnl_pct >= parameters.profit_target_pct:
+    if pnl_pct >= params["profit_target_pct"]:
         return ExitDecision(True, PROFIT_TARGET, pnl_pct)
-    if pnl_pct <= parameters.stop_loss_pct:
+    if pnl_pct <= params["stop_loss_pct"]:
         return ExitDecision(True, STOP_LOSS, pnl_pct)
     return ExitDecision(False, None, pnl_pct)

@@ -14,7 +14,6 @@ from typing import Any
 import market_data_store as store
 
 from bots.claude.execution import spread_ok
-from bots.claude.parameters import Parameters
 
 _SIDE_MAP = {"CALL": "call", "PUT": "put"}
 
@@ -23,18 +22,22 @@ def select_contract(
     contracts: list[dict[str, Any]],
     side: str,
     today: date,
-    parameters: Parameters,
+    params: dict[str, float],
 ) -> dict[str, Any] | None:
     """Returns the eligible contract whose delta is closest to the middle
     of the configured band, or None if nothing qualifies. Filters, in
     order: 0DTE only, Tier-A data only, matching side, delta band,
-    premium cap, spread sanity."""
+    premium cap, spread sanity. `params` is the FIRING hypothesis's own
+    parameter dict (bots/claude/parameters.py's HYPOTHESIS_DEFAULTS
+    shape) - delta band and premium cap are no longer one global
+    constant, they belong to whichever hypothesis produced the signal."""
     contract_side = _SIDE_MAP.get(side)
     if contract_side is None:
         return None
 
     today_iso = today.isoformat()
-    band_mid = (parameters.delta_min + parameters.delta_max) / 2
+    delta_min, delta_max = params["delta_min"], params["delta_max"]
+    band_mid = (delta_min + delta_max) / 2
     eligible: list[dict[str, Any]] = []
 
     for contract in contracts:
@@ -48,12 +51,12 @@ def select_contract(
         if delta is None:
             continue
         abs_delta = abs(delta)
-        if not (parameters.delta_min <= abs_delta <= parameters.delta_max):
+        if not (delta_min <= abs_delta <= delta_max):
             continue
         ask = contract.get("ask")
-        if ask is None or ask <= 0 or ask > parameters.premium_cap_usd:
+        if ask is None or ask <= 0 or ask > params["premium_cap_usd"]:
             continue
-        if not spread_ok(contract, parameters):
+        if not spread_ok(contract):
             continue
         eligible.append(contract)
 

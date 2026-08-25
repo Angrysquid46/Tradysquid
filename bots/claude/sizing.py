@@ -10,14 +10,12 @@ per-contract premium ceiling that already filters contract selection.
 
 from __future__ import annotations
 
-from bots.claude.parameters import Parameters
-
-
-def position_size(available_bankroll: float, ask: float, parameters: Parameters) -> int:
+def position_size(available_bankroll: float, ask: float, params: dict[str, float]) -> int:
     """Number of contracts affordable at `ask`, using the full available
-    bankroll, still bounded by premium_cap_usd (enforced upstream in
-    contract_selection.select_contract, re-checked here defensively)."""
-    if ask <= 0 or ask > parameters.premium_cap_usd or available_bankroll <= 0:
+    bankroll, still bounded by the firing hypothesis's own premium_cap_usd
+    (enforced upstream in contract_selection.select_contract, re-checked
+    here defensively)."""
+    if ask <= 0 or ask > params["premium_cap_usd"] or available_bankroll <= 0:
         return 0
     cost_per_contract = ask * 100
     return int(available_bankroll // cost_per_contract)

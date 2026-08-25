@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from bots.claude.parameters import Parameters
+from bots.claude.parameters import MAX_SPREAD_PCT
 
 
 def entry_fill_price(contract: dict[str, Any]) -> float:
@@ -28,8 +28,9 @@ def exit_fill_price(contract: dict[str, Any]) -> float:
     return float(contract["bid"])
 
 
-def spread_ok(contract: dict[str, Any], parameters: Parameters) -> bool:
-    """Liquidity/data-quality sanity bound, not an edge parameter."""
+def spread_ok(contract: dict[str, Any]) -> bool:
+    """Liquidity/data-quality sanity bound, not an edge parameter - shared
+    across every hypothesis, unlike delta band/premium cap/exits."""
     bid = contract.get("bid")
     ask = contract.get("ask")
     if bid is None or ask is None or bid <= 0 or ask <= bid:
@@ -37,10 +38,10 @@ def spread_ok(contract: dict[str, Any], parameters: Parameters) -> bool:
     mid = (bid + ask) / 2
     if mid <= 0:
         return False
-    return (ask - bid) / mid <= parameters.max_spread_pct
+    return (ask - bid) / mid <= MAX_SPREAD_PCT
 
 
-def build_execution_assumptions(parameters: Parameters) -> dict[str, Any]:
+def build_execution_assumptions() -> dict[str, Any]:
     """The exact dict passed to backtest_lab.record_backtest(
     execution_assumptions=...) - an honest, inspectable disclosure of the
     fill rule used, not a black box."""
@@ -50,6 +51,6 @@ def build_execution_assumptions(parameters: Parameters) -> dict[str, Any]:
         "mid_price_fills": False,
         "hindsight_fills": False,
         "fake_liquidity": False,
-        "max_spread_pct": parameters.max_spread_pct,
+        "max_spread_pct": MAX_SPREAD_PCT,
         "rejects_on": "bid<=0, ask<=bid, spread>max_spread_pct, or non-VERIFIED_REAL data_class",
     }
