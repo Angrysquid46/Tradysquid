@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-25T18:05:56.317073-05:00",
-  "branch": "codex/phase15-blacktide-launch",
-  "observed_head_at_write": "309ead5f903af04cfeb9effce18f8b0e9182e6f7",
-  "commit_subject": "Sync governance coordination state (Phase 15 AXIOM launch-prep begin/complete)",
+  "last_updated": "2026-08-25T18:19:28.553737-05:00",
+  "branch": "codex/phase15-blacktide-env-order",
+  "observed_head_at_write": "302a3d9902c15b23cfc33570f74fcbbf9c3ccd31",
+  "commit_subject": "Prepare BLACKTIDE Phase 15 standalone launch",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 14 complete after PR #332 and final governance reconciliation. Phase 15 is not started and requires explicit owner launch authorization.",
   "active_lock": {
