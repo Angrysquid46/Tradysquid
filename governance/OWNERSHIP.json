@@ -59,6 +59,62 @@
       "purpose": "Phase 10 (Section 15): the 43-chapter curriculum's stable structure - chapter list, lc-NN-slug Discord channel naming, LC-XX-YY lesson IDs, and the lesson registry. Both agents may build/maintain the shell and tooling; Section 15 requires autonomous trading code to never import, search, or query this module or its content."
     },
     {
+      "path": "market_data_store.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Phase 5: append-only Parquet market-data storage layer (quotes/chain/bars) and the DuckDB glob-query read API both competitors' backtests read through."
+    },
+    {
+      "path": "market_data_collector.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Phase 5: the scheduled capture jobs that populate market_data_store.py from Tradier, with VERIFIED_REAL/REAL_WITH_LIMITATIONS/REJECTED data-quality classification and the daily data manifest."
+    },
+    {
+      "path": "backtest_lab.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Phase 6: the shared, strategy-neutral no-lookahead MarketView interface (Section 10) and record_backtest/load_backtest_records reproducibility mechanism both competitors' backtests use."
+    },
+    {
+      "path": "market_api_budget.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Phase 7: Section 8's shared API-budget priority scheme and gate - the one shared factual market service both competitors' live loops must call through."
+    },
+    {
+      "path": "scoreboard.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Phase 8: Section 6's neutral, immutable competition scorekeeper - the sole official trade ledger for both BLACKTIDE and AXIOM, outside either private trader."
+    },
+    {
+      "path": "discord_surface_manifest.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Phase 9: Section 14's Discord surface manifest and health-state framework, used by any module (both competitors included) that presents a dynamic Discord surface."
+    },
+    {
+      "path": "rivalry.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Phase 9: Section 7's bounded, rate-limited rivalry event system BLACKTIDE and AXIOM both post trash talk through - never a code path either trader's decisions can read."
+    },
+    {
       "path": "bots/blacktide/",
       "owner": "BLACKTIDE_ONLY",
       "readers": ["Owner", "Codex"],
@@ -77,7 +133,6 @@
   ],
   "scoped_instructions_convention": "Each BLACKTIDE_ONLY/CLAUDE_ONLY directory (created Phase 11+, e.g. bots/blacktide, bots/claude) must contain its own AGENTS.md scoped to that directory, following the nearest-file convention: an agent reads the root AGENTS.md plus the nearest scoped AGENTS.md above its working path. This file's writers field for that directory's entry is the authoritative machine-readable grant; the scoped AGENTS.md is a human/agent-readable restatement of the same rule, not a separate grant. Root AGENTS.md must not enumerate bot directories in advance of the phase that creates them.",
   "not_yet_assigned": [
-    "market/options/backtest/features/execution/api_budget/competition/events/discord (SHARED_CORE) - Phases 5-9 shipped these as flat root modules (market_data_store.py, market_data_collector.py, backtest_lab.py, market_api_budget.py, scoreboard.py, discord_surface_manifest.py, rivalry.py, etc.), matching this repo's existing convention, not the shared/ package originally anticipated here. Individual entries for these files are still owed to this list - noted, not yet added, so as not to expand this phase's scope beyond correcting this note.",
     "learning/ catalog/lessons/search/references (HUMAN_LEARNING_CENTER, created Phase 10)"
   ]
 }
