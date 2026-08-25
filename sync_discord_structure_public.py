@@ -11,15 +11,7 @@ import sync_discord_structure as sync
 def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
     rebuilt: list[sync.ChannelSpec] = []
     inserted_activity = False
-    inserted_diagnostics = False
     for item in sync.CHANNELS:
-        if item.name == "scanner-controls":
-            item = sync.ChannelSpec(
-                item.category,
-                item.name,
-                "Public ticker add/remove status plus owner-only filters, pauses, and manual scans.",
-                item.channel_type,
-            )
         rebuilt.append(item)
         if item.name == "universe-watch" and not inserted_activity:
             rebuilt.append(
@@ -30,15 +22,6 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
                 )
             )
             inserted_activity = True
-        if item.name == "scanner-controls" and not inserted_diagnostics:
-            rebuilt.append(
-                sync.ChannelSpec(
-                    "SYSTEM",
-                    "automation-diagnostics",
-                    "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures.",
-                )
-            )
-            inserted_diagnostics = True
     if not inserted_activity:
         rebuilt.append(
             sync.ChannelSpec(
@@ -47,14 +30,13 @@ def _rebuild_channel_specs() -> list[sync.ChannelSpec]:
                 "Always-on interval receipts, off-hours SPY research, event sweeps, and data freshness.",
             )
         )
-    if not inserted_diagnostics:
-        rebuilt.append(
-            sync.ChannelSpec(
-                "SYSTEM",
-                "automation-diagnostics",
-                "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures.",
-            )
+    rebuilt.append(
+        sync.ChannelSpec(
+            "SYSTEM",
+            "automation-diagnostics",
+            "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures.",
         )
+    )
     return rebuilt
 
 
@@ -91,13 +73,11 @@ Type `/`, choose a command, complete its fields, and send it.
 • `/events`, `/calendar` — timestamped research links.
 • `/performance`, `/why`, `/status`, `/dataage`, `/lastscan` — tracking.
 • `/ask`, `/explain` — curated educational answers.
-• `/ticker-add`, `/ticker-remove` — public capped universe management.
-• `/ticker-list`, `/ticker-status` — current universe and capacity.
 • `/filters` — configuration status; guarded changes remain owner-only.
 
-The universe is capped at **25 active tickers**. Market-hours scans rotate through
-up to **12** symbols per pass. Closed-market research rotates through smaller
-batches every 30 minutes, checks events every hour, and opens no position.
+This system trades SPY exclusively - there is no ticker roster to add,
+remove, or manage. Closed-market research continues on its own schedule,
+checks events every hour, and opens no position outside regular hours.
 #system-activity proves what ran. #automation-diagnostics shows missed intervals
 and repair attempts. All output uses readable cards. Paper trading only; no
 brokerage orders are placed."""
@@ -137,19 +117,6 @@ and every close receives a trade-specific review separating exit trigger from
 probable cause. Cause tags feed the review-first learning archive, grouped by
 strategy so the two are compared honestly; filters never change without
 adequate evidence and owner approval."""
-
-sync.GUIDES["scanner-controls"] = """# Ticker and Scanner Controls
-**Every member:** `/ticker-add`, `/ticker-remove`, `/ticker-list`, `/ticker-status`.
-
-**Capacity:** 25 active tickers; 12 per live scan rotation. Additions require a
-live Tradier quote and usable option expirations. Removal stops new scans but
-never abandons an existing paper position or erases history.
-
-**Always-on behavior:** the market-hours options scanner pauses when trading is
-closed, but rotating stock research, event checks, outcome learning, Discord
-reporting, diagnostics, and repair monitoring continue automatically.
-
-**Owner-only:** filter changes, pauses, resumes, and full manual scans."""
 
 sync.GUIDES["automation-diagnostics"] = """# Automation Diagnostics and Self-Repair
 This owner-control channel is the scheduler's fault ledger.

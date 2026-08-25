@@ -104,7 +104,6 @@ CHANNELS = [
     ChannelSpec("SYSTEM", "system-health", "Local service health, freshness, queue depth, and restarts."),
     ChannelSpec("SYSTEM", "update-status", "Deploy checks, current commit, and auto-update outcomes."),
     ChannelSpec("SYSTEM", "provider-status", "Tradier, TradingView, Discord, and read-only MCP status."),
-    ChannelSpec("OWNER CONTROL", "scanner-controls", "Owner-only universe, filter, and schedule controls."),
     ChannelSpec("OWNER CONTROL", "workflow-log", "Release and deployment history."),
     # Reconciled 2026-08-19: these are live channels the bot already writes
     # to that had drifted out of this spec entirely. Declared with their
@@ -246,6 +245,15 @@ DELETE_CHANNELS = {
     # These 4 kept getting silently recreated by 3 separate live
     # mechanisms until the code driving all of them was removed too.
     "upgrade-requests", "upgrade-review", "applied-upgrades", "security-log",
+    # Retired 2026-08-25 - owner: its card advertised /ticker-add,
+    # /ticker-remove, and a 25-ticker capacity system that no longer
+    # exists (dynamic_universe.py's own docstring: multi-ticker scanning
+    # "was removed per explicit owner direction: this system trades SPY
+    # exclusively"). sync_discord_structure_public.py's topic/guide
+    # override was stale leftover text describing already-purged
+    # functionality, mistakenly preserved and re-posted live by an
+    # --apply run before this was caught.
+    "scanner-controls",
 }
 
 DELETE_CATEGORIES = {
@@ -311,7 +319,7 @@ Type `/`, choose a command, complete its fields, and send it.
 • `/events`, `/calendar` — timestamped research links.
 • `/performance`, `/why`, `/status`, `/dataage`, `/lastscan` — tracking.
 • `/ask`, `/explain` — educational answers.
-• `/filters`, `/ticker-list`, `/ticker-status` — configuration status.
+• `/filters` — configuration status.
 • `/scan-now scope:` — owner-only manual scan and reporting.
 The hidden supervisor starts services, checks GitHub for approved releases,
 restarts failures, synchronizes Discord, and reports deployments. The system is
@@ -591,12 +599,6 @@ Myths:
 
 Protect tokens and passwords, verify identities, and never give anyone remote
 control of a brokerage account.""",
-    "scanner-controls": """# Owner Scanner Controls
-`/filters` shows active limits. `/filter-set` changes a guarded local value.
-This system trades SPY exclusively - there is no ticker roster to manage.
-`/scan-now scope:Everything` immediately runs provider events, market
-intelligence, the SPY options scan, position tracking, and health reporting.
-The runtime is read-only toward brokerages and cannot place trades.""",
 }
 
 
