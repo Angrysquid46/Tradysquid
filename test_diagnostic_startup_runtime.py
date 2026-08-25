@@ -88,7 +88,10 @@ class DiagnosticStartupRuntimeTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def test_owner_channels_are_created_once_with_owner_permissions(self) -> None:
+    def test_no_owner_channels_are_required_since_the_old_upgrade_system_was_retired(self) -> None:
+        """CHANNEL_TOPICS is empty now that upgrade-requests/upgrade-review/
+        applied-upgrades are retired - this is the mechanism that used to
+        silently resurrect them; it must create nothing and make no POST."""
         tracker = FakeTracker(
             [
                 {
@@ -103,17 +106,8 @@ class DiagnosticStartupRuntimeTests(unittest.TestCase):
         engine = FakeEngine(tracker)
         with patch.object(diagnostics, "_engine", return_value=engine):
             created = startup._ensure_required_owner_channels()
-            second = startup._ensure_required_owner_channels()
-        self.assertEqual(
-            set(created),
-            {"upgrade-requests", "upgrade-review", "applied-upgrades"},
-        )
-        self.assertEqual(second, [])
-        posts = [call for call in tracker.calls if call[0] == "POST"]
-        self.assertEqual(len(posts), 3)
-        for _, _, payload in posts:
-            self.assertEqual(payload["parent_id"], "owner-category")
-            self.assertEqual(payload["permission_overwrites"][0]["deny"], "1024")
+        self.assertEqual(created, [])
+        self.assertEqual([call for call in tracker.calls if call[0] == "POST"], [])
 
     def test_restart_loop_requires_three_new_restarts_in_ten_minutes(self) -> None:
         first = startup._restart_loop_check()
@@ -132,41 +126,17 @@ class DiagnosticStartupRuntimeTests(unittest.TestCase):
         self.assertTrue(second.force_upgrade)
         self.assertIn("command-bot restarted 3", second.detail)
 
-    def test_acceptance_is_pending_until_real_create_recover_test_passes(self) -> None:
-        with (
-            patch.object(
-                startup,
-                "_ORIGINAL_ACCEPTANCE_CONTENT",
-                return_value="✅ **PASS · Diagnostic stable reporting** · old claim",
-            ),
-            patch.object(startup, "_self_test_complete", return_value=False),
-        ):
-            pending = startup.acceptance_content([], {})
-        self.assertIn("PENDING", pending)
-        with (
-            patch.object(
-                startup,
-                "_ORIGINAL_ACCEPTANCE_CONTENT",
-                return_value="✅ **PASS · Diagnostic stable reporting** · old claim",
-            ),
-            patch.object(startup, "_self_test_complete", return_value=True),
-        ):
-            passed = startup.acceptance_content([], {})
-        self.assertIn("PASS", passed)
-        self.assertIn("failure and recovery", passed)
-
-    def test_install_replaces_one_job_and_forces_startup_cycle(self) -> None:
-        engine = FakeEngine()
+    def test_install_forces_startup_cycle(self) -> None:
+        """install() is a historical entry point never called from any live
+        process (runtime_contract.py's install_live_checks() uses this
+        module's utility functions directly) - it only forces one startup
+        cycle now, since the job-replacement/content-wrapping it used to do
+        was tied to the retired #upgrade-review Discord reporting."""
         startup._INSTALLED = False
-        with (
-            patch.object(diagnostics, "_engine", return_value=engine),
-            patch.object(startup, "_force_startup_cycle") as force,
-        ):
+        with patch.object(startup, "_force_startup_cycle") as force:
             startup.install()
-        jobs = [job for job in engine.JOBS if job.name == diagnostics.DIAGNOSTIC_JOB]
-        self.assertEqual(len(jobs), 1)
-        self.assertIs(jobs[0].callback, startup.diagnostic_cycle_job)
         force.assert_called_once()
+        self.assertTrue(startup._INSTALLED)
         startup._INSTALLED = False
 
 

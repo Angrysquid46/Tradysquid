@@ -106,8 +106,6 @@ CHANNELS = [
     ChannelSpec("SYSTEM", "provider-status", "Tradier, TradingView, Discord, and read-only MCP status."),
     ChannelSpec("OWNER CONTROL", "scanner-controls", "Owner-only universe, filter, and schedule controls."),
     ChannelSpec("OWNER CONTROL", "workflow-log", "Release and deployment history."),
-    ChannelSpec("OWNER CONTROL", "upgrade-review", "Member suggestions pending owner approval or decline."),
-    ChannelSpec("OWNER CONTROL", "security-log", "Rejected requests and configuration warnings without secrets."),
     # Reconciled 2026-08-19: these are live channels the bot already writes
     # to that had drifted out of this spec entirely. Declared with their
     # CURRENT topics so the sync is a no-op - the point is that a future
@@ -118,8 +116,6 @@ CHANNELS = [
     ChannelSpec("START HERE", "risk-management", "Options risk disclosures and pre-trade safety checklist."),
     ChannelSpec("SYSTEM", "system-activity", "Always-on interval receipts, off-hours SPY research, event sweeps, and data freshness."),
     ChannelSpec("SYSTEM", "automation-diagnostics", "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures."),
-    ChannelSpec("OWNER CONTROL", "applied-upgrades", "Verified installed upgrades, affected channels, implementations, and live runtime proof."),
-    ChannelSpec("OWNER CONTROL", "upgrade-requests", "Owner-submitted upgrade batches mirrored from any Discord channel."),
     # Phase 9 (Master Spec Section 7): official head-to-head results, lead
     # changes, busts, milestones, and bounded bot-to-bot trash talk -
     # separate from operational trade channels. No persona/response logic
@@ -243,6 +239,13 @@ DELETE_CHANNELS = {
     "33-fair-value-and-mean-reversion", "34-the-market-clock",
     "35-algorithmic-glossary", "36-commodities-and-fixed-income",
     "learning-index", "ask-tradebot", "examples-and-reviews", "learning-start",
+    # Retired 2026-08-24 - owner: "it's an old system destroy it now." The
+    # upgrade-batch-via-GitHub-and-Discord workflow (/upgrade-add family)
+    # and the diagnostic system's #upgrade-review reporting channel were
+    # both retired; applied-upgrades' dashboard job was already dead.
+    # These 4 kept getting silently recreated by 3 separate live
+    # mechanisms until the code driving all of them was removed too.
+    "upgrade-requests", "upgrade-review", "applied-upgrades", "security-log",
 }
 
 DELETE_CATEGORIES = {
@@ -282,8 +285,6 @@ CHANNEL_STARTERS = {
     "strategy-change-log": "One entry per strategy-logic change, in plain language.",
     "strategy-recommendations": "Never auto-applied - owner approval required.",
     "workflow-log": "Used for releases, deployments, and rollback reports.",
-    "upgrade-review": "Manual owner review only.",
-    "security-log": "Receives rejected requests and configuration warnings.",
 }
 
 

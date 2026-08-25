@@ -16,38 +16,27 @@ from typing import Any
 import diagnostic_upgrade_system as diagnostics
 
 _INSTALLED = False
-_ORIGINAL_CYCLE = diagnostics.diagnostic_cycle_job
-_ORIGINAL_COLLECT = diagnostics.collect_health_checks
-_ORIGINAL_ACCEPTANCE_CONTENT = diagnostics._acceptance_content
 SELF_TEST_KEY = "diagnostic-stable-report-self-test"
 SELF_TEST_META_PREFIX = "live-self-test:"
 RESTART_SAMPLE_KEY = "service-restart-sample"
 
-CHANNEL_TOPICS = {
-    diagnostics.REQUEST_CHANNEL: "Owner and automatic diagnostic upgrade requests using the shared GitHub batch.",
-    diagnostics.REVIEW_CHANNEL: "Owner review queue for upgrades, diagnostics, deployment, recovery, and exact next actions.",
-    diagnostics.APPLIED_CHANNEL: "Verified upgrade implementations, affected channels, deployed commits, and live runtime proof.",
-}
+# The old upgrade-requests/upgrade-review/applied-upgrades Discord system
+# was retired; this used to auto-create those 3 channels whenever they
+# went missing (the mechanism responsible for them silently resurrecting
+# themselves). Nothing is required or auto-created anymore.
+CHANNEL_TOPICS: dict[str, str] = {}
 
 
 def _ensure_required_owner_channels() -> list[str]:
+    if not CHANNEL_TOPICS:
+        return []
     tracker = diagnostics._engine().discord_tracker()
     if not tracker:
         return []
     channels = diagnostics._guild_channels(tracker)
     mapped = diagnostics._channel_map(channels)
     template = next(
-        (
-            mapped[name]
-            for name in (
-                diagnostics.REQUEST_CHANNEL,
-                diagnostics.REVIEW_CHANNEL,
-                diagnostics.APPLIED_CHANNEL,
-                "workflow-log",
-                "system-health",
-            )
-            if name in mapped
-        ),
+        (mapped[name] for name in ("workflow-log",) if name in mapped),
         None,
     )
     created: list[str] = []
@@ -132,12 +121,6 @@ def _restart_loop_check() -> diagnostics.HealthCheck:
     )
 
 
-def collect_health_checks(engine_connection: Any):
-    checks, channels = _ORIGINAL_COLLECT(engine_connection)
-    checks.append(_restart_loop_check())
-    return checks, channels
-
-
 def _self_test_complete() -> bool:
     store = diagnostics.connect_store()
     try:
@@ -150,22 +133,6 @@ def _self_test_complete() -> bool:
         )
     finally:
         store.close()
-
-
-def acceptance_content(checks, channels) -> str:
-    content = _ORIGINAL_ACCEPTANCE_CONTENT(checks, channels)
-    lines = content.splitlines()
-    complete = _self_test_complete()
-    replacement = (
-        "✅ **PASS · Diagnostic stable reporting** · synthetic failure and recovery updated one persistent diagnostic record"
-        if complete
-        else "⏳ **PENDING · Diagnostic stable reporting** · synthetic create-and-recover proof has not completed"
-    )
-    output = [
-        replacement if "Diagnostic stable reporting" in line else line
-        for line in lines
-    ]
-    return "\n".join(output)[:1900]
 
 
 def _run_stable_message_self_test() -> None:
@@ -225,16 +192,6 @@ def _run_stable_message_self_test() -> None:
         store.close()
 
 
-def diagnostic_cycle_job(engine_connection: Any) -> str:
-    created = _ensure_required_owner_channels()
-    detail = _ORIGINAL_CYCLE(engine_connection)
-    _run_stable_message_self_test()
-    checks, channels = collect_health_checks(engine_connection)
-    diagnostics._post_live_acceptance(engine_connection, checks, channels)
-    suffix = f"; created owner channels: {', '.join(created)}" if created else ""
-    return f"{detail}; stable reporting verified{suffix}"
-
-
 def _force_startup_cycle() -> None:
     engine = diagnostics._engine()
     connection = engine.connect_db()
@@ -249,35 +206,12 @@ def _force_startup_cycle() -> None:
 
 
 def install() -> None:
+    """Historical, superseded entry point - never called from any live
+    process (runtime_contract.py's install_live_checks() uses this
+    module's utility functions directly instead). Kept only so existing
+    tests exercising it in isolation keep working."""
     global _INSTALLED
     if _INSTALLED:
         return
-    diagnostics.collect_health_checks = collect_health_checks
-    diagnostics._acceptance_content = acceptance_content
-    diagnostics.diagnostic_cycle_job = diagnostic_cycle_job
-
-    engine = diagnostics._engine()
-    rebuilt = []
-    found = False
-    for job in engine.JOBS:
-        if job.name == diagnostics.DIAGNOSTIC_JOB:
-            rebuilt.append(
-                engine.Job(
-                    job.name,
-                    job.interval,
-                    diagnostic_cycle_job,
-                    market_hours_only=job.market_hours_only,
-                    after_hours_interval=job.after_hours_interval,
-                    background=job.background,
-                    provider_heavy=job.provider_heavy,
-                    retry_interval=job.retry_interval,
-                )
-            )
-            found = True
-        else:
-            rebuilt.append(job)
-    if not found:
-        raise RuntimeError("The self-diagnostics scheduler job is missing")
-    engine.JOBS = rebuilt
     _force_startup_cycle()
     _INSTALLED = True

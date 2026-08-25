@@ -45,7 +45,6 @@ def launch_clean_handoff_before_runtime(target: Path) -> bool:
 
 def install_runtime_overrides(
     *,
-    include_discord_upgrade_commands: bool = False,
     include_information_engine: bool = False,
     include_supervisor_guard: bool = False,
 ) -> None:
@@ -79,11 +78,6 @@ def install_runtime_overrides(
     if include_information_engine:
         runtime_contract.install_information_engine()
 
-    if include_discord_upgrade_commands:
-        import github_upgrade_patch
-
-        github_upgrade_patch.install()
-
 
 def main() -> None:
     if len(sys.argv) < 2:
@@ -101,7 +95,6 @@ def main() -> None:
 
     load_env()
     install_runtime_overrides(
-        include_discord_upgrade_commands=(target.name.casefold() == "discord_command_bot_public.py"),
         include_information_engine=(target.name.casefold() == "local_information_engine_bootstrap.py"),
         include_supervisor_guard=(target.name.casefold() == "run_supervisor_simple.py"),
     )

@@ -36,22 +36,16 @@ REVIEW_CHANNEL = "upgrade-review"
 REQUEST_CHANNEL = "upgrade-requests"
 APPLIED_CHANNEL = "applied-upgrades"
 DIAGNOSTIC_JOB = "self-diagnostics"
-MARKET_REVIEW_JOB = "market-hours-upgrade-review"
 VERSION = "diagnostic-upgrade-system-v1"
-REVIEW_MESSAGE_KEY = f"{VERSION}:review-message-id"
-REVIEW_HASH_KEY = f"{VERSION}:review-hash"
-ACCEPTANCE_MESSAGE_KEY = f"{VERSION}:acceptance-message-id"
-ACCEPTANCE_HASH_KEY = f"{VERSION}:acceptance-hash"
-MARKET_REVIEW_LAST_KEY = f"{VERSION}:last-market-review"
 INSTALLED_SHA_KEY = f"{VERSION}:installed-sha"
 
+# REQUEST_CHANNEL/REVIEW_CHANNEL/APPLIED_CHANNEL are kept as constants -
+# _acceptance_content in diagnostic_review_runtime.py's history and old
+# test fixtures still reference them by name - but the old upgrade-batch
+# Discord system they named was retired; nothing requires or posts to
+# these channels anymore.
 REQUIRED_CHANNELS = (
-    REQUEST_CHANNEL,
-    REVIEW_CHANNEL,
-    APPLIED_CHANNEL,
     "workflow-log",
-    "system-health",
-    "system-activity",
 )
 CORE_PORTS = {
     "command-bot": 8080,
@@ -331,92 +325,12 @@ def _channel_map(channels: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]
     }
 
 
-def ensure_owner_channel(name: str, topic: str) -> tuple[Any | None, str]:
-    tracker = _engine().discord_tracker()
-    if not tracker:
-        return None, ""
-    channels = _guild_channels(tracker)
-    mapped = _channel_map(channels)
-    existing = mapped.get(name.casefold())
-    if existing:
-        return tracker, str(existing["id"])
-    sibling = mapped.get(REQUEST_CHANNEL) or mapped.get(REVIEW_CHANNEL)
-    payload: dict[str, Any] = {"name": name, "type": 0, "topic": topic[:1024]}
-    if sibling:
-        if sibling.get("parent_id"):
-            payload["parent_id"] = sibling["parent_id"]
-        if isinstance(sibling.get("permission_overwrites"), list):
-            payload["permission_overwrites"] = sibling["permission_overwrites"]
-    created = tracker._request("POST", f"/guilds/{tracker.guild_id}/channels", payload)
-    return tracker, str((created or {}).get("id") or "")
-
-
-def _render_record(record: dict[str, Any]) -> str:
-    evidence = json.loads(str(record.get("evidence_json") or "{}"))
-    icon = {
-        "DEGRADED": "⚠️",
-        "FAILED": "❌",
-        "RETRYING": "🔄",
-        "FAILED AGAIN": "❌",
-        "RECOVERED": "✅",
-        "RESOLVED": "✅",
-        "VERIFIED": "✅",
-    }.get(str(record.get("status") or ""), "ℹ️")
-    return "\n".join(
-        [
-            f"## {icon} {record['diagnostic_id']} · {record['component']}",
-            f"**Status:** {record['status']} · **Severity:** {record['severity']}",
-            f"**Operation:** {record['operation']}",
-            f"**Runtime target:** {record.get('runtime_target') or 'Not identified'}",
-            f"**Affected channels:** {record.get('channels') or 'None identified'}",
-            f"**First / latest:** {record['first_seen']} · {record['last_seen']}",
-            f"**Failures:** {record['consecutive_failures']} consecutive · {record['total_failures']} total",
-            f"**Commit:** `{record.get('deployed_commit') or 'unknown'}` · **last working:** `{record.get('last_working_commit') or 'unknown'}`",
-            f"**Healthy services:** {record.get('healthy_services') or 'unknown'} · **automatic retry:** {record.get('automatic_retry') or 'unknown'}",
-            "### Sanitized evidence",
-            f"```text\n{redact(evidence.get('detail') or record.get('normalized_error') or '')[:900]}\n```",
-            f"**Repair objective:** {record.get('repair_objective') or 'Identify and repair the defect.'}",
-            f"**GitHub batch request:** #{record.get('github_issue_number') or 'pending'} / {record.get('github_request_number') or 'pending'}",
-            f"**Next action:** {'Mark the shared batch upgrade-ready for maintainer review.' if record.get('github_request_number') else 'Automatic retries continue; persistent failures will enter the shared upgrade batch.'}",
-            (
-                f"**Recovery:** {record.get('recovery_time')} · {record.get('verification_result')}"
-                if record.get("recovery_time")
-                else ""
-            ),
-        ]
-    )[:1900]
-
-
 def _sync_discord(connection: sqlite3.Connection, record: dict[str, Any]) -> bool:
-    try:
-        tracker, channel_id = ensure_owner_channel(
-            REVIEW_CHANNEL,
-            "Owner review queue for upgrade requests, diagnostics, failures, recovery, and exact next actions.",
-        )
-        if not tracker or not channel_id:
-            return False
-        payload = {"content": _render_record(record), "allowed_mentions": {"parse": []}}
-        message_id = str(record.get("discord_message_id") or "")
-        if message_id:
-            try:
-                tracker._request(
-                    "PATCH", f"/channels/{channel_id}/messages/{message_id}", payload
-                )
-                return True
-            except Exception:
-                message_id = ""
-        created = tracker._request("POST", f"/channels/{channel_id}/messages", payload)
-        message_id = str((created or {}).get("id") or "")
-        if not message_id:
-            return False
-        connection.execute(
-            "UPDATE diagnostics SET discord_message_id=? WHERE signature=?",
-            (message_id, record["signature"]),
-        )
-        connection.commit()
-        return True
-    except Exception:
-        return False
+    """No-op: #upgrade-review was retired along with the old upgrade-batch
+    Discord system. record_failure/record_recovery still call this (kept
+    for call-site compatibility) but there is nowhere left to post - local
+    tracking, GitHub escalation, and retry/recovery logic are unaffected."""
+    return False
 
 
 def record_failure(
@@ -831,7 +745,7 @@ def _discord_checks() -> tuple[list[HealthCheck], dict[str, dict[str, Any]]]:
                 "Discord",
                 "bot configuration",
                 "Discord tracker is unavailable or credentials are not configured.",
-                channels="#upgrade-review",
+                channels="#workflow-log",
                 runtime_target="DiscordTracker",
             )
         ], {}
@@ -845,21 +759,13 @@ def _discord_checks() -> tuple[list[HealthCheck], dict[str, dict[str, Any]]]:
                 "Discord",
                 "guild channel API",
                 f"{type(exc).__name__}: {exc}",
-                channels="#upgrade-review",
+                channels="#workflow-log",
                 runtime_target="GET /guilds/{guild}/channels",
                 severity="WARNING",
                 automatic_retry="next five-minute diagnostic cycle",
             )
         ], {}
     missing = [name for name in REQUIRED_CHANNELS if name not in channels]
-    hooks = False
-    try:
-        hooks = all(
-            marker in (ROOT / "github_upgrade_patch.py").read_text(encoding="utf-8")
-            for marker in ("upgrade-add", "upgrade-list", "upgrade-ready", "upgrade-cancel")
-        )
-    except OSError:
-        hooks = False
     return [
         HealthCheck(
             "discord-connectivity",
@@ -867,7 +773,7 @@ def _discord_checks() -> tuple[list[HealthCheck], dict[str, dict[str, Any]]]:
             "Discord",
             "guild channel API",
             f"Connected; {len(channels)} channels visible.",
-            channels="#upgrade-review",
+            channels="#workflow-log",
             runtime_target="DiscordTracker",
         ),
         HealthCheck(
@@ -880,16 +786,6 @@ def _discord_checks() -> tuple[list[HealthCheck], dict[str, dict[str, Any]]]:
             runtime_target="feature-owned channel bootstrap",
             force_upgrade=bool(missing),
             acceptance_tests="Missing channels are created idempotently and a Discord timeout never blocks deployment.",
-        ),
-        HealthCheck(
-            "upgrade-command-hooks",
-            hooks,
-            "upgrade bridge",
-            "owner command hooks",
-            "All four owner upgrade command markers are installed." if hooks else "One or more upgrade command hooks are missing.",
-            channels="#upgrade-requests and #upgrade-review",
-            runtime_target="github_upgrade_patch.install",
-            force_upgrade=not hooks,
         ),
     ], channels
 
@@ -1046,87 +942,6 @@ def collect_health_checks(engine_connection: sqlite3.Connection) -> tuple[list[H
     return checks, channels
 
 
-def _upsert_message(
-    engine_connection: sqlite3.Connection,
-    tracker: Any,
-    channel_id: str,
-    state_key: str,
-    hash_key: str,
-    content: str,
-) -> str:
-    digest = hashlib.sha256(content.encode()).hexdigest()
-    previous = _engine().get_state(engine_connection, hash_key, "")
-    message_id = _engine().get_state(engine_connection, state_key, "")
-    if message_id and previous == digest:
-        return message_id
-    payload = {"content": content[:1900], "allowed_mentions": {"parse": []}}
-    if message_id:
-        try:
-            tracker._request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
-            _engine().set_state(engine_connection, hash_key, digest)
-            return message_id
-        except Exception:
-            message_id = ""
-    created = tracker._request("POST", f"/channels/{channel_id}/messages", payload)
-    message_id = str((created or {}).get("id") or "")
-    if not message_id:
-        raise RuntimeError("Discord did not acknowledge the stable diagnostic card")
-    _engine().set_state(engine_connection, state_key, message_id)
-    _engine().set_state(engine_connection, hash_key, digest)
-    return message_id
-
-
-def _acceptance_content(checks: list[HealthCheck], channels: dict[str, dict[str, Any]]) -> str:
-    state = _read_json(SUPERVISOR_STATE_PATH)
-    selected = [
-        ("Simple two-minute updater", str(state.get("supervisor_mode") or "") == "SIMPLE_TWO_MINUTE_UPDATER", str(state.get("supervisor_mode") or "missing")),
-        ("Command bot online", _tcp_open(8080), "127.0.0.1:8080"),
-        ("Information engine online", _tcp_open(8765), "127.0.0.1:8765"),
-        ("Scheduler heartbeat", any(check.key.startswith("job-") and check.passed for check in checks), "fresh job receipts available"),
-        ("ngrok online when configured", _tcp_open(4040) or not (ROOT / "ngrok.exe").exists(), "127.0.0.1:4040"),
-        ("#upgrade-requests", REQUEST_CHANNEL in channels, REQUEST_CHANNEL),
-        ("#upgrade-review", REVIEW_CHANNEL in channels, REVIEW_CHANNEL),
-        ("#applied-upgrades", APPLIED_CHANNEL in channels, APPLIED_CHANNEL),
-        ("Upgrade command hooks", next((check.passed for check in checks if check.key == "upgrade-command-hooks"), False), "four owner commands"),
-        ("Diagnostic stable reporting", REVIEW_CHANNEL in channels, "deduplicated message IDs stored locally"),
-        ("Applied-upgrade runtime proof", next((check.passed for check in checks if check.key == "job-applied-upgrades-dashboard"), False), "scheduler receipt"),
-        ("No detected restart loop", not any("restart loop" in check.detail.casefold() and not check.passed for check in checks), "recent logs"),
-        ("Installed equals deployed", next((check.passed for check in checks if check.key == "installed-deployed-commit"), False), "supervisor state"),
-    ]
-    icons = {True: "PASS", False: "FAIL"}
-    lines = [
-        "# Tradysquid Live Acceptance",
-        f"**Deployed commit:** `{_current_sha()}`",
-        "Each item is reported separately. Repository tests alone are not treated as live proof.",
-    ]
-    lines.extend(
-        f"{'✅' if passed else '❌'} **{icons[passed]} · {title}** · {detail}"
-        for title, passed, detail in selected
-    )
-    lines.append(f"Checked **{iso_now()}**.")
-    return "\n".join(lines)[:1900]
-
-
-def _post_live_acceptance(
-    engine_connection: sqlite3.Connection,
-    checks: list[HealthCheck],
-    channels: dict[str, dict[str, Any]],
-) -> None:
-    tracker, channel_id = ensure_owner_channel(
-        REVIEW_CHANNEL,
-        "Owner review queue for upgrades, diagnostics, deployment, and live acceptance.",
-    )
-    if not tracker or not channel_id:
-        return
-    _upsert_message(
-        engine_connection,
-        tracker,
-        channel_id,
-        ACCEPTANCE_MESSAGE_KEY,
-        ACCEPTANCE_HASH_KEY,
-        _acceptance_content(checks, channels),
-    )
-
 
 def diagnostic_cycle_job(engine_connection: sqlite3.Connection) -> str:
     checks, channels = collect_health_checks(engine_connection)
@@ -1144,7 +959,6 @@ def diagnostic_cycle_job(engine_connection: sqlite3.Connection) -> str:
         _set_meta(store, "last-complete-cycle", iso_now())
     finally:
         store.close()
-    _post_live_acceptance(engine_connection, checks, channels)
     _engine().store_observation(
         engine_connection,
         DIAGNOSTIC_JOB,
@@ -1275,115 +1089,6 @@ def official_market_session(
     )
 
 
-def market_review_due(
-    engine_connection: sqlite3.Connection,
-    moment: datetime | None = None,
-    *,
-    calendar_payload: dict[str, Any] | None = None,
-) -> bool:
-    moment = (moment or datetime.now(market_data.MARKET_TZ)).astimezone(market_data.MARKET_TZ)
-    session = official_market_session(moment, calendar_payload=calendar_payload)
-    if not session or not (session[0] <= moment <= session[1]):
-        return False
-    last = _parse_time(_engine().get_state(engine_connection, MARKET_REVIEW_LAST_KEY, ""))
-    return not last or moment - last.astimezone(market_data.MARKET_TZ) >= timedelta(hours=2)
-
-
-def _age(value: str) -> str:
-    parsed = _parse_time(value)
-    if not parsed:
-        return "unknown age"
-    delta = max(timedelta(), now() - parsed)
-    hours = int(delta.total_seconds() // 3600)
-    return f"{hours}h" if hours else f"{int(delta.total_seconds() // 60)}m"
-
-
-def _queue_content(
-    status: dict[str, Any],
-    pulls: list[dict[str, Any]],
-    state: dict[str, Any],
-) -> str:
-    lines = [
-        "# Upgrade Review Queue",
-        f"**Shared batch:** #{status.get('issue_number') or 'none'} · {status.get('state', 'NONE')} · {status.get('request_count', 0)} request(s)",
-    ]
-    for request in status.get("requests") or []:
-        lines.append(
-            f"• **Request {request.get('request_number')} · {request.get('source')} · {request.get('status')}** "
-            f"· {_age(str(request.get('updated_at') or ''))} · {request.get('summary')} · **Next:** {request.get('next_action')}"
-        )
-    for pull in pulls:
-        lines.append(
-            f"• **PR #{pull['number']} · CI {pull['ci_state']}** · {_age(pull['updated_at'])} · "
-            f"{pull['title']} · **Next:** {pull['next_action']}"
-        )
-    remote = str(state.get("last_remote_sha") or "")[:12]
-    deployed = str(state.get("deployed_sha") or "")[:12]
-    if remote and deployed and remote != deployed:
-        lines.append(
-            f"• **DEPLOYMENT PENDING** · remote `{remote}` / deployed `{deployed}` · **Next:** leave the two-minute updater running."
-        )
-    lines.append(f"Reviewed **{iso_now()}**. Unchanged and empty queues are not reposted.")
-    return "\n".join(lines)[:1900]
-
-
-def market_upgrade_review_job(engine_connection: sqlite3.Connection) -> str:
-    moment = datetime.now(market_data.MARKET_TZ)
-    if not market_review_due(engine_connection, moment):
-        return "outside official market session or two-hour review is not due"
-    try:
-        status = bridge.batch_status()
-        pulls = bridge.pull_request_queue()
-    except Exception as exc:
-        record_failure(
-            HealthCheck(
-                "market-review-github",
-                False,
-                "upgrade review",
-                "GitHub queue review",
-                f"{type(exc).__name__}: {exc}",
-                severity="WARNING",
-                channels="#upgrade-review",
-                runtime_target=MARKET_REVIEW_JOB,
-                automatic_retry="next eligible market-hours review",
-            )
-        )
-        raise
-    state = _read_json(SUPERVISOR_STATE_PATH)
-    remote = str(state.get("last_remote_sha") or "")[:12]
-    deployed = str(state.get("deployed_sha") or "")[:12]
-    has_queue = bool(status.get("request_count") or pulls or (remote and deployed and remote != deployed))
-    _engine().set_state(engine_connection, MARKET_REVIEW_LAST_KEY, moment.isoformat())
-    if not has_queue:
-        return "upgrade review queue is empty; no Discord message posted"
-    tracker, channel_id = ensure_owner_channel(
-        REVIEW_CHANNEL,
-        "Owner review queue for upgrades, diagnostics, deployment, and live acceptance.",
-    )
-    if not tracker or not channel_id:
-        raise RuntimeError("#upgrade-review is unavailable")
-    content = _queue_content(status, pulls, state)
-    _upsert_message(
-        engine_connection,
-        tracker,
-        channel_id,
-        REVIEW_MESSAGE_KEY,
-        REVIEW_HASH_KEY,
-        content,
-    )
-    _engine().store_observation(
-        engine_connection,
-        MARKET_REVIEW_JOB,
-        {
-            "batch": status,
-            "pulls": pulls,
-            "remote": remote,
-            "deployed": deployed,
-            "at": iso_now(),
-        },
-    )
-    return f"{status.get('request_count', 0)} request(s); {len(pulls)} pull request(s)"
-
 
 def diagnostics_summary() -> dict[str, Any]:
     connection = connect_store()
@@ -1412,7 +1117,7 @@ def _seed_immediate_runs() -> None:
         installed = engine.get_state(connection, INSTALLED_SHA_KEY, "")
         if installed == sha:
             return
-        for name in (DIAGNOSTIC_JOB, MARKET_REVIEW_JOB):
+        for name in (DIAGNOSTIC_JOB,):
             connection.execute(
                 "DELETE FROM engine_state WHERE key IN (?, ?)",
                 (f"job:{name}", f"job-error:{name}"),
@@ -1435,13 +1140,6 @@ def install() -> None:
             diagnostic_cycle_job,
             background=True,
             retry_interval=timedelta(minutes=2),
-        ),
-        MARKET_REVIEW_JOB: engine.Job(
-            MARKET_REVIEW_JOB,
-            timedelta(hours=2),
-            market_upgrade_review_job,
-            background=True,
-            retry_interval=timedelta(minutes=15),
         ),
     }
     rebuilt = []

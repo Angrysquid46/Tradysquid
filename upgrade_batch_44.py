@@ -44,7 +44,6 @@ _ORIGINAL_TRADE_LEARNING_ANALYSIS: Any | None = None
 _UNIVERSE_POLICY_INSTALLED = False
 _LEARNING_INSTALLED = False
 _ENGINE_INSTALLED = False
-_STRUCTURE_INSTALLED = False
 
 
 def _now() -> datetime:
@@ -1142,69 +1141,6 @@ def enhanced_outcome_learning_job(connection: Any) -> str:
     )
 
 
-def _find_channel(tracker: Any, names: tuple[str, ...]) -> dict[str, Any] | None:
-    channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
-    for name in names:
-        match = next(
-            (
-                item
-                for item in channels
-                if str(item.get("name") or "").casefold() == name.casefold()
-                and int(item.get("type") or 0) == 0
-            ),
-            None,
-        )
-        if match:
-            return match
-    return None
-
-
-def upgrade_request_migration_job(connection: Any) -> str:
-    tracker = _tracker()
-    if not tracker:
-        return "waiting for Discord configuration"
-    destination = _find_channel(tracker, ("upgrade-requests", "upgrade-review"))
-    if not destination:
-        return "upgrade destination is missing"
-    destination_id = str(destination["id"])
-    channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
-    moved = 0
-    scanned = 0
-    for channel in channels:
-        channel_id = str(channel.get("id") or "")
-        if int(channel.get("type") or -1) != 0 or not channel_id or channel_id == destination_id:
-            continue
-        try:
-            messages = tracker._request("GET", f"/channels/{channel_id}/messages?limit=100")
-        except discord_transport.DiscordError:
-            continue
-        for message in messages if isinstance(messages, list) else []:
-            scanned += 1
-            author = message.get("author") or {}
-            if not author.get("bot"):
-                continue
-            text = discord_transport.message_search_text(message)
-            if (
-                "Upgrade request" not in text
-                or ("uploaded" not in text and "Batch issue" not in text)
-            ):
-                continue
-            payload = {
-                "content": str(message.get("content") or "")[:1900],
-                "embeds": message.get("embeds") or [],
-                "allowed_mentions": {"parse": []},
-            }
-            tracker._request("POST", f"/channels/{destination_id}/messages", payload)
-            tracker._request("DELETE", f"/channels/{channel_id}/messages/{message['id']}")
-            moved += 1
-    _engine().store_observation(
-        connection,
-        "upgrade-request-migration",
-        {"scanned": scanned, "moved": moved, "at": _engine().iso_now()},
-    )
-    return f"{scanned} recent messages checked; {moved} upgrade response(s) moved"
-
-
 def _clone_job(job: Any, callback: Any | None = None, **changes: Any) -> Any:
     engine = _engine()
     return engine.Job(
@@ -1239,49 +1175,6 @@ def install_engine() -> None:
 
     _ENGINE = local_information_engine
     _ENGINE_INSTALLED = True
-
-
-def install_structure(sync: Any) -> None:
-    """Add a dedicated owner-only upgrade request channel without disturbing review."""
-    global _STRUCTURE_INSTALLED
-    if _STRUCTURE_INSTALLED:
-        return
-    if not any(item.name == "upgrade-requests" for item in sync.CHANNELS):
-        rebuilt = []
-        inserted = False
-        for item in sync.CHANNELS:
-            if item.name == "upgrade-review" and not inserted:
-                rebuilt.append(
-                    sync.ChannelSpec(
-                        "OWNER CONTROL",
-                        "upgrade-requests",
-                        "Owner-submitted upgrade batches mirrored from any Discord channel.",
-                    )
-                )
-                inserted = True
-            rebuilt.append(item)
-        if not inserted:
-            rebuilt.append(
-                sync.ChannelSpec(
-                    "OWNER CONTROL",
-                    "upgrade-requests",
-                    "Owner-submitted upgrade batches mirrored from any Discord channel.",
-                )
-            )
-        sync.CHANNELS = rebuilt
-    sync.CHANNEL_STARTERS["upgrade-requests"] = (
-        "Owner `/upgrade-add` requests are mirrored here, removed from the source channel, "
-        "and uploaded to the active GitHub batch."
-    )
-    sync.GUIDES["upgrade-requests"] = """# Upgrade Requests
-Use `/upgrade-add request:` from any channel. TradeBot records the request in the
-open GitHub batch, mirrors the confirmation here, and removes the confirmation
-from the source channel so working dashboards stay clean.
-
-`/upgrade-list` shows the current batch. `/upgrade-ready` locks it for maintainer
-review. No request edits code or deploys anything until a tested pull request is
-approved and merged."""
-    _STRUCTURE_INSTALLED = True
 
 
 def validate_batch() -> dict[str, Any]:
