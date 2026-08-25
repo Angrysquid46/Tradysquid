@@ -22,6 +22,14 @@ safety check immediately before committing capital or closing a position.
 
 from __future__ import annotations
 
+# Must run before any module that reads an env var as a module-level
+# constant at import time (market_data.TRADIER_TOKEN,
+# discord_transport.DISCORD_BOT_TOKEN, etc.) - see env_bootstrap.py's own
+# docstring for why this has to be first, ahead of the imports below.
+from bots.claude.env_bootstrap import load_env
+
+load_env()
+
 import json
 import os
 import time
@@ -126,9 +134,15 @@ def entry_scan_job(connection) -> str:
     if contract is None:
         return f"{selected.name} fired ({selected.decision.side}) but no eligible contract"
 
-    if not market_api_budget.request_allowed(market_api_budget.PRIORITY_ENTRY_CRITICAL_DATA):
-        return "budget gate declined final entry safety check, retrying next cycle"
-    safety_quote = market_data.get_quote("SPY")
+    # market_data.get_quote self-gates through market_api_budget internally
+    # now (Phase 14) - a separate request_allowed() pre-check here would
+    # reserve a slot that's never consumed, and get_quote's own gate would
+    # still apply the wrong (default) priority tier. Pass the real
+    # priority straight through instead.
+    try:
+        safety_quote = market_data.get_quote("SPY", priority=market_api_budget.PRIORITY_ENTRY_CRITICAL_DATA)
+    except market_data.TradierError:
+        return "final safety quote unavailable (provider/budget), skipping this cycle"
     if safety_quote is None:
         return "final safety quote unavailable, skipping this cycle"
 
@@ -197,7 +211,6 @@ def position_monitor_job(connection) -> str:
     if not decision.should_exit:
         return f"holding, pnl_pct={decision.pnl_pct}"
 
-    market_api_budget.request_allowed(market_api_budget.PRIORITY_EXIT_CRITICAL_DATA)
     exit_price = execution.exit_fill_price(contract)
     pnl_usd = (exit_price - trade["entry_price"]) * 100 * trade["contracts"]
     scoreboard.record_trade_close(

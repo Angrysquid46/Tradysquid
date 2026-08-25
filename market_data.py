@@ -146,8 +146,8 @@ def get_quotes(symbols: list[str], include_greeks: bool = True, *, priority: int
     return quote_map
 
 
-def get_quote(symbol: str) -> dict[str, Any] | None:
-    return get_quotes([symbol], include_greeks=False).get(symbol)
+def get_quote(symbol: str, *, priority: int = market_api_budget.PRIORITY_SECONDARY_CONTEXT) -> dict[str, Any] | None:
+    return get_quotes([symbol], include_greeks=False, priority=priority).get(symbol)
 
 def get_expirations(symbol: str, *, priority: int = market_api_budget.PRIORITY_SECONDARY_CONTEXT) -> list[str]:
     data = tradier_get("/markets/options/expirations", {"symbol": symbol, "includeAllRoots": "true"}, priority=priority, cache_ttl_seconds=21600)
