@@ -1,16 +1,11 @@
 {
-  "last_updated": "2026-08-25T16:35:54.977316-05:00",
-  "branch": "codex/phase14-completion",
-  "observed_head_at_write": "612265b5d96a2ff8a5632e041e1a0d73366c37f1",
-  "commit_subject": "Re-sync governance/PROJECT_STATE.json (re-audit finding)",
+  "last_updated": "2026-08-25T16:46:06.634495-05:00",
+  "branch": "codex/phase14-final-reconciliation",
+  "observed_head_at_write": "ae5e1aee51c9fe96da36e0e8e0daec347ec2c18e",
+  "commit_subject": "Finish Phase 14 adversarial launch hardening",
   "current_phase": "Phase 14",
-  "current_subphase": "Phase 14 hardening merged (PR #331: scoreboard/rivalry/discord_surface_manifest/market_data_collector/backtest_lab fixes). Corrected again during re-audit - finish() is called before the merge/push happens on my own feature-branch workflow, so it can never know about commits made after it returns; the fix is resyncing this file as the explicit last step of every deploy cycle, not a tool change.",
-  "active_lock": {
-    "actor": "Codex",
-    "task": "Finish Phase 14 completely",
-    "work_id": "271a697a-dbec-4bbf-ab53-833c763a7cdc",
-    "started_at": "2026-08-25T16:03:18.191141-05:00"
-  },
+  "current_subphase": "Phase 14 complete after PR #332 and final governance reconciliation. Phase 15 is not started and requires explicit owner launch authorization.",
+  "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
 }
