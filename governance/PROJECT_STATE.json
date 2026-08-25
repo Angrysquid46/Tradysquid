@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-25T10:19:38.643962-05:00",
+  "last_updated": "2026-08-25T13:15:47.570018-05:00",
   "branch": "main",
-  "current_commit": "40248e83d1417478c52e3f48611954f0063ab367",
-  "commit_subject": "Merge pull request #328 from Angrysquid46/codex/phase12-blacktide",
+  "current_commit": "d8b82e89c850d8bf2dd8c99b24d0961d01f6c4ed",
+  "commit_subject": "Sync governance coordination state (Phase 12 completion, Phase 13 begin/complete)",
   "current_phase": "Phase 12",
   "current_subphase": "Phase 11 complete; Phase 12 ready",
   "active_lock": null,
