@@ -199,7 +199,7 @@ def test_record_backtest_round_trips(scratch):
         results={"pnl": 0},
     )
     assert record["engine_version"] == lab.ENGINE_VERSION
-    loaded = lab.load_backtest_records(date(2026, 8, 24))
+    loaded = lab.load_backtest_records(datetime.fromisoformat(record["recorded_at"]).date())
     assert len(loaded) == 1
     assert loaded[0]["bot_version"] == "test-v0"
 
@@ -212,7 +212,7 @@ def test_record_backtest_is_append_only(scratch):
             data_quality={}, feature_versions={}, execution_assumptions={},
             parameters={}, random_seed=None, results={},
         )
-    loaded = lab.load_backtest_records(date(2026, 8, 24))
+    loaded = lab.load_backtest_records(datetime.now().astimezone().date())
     assert len(loaded) == 3
     assert [r["bot_version"] for r in loaded] == ["test-v0", "test-v1", "test-v2"]
 
