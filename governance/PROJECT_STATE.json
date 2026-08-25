@@ -1,10 +1,10 @@
 {
-  "last_updated": "2026-08-25T13:15:47.570018-05:00",
+  "last_updated": "2026-08-25T14:50:00.000000-05:00",
   "branch": "main",
-  "current_commit": "d8b82e89c850d8bf2dd8c99b24d0961d01f6c4ed",
-  "commit_subject": "Sync governance coordination state (Phase 12 completion, Phase 13 begin/complete)",
-  "current_phase": "Phase 12",
-  "current_subphase": "Phase 11 complete; Phase 12 ready",
+  "current_commit": "3c7ad9dff8cb9a020c1a0ee8811b2a2c21826988",
+  "commit_subject": "Sync governance coordination state (AXIOM v2 begin/complete)",
+  "current_phase": "Phase 14",
+  "current_subphase": "Phase 12 and Phase 13 complete; Phase 14 (full validation) ready - corrected from drift found during Claude's Phase 14 audit: two prior finish() calls recorded ending_commit before the matching git commit existed",
   "active_lock": null,
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."
 }
