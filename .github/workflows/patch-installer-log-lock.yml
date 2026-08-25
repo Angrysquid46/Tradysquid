@@ -1,22 +1,14 @@
 name: Patch Windows installer log lock
 
 on:
-  push:
-    branches:
-      - clean-rebuild
-    paths:
-      - ".github/workflows/patch-installer-log-lock.yml"
-  pull_request:
-    branches:
-      - clean-rebuild
-    paths:
-      - ".github/installer-log-lock-trigger"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   patch-and-verify:
+    if: ${{ false }} # Retired Phase 14: obsolete clean-rebuild installer repair only.
     runs-on: windows-latest
     timeout-minutes: 20
     steps:

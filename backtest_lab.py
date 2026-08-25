@@ -79,9 +79,7 @@ class MarketView:
                           f"{self.tolerance_minutes}-minute tolerance",
                 "quote": quote,
             }
-        tier = TIER_A if quote["data_class"] in (
-            store.VERIFIED_REAL, store.REAL_WITH_LIMITATIONS
-        ) else TIER_C
+        tier = TIER_A if quote["data_class"] == store.VERIFIED_REAL else TIER_C
         return {
             "tier": tier,
             "reason": None if tier == TIER_A else INSUFFICIENT_DATA,
@@ -126,9 +124,9 @@ class MarketView:
             }
         clean = [c for c in contracts if c["data_class"] == store.VERIFIED_REAL]
         limited = [c for c in contracts if c["data_class"] == store.REAL_WITH_LIMITATIONS]
-        if clean:
+        if clean and len(clean) == len(contracts):
             tier = TIER_A
-        elif limited:
+        elif clean or limited:
             # Real chain data exists but every contract is flagged
             # REAL_WITH_LIMITATIONS - Tier B's classification without a
             # modeled-pricing fallback (not implemented; see module docs).
@@ -192,37 +190,20 @@ _LATEST_COLUMN = {
 
 
 def dataset_fingerprint(symbol: str, start_date: date, end_date: date) -> str:
-    """sha256 of engine version + per-dataset row-count/max-timestamp
-    over [start_date, end_date] - modeled on
-    market_memory_charts.data_fingerprint(). Stable across repeated calls
-    against the same stored data; changes once new data is appended."""
-    parts = [ENGINE_VERSION, symbol, start_date.isoformat(), end_date.isoformat()]
-    start_iso = datetime.combine(start_date, datetime.min.time()).isoformat()
-    end_iso = datetime.combine(end_date, datetime.max.time()).isoformat()
-    start_epoch = int(datetime.combine(start_date, datetime.min.time()).timestamp())
-    end_epoch = int(datetime.combine(end_date, datetime.max.time()).timestamp())
-
-    for dataset_name in (store.QUOTES_DATASET, store.CHAIN_DATASET, store.BARS_DATASET):
-        directory = store.DATA_ROOT / dataset_name / symbol
-        if not directory.exists():
-            parts.append(f"{dataset_name}:0:")
-            continue
-        glob = store.dataset_glob(dataset_name, symbol)
-        column = _LATEST_COLUMN[dataset_name]
-        bounds = (
-            [start_epoch, end_epoch]
-            if dataset_name == store.BARS_DATASET
-            else [start_iso, end_iso]
-        )
-        rows = store.query(
-            f"SELECT COUNT(*) AS n, MAX({column}) AS latest FROM read_parquet('{glob}') "
-            f"WHERE {column} >= ? AND {column} <= ?",
-            bounds,
-        )
-        row = rows[0] if rows else {"n": 0, "latest": None}
-        parts.append(f"{dataset_name}:{row['n']}:{row['latest']}")
-
-    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+    """Content-address every immutable parquet input in the requested range."""
+    digest = hashlib.sha256()
+    digest.update(f"{ENGINE_VERSION}|{symbol}|{start_date}|{end_date}".encode())
+    day = start_date
+    while day <= end_date:
+        for dataset_name in (store.QUOTES_DATASET, store.CHAIN_DATASET, store.BARS_DATASET):
+            partition = store.partition_dir(dataset_name, symbol, day)
+            for path in sorted(partition.glob("*.parquet")) if partition.exists() else ():
+                digest.update(str(path.relative_to(store.DATA_ROOT)).replace("\\", "/").encode())
+                with path.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+        day = date.fromordinal(day.toordinal() + 1)
+    return digest.hexdigest()
 
 
 def record_backtest(

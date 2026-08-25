@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 import market_api_budget
+import market_response_cache
 
 REPO_ROOT = Path(__file__).resolve().parent
 STATE_DIR = REPO_ROOT / "state"
@@ -77,34 +78,61 @@ def market_is_open_now() -> tuple[bool, datetime]:
 class TradierError(RuntimeError):
     pass
 
-def tradier_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+def tradier_get(path: str, params: dict[str, Any] | None = None, *,
+                priority: int = market_api_budget.PRIORITY_SECONDARY_CONTEXT,
+                cache_ttl_seconds: int = 0) -> dict[str, Any]:
+    # Provider-wide defaults protect every legacy/current caller that reaches
+    # this choke point, including calendar wrappers outside the collector.
+    if cache_ttl_seconds <= 0:
+        cache_ttl_seconds = {
+            "/markets/calendar": 21600,
+            "/markets/options/expirations": 21600,
+            "/markets/history": 60,
+            "/markets/timesales": 5,
+            "/markets/quotes": 5,
+            "/markets/options/chains": 5,
+        }.get(path, 0)
+    request_params = params or {}
+    key = market_response_cache.cache_key(path, request_params)
+    if cache_ttl_seconds > 0:
+        cached = market_response_cache.get(key)
+        if cached is not None:
+            return cached
     if not TRADIER_TOKEN:
         raise TradierError("TRADIER_TOKEN is not configured")
+    if not market_api_budget.request_allowed(priority):
+        raise TradierError(f"Tradier shared budget denied priority {priority} for {path}")
     try:
         response = SESSION.get(
             f"{TRADIER_BASE_URL}{path}",
-            params=params or {},
+            params=request_params,
             headers={"Authorization": f"Bearer {TRADIER_TOKEN}", "Accept": "application/json"},
             timeout=25,
         )
     except requests.RequestException as exc:
+        market_api_budget.release_reservation()
         raise TradierError(f"Tradier request failed: {exc}") from exc
     if not response.ok:
+        market_api_budget.release_reservation()
         body = response.text[:500].replace(TRADIER_TOKEN, "[REDACTED]")
         raise TradierError(f"Tradier HTTP {response.status_code} for {path}: {body}")
     market_api_budget.record_response_headers(response)
     try:
-        return response.json()
+        payload = response.json()
+        if cache_ttl_seconds > 0:
+            market_response_cache.put(key, payload, cache_ttl_seconds)
+        return payload
     except ValueError as exc:
         raise TradierError(f"Tradier returned invalid JSON for {path}") from exc
 
-def get_quotes(symbols: list[str], include_greeks: bool = True) -> dict[str, dict[str, Any]]:
+def get_quotes(symbols: list[str], include_greeks: bool = True, *, priority: int = market_api_budget.PRIORITY_SECONDARY_CONTEXT) -> dict[str, dict[str, Any]]:
     unique = list(dict.fromkeys(symbol for symbol in symbols if symbol))
     quote_map: dict[str, dict[str, Any]] = {}
     for chunk in split_chunks(unique, 50):
         data = tradier_get(
             "/markets/quotes",
             {"symbols": ",".join(chunk), "greeks": str(include_greeks).lower()},
+            priority=priority, cache_ttl_seconds=5,
         )
         quotes = data.get("quotes", {}).get("quote")
         if not quotes:
@@ -121,17 +149,18 @@ def get_quotes(symbols: list[str], include_greeks: bool = True) -> dict[str, dic
 def get_quote(symbol: str) -> dict[str, Any] | None:
     return get_quotes([symbol], include_greeks=False).get(symbol)
 
-def get_expirations(symbol: str) -> list[str]:
-    data = tradier_get("/markets/options/expirations", {"symbol": symbol, "includeAllRoots": "true"})
+def get_expirations(symbol: str, *, priority: int = market_api_budget.PRIORITY_SECONDARY_CONTEXT) -> list[str]:
+    data = tradier_get("/markets/options/expirations", {"symbol": symbol, "includeAllRoots": "true"}, priority=priority, cache_ttl_seconds=21600)
     values = data.get("expirations", {}).get("date")
     if values is None:
         return []
     return [values] if isinstance(values, str) else list(values)
 
-def get_chain(symbol: str, expiration: str) -> list[dict[str, Any]]:
+def get_chain(symbol: str, expiration: str, *, priority: int = market_api_budget.PRIORITY_SECONDARY_CONTEXT) -> list[dict[str, Any]]:
     data = tradier_get(
         "/markets/options/chains",
         {"symbol": symbol, "expiration": expiration, "greeks": "true"},
+        priority=priority, cache_ttl_seconds=5,
     )
     values = data.get("options", {}).get("option")
     if values is None:

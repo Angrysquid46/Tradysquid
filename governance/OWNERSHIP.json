@@ -91,6 +91,22 @@
       "purpose": "Phase 7: Section 8's shared API-budget priority scheme and gate - the one shared factual market service both competitors' live loops must call through."
     },
     {
+      "path": "market_data.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Authoritative Tradier HTTP choke point. Every REST observation participates in the shared quota and response-cache architecture."
+    },
+    {
+      "path": "market_response_cache.py",
+      "owner": "SHARED_DATA",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Cross-process cache for identical factual provider responses; contains no competitor strategy intelligence."
+    },
+    {
       "path": "scoreboard.py",
       "owner": "SHARED_CORE",
       "readers": ["Owner", "Codex", "Claude"],
@@ -113,6 +129,22 @@
       "writers": ["Owner", "Codex", "Claude"],
       "protected": false,
       "purpose": "Phase 9: Section 7's bounded, rate-limited rivalry event system BLACKTIDE and AXIOM both post trash talk through - never a code path either trader's decisions can read."
+    },
+    {
+      "path": "rivalry_presentation.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Failure-isolated Discord publisher for redacted official scoreboard and bounded rivalry cards."
+    },
+    {
+      "path": "sync_discord_structure.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Claude"],
+      "writers": ["Owner", "Codex", "Claude"],
+      "protected": false,
+      "purpose": "Authoritative idempotent live Discord channel/category reconciliation specification."
     },
     {
       "path": "bots/blacktide/",

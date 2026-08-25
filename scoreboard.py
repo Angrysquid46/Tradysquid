@@ -102,6 +102,22 @@ def record_trade_open(
     ).fetchone()
     if existing:
         raise ValueError(f"trade_id {trade_id!r} already recorded")
+    authoritative_generation = current_generation(connection, bot)
+    authoritative_bankroll = current_bankroll(connection, bot)
+    if generation != authoritative_generation:
+        raise ValueError(
+            f"generation {generation} is not authoritative current generation "
+            f"{authoritative_generation} for {bot}"
+        )
+    if abs(entry_bankroll - authoritative_bankroll) > 0.01:
+        raise ValueError(
+            f"entry_bankroll {entry_bankroll!r} does not match referee bankroll "
+            f"{authoritative_bankroll!r}"
+        )
+    if entry_price <= 0 or contracts < 1:
+        raise ValueError("entry_price and contracts must be positive")
+    if entry_price * 100 * contracts > authoritative_bankroll + 0.01:
+        raise ValueError("trade cost exceeds referee bankroll")
     # Global per bot, not per generation - IMMUTABLE_RULES.json's
     # max_open_trades_per_bot has no generation qualifier. A generation-
     # scoped check would let a bot hold an open trade in one generation
@@ -189,11 +205,39 @@ def record_generation_event(
     generation: int,
     event: str,
     detail: str = "",
+    minimum_qualifying_cost: float | None = None,
 ) -> None:
     if bot not in BOTS:
         raise ValueError(f"Unknown bot: {bot!r}")
     if event not in ("STARTED", "BUSTED"):
         raise ValueError(f"Unknown generation event: {event!r}")
+    current = current_generation(connection, bot)
+    open_position = current_position_status(connection, bot)
+    if open_position is not None:
+        raise ValueError("generation transition impossible while a position is open")
+    existing = connection.execute(
+        "SELECT event FROM generation_events WHERE bot=? AND generation=?",
+        (bot, generation),
+    ).fetchall()
+    existing_events = {row["event"] for row in existing}
+    if event == "BUSTED":
+        if generation != current or "BUSTED" in existing_events:
+            raise ValueError("invalid or duplicate BUSTED transition")
+        bankroll = current_bankroll(connection, bot)
+        if minimum_qualifying_cost is None:
+            if bankroll > 0.01:
+                raise ValueError("positive-bankroll bust requires minimum_qualifying_cost evidence")
+        elif minimum_qualifying_cost <= bankroll + 0.01:
+            raise ValueError("referee bankroll can still afford the qualifying trade")
+    else:
+        if generation != current + 1 or "STARTED" in existing_events:
+            raise ValueError("STARTED must advance exactly one generation and cannot duplicate")
+        prior = connection.execute(
+            "SELECT 1 FROM generation_events WHERE bot=? AND generation=? AND event='BUSTED'",
+            (bot, current),
+        ).fetchone()
+        if prior is None:
+            raise ValueError("STARTED requires the current generation to be BUSTED first")
     connection.execute(
         "INSERT INTO generation_events (bot, generation, event, at, detail) "
         "VALUES (?, ?, ?, ?, ?)",
@@ -401,8 +445,14 @@ SCOREBOARD_SNAPSHOT_KEYS = frozenset({
 
 
 def scoreboard_snapshot(connection: sqlite3.Connection, bot: str) -> dict[str, Any]:
-    """The public metrics payload Section 6 describes."""
+    """The public metrics payload Section 6 describes.
+
+    Live positions are deliberately represented only as OPEN/FLAT.  The
+    referee and bot-recovery path use current_position_status() directly;
+    contract, direction, fill, size and timing never enter public state.
+    """
     generation = current_generation(connection, bot)
+    public_position_status = "OPEN" if current_position_status(connection, bot) else "FLAT"
     return {
         "bot": bot,
         "generation": generation,
@@ -425,7 +475,7 @@ def scoreboard_snapshot(connection: sqlite3.Connection, bot: str) -> dict[str, A
         "best_generation": best_generation(connection, bot),
         "worst_generation": worst_generation(connection, bot),
         "generation_over_generation_improvement": generation_over_generation_improvement(connection, bot),
-        "current_position_status": current_position_status(connection, bot),
+        "current_position_status": public_position_status,
     }
 
 

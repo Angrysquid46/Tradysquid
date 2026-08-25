@@ -142,8 +142,10 @@
         "Phase 11"
       ],
       "completion_criteria": "Codex-owned private trader built under Section 4's immutable competition rules, using only shared/approved resources per Section 3.",
-      "discovered_subphases": [],
-      "completion_evidence": "Codex-owned BLACKTIDE_SPY implemented exclusively under bots/blacktide: deterministic point-in-time decision engine; Tier-A-only entries; same-day long calls/puts; observed ask entries and bid exits; spread/liquidity/delta gates; bankroll risk sizing; one-position state enforcement; stop/take-profit/time exits; explicit bust/generation reset; bounded evolution using only BLACKTIDE's own completed returns; neutral MarketView and immutable scoreboard adapter. No live launch, shadow portfolio, opponent input, rivalry input, or Learning Center import. Verified: 6 BLACKTIDE rule tests, immutable scorekeeper round-trip integration, ownership/isolation suite, 22 focused BLACKTIDE/backtest tests passed (2 known pre-existing date-boundary tests deselected), and 524 remaining repository tests passed."
+      "discovered_subphases": [
+        "12.1 Phase 14 reopening: replace the incomplete five-bar momentum prototype with the approved Adaptive Market-Control Transition Engine, restart recovery, state-aware risk/exits, strict contract evidence, autonomous scheduler, and private walk-forward evolution loop. Completed and revalidated during Phase 14; no competition launch performed."
+      ],
+      "completion_evidence": "Codex-owned BLACKTIDE is implemented exclusively under bots/blacktide as the Adaptive Market-Control Transition Engine: causal completed 1m observations with completed 3m/5m/15m context; independent bull/bear control and approved market states/entry families; strict selected-contract Tier-A fields and approximately 0.50-delta quality selection; observed ask/bid accounting; official referee restart recovery; correct whole-bankroll bust semantics; state-aware exits; one official position; autonomous scheduler; and deterministic private chronological train/holdout evolution fed only by BLACKTIDE's official completed outcomes. No live launch, shadow portfolio, opponent input, rivalry input, or Learning Center import. Phase 14 focused BLACKTIDE/recovery/evolution/scheduler/AMCTE and isolation tests passed."
     },
     {
       "phase_number": 13,
@@ -167,7 +169,12 @@
         "Phase 13"
       ],
       "completion_criteria": "Section 20's BUILD COMPLETE bar met for everything THROUGH this phase's own scope: Phases 0-13 complete, no unresolved blocker, no orphaned integration, no stale/unowned Discord surface, project state and Git synchronized, required tests pass, and both Claude and Codex independently find no additional phase required before Phase 15 can begin. (Corrected during this phase's own audit: the original wording said 'every known phase/subphase complete' with no qualifier, which is self-referentially impossible since Phase 15/16 depend ON Phase 14 and are necessarily not_started while Phase 14 is being evaluated. BUILD COMPLETE overall, across all phases including 15/16, is Section 20's separate, later bar - not this phase's.)",
-      "discovered_subphases": []
+      "discovered_subphases": [
+        "14.1 Authoritative referee and restart adversarial hardening: official generation/bankroll derivation, sequential bust/start transitions, immutable close math, cross-generation/open-position defenses, and process recovery.",
+        "14.2 Shared launch infrastructure hardening: cross-process SQLite Tradier quota reservations/cache, evidence-tier integrity, content fingerprints, redacted Discord scoreboard/rivalry publishing, canonical surface reconciliation, and exact Git-derived governance synchronization semantics.",
+        "14.3 Owner-authorized legacy workflow disposition: patch-installer-log-lock verified exclusive to obsolete clean-rebuild installer repair and retired without modifying frozen updater runtime.",
+        "14.4 Adversarial launch rehearsal and live read-only/presentation smoke validation. Completion evidence is recorded only after the full repository and deployment gates finish green."
+      ]
     },
     {
       "phase_number": 15,

@@ -162,3 +162,16 @@ def test_surface_snapshot_bundles_declaration_and_health(db):
     assert snapshot["surface_id"] == "scoreboard-card"
     assert snapshot["health"] == manifest.HEALTHY
     assert snapshot["last_event_type"] == "PUBLISH"
+
+
+def test_canonical_competition_reconciliation_retires_orphans(db):
+    _register(db, surface_id="old-rivalry-card")
+    db.execute("UPDATE surfaces SET category='RIVALRY' WHERE surface_id='old-rivalry-card'")
+    db.commit()
+    retired = manifest.reconcile_canonical_competition_surfaces(db)
+    assert retired == ("old-rivalry-card",)
+    rows = db.execute("SELECT surface_id, enabled, status FROM surfaces").fetchall()
+    indexed = {row["surface_id"]: dict(row) for row in rows}
+    assert set(indexed) >= {"competition-scoreboard-card", "competition-rivalry-card"}
+    assert indexed["old-rivalry-card"]["enabled"] == 0
+    assert indexed["old-rivalry-card"]["status"] == "RETIRED"

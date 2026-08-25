@@ -9,17 +9,36 @@ from datetime import datetime
 import backtest_lab
 import scoreboard
 
-from .engine import BLACKTIDE, CONTRACT_MULTIPLIER, Decision
+from .engine import BLACKTIDE, CONTRACT_MULTIPLIER, Decision, Position
+from .evolution import EvolutionLoop, Outcome
 
 SCOREBOARD_BOT = "BLACKTIDE"
 
 
 class BlacktideRuntime:
-    def __init__(self, *, engine: BLACKTIDE | None = None, market_view=None):
+    def __init__(self, *, engine: BLACKTIDE | None = None, market_view=None, evolution=None):
         self.engine = engine or BLACKTIDE()
         self.market_view = market_view or backtest_lab.MarketView("SPY")
+        self.evolution = evolution or EvolutionLoop()
+
+    def recover(self, connection: sqlite3.Connection) -> None:
+        """Reconstruct private process memory from the authoritative referee."""
+        self.engine.generation = scoreboard.current_generation(connection, SCOREBOARD_BOT)
+        row = scoreboard.current_position_status(connection, SCOREBOARD_BOT)
+        if row is None:
+            self.engine.position = None
+            return
+        side = str(row["side"]).lower()
+        if side not in ("call", "put"):
+            raise RuntimeError(f"invalid official BLACKTIDE side: {side!r}")
+        self.engine.position = Position(
+            trade_id=str(row["trade_id"]), contract_symbol=str(row["contract_symbol"]),
+            side=side, contracts=int(row["contracts"]), entry_price=float(row["entry_price"]),
+            opened_at=datetime.fromisoformat(str(row["opened_at"])),
+        )
 
     def evaluate(self, as_of: datetime, connection: sqlite3.Connection) -> Decision:
+        self.recover(connection)
         bankroll = scoreboard.current_bankroll(connection, SCOREBOARD_BOT)
         decision = self.engine.decide(
             as_of=as_of,
@@ -47,6 +66,12 @@ class BlacktideRuntime:
                 connection, trade_id=position.trade_id, closed_at=as_of.isoformat(),
                 exit_price=decision.price, pnl_usd=pnl,
             )
+            self.evolution.record(Outcome(
+                position.trade_id, self.engine.generation, pnl,
+                (decision.price / position.entry_price) - 1,
+                "RECOVERED_OR_PRIVATE", position.entry_state, as_of.isoformat(),
+            ))
+            self.evolution.evaluate(self.engine)
             self.engine.apply_exit(decision)
         elif decision.action == "BUST":
             if self.engine.position is not None:
@@ -54,6 +79,7 @@ class BlacktideRuntime:
             scoreboard.record_generation_event(
                 connection, bot=SCOREBOARD_BOT, generation=self.engine.generation,
                 event="BUSTED", detail=decision.reason,
+                minimum_qualifying_cost=bankroll + 0.02,
             )
             self.engine.reset_generation_after_bust()
             scoreboard.record_generation_event(

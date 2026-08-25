@@ -59,7 +59,8 @@ def expected_session_minutes(trading_day: date) -> int:
     fail-open convention for non-critical grading data."""
     try:
         payload = market_data.tradier_get(
-            "/markets/calendar", {"month": trading_day.month, "year": trading_day.year}
+            "/markets/calendar", {"month": trading_day.month, "year": trading_day.year},
+            priority=market_api_budget.PRIORITY_SECONDARY_CONTEXT, cache_ttl_seconds=21600,
         )
     except Exception:
         return EXPECTED_RTH_MINUTES
@@ -84,7 +85,7 @@ REJECTED = market_data_store.REJECTED
 def find_zero_dte_expiration(symbol: str) -> str | None:
     today = market_data.now_ct().date().isoformat()
     try:
-        expirations = market_data.get_expirations(symbol)
+        expirations = market_data.get_expirations(symbol, priority=market_api_budget.PRIORITY_SHARED_OPTIONS_COLLECTION)
     except Exception:
         return None
     return today if today in expirations else None
@@ -284,13 +285,13 @@ def capture_cycle_job(connection) -> str:
     invalid = 0
     raw_quote: dict[str, Any] | None = None
 
-    if market_api_budget.request_allowed(market_api_budget.PRIORITY_SHARED_SPY_OBSERVATIONS):
-        try:
-            quotes = market_data.get_quotes([symbol], include_greeks=False)
-            raw_quote = quotes.get(symbol)
-        except Exception:
-            api_errors += 1
-    else:
+    try:
+        quotes = market_data.get_quotes(
+            [symbol], include_greeks=False,
+            priority=market_api_budget.PRIORITY_SHARED_SPY_OBSERVATIONS,
+        )
+        raw_quote = quotes.get(symbol)
+    except Exception:
         api_errors += 1
 
     if raw_quote:
@@ -305,23 +306,23 @@ def capture_cycle_job(connection) -> str:
 
     expiration = find_zero_dte_expiration(symbol)
     if expiration:
-        if market_api_budget.request_allowed(market_api_budget.PRIORITY_SHARED_OPTIONS_COLLECTION):
-            try:
-                contracts = market_data.get_chain(symbol, expiration)
-            except Exception:
-                api_errors += 1
-            else:
-                rows = []
-                for contract in contracts:
-                    row, cls = classify_chain_row(contract, raw_quote or {}, now)
-                    if cls == REJECTED:
-                        invalid += 1
-                        continue
-                    rows.append(row)
-                path = market_data_store.write_chain_snapshot(symbol, trading_day, now, rows)
-                chain_written = path is not None
-        else:
+        try:
+            contracts = market_data.get_chain(
+                symbol, expiration,
+                priority=market_api_budget.PRIORITY_SHARED_OPTIONS_COLLECTION,
+            )
+        except Exception:
             api_errors += 1
+        else:
+            rows = []
+            for contract in contracts:
+                row, cls = classify_chain_row(contract, raw_quote or {}, now)
+                if cls == REJECTED:
+                    invalid += 1
+                    continue
+                rows.append(row)
+            path = market_data_store.write_chain_snapshot(symbol, trading_day, now, rows)
+            chain_written = path is not None
 
     record_cycle_result(
         connection,

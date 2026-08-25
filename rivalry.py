@@ -30,6 +30,7 @@ RIVALRY_MAX_MESSAGES_PER_BOT_PER_EVENT = 3
 RIVALRY_MAX_MESSAGES_PER_BOT_PER_DAY = 20
 RIVALRY_MAX_TOTAL_MESSAGES_PER_MINUTE = 6
 RIVALRY_MIN_MESSAGE_GAP_SECONDS = 20
+RIVALRY_MAX_CONVERSATION_ROUNDS = 3
 RIVALRY_OPEN_POSITION_CHAT = False
 RIVALRY_PRIVATE_STRATEGY_ACCESS = False
 RIVALRY_CAN_INFLUENCE_TRADING = False
@@ -209,6 +210,24 @@ def record_rivalry_event(
         raise ValueError(f"Unknown trigger: {trigger!r}")
     if speaker not in BOTS:
         raise ValueError(f"Unknown speaker: {speaker!r}")
+    if target is not None and target not in BOTS:
+        raise ValueError(f"Unknown target: {target!r}")
+    if conversation_round < 0 or conversation_round >= RIVALRY_MAX_CONVERSATION_ROUNDS:
+        raise RivalryLimitExceeded(
+            f"conversation round {conversation_round} exceeds finite reply-chain limit "
+            f"{RIVALRY_MAX_CONVERSATION_ROUNDS}"
+        )
+    if reply_to_id:
+        parent = connection.execute(
+            "SELECT event_group_id, conversation_round FROM rivalry_events "
+            "WHERE rivalry_event_id=?", (reply_to_id,),
+        ).fetchone()
+        if parent is None:
+            raise ValueError(f"reply_to_id {reply_to_id!r} does not exist")
+        if parent["event_group_id"] != event_group_id:
+            raise ValueError("reply must remain inside its original event group")
+        if conversation_round != int(parent["conversation_round"]) + 1:
+            raise ValueError("reply conversation_round must advance exactly once")
     unexpected_keys = set(public_score_snapshot) - ALLOWED_PUBLIC_SNAPSHOT_KEYS
     if unexpected_keys:
         raise ValueError(
@@ -216,6 +235,9 @@ def record_rivalry_event(
             "only scoreboard.scoreboard_snapshot()'s own public fields are allowed, so a "
             "private value can't accidentally hitch a ride into rivalry memory"
         )
+    position_status = public_score_snapshot.get("current_position_status")
+    if position_status is not None and position_status not in ("OPEN", "FLAT"):
+        raise ValueError("public position status may expose only OPEN or FLAT")
     existing = connection.execute(
         "SELECT 1 FROM rivalry_events WHERE rivalry_event_id=?", (rivalry_event_id,)
     ).fetchone()

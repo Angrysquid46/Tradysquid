@@ -40,16 +40,6 @@ GOV_IMMUTABLE_RULES_PATH = GOVERNANCE_DIR / "IMMUTABLE_RULES.json"
 
 PHASE_STATUSES = {"not_started", "in_progress", "complete"}
 
-# A committed state file can never record its own commit's SHA - writing it
-# and committing it are necessarily two different operations. Every finish()
-# (or a manual resync) leaves PROJECT_STATE.json exactly one commit behind
-# the commit that carries it, and that commit is itself one behind the next.
-# Treating any mismatch as stale makes verify() permanently BLOCKED. Only
-# flag staleness once the recorded commit is missing entirely from history,
-# or is more than this many commits behind - a real, unexplained drift.
-STALE_COMMIT_DISTANCE = 5
-
-
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat()
 
@@ -109,7 +99,7 @@ def validate_governance_schema() -> list[str]:
     state = _load_json_file(GOV_PROJECT_STATE_PATH, problems)
     if state is not None:
         for key, expected in (
-            ("current_commit", str), ("branch", str), ("last_updated", str),
+            ("observed_head_at_write", str), ("branch", str), ("last_updated", str),
         ):
             if not isinstance(state.get(key), expected):
                 problems.append(f"schema:PROJECT_STATE.json:missing_key:{key}")
@@ -196,27 +186,19 @@ def check_state_freshness() -> dict[str, Any]:
         actual_commit = git("rev-parse", "HEAD")
     except RuntimeError:
         return result
-    recorded_commit = state.get("current_commit")
+    recorded_commit = state.get("observed_head_at_write")
     result["recorded_commit"] = recorded_commit
     result["actual_commit"] = actual_commit
-    if not recorded_commit or recorded_commit == actual_commit:
-        return result
     if LOCK_PATH.exists():
         return result
     try:
-        git("merge-base", "--is-ancestor", recorded_commit, actual_commit)
-        is_ancestor = True
+        state_commit = git("log", "-1", "--format=%H", "--", "governance/PROJECT_STATE.json")
     except RuntimeError:
-        is_ancestor = False
-    if is_ancestor:
-        try:
-            distance = int(git("rev-list", "--count", f"{recorded_commit}..{actual_commit}"))
-        except (RuntimeError, ValueError):
-            distance = STALE_COMMIT_DISTANCE + 1
-        if distance <= STALE_COMMIT_DISTANCE:
-            return result
-    result["stale"] = True
-    result["reason"] = "PROJECT_STATE_STALE"
+        state_commit = ""
+    result["state_record_commit"] = state_commit
+    if not state_commit or state_commit != actual_commit:
+        result["stale"] = True
+        result["reason"] = "PROJECT_STATE_STALE"
     return result
 
 
@@ -390,7 +372,7 @@ def update_project_state(phase: str | None = None, subphase: str | None = None) 
     state = {
         "last_updated": now_iso(),
         "branch": snapshot["branch"],
-        "current_commit": snapshot["commit"],
+        "observed_head_at_write": snapshot["commit"],
         "commit_subject": snapshot["commit_subject"],
         "current_phase": phase,
         "current_subphase": subphase,
@@ -403,10 +385,11 @@ def update_project_state(phase: str | None = None, subphase: str | None = None) 
             }
         ),
         "notes": (
-            "PROJECT_STATE.current_commit should match the repository state it "
-            "describes. If Git materially changes without a synchronized update, "
-            "treat this file as PROJECT_STATE_STALE."
+            "Exact synchronization is derived from Git: when no lock is active, "
+            "the newest commit containing governance/PROJECT_STATE.json must equal HEAD. "
+            "observed_head_at_write is provenance, not a self-referential equality claim."
         ),
+        "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear",
     }
     atomic_json(GOV_PROJECT_STATE_PATH, state)
     return state

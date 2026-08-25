@@ -180,16 +180,16 @@ def test_capture_cycle_job_writes_quote_and_chain_and_updates_manifest(
     )
     monkeypatch.setattr(
         collector.market_data, "get_quotes",
-        lambda symbols, include_greeks=True: {"SPY": {
+            lambda symbols, include_greeks=True, **kwargs: {"SPY": {
             "symbol": "SPY", "bid": 763.0, "ask": 763.05, "bid_date": 1, "ask_date": 2,
         }},
     )
     monkeypatch.setattr(
-        collector.market_data, "get_expirations", lambda symbol: ["2026-08-24"]
+            collector.market_data, "get_expirations", lambda symbol, **kwargs: ["2026-08-24"]
     )
     monkeypatch.setattr(
         collector.market_data, "get_chain",
-        lambda symbol, expiration: [{
+            lambda symbol, expiration, **kwargs: [{
             "symbol": "SPY260824C00500000", "expiration_date": "2026-08-24",
             "strike": 500.0, "option_type": "call", "bid": 1.0, "ask": 1.05,
             "bid_date": 1, "ask_date": 2, "greeks": {},
@@ -216,12 +216,12 @@ def test_capture_cycle_job_skips_chain_when_no_zero_dte_expiration(
     )
     monkeypatch.setattr(
         collector.market_data, "get_quotes",
-        lambda symbols, include_greeks=True: {"SPY": {
+            lambda symbols, include_greeks=True, **kwargs: {"SPY": {
             "symbol": "SPY", "bid": 763.0, "ask": 763.05, "bid_date": 1, "ask_date": 2,
         }},
     )
     monkeypatch.setattr(
-        collector.market_data, "get_expirations", lambda symbol: ["2026-08-25"]
+            collector.market_data, "get_expirations", lambda symbol, **kwargs: ["2026-08-25"]
     )
     summary = collector.capture_cycle_job(manifest_db)
     assert "quote=OK" in summary
@@ -240,7 +240,7 @@ def test_capture_cycle_job_counts_provider_failure_as_api_error_not_crash(
         raise RuntimeError("provider down")
 
     monkeypatch.setattr(collector.market_data, "get_quotes", boom)
-    monkeypatch.setattr(collector.market_data, "get_expirations", lambda symbol: [])
+    monkeypatch.setattr(collector.market_data, "get_expirations", lambda symbol, **kwargs: [])
     summary = collector.capture_cycle_job(manifest_db)
     assert "errors=1" in summary
     row = manifest_db.execute(
@@ -261,7 +261,7 @@ def test_capture_cycle_job_skips_quote_call_and_records_error_when_budget_gate_b
         raise AssertionError("get_quotes should not be called while the budget gate blocks")
 
     monkeypatch.setattr(collector.market_data, "get_quotes", boom_if_called)
-    monkeypatch.setattr(collector.market_data, "get_expirations", lambda symbol: [])
+    monkeypatch.setattr(collector.market_data, "get_expirations", lambda symbol, **kwargs: [])
     monkeypatch.setattr(market_api_budget, "request_allowed", lambda priority: False)
 
     summary = collector.capture_cycle_job(manifest_db)
@@ -273,7 +273,7 @@ def test_capture_cycle_job_skips_quote_call_and_records_error_when_budget_gate_b
     assert row[0] == 1
 
 
-def test_capture_cycle_job_skips_chain_call_when_options_gate_blocks(
+def test_capture_cycle_job_isolates_source_level_options_budget_denial(
     manifest_db, monkeypatch, scratch_data_root
 ):
     """Expiration lookup is real (not gated) so the block below is
@@ -285,23 +285,18 @@ def test_capture_cycle_job_skips_chain_call_when_options_gate_blocks(
     )
     monkeypatch.setattr(
         collector.market_data, "get_quotes",
-        lambda symbols, include_greeks=True: {"SPY": {
+            lambda symbols, include_greeks=True, **kwargs: {"SPY": {
             "symbol": "SPY", "bid": 763.0, "ask": 763.05, "bid_date": 1, "ask_date": 2,
         }},
     )
     monkeypatch.setattr(
-        collector.market_data, "get_expirations", lambda symbol: ["2026-08-24"]
+            collector.market_data, "get_expirations", lambda symbol, **kwargs: ["2026-08-24"]
     )
 
     def boom_if_called(*args, **kwargs):
-        raise AssertionError("get_chain should not be called while the budget gate blocks")
+        raise collector.market_data.TradierError("shared budget denied")
 
     monkeypatch.setattr(collector.market_data, "get_chain", boom_if_called)
-    monkeypatch.setattr(
-        market_api_budget, "request_allowed",
-        lambda priority: priority != market_api_budget.PRIORITY_SHARED_OPTIONS_COLLECTION,
-    )
-
     summary = collector.capture_cycle_job(manifest_db)
     assert "quote=OK" in summary
     assert "chain=MISS" in summary
@@ -356,7 +351,7 @@ def test_expected_session_minutes_full_day(monkeypatch):
              "open": {"start": "08:30", "end": "15:00"}},
         ]}}
     }
-    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params: payload)
+    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params, **kwargs: payload)
     assert collector.expected_session_minutes(date(2026, 8, 24)) == 390
 
 
@@ -367,7 +362,7 @@ def test_expected_session_minutes_early_close(monkeypatch):
              "open": {"start": "08:30", "end": "12:00"}},
         ]}}
     }
-    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params: payload)
+    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params, **kwargs: payload)
     assert collector.expected_session_minutes(date(2026, 11, 27)) == 210
 
 
@@ -381,13 +376,13 @@ def test_expected_session_minutes_falls_back_on_fetch_failure(monkeypatch):
 
 def test_expected_session_minutes_falls_back_when_day_not_found(monkeypatch):
     payload = {"calendar": {"days": {"day": [{"date": "2026-08-25", "status": "open"}]}}}
-    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params: payload)
+    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params, **kwargs: payload)
     assert collector.expected_session_minutes(date(2026, 8, 24)) == collector.EXPECTED_RTH_MINUTES
 
 
 def test_expected_session_minutes_falls_back_on_closed_day(monkeypatch):
     payload = {"calendar": {"days": {"day": [{"date": "2026-12-25", "status": "closed"}]}}}
-    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params: payload)
+    monkeypatch.setattr(collector.market_data, "tradier_get", lambda path, params, **kwargs: payload)
     assert collector.expected_session_minutes(date(2026, 12, 25)) == collector.EXPECTED_RTH_MINUTES
 
 
