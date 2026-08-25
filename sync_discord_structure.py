@@ -281,7 +281,7 @@ CHANNEL_STARTERS = {
     "learning-results": "Updated by the local learning review.",
     "ask-tradebot": "Use `/ask` or `/explain`; general conversation belongs in #general-chat.",
     "examples-and-reviews": "Paper-trade examples and completed reviews appear here.",
-    "scanner-status": "Updated as the scanner cycles through the active universe.",
+    "scanner-status": "Updated as the SPY scanner completes each pass.",
     "api-errors": "Populated only when a provider or Discord request actually fails.",
     "system-health": "Updated by the local supervisor and engine.",
     "update-status": "Updated on every automatic deploy check.",

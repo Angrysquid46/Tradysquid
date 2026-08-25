@@ -54,7 +54,7 @@ sync.CHANNEL_STARTERS.update(
             "News and event sweeps continue during market hours, evenings, overnight periods, and weekends."
         ),
         "system-activity": (
-            "Always-on run ledger showing what fired, when it ran, the expected interval, the current universe batch, and off-hours research activity."
+            "Always-on run ledger showing what fired, when it ran, the expected interval, and off-hours SPY research activity."
         ),
         "system-health": (
             "Updated by the supervisor and scheduler heartbeat. A responding process is not considered healthy unless scheduled work is also firing."
@@ -135,8 +135,8 @@ painted green and forgotten."""
 sync.GUIDES["system-activity"] = """# Always-On Activity Ledger
 This channel should never look abandoned merely because the exchange is closed.
 It refreshes every few minutes with scheduler receipts, market state, service
-activity, universe capacity, latest live-scan rotation, latest off-hours research
-batch, event-sweep freshness, and the next expected work.
+activity, latest off-hours SPY research, event-sweep freshness, and the next
+expected work.
 
 During regular market hours, the options scanner may create paper positions when
 all gates pass. Outside regular hours and on weekends, the system continues
