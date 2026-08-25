@@ -163,7 +163,7 @@
     {
       "phase_number": 14,
       "name": "Full validation",
-      "status": "in_progress",
+      "status": "complete",
       "dependencies": [
         "Phase 12",
         "Phase 13"
@@ -174,7 +174,8 @@
         "14.2 Shared launch infrastructure hardening: cross-process SQLite Tradier quota reservations/cache, evidence-tier integrity, content fingerprints, redacted Discord scoreboard/rivalry publishing, canonical surface reconciliation, and exact Git-derived governance synchronization semantics.",
         "14.3 Owner-authorized legacy workflow disposition: patch-installer-log-lock verified exclusive to obsolete clean-rebuild installer repair and retired without modifying frozen updater runtime.",
         "14.4 Adversarial launch rehearsal and live read-only/presentation smoke validation. Completion evidence is recorded only after the full repository and deployment gates finish green."
-      ]
+      ],
+      "completion_evidence": "Phase 14 implementation merged as PR #332 at ae5e1aee51c9fe96da36e0e8e0daec347ec2c18e after all required GitHub checks passed. Local evidence: full root pytest suite exit 0; 213-test adversarial rehearsal exit 0; deployment unittest gate 138/138; governance 38/38; changed runtime syntax 17/17; live Tradier quote/expiration/358-contract chain successful with shared quota telemetry; live Discord structure dry-run clean; redacted scoreboard and rivalry cards published/reconciled. AXIOM executed only through black-box repository tests. No Phase 15 launch."
     },
     {
       "phase_number": 15,

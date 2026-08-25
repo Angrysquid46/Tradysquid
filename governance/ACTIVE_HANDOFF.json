@@ -1,22 +1,5 @@
 {
-  "active": true,
-  "work_id": "271a697a-dbec-4bbf-ab53-833c763a7cdc",
-  "actor": "Codex",
-  "task": "Finish Phase 14 completely",
-  "method": "Owner-authorized end-to-end implementation: adversarially harden neutral referee, BLACKTIDE restart/bust/full AMCTE/autonomy, cross-process API authority/cache coverage, evidence tiers, content fingerprints, Discord/rivalry/surface reconciliation, exact governance semantics, legacy workflow disposition, complete rehearsal/tests/live checks, PR/CI/merge/reconciliation. AXIOM remains an unread black box.",
-  "started_at": "2026-08-25T16:03:18.191141-05:00",
-  "starting_commit": "612265b5d96a2ff8a5632e041e1a0d73366c37f1",
-  "process_id": 1080,
-  "owner_request": "Owner explicitly requires all remaining Phase 14 defects completed, merged, validated, and synchronized before any Phase 15 readiness verdict.",
-  "before_state": "main 612265b; Phase 14 in_progress; no active lock; PROJECT_STATE describes 97e3faf under loose drift semantics; Claude shared hardening merged; BLACKTIDE simplified Phase 12 implementation remains; unrelated docs/images and scratch directories excluded.",
-  "reason": "Owner explicitly requires all remaining Phase 14 defects completed, merged, validated, and synchronized before any Phase 15 readiness verdict.",
-  "intended_scope": "Shared files and tests, governance, Discord/rivalry integration, bots/blacktide only. Never inspect/edit bots/claude or AXIOM-private state. May retire patch-installer-log-lock workflow only after verifying it is exclusively obsolete updater repair. No Phase 15 launch or brokerage trades.",
-  "expected_effects": "Authoritative referee state, restart-safe full BLACKTIDE AMCTE with autonomous private evolution, cross-process API budget/cache, strict evidence tiers, content-addressed backtests, bounded public rivalry/Discord reconciliation, exact governance state semantics, adversarial launch rehearsal, green CI.",
-  "required_tests": "Complete pytest/unit/governance/deployment gates; BLACKTIDE/shared adversarial/isolation; cross-process contention; no-lookahead/fingerprint mutation; Discord/rivalry outage/reconciliation; live read-only smoke checks where credentials permit; CI green.",
-  "risks": "Broad shared changes, privacy boundary, frozen updater workflow, live Discord mutations, and false readiness. Use narrow commits, checkpoints, explicit evidence, no updater redesign, no AXIOM-private reads, no launch.",
-  "next_safe_action_if_interrupted": "Commit intended Phase 14 files only (preserve user docs/.claude/temp changes), push PR, wait for required CI, merge via rebase with final governance state commit, verify live deployed receipt/service health without touching frozen updater, finish lock, and exact-state reconcile.",
-  "phase": "Phase 14",
-  "last_checkpoint_at": "2026-08-25T16:35:54.633722-05:00",
-  "last_successful_action": "Phase 14 implementation and adversarial rehearsal complete: referee authority/restart/bust defenses; BLACKTIDE AMCTE/autonomy/evolution; SQLite cross-process quota/cache; evidence tiers/content fingerprints; redacted rivalry/scoreboard publisher and canonical manifests; exact governance semantics; obsolete installer workflow retired. Focused rehearsal 213 passed, full root suite passed, deployment unittest gate 138 passed, governance 38 passed, syntax 17 files passed, live Tradier quote/expiration/358-contract chain succeeded, live Discord dry-run clean and two cards published.",
-  "next_safe_action": "Commit intended Phase 14 files only (preserve user docs/.claude/temp changes), push PR, wait for required CI, merge via rebase with final governance state commit, verify live deployed receipt/service health without touching frozen updater, finish lock, and exact-state reconcile."
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-25T16:46:06.293181-05:00"
 }
