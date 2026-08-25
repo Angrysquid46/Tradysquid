@@ -25,12 +25,17 @@ checked by `ai_coordination.py`'s `enforce_ownership()` on every `finish()`.
 
 ## What this directory is for
 
-Claude's private trader is built here in Phase 13, under Section 4's
+Claude's private trader, **AXIOM** (competitor identity "AXIOM" in
+`governance/IMMUTABLE_RULES.json`'s `competitors` block; this directory
+and the `"Claude"` writer/actor identity are unchanged - a separate,
+engineering-agent namespace), built here in Phase 13, under Section 4's
 immutable competition rules (SPY options only, long 0DTE calls/puts to
 start, $1,000 starting bankroll per generation, one open trade at a
 time, no lookahead, no live shadow trading, completed trades immutable,
-bust protocol resets bankroll and preserves history). Claude independently
-designs this trader from scratch - it is not a copy of, derived from, or
-informed by BLACKTIDE's private strategy. Nothing here yet - this phase
-(11) only establishes the ownership boundary before either trader is
-implemented.
+bust protocol resets bankroll and preserves history). AXIOM was
+independently designed from scratch - not a copy of, derived from, or
+informed by BLACKTIDE's private strategy; `bots/blacktide/` was never
+read while designing it. Modules: `parameters.py` (every tunable
+threshold, named), `signal.py` (entry decision), `contract_selection.py`,
+`sizing.py`, `execution.py` (fill model), `exits.py`, `backtest_runner.py`,
+`scheduler.py`/`runtime.py` (live loop), `postmortems/` (bust records).

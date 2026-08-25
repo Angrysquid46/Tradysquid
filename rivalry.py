@@ -1,5 +1,5 @@
 """Phase 9: rivalry event system (Master Spec Section 7). Bounded,
-traceable public trash-talk between BLACKTIDE and Claude, triggered by
+traceable public trash-talk between BLACKTIDE and AXIOM, triggered by
 real competition events - never a code path that can open, close, or
 size a trade, and never imported by anything that does.
 
@@ -44,7 +44,7 @@ TRIGGERS = (
     "LIFETIME_LEADER_CHANGE",
 )
 
-BOTS = ("BLACKTIDE", "Claude")
+BOTS = ("BLACKTIDE", "AXIOM")
 
 
 class RivalryLimitExceeded(Exception):

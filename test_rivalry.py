@@ -21,7 +21,7 @@ def db(monkeypatch):
 BASE = datetime(2026, 8, 24, 12, 0, 0)
 
 
-def _record(db, event_id, *, speaker="Claude", event_group_id="g1", trigger="TRADE_CLOSED_WIN", now):
+def _record(db, event_id, *, speaker="AXIOM", event_group_id="g1", trigger="TRADE_CLOSED_WIN", now):
     return rivalry.record_rivalry_event(
         db, rivalry_event_id=event_id, event_group_id=event_group_id, trigger=trigger,
         speaker=speaker, message="gg", public_score_snapshot={"lead": speaker},
@@ -36,14 +36,14 @@ def test_record_rivalry_event_succeeds_and_round_trips(db):
     history = rivalry.public_rivalry_history(db)
     assert len(history) == 1
     assert history[0]["rivalry_event_id"] == "e1"
-    assert history[0]["public_score_snapshot"] == {"lead": "Claude"}
+    assert history[0]["public_score_snapshot"] == {"lead": "AXIOM"}
 
 
 def test_record_rivalry_event_rejects_unknown_trigger(db):
     with pytest.raises(ValueError, match="Unknown trigger"):
         rivalry.record_rivalry_event(
             db, rivalry_event_id="e1", event_group_id="g1", trigger="MADE_UP",
-            speaker="Claude", message="x", public_score_snapshot={}, now=BASE,
+            speaker="AXIOM", message="x", public_score_snapshot={}, now=BASE,
         )
 
 
@@ -91,30 +91,30 @@ def test_total_per_minute_limit_blocks_the_seventh_message(db):
     # apart (at the min-gap boundary, not blocked), while all 6 land
     # within one 60s window.
     for i in range(6):
-        speaker = "Claude" if i % 2 == 0 else "BLACKTIDE"
+        speaker = "AXIOM" if i % 2 == 0 else "BLACKTIDE"
         _record(
             db, f"e{i}", speaker=speaker, event_group_id=f"g{i}",
             now=BASE + timedelta(seconds=10 * i),
         )
     with pytest.raises(rivalry.RivalryLimitExceeded, match="last minute"):
-        _record(db, "e6", speaker="Claude", event_group_id="g6", now=BASE + timedelta(seconds=60))
+        _record(db, "e6", speaker="AXIOM", event_group_id="g6", now=BASE + timedelta(seconds=60))
 
 
 def test_min_gap_limit_blocks_the_same_bot_speaking_too_soon(db):
-    _record(db, "e1", speaker="Claude", event_group_id="g1", now=BASE)
+    _record(db, "e1", speaker="AXIOM", event_group_id="g1", now=BASE)
     with pytest.raises(rivalry.RivalryLimitExceeded, match="min gap"):
-        _record(db, "e2", speaker="Claude", event_group_id="g2", now=BASE + timedelta(seconds=5))
+        _record(db, "e2", speaker="AXIOM", event_group_id="g2", now=BASE + timedelta(seconds=5))
 
 
 def test_min_gap_limit_does_not_apply_across_different_speakers(db):
-    _record(db, "e1", speaker="Claude", event_group_id="g1", now=BASE)
+    _record(db, "e1", speaker="AXIOM", event_group_id="g1", now=BASE)
     _record(db, "e2", speaker="BLACKTIDE", event_group_id="g2", now=BASE + timedelta(seconds=5))  # ok
 
 
 def test_min_gap_limit_clears_after_enough_time(db):
-    _record(db, "e1", speaker="Claude", event_group_id="g1", now=BASE)
+    _record(db, "e1", speaker="AXIOM", event_group_id="g1", now=BASE)
     _record(
-        db, "e2", speaker="Claude", event_group_id="g2",
+        db, "e2", speaker="AXIOM", event_group_id="g2",
         now=BASE + timedelta(seconds=rivalry.RIVALRY_MIN_MESSAGE_GAP_SECONDS),
     )  # exactly at the boundary - does not raise
 
@@ -122,7 +122,7 @@ def test_min_gap_limit_clears_after_enough_time(db):
 # --- public_rivalry_history -----------------------------------------------------
 
 def test_public_rivalry_history_orders_newest_first(db):
-    _record(db, "e1", speaker="Claude", event_group_id="g1", now=BASE)
+    _record(db, "e1", speaker="AXIOM", event_group_id="g1", now=BASE)
     _record(db, "e2", speaker="BLACKTIDE", event_group_id="g2", now=BASE + timedelta(seconds=30))
     history = rivalry.public_rivalry_history(db)
     assert [item["rivalry_event_id"] for item in history] == ["e2", "e1"]
@@ -131,7 +131,7 @@ def test_public_rivalry_history_orders_newest_first(db):
 def test_public_rivalry_history_filters_by_bot_as_speaker_or_target(db):
     rivalry.record_rivalry_event(
         db, rivalry_event_id="e1", event_group_id="g1", trigger="TRADE_CLOSED_WIN",
-        speaker="Claude", target="BLACKTIDE", message="x", public_score_snapshot={}, now=BASE,
+        speaker="AXIOM", target="BLACKTIDE", message="x", public_score_snapshot={}, now=BASE,
     )
     history = rivalry.public_rivalry_history(db, bot="BLACKTIDE")
     assert len(history) == 1
