@@ -1,22 +1,5 @@
 {
-  "active": true,
-  "work_id": "1e2cbe55-117b-4a0b-a88d-27f7fa0b0ebe",
-  "actor": "Codex",
-  "task": "Phase 12: BLACKTIDE implementation",
-  "method": "Fresh Codex-owned BLACKTIDE_SPY design inside bots/blacktide using only approved shared factual/neutral services; deterministic causal decisions, realistic paper execution, one-position enforcement, immutable scorekeeper integration, generation/bust lifecycle, private evolution, and isolation tests.",
-  "started_at": "2026-08-25T05:41:30.406266-05:00",
-  "starting_commit": "1c3c2a9e7c3e889785a377f99c9f8342b60a093c",
-  "process_id": 28408,
-  "owner_request": "Owner directed Codex to take its turn; Phase 12 is next and dependency-ready.",
-  "before_state": "main at 1c3c2a9; Phase 11 complete; bots/blacktide contains only AGENTS.md; unrelated docs/image edits excluded.",
-  "reason": "Owner directed Codex to take its turn; Phase 12 is next and dependency-ready.",
-  "intended_scope": "bots/blacktide and permitted neutral tests only; never inspect bots/claude; no updater edits, Discord apply, or live launch.",
-  "expected_effects": "BLACKTIDE private implementation and offline validation; no live trades.",
-  "required_tests": "BLACKTIDE rules, no-lookahead, execution, bust lifecycle, isolation, shared regressions, compile/install.",
-  "risks": "Strategy leakage, lookahead, unrealistic fills, premature live trading.",
-  "next_safe_action_if_interrupted": "Correct floating assertion, run BLACKTIDE plus shared regression suites, audit isolation/imports and phase-completion gaps before commit.",
-  "phase": "Phase 12",
-  "last_checkpoint_at": "2026-08-25T05:44:27.610230-05:00",
-  "last_successful_action": "Phase 12 BLACKTIDE core implemented privately: deterministic point-in-time ENTER/EXIT/BUST state machine, same-day long call/put filtering, observed ask-entry/bid-exit pricing, liquidity/spread/delta gates, bankroll risk sizing, one-position enforcement, bounded own-history evolution, neutral MarketView adapter, immutable scoreboard open/close and generation lifecycle. Focused rules/ownership tests passed; runtime integration completed a scorekeeper round trip. Two unrelated known test_backtest_lab date-boundary failures remain pre-existing.",
-  "next_safe_action": "Correct floating assertion, run BLACKTIDE plus shared regression suites, audit isolation/imports and phase-completion gaps before commit."
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-25T10:19:38.448443-05:00"
 }

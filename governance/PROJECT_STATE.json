@@ -1,15 +1,10 @@
 {
-  "last_updated": "2026-08-25T05:44:27.965057-05:00",
-  "branch": "codex/phase12-blacktide",
-  "current_commit": "1c3c2a9e7c3e889785a377f99c9f8342b60a093c",
-  "commit_subject": "Merge pull request #327 from Angrysquid46/claude/fix-stale-scanner-controls",
+  "last_updated": "2026-08-25T10:19:38.643962-05:00",
+  "branch": "main",
+  "current_commit": "40248e83d1417478c52e3f48611954f0063ab367",
+  "commit_subject": "Merge pull request #328 from Angrysquid46/codex/phase12-blacktide",
   "current_phase": "Phase 12",
   "current_subphase": "Phase 11 complete; Phase 12 ready",
-  "active_lock": {
-    "actor": "Codex",
-    "task": "Phase 12: BLACKTIDE implementation",
-    "work_id": "1e2cbe55-117b-4a0b-a88d-27f7fa0b0ebe",
-    "started_at": "2026-08-25T05:41:30.406266-05:00"
-  },
+  "active_lock": null,
   "notes": "PROJECT_STATE.current_commit should match the repository state it describes. If Git materially changes without a synchronized update, treat this file as PROJECT_STATE_STALE."
 }
