@@ -32,6 +32,11 @@ import market_data_collector
 import diagnostic_upgrade_system as diagnostics
 import requests
 import trade_intelligence
+import upgrade_batch_44
+import rivalry
+import rivalry_presentation
+import scoreboard
+import discord_surface_manifest
 from run_with_env import load_env
 
 ROOT = Path(__file__).resolve().parent
@@ -722,6 +727,31 @@ def intelligence_retention_job(connection: sqlite3.Connection) -> str:
     return f"{result['temporary_files_removed']} temporary files and {result['missing_pointers_removed']} stale pointers removed; canonical evidence preserved"
 
 
+def competition_surfaces_job(connection: sqlite3.Connection) -> str:
+    """Publishes rivalry_presentation.py's cards - the combined
+    #blacktide-vs-claude scoreboard plus each bot's own #axiom-*/
+    #blacktide-* dashboard/held-trade/winners-losers channels. Previously
+    fully built but never registered here, so none of it had ever posted."""
+    tracker = discord_transport.DiscordTracker(
+        discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID
+    )
+    if not tracker.enabled:
+        return "Discord tracker disabled"
+    score_connection = scoreboard.connect_db()
+    rivalry_connection = rivalry.connect_db()
+    surface_connection = discord_surface_manifest.connect_db()
+    combined = rivalry_presentation.publish_competition_surfaces(
+        score_connection, rivalry_connection, surface_connection, tracker
+    )
+    results = [f"combined:{'ok' if combined['ok'] else combined['error']}"]
+    for bot in scoreboard.BOTS:
+        per_bot = rivalry_presentation.publish_bot_surfaces(
+            score_connection, surface_connection, tracker, bot
+        )
+        results.append(f"{bot}:{'ok' if per_bot['ok'] else per_bot['error']}")
+    return "; ".join(results)
+
+
 @dataclass
 class Job:
     name: str
@@ -806,6 +836,50 @@ JOBS = [
         background=True,
         provider_heavy=True,
         retry_interval=timedelta(minutes=5),
+    ),
+    # MARKET INTELLIGENCE: previously fully built (upgrade_batch_44.py) but
+    # never registered here, so #premarket/#market-regime/#charts-and-levels/
+    # #spy-technicals had never posted. Fixing that also required repairing
+    # upgrade_batch_44._tracker()/_require_dashboard()/_replace_chart_message(),
+    # which called _engine().discord_tracker()/upsert_dashboard() - methods
+    # that don't exist on local_information_engine, an old visibility-layer
+    # leftover its own install_engine() docstring already flagged as removed.
+    Job(
+        "active-premarket",
+        timedelta(minutes=30),
+        upgrade_batch_44.active_premarket_job,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=5),
+    ),
+    Job(
+        "market-regime-summary",
+        timedelta(minutes=30),
+        upgrade_batch_44.market_regime_summary_job,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=5),
+    ),
+    Job(
+        "intraday-chart-refresh",
+        timedelta(minutes=30),
+        upgrade_batch_44.intraday_chart_job,
+        market_hours_only=True,
+        background=True,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=10),
+    ),
+    Job(
+        "spy-technicals-refresh",
+        timedelta(minutes=15),
+        upgrade_batch_44.spy_technicals_job,
+        background=True,
+        retry_interval=timedelta(minutes=5),
+    ),
+    Job(
+        "competition-surfaces",
+        timedelta(minutes=5),
+        competition_surfaces_job,
+        background=True,
+        retry_interval=timedelta(minutes=2),
     ),
 ]
 

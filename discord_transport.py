@@ -17,9 +17,11 @@ discovered_subphases for the follow-up note.
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -253,3 +255,42 @@ class DiscordTracker:
             return message_id, removed
         created = self._request("POST", f"/channels/{channel_id}/messages", payload)
         return str((created or {}).get("id") or ""), 0
+
+    def send_channel_file(
+        self, channel_id: str, path: Path, content: str = ""
+    ) -> dict[str, Any] | None:
+        """Post a file attachment (e.g. a generated chart PNG) as a new
+        message. Discord's file-upload endpoint takes multipart/form-data,
+        not the JSON body _request() sends, so this can't reuse it."""
+        if not self.enabled or not channel_id:
+            return None
+        url = f"{self.API_BASE}/channels/{channel_id}/messages"
+        headers = {
+            "Authorization": f"Bot {self.token}",
+            "User-Agent": "DiscordBot (Tradysquids TradeBot, 1.0)",
+        }
+        payload_json = json.dumps(
+            {"content": content[:2000], "allowed_mentions": {"parse": []}}
+        )
+        for attempt in range(4):
+            with open(path, "rb") as handle:
+                files = {
+                    "payload_json": (None, payload_json, "application/json"),
+                    "files[0]": (Path(path).name, handle, "image/png"),
+                }
+                response = SESSION.post(url, headers=headers, files=files, timeout=30)
+            if response.status_code == 429:
+                try:
+                    retry_after = float(response.json().get("retry_after", 1.0))
+                except (ValueError, TypeError):
+                    retry_after = 1.0
+                time.sleep(min(max(retry_after, 0.0) + 0.25, 65))
+                continue
+            if response.status_code >= 500 and attempt < 3:
+                time.sleep(2**attempt)
+                continue
+            if not response.ok:
+                body = response.text[:700].replace(self.token, "[REDACTED]")
+                raise DiscordError(f"Discord HTTP {response.status_code} for {url}: {body}")
+            return response.json() if response.content else None
+        raise DiscordError(f"Discord rate limit retries exhausted for {url}")

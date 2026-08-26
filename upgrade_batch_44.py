@@ -218,8 +218,45 @@ def _engine() -> Any:
     return _ENGINE
 
 
-def _tracker() -> Any | None:
-    return _engine().discord_tracker()
+# Retired 2026-08-25: this used to route through _engine().discord_tracker()
+# and _engine().upsert_dashboard(), both leftover calls onto the old
+# discover()-based visibility layer install_engine() itself documents as
+# deleted in the Phase 3 purge - local_information_engine has neither
+# attribute, so every dashboard job using them raised AttributeError the
+# moment it actually ran (only ever exercised by tests, never live). Now
+# builds a real tracker directly and resolves channel IDs the same way
+# rivalry_presentation.py's already-working _channel_id() does, since
+# DiscordTracker deliberately doesn't do channel discovery itself.
+_CHANNEL_ID_CACHE: dict[str, str] = {}
+
+_LOGICAL_CHANNEL_NAMES = {
+    "premarket": "premarket",
+    "intelligence": "market-regime",
+    "charts": "charts-and-levels",
+    "spy_technicals": "spy-technicals",
+}
+
+
+def _tracker() -> discord_transport.DiscordTracker | None:
+    tracker = discord_transport.DiscordTracker(
+        discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID
+    )
+    return tracker if tracker.enabled else None
+
+
+def _channel_id(tracker: discord_transport.DiscordTracker, logical_channel: str) -> str:
+    name = _LOGICAL_CHANNEL_NAMES.get(logical_channel, logical_channel)
+    cached = _CHANNEL_ID_CACHE.get(name)
+    if cached:
+        return cached
+    channels = tracker._request("GET", f"/guilds/{tracker.guild_id}/channels")
+    for row in channels if isinstance(channels, list) else []:
+        if str(row.get("name") or "").casefold() == name.casefold():
+            channel_id = str(row.get("id") or "")
+            if channel_id:
+                _CHANNEL_ID_CACHE[name] = channel_id
+                return channel_id
+    return ""
 
 
 def _state_json(connection: Any, key: str) -> dict[str, Any]:
@@ -254,15 +291,12 @@ def _latest_payload(kind: str) -> dict[str, Any]:
 
 
 def _universe_rows() -> dict[str, dict[str, Any]]:
-    connection = dynamic_universe.connect()
-    try:
-        rows = connection.execute(
-            "SELECT symbol,status,source,score,last_price,average_volume,"
-            "options_available,reason,updated_at,expires_at FROM universe"
-        ).fetchall()
-        return {str(row["symbol"]): dict(row) for row in rows}
-    finally:
-        connection.close()
+    # The multi-ticker "universe" table was removed when this system went
+    # SPY-only (dynamic_universe.py's connect() no longer creates it) -
+    # nothing left to look up. Callers already fall back to per-field
+    # defaults ("current active-universe rules", etc.) when a symbol has
+    # no metadata here.
+    return {}
 
 
 def _rotation_batch(
@@ -294,7 +328,7 @@ def _cleanup_dashboard_cards(
     tracker = _tracker()
     if not tracker:
         return 0
-    channel_id = str(tracker.channels.get(logical_channel) or "")
+    channel_id = _channel_id(tracker, logical_channel)
     if not channel_id:
         return 0
     state = _state_json(connection, "discord_dashboard_state")
@@ -326,7 +360,16 @@ def _require_dashboard(
     key: str,
     content: str,
 ) -> None:
-    if not _engine().upsert_dashboard(connection, logical_channel, key, content[:5900]):
+    tracker = _tracker()
+    if not tracker:
+        raise RuntimeError(f"Discord tracker unavailable for {logical_channel}:{key}")
+    channel_id = _channel_id(tracker, logical_channel)
+    if not channel_id:
+        raise RuntimeError(f"channel for {logical_channel} not found ({logical_channel}:{key})")
+    message_id, _ = tracker.upsert_singleton_message(
+        channel_id, content[:5900], search_token=f"local-engine:{key}"
+    )
+    if not message_id:
         raise RuntimeError(f"Discord did not acknowledge {logical_channel}:{key}")
 
 
@@ -345,11 +388,27 @@ def _fmt_number(value: Any, digits: int = 1, suffix: str = "") -> str:
     return "unavailable" if number is None else f"{number:.{digits}f}{suffix}"
 
 
+def _session_label(now: datetime, is_open: bool) -> str:
+    # _PUBLIC (local_information_engine_public) supplied this before the
+    # Phase 3 purge deleted that module; _PUBLIC itself was never
+    # reassigned afterward, so this call always raised AttributeError in
+    # production. Inlined equivalent: regular hours use the real open
+    # flag, everything else is bucketed by clock time (CT).
+    if is_open:
+        return "regular session"
+    minutes = now.hour * 60 + now.minute
+    if 4 * 60 <= minutes < 8 * 60 + 30:
+        return "premarket"
+    if 15 * 60 <= minutes < 20 * 60:
+        return "after hours"
+    return "closed"
+
+
 def active_premarket_job(connection: Any) -> str:
     symbols = dynamic_universe.active_symbols()
     quotes = market_data.get_quotes(symbols, include_greeks=False) if symbols else {}
     rows = _universe_rows()
-    session = _PUBLIC._session_label(market_data.now_ct(), bool(market_data.market_is_open_now()[0]))
+    session = _session_label(market_data.now_ct(), bool(market_data.market_is_open_now()[0]))
     ranked = sorted(
         symbols,
         key=lambda symbol: abs(_quote_change(quotes.get(symbol) or {}) or 0.0),
@@ -643,7 +702,28 @@ def active_market_information_job(connection: Any) -> str:
     )
 
 
-def _render_intraday_chart(symbol: str, bars: list[dict[str, Any]], output: Path) -> dict[str, Any]:
+# Three visually distinct layouts on the SAME real bars, rotated by
+# calendar day so consecutive posts don't look like a stamped template
+# (owner request: "charts...don't always look the same every time they
+# post"). Each still draws only real numbers - support/resistance from the
+# actual trailing window, a real simple moving average - nothing synthetic.
+CHART_VARIANT_COUNT = 3
+
+
+def _simple_moving_average(values: list[float], period: int) -> list[float | None]:
+    out: list[float | None] = []
+    for index in range(len(values)):
+        if index + 1 < period:
+            out.append(None)
+            continue
+        window = values[index + 1 - period : index + 1]
+        out.append(sum(window) / len(window))
+    return out
+
+
+def _render_intraday_chart(
+    symbol: str, bars: list[dict[str, Any]], output: Path, *, variant: int = 0
+) -> dict[str, Any]:
     from PIL import Image, ImageDraw, ImageFont
 
     points: list[tuple[str, float]] = []
@@ -656,6 +736,7 @@ def _render_intraday_chart(symbol: str, bars: list[dict[str, Any]], output: Path
     if len(points) < 2:
         raise ValueError(f"{symbol} returned fewer than two usable chart bars")
 
+    variant = variant % CHART_VARIANT_COUNT
     values = [item[1] for item in points]
     width, height = 1200, 650
     left, right, top, bottom = 90, 40, 90, 100
@@ -665,7 +746,8 @@ def _render_intraday_chart(symbol: str, bars: list[dict[str, Any]], output: Path
     padding = max((high - low) * 0.12, 0.05)
     low -= padding
     high += padding
-    image = Image.new("RGB", (width, height), "#0b1420")
+    background = "#0b1420" if variant != 2 else "#11151f"
+    image = Image.new("RGB", (width, height), background)
     draw = ImageDraw.Draw(image)
     small = ImageFont.load_default(size=15)
     normal = ImageFont.load_default(size=18)
@@ -681,22 +763,50 @@ def _render_intraday_chart(symbol: str, bars: list[dict[str, Any]], output: Path
         y = xy(0, value)[1]
         draw.line((left, y, width - right, y), fill="#26364a", width=1)
         draw.text((12, y - 8), f"${value:.2f}", fill="#9fb0c3", font=small)
-    draw.line([xy(index, value) for index, value in enumerate(values)], fill="#e5edf7", width=4)
+
     support = min(values[-min(20, len(values)):])
     resistance = max(values[-min(20, len(values)):])
-    for level, label, color in (
-        (support, "support", "#22c55e"),
-        (resistance, "resistance", "#ef4444"),
-    ):
-        y = xy(0, level)[1]
-        draw.line((left, y, width - right, y), fill=color, width=2)
-        draw.text((width - 190, y - 20), f"{label} ${level:.2f}", fill=color, font=small)
+    line_points = [xy(index, value) for index, value in enumerate(values)]
+
+    if variant == 0:
+        # Plain price line + explicit support/resistance rails.
+        draw.line(line_points, fill="#e5edf7", width=4)
+        for level, label, color in (
+            (support, "support", "#22c55e"),
+            (resistance, "resistance", "#ef4444"),
+        ):
+            y = xy(0, level)[1]
+            draw.line((left, y, width - right, y), fill=color, width=2)
+            draw.text((width - 190, y - 20), f"{label} ${level:.2f}", fill=color, font=small)
+        subtitle = "price + support/resistance"
+    elif variant == 1:
+        # Shaded range band between support and resistance, price on top.
+        top_y = xy(0, resistance)[1]
+        bottom_y = xy(0, support)[1]
+        draw.rectangle((left, top_y, width - right, bottom_y), fill="#16273a")
+        draw.line(line_points, fill="#7dd3fc", width=4)
+        draw.text((width - 230, top_y - 20), f"resistance ${resistance:.2f}", fill="#ef4444", font=small)
+        draw.text((width - 230, bottom_y + 6), f"support ${support:.2f}", fill="#22c55e", font=small)
+        subtitle = "price + support/resistance zone"
+    else:
+        # Price line with a real trailing simple-moving-average overlay.
+        period = max(3, min(20, len(values) // 4 or 3))
+        sma = _simple_moving_average(values, period)
+        draw.line(line_points, fill="#e5edf7", width=3)
+        sma_points = [
+            xy(index, value) for index, value in enumerate(sma) if value is not None
+        ]
+        if len(sma_points) >= 2:
+            draw.line(sma_points, fill="#fbbf24", width=3)
+        draw.text((width - 230, top + 6), f"SMA({period})", fill="#fbbf24", font=small)
+        subtitle = f"price + {period}-bar moving average"
+
     first, last = values[0], values[-1]
     change = (last / first - 1) * 100 if first else 0.0
     draw.text((left, 25), f"{symbol} ACTIVE SESSION PRICE MOVEMENT", fill="#f8fafc", font=title_font)
     draw.text(
         (left, 58),
-        f"{len(values)} bars · ${first:.2f} to ${last:.2f} · {change:+.2f}%",
+        f"{len(values)} bars · ${first:.2f} to ${last:.2f} · {change:+.2f}% · {subtitle}",
         fill="#b8c7d9",
         font=normal,
     )
@@ -744,14 +854,16 @@ def _replace_chart_message(
     tracker = _tracker()
     if not tracker:
         return False
+    channel_id = _channel_id(tracker, channel)
+    if not channel_id:
+        return False
     state = _state_json(connection, state_key)
     old_id = str(state.get(symbol) or "")
-    response = tracker.send_channel_file(channel, path, content=caption[:1900])
+    response = tracker.send_channel_file(channel_id, path, content=caption[:1900])
     new_id = str((response or {}).get("id") or "")
     if not new_id:
         return False
-    channel_id = str(tracker.channels.get(channel) or "")
-    if old_id and old_id != new_id and channel_id:
+    if old_id and old_id != new_id:
         try:
             tracker._request("DELETE", f"/channels/{channel_id}/messages/{old_id}")
         except discord_transport.DiscordError as exc:
@@ -833,7 +945,7 @@ def _cleanup_chart_messages(connection: Any, active: set[str]) -> int:
     if not tracker:
         return 0
     state = _state_json(connection, "upgrade44:chart-messages")
-    channel_id = str(tracker.channels.get("charts") or "")
+    channel_id = _channel_id(tracker, "charts")
     removed = 0
     for symbol in list(state):
         if symbol in active:
@@ -865,7 +977,8 @@ def intraday_chart_job(connection: Any) -> str:
                 bars = market_data.get_daily_history(symbol, days=45)[-30:]
                 timeframe = "30-session fallback"
             output = CHART_DIR / f"{symbol.lower()}-active-session.png"
-            metrics = _render_intraday_chart(symbol, bars, output)
+            variant = _now().toordinal() % CHART_VARIANT_COUNT
+            metrics = _render_intraday_chart(symbol, bars, output, variant=variant)
             snapshot = _latest_payload(f"ticker-market:{symbol}")
             content = "\n".join(
                 [
