@@ -278,3 +278,31 @@ def test_current_leader_none_on_a_tie(db):
     _open(db, "t2", bot="BLACKTIDE", entry_bankroll=1000)
     _close(db, "t2", 100)
     assert sb.current_leader(db) is None
+
+
+# --- recent_closed_trades / bankroll_history -----------------------------------
+
+def test_recent_closed_trades_outcome_filter_separates_wins_and_losses(five_trade_generation):
+    wins = sb.recent_closed_trades(five_trade_generation, "AXIOM", outcome="WIN")
+    losses = sb.recent_closed_trades(five_trade_generation, "AXIOM", outcome="LOSS")
+    assert [round(t["pnl_usd"]) for t in wins] == [80, 200, 100]
+    assert [round(t["pnl_usd"]) for t in losses] == [-30, -50]
+    assert all(t["outcome"] == "WIN" for t in wins)
+    assert all(t["outcome"] == "LOSS" for t in losses)
+
+
+def test_recent_closed_trades_outcome_filter_respects_limit(five_trade_generation):
+    wins = sb.recent_closed_trades(five_trade_generation, "AXIOM", limit=1, outcome="WIN")
+    assert len(wins) == 1
+    assert round(wins[0]["pnl_usd"]) == 80
+
+
+def test_bankroll_history_matches_the_hand_calculated_equity_curve(five_trade_generation):
+    points = sb.bankroll_history(five_trade_generation, "AXIOM")
+    values = [round(p["bankroll"]) for p in points]
+    assert values == [1000, 1000, 1100, 1100, 1050, 1050, 1250, 1250, 1220, 1220, 1300]
+
+
+def test_bankroll_history_on_an_empty_bot_is_just_the_starting_point(db):
+    points = sb.bankroll_history(db, "AXIOM")
+    assert points == [{"at": None, "bankroll": sb.STARTING_BANKROLL_USD, "generation": 1}]

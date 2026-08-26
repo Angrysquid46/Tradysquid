@@ -72,6 +72,60 @@ CANONICAL_COMPETITION_SURFACES = (
 )
 
 
+# Per-bot AXIOM/BLACKTIDE dashboard surfaces (rivalry_presentation.
+# publish_bot_surfaces) - same registration requirement as
+# CANONICAL_COMPETITION_SURFACES above (record_surface_event() raises on
+# an unregistered surface_id), generated rather than hand-duplicated since
+# both bots' surface sets are identical in shape.
+CANONICAL_BOT_SURFACES = tuple(
+    {
+        "surface_id": f"{bot.lower()}-{suffix}", "category": bot,
+        "channel": channel.format(bot=bot.lower()), "owner": "Claude" if bot == "AXIOM" else "Codex",
+        "purpose": purpose.format(bot),
+        "producer": "rivalry_presentation.publish_bot_surfaces",
+        "publisher": "discord_transport.DiscordTracker", "update_mode": update_mode,
+        "expected_silence": expected_silence,
+        **({"max_silence_minutes": 10} if update_mode == UPDATE_MODE_PERIODIC else {}),
+        "event_types": event_types, "schema_version": "phase15-v1",
+    }
+    for bot in ("AXIOM", "BLACKTIDE")
+    for suffix, channel, purpose, update_mode, expected_silence, event_types in (
+        ("dashboard-card", "{bot}-dashboard", "{}'s balance/generation/P&L/win-rate stat card",
+         UPDATE_MODE_PERIODIC, False, ("PUBLISH",)),
+        ("dashboard-chart", "{bot}-dashboard", "{}'s bankroll-history chart",
+         UPDATE_MODE_PERIODIC, False, ("PUBLISH",)),
+        ("held-trade-card", "{bot}-held-trades", "{}'s current OPEN/FLAT position card",
+         UPDATE_MODE_EVENT_DRIVEN, True, ("PUBLISH",)),
+        ("winners-card", "{bot}-winners", "{}'s recent winning closed trades",
+         UPDATE_MODE_EVENT_DRIVEN, True, ("PUBLISH",)),
+        ("losers-card", "{bot}-losers", "{}'s recent losing closed trades",
+         UPDATE_MODE_EVENT_DRIVEN, True, ("PUBLISH",)),
+    )
+)
+
+
+def reconcile_canonical_bot_surfaces(connection: sqlite3.Connection) -> tuple[str, ...]:
+    """Same idempotent register-then-retire-obsolete shape as
+    reconcile_canonical_competition_surfaces, for the per-bot surfaces."""
+    active_ids = {item["surface_id"] for item in CANONICAL_BOT_SURFACES}
+    for item in CANONICAL_BOT_SURFACES:
+        register_surface(connection, **item)
+    rows = connection.execute(
+        "SELECT surface_id FROM surfaces WHERE category IN ('AXIOM', 'BLACKTIDE')"
+    ).fetchall()
+    retired: list[str] = []
+    for row in rows:
+        surface_id = row["surface_id"]
+        if surface_id not in active_ids:
+            connection.execute(
+                "UPDATE surfaces SET enabled=0, status='RETIRED' WHERE surface_id=?",
+                (surface_id,),
+            )
+            retired.append(surface_id)
+    connection.commit()
+    return tuple(retired)
+
+
 def connect_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=10)
