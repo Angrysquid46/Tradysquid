@@ -20,6 +20,8 @@ from nacl.signing import VerifyKey
 
 import activity_log
 import local_information_engine as info_engine
+import market_data
+import upgrade_batch_44
 
 HOST = os.environ.get("COMMAND_BOT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("COMMAND_BOT_PORT", "8080"))
@@ -261,6 +263,40 @@ def trend_reply(ticker: str) -> str:
     ])
 
 
+def levels_reply(ticker: str) -> str:
+    snapshot = info_engine.market_snapshot(ticker)
+    return "\n".join([
+        f"📏 **{ticker} levels**",
+        f"Price {value_text(snapshot['price'], prefix='$')} · Regime: **{snapshot['regime']}**",
+        (
+            f"20-day support {value_text(snapshot.get('support20'), prefix='$')} · "
+            f"resistance {value_text(snapshot.get('resistance20'), prefix='$')}"
+        ),
+        "Levels are computed from real recorded bars, not predictions.",
+    ])
+
+
+def chart_reply_file(ticker: str) -> tuple[str, Path | None]:
+    from datetime import datetime
+
+    bars = market_data.get_intraday_history(ticker)
+    timeframe = "5-minute session"
+    if len(bars) < 2:
+        bars = market_data.get_daily_history(ticker, days=45)[-30:]
+        timeframe = "30-session fallback"
+    output = Path("docs") / "tickers" / f"{ticker.lower()}-command-chart.png"
+    try:
+        variant = datetime.now().toordinal() % upgrade_batch_44.CHART_VARIANT_COUNT
+        metrics = upgrade_batch_44._render_intraday_chart(ticker, bars, output, variant=variant)
+    except ValueError as exc:
+        return f"Could not render a chart for {ticker}: {exc}", None
+    caption = (
+        f"📈 **{ticker} {timeframe}** · {metrics['change_pct']:+.2f}% · "
+        f"support ${metrics['support']:.2f} · resistance ${metrics['resistance']:.2f}"
+    )
+    return caption, output
+
+
 def chain_reply(ticker: str, side: str) -> str:
     side = side.lower()
     if side not in {"call", "put"}:
@@ -482,6 +518,13 @@ def process_command(interaction: dict[str, Any]) -> None:
         elif name == "trend":
             ticker = interaction_ticker(interaction)
             patch_original(application_id, token, content=trend_reply(ticker))
+        elif name == "levels":
+            ticker = interaction_ticker(interaction)
+            patch_original(application_id, token, content=levels_reply(ticker))
+        elif name == "chart":
+            ticker = interaction_ticker(interaction)
+            caption, chart_path = chart_reply_file(ticker)
+            patch_original(application_id, token, content=caption, file_path=chart_path)
         elif name == "chain":
             ticker = interaction_ticker(interaction)
             patch_original(

@@ -73,7 +73,8 @@ CATEGORY_ORDER = [
     "COMMUNITY",
     "MARKET INTELLIGENCE",
     "LEARNING CENTER",
-    "SYSTEM",
+    "AXIOM",
+    "BLACKTIDE",
     "RIVALRY",
     "OWNER CONTROL",
 ]
@@ -98,14 +99,32 @@ CHANNELS = [
     ChannelSpec("MARKET INTELLIGENCE", "charts-and-levels", "Requested and scheduled charts, support, and resistance."),
     ChannelSpec("MARKET INTELLIGENCE", "news-and-events", "Cached company and market news with timestamps."),
     ChannelSpec("MARKET INTELLIGENCE", "market-regime", "Broad-market context, trend, and volatility conditions."),
-    ChannelSpec("MARKET INTELLIGENCE", "universe-watch", "SPY off-hours screen status and on-demand snapshot."),
     ChannelSpec("MARKET INTELLIGENCE", "spy-technicals", "SPY technical history from the standalone market-memory store: SMA/EMA/VWAP, MACD, RSI, ADX, Bollinger and ATR across intraday, short, medium and long horizons, plus what each tracked pattern is actually worth against the base rate."),
-    ChannelSpec("SYSTEM", "scanner-status", "Current scanner run state: cycle phase, last completed pass, and next scheduled run."),
-    ChannelSpec("SYSTEM", "api-errors", "Provider and Discord API errors, rate limits, and failed requests."),
-    ChannelSpec("SYSTEM", "system-health", "Local service health, freshness, queue depth, and restarts."),
-    ChannelSpec("SYSTEM", "update-status", "Deploy checks, current commit, and auto-update outcomes."),
-    ChannelSpec("SYSTEM", "provider-status", "Tradier, TradingView, Discord, and read-only MCP status."),
+    # Retired 2026-08-25 - owner: SYSTEM category and all its channels
+    # removed forever. Of its 7 channels, 6 (scanner-status, api-errors,
+    # update-status, provider-status, system-activity,
+    # automation-diagnostics) had never had anything post to them - pure
+    # spec, confirmed by grep, no producer anywhere. system-health is the
+    # one real exception (the frozen updater's tradysquid_supervisor.py
+    # defaults discord_post() to it, and test_supervisor_availability.py
+    # asserts the literal name) - relocated to OWNER CONTROL below rather
+    # than deleted, since discord_channel_id() resolves channels by name
+    # via a live API lookup, not by category, so this needs zero changes
+    # to any frozen file.
+    ChannelSpec("OWNER CONTROL", "system-health", "Local service health, freshness, queue depth, and restarts."),
     ChannelSpec("OWNER CONTROL", "workflow-log", "Release and deployment history."),
+    # AXIOM (Claude) and BLACKTIDE (Codex) each get their own category:
+    # a balance/trades/stats dashboard, a live held-trades card, and a
+    # closed-trade winners/losers feed - all built on scoreboard.py, the
+    # single neutral ledger already shared by both bots (see
+    # rivalry_presentation.py, which already reads it the same way for the
+    # combined #blacktide-vs-claude scoreboard).
+    ChannelSpec("AXIOM", "axiom-dashboard", "AXIOM bankroll, lifetime P/L, trade count, win rate, and streak."),
+    ChannelSpec("AXIOM", "axiom-held-trades", "AXIOM's current live position, updated on open/close."),
+    ChannelSpec("AXIOM", "axiom-winners-losers", "Every AXIOM closed trade, tagged WIN or LOSS with P/L."),
+    ChannelSpec("BLACKTIDE", "blacktide-dashboard", "BLACKTIDE bankroll, lifetime P/L, trade count, win rate, and streak."),
+    ChannelSpec("BLACKTIDE", "blacktide-held-trades", "BLACKTIDE's current live position, updated on open/close."),
+    ChannelSpec("BLACKTIDE", "blacktide-winners-losers", "Every BLACKTIDE closed trade, tagged WIN or LOSS with P/L."),
     # Reconciled 2026-08-19: these are live channels the bot already writes
     # to that had drifted out of this spec entirely. Declared with their
     # CURRENT topics so the sync is a no-op - the point is that a future
@@ -114,8 +133,6 @@ CHANNELS = [
     # so declaring it would move it.
     ChannelSpec("START HERE", "bot-commands", "Complete TradeBot slash-command reference and ticker-context instructions."),
     ChannelSpec("START HERE", "risk-management", "Options risk disclosures and pre-trade safety checklist."),
-    ChannelSpec("SYSTEM", "system-activity", "Always-on interval receipts, off-hours SPY research, event sweeps, and data freshness."),
-    ChannelSpec("SYSTEM", "automation-diagnostics", "Missed jobs, overdue intervals, stale runs, automatic repair attempts, retry limits, and unresolved failures."),
     # Phase 9 (Master Spec Section 7): official head-to-head results, lead
     # changes, busts, milestones, and bounded bot-to-bot trash talk -
     # separate from operational trade channels. No persona/response logic
@@ -255,11 +272,22 @@ DELETE_CHANNELS = {
     # functionality, mistakenly preserved and re-posted live by an
     # --apply run before this was caught.
     "scanner-controls",
+    # Retired 2026-08-25 - owner: "the system catagory and all channels I
+    # want removed forever." scanner-status/api-errors/update-status/
+    # provider-status/system-activity/automation-diagnostics never had a
+    # producer (grep-confirmed spec-only). universe-watch is separately
+    # dead-by-design: the multi-ticker "universe" table it read no longer
+    # exists (dynamic_universe.py is SPY-only), so it could only ever have
+    # errored if something had tried to post to it. system-health is the
+    # one exception and is NOT here - it's relocated to OWNER CONTROL
+    # above instead, since the frozen updater still posts to it by name.
+    "scanner-status", "api-errors", "update-status", "provider-status",
+    "system-activity", "automation-diagnostics", "universe-watch",
 }
 
 DELETE_CATEGORIES = {
     "ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE",
-    "LIVE TRADING DESK", "PERFORMANCE", "STRATEGY CONTROL",
+    "LIVE TRADING DESK", "PERFORMANCE", "STRATEGY CONTROL", "SYSTEM",
     *_OLD_STRATEGY_CATEGORY_NAMES,
     STRATEGIES_CATEGORY_NAME,
 }
@@ -274,7 +302,6 @@ CHANNEL_STARTERS = {
     "charts-and-levels": "Updated by scheduled research and `/chart` or `/levels` requests.",
     "news-and-events": "Updated by scheduled news checks and `/events` requests.",
     "market-regime": "Updated with broad-market and scanner context.",
-    "universe-watch": "Updated by the SPY off-hours screen and on-demand scans.",
     "spy-technicals": "Refreshed once per trading day, shortly after the 3:35pm CT market-memory collection run. Charts show completed sessions - never a live price.",
     "strategies-dashboard": "Updated as each live strategy's paper trades open and close, plus a leaderboard ranking them.",
     "strategies-results": "Updated from every one of those strategies' recorded paper-trade outcomes, each tagged with its own strategy.",
@@ -282,11 +309,13 @@ CHANNEL_STARTERS = {
     "learning-results": "Updated by the local learning review.",
     "ask-tradebot": "Use `/ask` or `/explain`; general conversation belongs in #general-chat.",
     "examples-and-reviews": "Paper-trade examples and completed reviews appear here.",
-    "scanner-status": "Updated as the SPY scanner completes each pass.",
-    "api-errors": "Populated only when a provider or Discord request actually fails.",
     "system-health": "Updated by the local supervisor and engine.",
-    "update-status": "Updated on every automatic deploy check.",
-    "provider-status": "Shows the current data-provider and webhook status.",
+    "axiom-dashboard": "Updated as AXIOM's bankroll, trades, and stats change.",
+    "axiom-held-trades": "Updated when AXIOM opens or closes its position.",
+    "axiom-winners-losers": "Updated immediately when an AXIOM position closes.",
+    "blacktide-dashboard": "Updated as BLACKTIDE's bankroll, trades, and stats change.",
+    "blacktide-held-trades": "Updated when BLACKTIDE opens or closes its position.",
+    "blacktide-winners-losers": "Updated immediately when a BLACKTIDE position closes.",
     "strategy-control": "Owner-only; reflects both live SPY 0DTE strategy toggles (1-minute and 5-minute).",
     "strategy-settings": "Mirrors the filters each strategy is currently using.",
     "strategy-versions": "Updated when a strategy's configuration hash changes.",
@@ -301,8 +330,19 @@ CHANNEL_STARTERS = {
 GUIDES = {
     "welcome": """# Tradysquids
 Tradysquids is a local-first, paper-trading research system for learning how
-options setups are found, tracked, and reviewed. Start with #rules-and-risk,
-then use #how-to-use-tradebot and #learning-index. No brokerage orders are placed.""",
+options setups are found, tracked, and reviewed. No brokerage orders are ever
+placed - everything here is paper money.
+
+Two things run side by side:
+- **Live SPY 0DTE strategies** (opening-range breakout, key levels, and
+  friends) - see #how-trades-are-found and #market-intelligence.
+- **AXIOM vs BLACKTIDE** - two independently-built AI paper-traders
+  competing head-to-head from the same $1,000 starting bankroll. Each has
+  its own dashboard/held-trades/winners-losers channels under #axiom and
+  #blacktide; the combined head-to-head scoreboard lives in
+  #blacktide-vs-claude.
+
+Start with #rules-and-risk, then #how-to-use-tradebot.""",
     "rules-and-risk": """# Rules, Risk, and Conduct
 1. Educational information only—not professional financial advice.
 2. Options can lose 100% of premium. Some short-option positions can lose more
@@ -315,13 +355,18 @@ share private information, spam, harass, or manipulate markets.
 your trades. Paper results and historical performance do not guarantee profit.""",
     "how-to-use-tradebot": """# How to Use TradeBot
 Type `/`, choose a command, complete its fields, and send it.
-• `/quote`, `/trend`, `/levels`, `/chart` — current market context.
+• `/quote`, `/trend`, `/levels`, `/chart` — current market context and a
+  real chart rendered from live bars (the layout varies day to day).
 • `/chain`, `/option`, `/setup`, `/risk` — options research and risk examples.
 • `/events`, `/calendar` — timestamped research links.
 • `/performance`, `/why`, `/status`, `/dataage`, `/lastscan` — tracking.
 • `/ask`, `/explain` — educational answers.
 • `/filters` — configuration status.
 • `/scan-now scope:` — owner-only manual scan and reporting.
+Scheduled research posts on its own into #market-intelligence
+(premarket/breaking-alerts/charts-and-levels/news-and-events/market-regime/
+spy-technicals); AXIOM and BLACKTIDE's own dashboards update themselves as
+their paper trades open and close.
 The hidden supervisor starts services, checks GitHub for approved releases,
 restarts failures, synchronizes Discord, and reports deployments. The system is
 paper-trading only and cannot place brokerage orders.""",
@@ -356,7 +401,15 @@ ONCE to -15% and holds there - it does not keep trailing behind every tick.
 Every position force-closes at end of day; 0DTE never holds overnight.
 
 Quotes, assignment, exercise, slippage, and total-loss risk still require
-individual review. Educational only—not financial advice.""",
+individual review. Educational only—not financial advice.
+
+**AXIOM and BLACKTIDE are separate.** They're two independently-built AI
+paper-traders (AXIOM is Claude's, BLACKTIDE is Codex's) competing head-to-head
+from the same $1,000 starting bankroll, each with its own private entry/exit
+logic neither side can see into. Every trade either one makes is recorded
+through the same neutral, shared scorekeeper, so #axiom-dashboard,
+#blacktide-dashboard, and the combined #blacktide-vs-claude scoreboard are
+always describing real, audited paper trades - never a simulation of one.""",
     "learning-index": """# Complete Learning Center
 Use the numbered channels in order, or jump directly to the topic you need.
 

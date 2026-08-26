@@ -431,6 +431,30 @@ def lifetime_pnl(connection: sqlite3.Connection, bot: str) -> float:
     return total_pnl(connection, bot, generation=None)
 
 
+def recent_closed_trades(
+    connection: sqlite3.Connection, bot: str, *, limit: int = 20
+) -> list[dict[str, Any]]:
+    """Public, privacy-safe closed-trade feed for a winners/losers channel:
+    outcome and P/L only, never contract/side/fill - the private-strategy
+    signals current_position_status()'s raw row exposes for internal use
+    only. Newest first."""
+    rows = connection.execute(
+        "SELECT trade_id, generation, closed_at, pnl_usd FROM official_trades "
+        "WHERE bot=? AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT ?",
+        (bot, limit),
+    ).fetchall()
+    return [
+        {
+            "trade_id": row["trade_id"],
+            "generation": row["generation"],
+            "closed_at": row["closed_at"],
+            "pnl_usd": row["pnl_usd"],
+            "outcome": "WIN" if row["pnl_usd"] > 0 else "LOSS" if row["pnl_usd"] < 0 else "SCRATCH",
+        }
+        for row in rows
+    ]
+
+
 # The exact key set scoreboard_snapshot() returns - exported so other
 # modules (rivalry.py's public_score_snapshot schema check) can validate
 # against the real public shape instead of duplicating/guessing it.

@@ -72,7 +72,16 @@ def _port_is_free(host: str, port: int) -> bool:
         probe.close()
 
 
-def main() -> int:
+def run_checks(*, skip_market_check: bool = False) -> Report:
+    """Run every real readiness check and return the filled-in Report.
+
+    `skip_market_check` exists for launch.py: entry/position-monitor jobs in
+    runtime.py already self-gate on `market_hours_only` inside due(), so a
+    long-running process doesn't need to be blocked from *starting* just
+    because it's currently after-hours - it can start now, sit idle, and
+    begin trading itself the moment the market opens. The interactive CLI
+    (main(), below) always runs the full 6-check report unchanged.
+    """
     r = Report()
 
     # 1. deployed == origin/main
@@ -128,9 +137,24 @@ def main() -> int:
 
     # 6. market actually open
     open_now, now = market_data.market_is_open_now()
-    r.check("market currently open", open_now, f"now={now.isoformat(timespec='seconds')}")
+    if skip_market_check:
+        r.check("market currently open (informational)", True,
+                 f"open={open_now} now={now.isoformat(timespec='seconds')}")
+    else:
+        r.check("market currently open", open_now, f"now={now.isoformat(timespec='seconds')}")
 
-    return r.render()
+    return r
+
+
+def require_ready(*, skip_market_check: bool = False) -> tuple[bool, Report]:
+    """Programmatic form of the CLI gate for launch.py: (is_ready, report)."""
+    report = run_checks(skip_market_check=skip_market_check)
+    ready = all(ok for _, ok, _ in report.rows)
+    return ready, report
+
+
+def main() -> int:
+    return run_checks().render()
 
 
 if __name__ == "__main__":
