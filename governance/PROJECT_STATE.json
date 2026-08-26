@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-26T15:08:49.136887-05:00",
+  "last_updated": "2026-08-26T16:22:45.568320-05:00",
   "branch": "main",
-  "observed_head_at_write": "f722d80080848b4d64f623ee80faf2954f4fc3d6",
-  "commit_subject": "Record runtime schema migration",
+  "observed_head_at_write": "369fdcf631da1d684bda1d5d0e8cdf6bc259b1fe",
+  "commit_subject": "Restore verified rivalry and focused SPY charts",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
