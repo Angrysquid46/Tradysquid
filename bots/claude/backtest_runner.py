@@ -78,8 +78,9 @@ def _simulate_day(
                 continue
             snapshot = view.options_as_of(current_dt)
             tiers_seen.append(snapshot["tier"])
+            confidence = selected.decision.contributing_signals.get("confidence", 0.5)
             contract = contract_selection.select_contract(
-                snapshot["contracts"], selected.decision.side, day, selected.params
+                snapshot["contracts"], selected.decision.side, day, selected.params, confidence=confidence
             )
             if contract is None:
                 continue

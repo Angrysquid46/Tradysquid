@@ -1,16 +1,16 @@
-"""Phase 13 v2: per-hypothesis mutable parameters, plus the mutation
-specs that drive bots/claude/evolution.py's deterministic tightening.
+"""Per-hypothesis mutable parameters, plus the mutation specs that drive
+bots/claude/evolution.py's deterministic tightening/loosening.
 
 v1 had one global, fixed Parameters object. That was a fair criticism:
 a trend-continuation trade and a mean-reversion trade have no principled
 reason to share one delta band or one exit shape, and hand-picked
 constants that never change aren't "adaptive." Every hypothesis in
-HYPOTHESIS_DEFAULTS now owns its own entry thresholds AND its own
-position mechanics (delta band, premium cap, profit target, stop), and
+HYPOTHESIS_DEFAULTS owns its own entry thresholds AND its own position
+mechanics (delta band, premium cap, profit target, stop), and
 MUTATION_SPECS defines, for each tunable field, which direction is
 "tighter/more selective" and where the bound is - evolution.py applies
 these deterministically (never randomly) when a hypothesis's measured
-fitness goes negative.
+fitness moves, or when it's gone too long without firing at all.
 
 Every starting value here is a reasoned default, not a measured one -
 labeled that way throughout, same basis as market_api_budget.py's
@@ -28,9 +28,12 @@ FORCE_CLOSE_HOUR = 14
 FORCE_CLOSE_MINUTE = 45
 # How many of a hypothesis's OWN attributed closed trades must exist
 # before its fitness is judged and it becomes eligible for an evolution
-# step. Policy default, not a measured value - gates when a hypothesis is
-# old enough to judge, does not block launch.
-MIN_SAMPLE_BEFORE_EVOLVE = 10
+# step. Owner directive 2026-08-26 ("evolve as aggressively as it
+# wants"/"self learning path"): lowered from 10 to 6 - a faster feedback
+# loop trades some statistical smoothing for AXIOM actually reacting to
+# what's happening this generation instead of next one. Still a real
+# half-dozen closed trades, not a hair-trigger on 1-2.
+MIN_SAMPLE_BEFORE_EVOLVE = 6
 
 # --- per-hypothesis starting parameters ---
 # Every hypothesis carries the same shared position-mechanics fields
@@ -53,7 +56,7 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
         "relative_volume_min": 1.2,
         "delta_min": 0.35,
         "delta_max": 0.55,
-        "premium_cap_usd": 450.0,
+        "premium_cap_usd": 500.0,
         "profit_target_pct": 0.40,
         "stop_loss_pct": -0.35,
     },
@@ -65,7 +68,7 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
         "max_trend_strength_level": 1,
         "delta_min": 0.35,
         "delta_max": 0.55,
-        "premium_cap_usd": 450.0,
+        "premium_cap_usd": 500.0,
         "profit_target_pct": 0.40,
         "stop_loss_pct": -0.35,
     },
@@ -78,7 +81,46 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
         "relative_volume_min": 1.3,
         "delta_min": 0.35,
         "delta_max": 0.55,
-        "premium_cap_usd": 450.0,
+        "premium_cap_usd": 500.0,
+        "profit_target_pct": 0.40,
+        "stop_loss_pct": -0.35,
+    },
+    # --- Added 2026-08-26 (owner directive: "build anything with its own
+    # signals and aggression") - three more genuinely distinct mechanisms,
+    # not variations on the original three. ---
+    "vwap_momentum": {
+        # SPY around $550-600: 0.05% is roughly $0.28-0.30, a real
+        # intraday move off the session's volume-weighted price, not
+        # tick noise.
+        "min_vwap_distance_pct": 0.05,
+        "relative_volume_min": 1.2,
+        "delta_min": 0.35,
+        "delta_max": 0.55,
+        "premium_cap_usd": 500.0,
+        "profit_target_pct": 0.40,
+        "stop_loss_pct": -0.35,
+    },
+    "volatility_breakout": {
+        # bb_width_pct this tight is a genuine compression regime, not
+        # every ordinary quiet bar - most sessions never qualify.
+        "max_squeeze_bb_width_pct": 1.5,
+        # Breakout confirmation should be volume-heavy - a squeeze that
+        # "breaks" on thin volume is usually just noise at the band edge.
+        "relative_volume_min": 1.4,
+        "delta_min": 0.35,
+        "delta_max": 0.55,
+        "premium_cap_usd": 500.0,
+        "profit_target_pct": 0.40,
+        "stop_loss_pct": -0.35,
+    },
+    "gap_and_go": {
+        # 0.15% on SPY is roughly $0.80-0.90 - a gap worth trading, not
+        # the routine half-tick most sessions open with.
+        "min_gap_pct": 0.15,
+        "relative_volume_min": 1.3,
+        "delta_min": 0.35,
+        "delta_max": 0.55,
+        "premium_cap_usd": 500.0,
         "profit_target_pct": 0.40,
         "stop_loss_pct": -0.35,
     },
@@ -91,15 +133,12 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
 # deterministic, reproducible, no randomness. Every field's loose bound
 # (lower if step>0, upper if step<0) is deliberately set equal to that
 # field's own HYPOTHESIS_DEFAULTS value, so evolution.py's loosening path
-# (added 2026-08-26) can only ever walk a field back to its original
-# documented default, never past it - delta_min previously broke this
-# (loose bound 0.30 sat below its 0.35 default, an inconsistency from
-# before loosening existed), fixed here to match the pattern every other
-# field already followed.
+# can only ever walk a field back to its original documented default,
+# never past it.
 _SHARED_POSITION_SPECS: dict[str, tuple[float, float, float]] = {
     "delta_min": (0.02, 0.35, 0.45),
     "delta_max": (-0.02, 0.45, 0.55),
-    "premium_cap_usd": (-25.0, 150.0, 450.0),
+    "premium_cap_usd": (-25.0, 150.0, 500.0),
     "profit_target_pct": (0.05, 0.40, 0.80),
     "stop_loss_pct": (0.03, -0.35, -0.15),
 }
@@ -119,6 +158,27 @@ MUTATION_SPECS: dict[str, dict[str, tuple[float, float, float]]] = {
     },
     "momentum_acceleration": {
         "max_run_length": (-1, 1, 3),
+        "relative_volume_min": (0.2, 1.3, 3.0),
+        **_SHARED_POSITION_SPECS,
+    },
+    "vwap_momentum": {
+        # Default (loose bound) 0.05 - tighten walks the required
+        # distance-off-vwap UP toward 0.20 (stricter: only the biggest
+        # moves qualify).
+        "min_vwap_distance_pct": (0.02, 0.05, 0.20),
+        "relative_volume_min": (0.2, 1.2, 3.0),
+        **_SHARED_POSITION_SPECS,
+    },
+    "volatility_breakout": {
+        # Default (loose bound) 1.5 is the upper bound here - tighten
+        # walks the max allowed width DOWN toward 0.5 (stricter: demands
+        # a tighter coil before it'll trade the break).
+        "max_squeeze_bb_width_pct": (-0.25, 0.5, 1.5),
+        "relative_volume_min": (0.2, 1.4, 3.0),
+        **_SHARED_POSITION_SPECS,
+    },
+    "gap_and_go": {
+        "min_gap_pct": (0.05, 0.15, 0.50),
         "relative_volume_min": (0.2, 1.3, 3.0),
         **_SHARED_POSITION_SPECS,
     },
