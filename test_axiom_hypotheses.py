@@ -62,8 +62,33 @@ def test_trend_continuation_blocked_when_di_unclear():
     assert "DI direction" in decision.rationale
 
 
-def test_trend_continuation_blocked_when_ma_stack_not_aligned():
+def test_trend_continuation_enters_on_majority_ma_stack_agreement():
+    """Owner directive 2026-08-26: min_ma_stack_agreement defaults to 2
+    (majority), not the old hardcoded unanimous 3-of-3 - a real
+    VERY_STRONG/clear-DI setup should not be blocked just because one of
+    three timeframes disagrees, which happened live and cost a full
+    session of zero trades."""
     decision = trend_continuation(100.0, _bullish_features(long_term_trend="DOWN"), TC_PARAMS)
+    assert decision.should_enter is True
+    assert decision.side == "CALL"
+
+
+def test_trend_continuation_blocked_when_ma_stack_agreement_below_minority():
+    """Only short-term agrees (1-of-3) - even majority-rule must still
+    block a stack that's mostly disagreeing."""
+    decision = trend_continuation(
+        100.0, _bullish_features(medium_term_trend="DOWN", long_term_trend="DOWN"), TC_PARAMS
+    )
+    assert decision.should_enter is False
+    assert "MA stack" in decision.rationale
+
+
+def test_trend_continuation_respects_a_stricter_ma_stack_agreement_param():
+    """A hypothesis evolution.py has tightened min_ma_stack_agreement back
+    to 3 (unanimous) must still block on a 2-of-3 stack - the param is a
+    real lever, not just a default that's ignored."""
+    strict_params = dict(TC_PARAMS, min_ma_stack_agreement=3)
+    decision = trend_continuation(100.0, _bullish_features(long_term_trend="DOWN"), strict_params)
     assert decision.should_enter is False
     assert "MA stack" in decision.rationale
 

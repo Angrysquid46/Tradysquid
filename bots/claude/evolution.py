@@ -235,6 +235,33 @@ def _tighten(params: dict[str, float], specs: dict[str, tuple[float, float, floa
     return new_params, changes
 
 
+def _loosen(params: dict[str, float], specs: dict[str, tuple[float, float, float]]) -> tuple[dict[str, float], dict[str, tuple[float, float]]]:
+    """Owner directive 2026-08-26 ("can evolve as aggressively as it
+    wants"): the exact mirror of _tighten() - one deterministic step
+    AWAY from the strict bound, toward the permissive one. Every spec's
+    `lower`/`upper` pair already brackets [most selective, original
+    documented default], so this can never push a field more permissive
+    than parameters.py's own reasoned starting value - loosening finds
+    its way back to the default, not past it."""
+    new_params = dict(params)
+    changes: dict[str, tuple[float, float]] = {}
+    for key, (step, lower, upper) in specs.items():
+        old_value = params[key]
+        new_value = max(lower, min(upper, old_value - step))
+        if new_value != old_value:
+            changes[key] = (old_value, new_value)
+        new_params[key] = new_value
+    return new_params, changes
+
+
+def _all_at_loose_bound(params: dict[str, float], specs: dict[str, tuple[float, float, float]]) -> bool:
+    for key, (step, lower, upper) in specs.items():
+        bound = lower if step > 0 else upper
+        if params.get(key) != bound:
+            return False
+    return True
+
+
 def _log_event(event: dict[str, Any], log_path: Path | None) -> None:
     if log_path is None:
         return
@@ -248,42 +275,117 @@ def update_fitness_and_evolve(
     fitness_fn: FitnessFn = hypothesis_fitness,
     log_path: Path | None = LOG_PATH,
 ) -> list[dict[str, Any]]:
-    """Re-evaluates every currently-enabled hypothesis's fitness; on
-    negative fitness with enough sample, tightens its parameters one
-    deterministic step, or disables it if already at every bound. Never
-    re-enables a disabled hypothesis - out of scope for this pass.
-    `log_path=None` (backtest_runner.py's isolated runs use this) skips
-    writing to the shared audit log - a backtest's own evolution steps
-    are local to its temporary in-memory state, not part of live
-    history."""
+    """Re-evaluates every currently-enabled hypothesis's fitness. Negative
+    fitness with enough sample tightens one deterministic step (or
+    disables if already at every strict bound). Owner directive
+    2026-08-26 ("evolve as aggressively as it wants"): sustained POSITIVE
+    fitness now also evolves - one deterministic loosening step, the
+    mirror case - so a hypothesis that is actually working gets more
+    room to trade instead of only ever being reined in. Zero fitness
+    (exactly break-even) is left alone either way. Never re-enables a
+    disabled hypothesis - out of scope for this pass. `log_path=None`
+    (backtest_runner.py's isolated runs use this) skips writing to the
+    shared audit log - a backtest's own evolution steps are local to its
+    temporary in-memory state, not part of live history."""
     applied: list[dict[str, Any]] = []
     for name in get_enabled_hypotheses(connection):
         fitness, sample_size = fitness_fn(connection, name)
-        if fitness is None or fitness >= 0:
+        if fitness is None or fitness == 0:
             continue
         state = get_hypothesis_state(connection, name)
         params = json.loads(state["params_json"])
         specs = MUTATION_SPECS[name]
-        if _all_at_bound(params, specs):
-            connection.execute(
-                "UPDATE hypothesis_state SET enabled=0, updated_at=? WHERE name=?",
-                (_now_iso(), name),
-            )
-            connection.commit()
-            event = {"event": "DISABLED", "hypothesis": name, "fitness": fitness, "sample_size": sample_size}
-            _log_event(event, log_path)
-            applied.append(event)
-            continue
 
-        new_params, changes = _tighten(params, specs)
+        if fitness < 0:
+            if _all_at_bound(params, specs):
+                connection.execute(
+                    "UPDATE hypothesis_state SET enabled=0, updated_at=? WHERE name=?",
+                    (_now_iso(), name),
+                )
+                connection.commit()
+                event = {"event": "DISABLED", "hypothesis": name, "fitness": fitness, "sample_size": sample_size}
+                _log_event(event, log_path)
+                applied.append(event)
+                continue
+            new_params, changes = _tighten(params, specs)
+            event_name = "TIGHTENED"
+        else:
+            if _all_at_loose_bound(params, specs):
+                continue
+            new_params, changes = _loosen(params, specs)
+            event_name = "LOOSENED_PROFITABLE"
+
+        if not changes:
+            continue
         connection.execute(
             "UPDATE hypothesis_state SET params_json=?, generation=generation+1, updated_at=? WHERE name=?",
             (json.dumps(new_params), _now_iso(), name),
         )
         connection.commit()
         event = {
-            "event": "TIGHTENED", "hypothesis": name, "fitness": fitness,
+            "event": event_name, "hypothesis": name, "fitness": fitness,
             "sample_size": sample_size, "changes": changes,
+        }
+        _log_event(event, log_path)
+        applied.append(event)
+    return applied
+
+
+# Owner directive 2026-08-26: a hypothesis that simply never fires can
+# never accumulate MIN_SAMPLE_BEFORE_EVOLVE real trades, so
+# update_fitness_and_evolve() above can never even judge it - a
+# structural trap that let AXIOM sit at 0 trades for a full session
+# while its thresholds never budged. This is the other half of
+# bidirectional evolution: independent of measured fitness, a hypothesis
+# that has gone too long without an attributed trade loosens one
+# deterministic step, exactly like _tighten()'s mirror, so the drought
+# itself is the signal instead of requiring trades that can't happen yet.
+DROUGHT_HOURS = 3.0
+
+
+def _hours_since_last_signal(connection: sqlite3.Connection, name: str) -> float:
+    row = connection.execute(
+        "SELECT MAX(recorded_at) AS last FROM trade_attribution WHERE hypothesis_name=?", (name,)
+    ).fetchone()
+    reference = row["last"] if row else None
+    if not reference:
+        reference = get_hypothesis_state(connection, name)["updated_at"]
+    elapsed = datetime.now().astimezone() - datetime.fromisoformat(reference)
+    return elapsed.total_seconds() / 3600.0
+
+
+def loosen_starved_hypotheses(
+    connection: sqlite3.Connection,
+    log_path: Path | None = LOG_PATH,
+    drought_hours: float = DROUGHT_HOURS,
+) -> list[dict[str, Any]]:
+    """Loosens (never re-enables) any enabled hypothesis that has gone
+    `drought_hours` since its last attributed trade (or since it was
+    seeded/last touched, if it has never fired at all) - deterministic,
+    bounded to the same MUTATION_SPECS floor as _loosen() everywhere
+    else, so a drought can only walk a hypothesis back to its original
+    documented default, never past it."""
+    applied: list[dict[str, Any]] = []
+    for name in get_enabled_hypotheses(connection):
+        hours = _hours_since_last_signal(connection, name)
+        if hours < drought_hours:
+            continue
+        state = get_hypothesis_state(connection, name)
+        params = json.loads(state["params_json"])
+        specs = MUTATION_SPECS[name]
+        if _all_at_loose_bound(params, specs):
+            continue
+        new_params, changes = _loosen(params, specs)
+        if not changes:
+            continue
+        connection.execute(
+            "UPDATE hypothesis_state SET params_json=?, generation=generation+1, updated_at=? WHERE name=?",
+            (json.dumps(new_params), _now_iso(), name),
+        )
+        connection.commit()
+        event = {
+            "event": "LOOSENED_DROUGHT", "hypothesis": name,
+            "hours_since_signal": hours, "changes": changes,
         }
         _log_event(event, log_path)
         applied.append(event)
