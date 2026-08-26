@@ -180,22 +180,26 @@
     {
       "phase_number": 15,
       "name": "Competition launch",
-      "status": "not_started",
+      "status": "in_progress",
       "dependencies": [
         "Phase 14"
       ],
       "completion_criteria": "Both bots launched at Section 4's starting bankroll ($1,000) with 0 inherited trades.",
-      "discovered_subphases": []
+      "discovered_subphases": [
+        "Owner-authorized 2026-08-25. AXIOM: bots/claude/launch.py built (was missing - runtime.py's job loop existed but had no standalone entrypoint), running live, preflight passing (5/6, only market-hours gated, as expected after-hours), Gen 1/$1,000/0 trades/FLAT confirmed clean. BLACKTIDE: found already running its own independent launch process (Codex's own, pre-dating this session's work), session 2026-08-26, --require-clean-start, Gen 1/$1,000/0 trades/FLAT. Not marked complete: 0 trades exist for either bot yet - phase completes once both have genuinely traded through a session, not merely at the moment of launch."
+      ]
     },
     {
       "phase_number": 16,
       "name": "Full Learning Center population",
-      "status": "not_started",
+      "status": "in_progress",
       "dependencies": [
         "Phase 10"
       ],
       "completion_criteria": "Section 15's full 43-chapter curriculum authored (comprehensive original explanations, not skimmed), every lesson carries a stable ID, human Q&A can search and link directly to lessons.",
-      "discovered_subphases": []
+      "discovered_subphases": [
+        "Batch 1 complete 2026-08-26: Chapters 1-5 (27 lessons, 80 cards) authored and published live via new learning_center_publish.py; /learn topic: registered and live-verified. Chapters 6-43 remain - continuing chapter-by-chapter in follow-up sessions rather than rushing depth to close this phase early."
+      ]
     }
   ]
 }
