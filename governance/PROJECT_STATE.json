@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-26T04:45:32.107522-05:00",
+  "last_updated": "2026-08-26T11:19:19.904616-05:00",
   "branch": "main",
-  "observed_head_at_write": "c600ec7f76328692e63b73ff9f84dc5378bdf374",
-  "commit_subject": "Expand Phase 16 into complete topic lessons",
+  "observed_head_at_write": "15ee7ed4884216bb9f741a3702823f2b257f38af",
+  "commit_subject": "Show closed trade details on bot result cards",
   "current_phase": "Phase 16",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
