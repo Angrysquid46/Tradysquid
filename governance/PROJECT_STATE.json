@@ -1,10 +1,10 @@
 {
-  "last_updated": "2026-08-25T20:45:00.000000-05:00",
+  "last_updated": "2026-08-25T21:05:00.000000-05:00",
   "branch": "main",
   "observed_head_at_write": "c7bf5408d4d1e533b1bbd82c582a16eadf0b7ee2",
   "commit_subject": "Merge pull request #341 from Angrysquid46/discord-rebuild-axiom-launch",
   "current_phase": "Phase 16",
-  "current_subphase": "Phase 15 owner-authorized and armed 2026-08-25: bots/claude/launch.py built, AXIOM live and passing preflight pending market open; BLACKTIDE already running its own independent launch process. Discord layout rebuilt (PRs #338, #340, #341): AXIOM/BLACKTIDE categories with dashboard/held-trades/winners/losers channels wired to scoreboard.py, MARKET INTELLIGENCE jobs registered, SYSTEM category removed. Phase 16 (Learning Center population) starting - this record was stale (last touched before tonight's PRs) until this commit.",
+  "current_subphase": "Phase 15 owner-authorized and armed 2026-08-25: AXIOM live pending market open, BLACKTIDE running its own independent process; Discord layout rebuilt (PRs #338, #340, #341). Phase 16 (Learning Center population) batch 1 in progress: learning_center_publish.py pipeline built and live-verified (idempotent re-publish confirmed), Chapters 1-5 (Definitions, Covered Call Writing, Call Buying, Other Call Buying Strategies, Naked Call Writing - 27 lessons, 80 cards) authored and published live to their lc-NN- Discord channels, /learn topic: registered and live-verified against real published lessons. 38 of 43 chapters remain - phase is NOT complete, per its own completion criteria (\"full 43-chapter curriculum\"), and should stay current_phase=\"Phase 16\" until the rest are done in follow-up sessions.",
   "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"

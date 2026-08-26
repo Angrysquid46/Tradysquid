@@ -19,6 +19,7 @@ from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
 
 import activity_log
+import learning_center_index
 import local_information_engine as info_engine
 import market_data
 import upgrade_batch_44
@@ -500,6 +501,32 @@ def ask_reply(question: str) -> str:
     )
 
 
+def learn_reply(topic: str) -> str:
+    """Section 15: 'human Q&A may search and link directly to lessons' -
+    searches the 43-chapter LC-XX-YY curriculum (learning_center_index.py,
+    separate from the ask_reply/explain_reply curated Q&A above) and
+    returns matching lessons with a Discord jump link straight to the
+    card, rather than reproducing the lesson text inline."""
+    topic = topic.strip()
+    if not topic:
+        return "Use `/learn topic:` with a word or phrase, e.g. `/learn topic:covered call`."
+    connection = learning_center_index.connect_db()
+    matches = learning_center_index.search_lessons(connection, topic)
+    if not matches:
+        return (
+            f"No published lesson matches **{topic}** yet. The curriculum is "
+            "being published chapter by chapter - try a more general term, "
+            "or check #learning-index."
+        )
+    lines = [f"**Lessons matching \"{topic}\":**"]
+    for lesson in matches[:8]:
+        link = lesson.get("jump_link") or "(not yet published)"
+        lines.append(f"• `{lesson['lesson_id']}` **{lesson['lesson_title']}** — {link}")
+    if len(matches) > 8:
+        lines.append(f"...and {len(matches) - 8} more match(es). Try a narrower term.")
+    return "\n".join(lines)
+
+
 def process_command(interaction: dict[str, Any]) -> None:
     application_id = str(interaction.get("application_id") or "")
     token = str(interaction.get("token") or "")
@@ -572,6 +599,12 @@ def process_command(interaction: dict[str, Any]) -> None:
                 application_id,
                 token,
                 content=ask_reply(str(option_value(interaction, "question", ""))),
+            )
+        elif name == "learn":
+            patch_original(
+                application_id,
+                token,
+                content=learn_reply(str(option_value(interaction, "topic", ""))),
             )
         else:
             patch_original(application_id, token, content=f"Unknown command: `{name}`")

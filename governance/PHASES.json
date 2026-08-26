@@ -190,12 +190,14 @@
     {
       "phase_number": 16,
       "name": "Full Learning Center population",
-      "status": "not_started",
+      "status": "in_progress",
       "dependencies": [
         "Phase 10"
       ],
       "completion_criteria": "Section 15's full 43-chapter curriculum authored (comprehensive original explanations, not skimmed), every lesson carries a stable ID, human Q&A can search and link directly to lessons.",
-      "discovered_subphases": []
+      "discovered_subphases": [
+        "Batch 1 complete 2026-08-26: Chapters 1-5 (27 lessons, 80 cards) authored and published live via new learning_center_publish.py; /learn topic: registered and live-verified. Chapters 6-43 remain - continuing chapter-by-chapter in follow-up sessions rather than rushing depth to close this phase early."
+      ]
     }
   ]
 }

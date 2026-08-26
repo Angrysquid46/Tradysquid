@@ -357,6 +357,19 @@ COMMANDS = [
             "max_length": 300,
         }],
     },
+    {
+        "name": "learn",
+        "type": 1,
+        "description": "Search the 43-chapter Learning Center curriculum and link directly to lessons",
+        "options": [{
+            "name": "topic",
+            "description": "Example: covered call, strike price, implied volatility",
+            "type": 3,
+            "required": True,
+            "min_length": 2,
+            "max_length": 100,
+        }],
+    },
 ]
 
 
