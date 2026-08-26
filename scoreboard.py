@@ -434,15 +434,18 @@ def lifetime_pnl(connection: sqlite3.Connection, bot: str) -> float:
 def recent_closed_trades(
     connection: sqlite3.Connection, bot: str, *, limit: int = 20, outcome: str | None = None
 ) -> list[dict[str, Any]]:
-    """Public, privacy-safe closed-trade feed for winners/losers channels:
-    outcome and P/L only, never contract/side/fill - the private-strategy
-    signals current_position_status()'s raw row exposes for internal use
-    only. Newest first. `outcome` ("WIN"/"LOSS"/"SCRATCH") filters before
-    limiting, so a separate winners channel and a separate losers channel
-    each get their own real most-recent-N, not a shared feed split after
-    the fact."""
+    """Immutable, closed-trade audit feed for winners/losers channels.
+
+    Each record is sourced from the neutral referee's ``official_trades``
+    table after its one permitted open-to-closed transition.  Contract and
+    fill details are intentionally available only after a trade has closed;
+    open-position presentation remains status-only.  Newest first. ``outcome``
+    (``WIN``/``LOSS``/``SCRATCH``) filters before limiting, so winners and
+    losers each receive their own most-recent-N records.
+    """
     rows = connection.execute(
-        "SELECT trade_id, generation, closed_at, pnl_usd FROM official_trades "
+        "SELECT trade_id, generation, opened_at, closed_at, side, contract_symbol, "
+        "entry_price, exit_price, contracts, pnl_usd FROM official_trades "
         "WHERE bot=? AND closed_at IS NOT NULL ORDER BY closed_at DESC",
         (bot,),
     ).fetchall()
@@ -454,7 +457,13 @@ def recent_closed_trades(
         result.append({
             "trade_id": row["trade_id"],
             "generation": row["generation"],
+            "opened_at": row["opened_at"],
             "closed_at": row["closed_at"],
+            "side": row["side"],
+            "contract_symbol": row["contract_symbol"],
+            "entry_price": row["entry_price"],
+            "exit_price": row["exit_price"],
+            "contracts": row["contracts"],
             "pnl_usd": row["pnl_usd"],
             "outcome": row_outcome,
         })

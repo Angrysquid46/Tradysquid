@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -160,13 +162,59 @@ def render_bot_held_trade(connection: Any, bot: str) -> str:
     ))
 
 
+_OCC_SYMBOL = re.compile(
+    r"^(?P<ticker>[A-Z]+)(?P<date>\d{6})(?P<right>[CP])(?P<strike>\d{8})$"
+)
+
+
+def _format_contract(trade: dict[str, Any]) -> str:
+    """Turn an OCC option symbol into a compact, human-auditable contract.
+
+    Fall back to the recorded symbol rather than guessing if a provider ever
+    supplies a non-OCC identifier.
+    """
+    symbol = str(trade.get("contract_symbol") or "").strip().upper()
+    match = _OCC_SYMBOL.fullmatch(symbol)
+    if not match:
+        return symbol or "Recorded contract unavailable"
+    expiry_date = datetime.strptime(match.group("date"), "%y%m%d")
+    expiration = f"{expiry_date.strftime('%b')} {expiry_date.day}, {expiry_date.year}"
+    strike = int(match.group("strike")) / 1000
+    right = "Call" if match.group("right") == "C" else "Put"
+    return f"{match.group('ticker')} ${strike:,.3f} {right} · expires {expiration}"
+
+
+def _format_timestamp(value: object) -> str:
+    try:
+        timestamp = datetime.fromisoformat(str(value))
+        return (
+            f"{timestamp.strftime('%b')} {timestamp.day}, {timestamp.year} "
+            f"{timestamp.hour % 12 or 12}:{timestamp:%M} {timestamp:%p}"
+        )
+    except (TypeError, ValueError):
+        return str(value or "not recorded")
+
+
 def _render_trade_feed(bot: str, label: str, marker: str, trades: list[dict[str, Any]]) -> str:
     lines = [f"## {bot} — {label}"]
     if not trades:
         lines.append(f"No {label.lower()} yet.")
         return "\n".join(lines)
     for trade in trades:
-        lines.append(f"{marker} ${trade['pnl_usd']:+.2f} · gen {trade['generation']} · {trade['closed_at']}")
+        entry = float(trade["entry_price"])
+        exit_price = float(trade["exit_price"])
+        percent = ((exit_price - entry) / entry) * 100 if entry else 0.0
+        contracts = int(trade["contracts"])
+        pnl = float(trade["pnl_usd"])
+        pnl_text = f"{'+' if pnl >= 0 else '-'}${abs(pnl):.2f}"
+        lines.extend((
+            f"{marker} **{pnl_text} ({percent:+.1f}%)** · generation {trade['generation']}",
+            _format_contract(trade),
+            f"{contracts} contract{'s' if contracts != 1 else ''} · bought ${entry:.2f} → sold ${exit_price:.2f}",
+            f"Opened {_format_timestamp(trade.get('opened_at'))} · closed {_format_timestamp(trade.get('closed_at'))}",
+            f"Trade ID: `{trade['trade_id']}`",
+            "",
+        ))
     return "\n".join(lines)
 
 
