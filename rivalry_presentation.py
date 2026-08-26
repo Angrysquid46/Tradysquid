@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import discord_surface_manifest as surfaces
@@ -10,6 +11,7 @@ import rivalry
 import scoreboard
 
 CHANNEL_NAME = "blacktide-vs-claude"
+CHART_DIR = Path(__file__).resolve().parent / "docs" / "tickers"
 
 
 def render_scoreboard(connection: Any) -> str:
@@ -61,27 +63,88 @@ def _resolve_channel_id(tracker: discord_transport.DiscordTracker, name: str) ->
 
 
 def render_bot_dashboard(connection: Any, bot: str) -> str:
+    """### -prefixed sections so discord_card() renders each stat as its
+    own boxed embed field (owner request: "stat cards on the dashboards"),
+    not one run-together paragraph."""
     row = scoreboard.scoreboard_snapshot(connection, bot)
-    lines = [
-        f"## {bot} — Dashboard",
-        f"Generation {row['generation']} · Bankroll ${row['current_bankroll']:.2f}",
-        f"Lifetime P/L ${row['lifetime_pnl']:.2f} · This generation P/L ${row['generation_pnl']:.2f}",
-        f"Trades: {row['trade_count_lifetime']} lifetime · {row['trade_count_generation']} this generation",
-    ]
     win_rate = row.get("win_rate")
     profit_factor = row.get("profit_factor")
-    lines.append(
-        "Win rate " + (f"{win_rate:.1%}" if win_rate is not None else "n/a")
-        + " · Profit factor " + (f"{profit_factor:.2f}" if profit_factor is not None else "n/a")
-    )
     streak = row.get("current_streak") or {}
-    if streak.get("count"):
-        lines.append(f"Current streak: {streak['count']} {streak.get('kind', '')}".strip())
+    streak_text = f"{streak['count']} {streak.get('kind', '')}".strip() if streak.get("count") else "None"
     drawdown = row.get("current_drawdown")
-    if drawdown is not None:
-        lines.append(f"Current drawdown: ${drawdown:.2f}")
-    lines.append(f"Position: {row['current_position_status']} · Busts (lifetime): {row.get('bust_count', 0)}")
-    return "\n".join(lines)
+    return "\n".join((
+        f"## {bot} — Dashboard",
+        "### Balance", f"${row['current_bankroll']:.2f}",
+        "### Generation", f"{row['generation']} · Busts (lifetime): {row.get('bust_count', 0)}",
+        "### Lifetime P/L", f"${row['lifetime_pnl']:+.2f}",
+        "### This Generation P/L", f"${row['generation_pnl']:+.2f}",
+        "### Trades", f"{row['trade_count_lifetime']} lifetime · {row['trade_count_generation']} this generation",
+        "### Win Rate", (f"{win_rate:.1%}" if win_rate is not None else "n/a"),
+        "### Profit Factor", (f"{profit_factor:.2f}" if profit_factor is not None else "n/a"),
+        "### Current Streak", streak_text,
+        "### Current Drawdown", (f"${drawdown:.2f}" if drawdown is not None else "$0.00"),
+        "### Position", row["current_position_status"],
+    ))
+
+
+def render_bankroll_chart(bot: str, points: list[dict[str, Any]], output: Path) -> dict[str, Any]:
+    """PIL line chart of bankroll over every closed trade, across
+    generations - a bust shows up as a real drop toward $0 (marked)
+    followed by a jump back to the $1,000 reset, because that IS what a
+    bust is, not something drawn separately."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    values = [float(point["bankroll"]) for point in points]
+    if len(values) < 2:
+        values = [scoreboard.STARTING_BANKROLL_USD, scoreboard.STARTING_BANKROLL_USD]
+
+    width, height = 1200, 600
+    left, right, top, bottom = 90, 40, 80, 60
+    plot_width = width - left - right
+    plot_height = height - top - bottom
+    low = max(0.0, min(values) - 25.0)
+    high = max(values + [scoreboard.STARTING_BANKROLL_USD]) * 1.1
+
+    image = Image.new("RGB", (width, height), "#0b1420")
+    draw = ImageDraw.Draw(image)
+    small = ImageFont.load_default(size=15)
+    title_font = ImageFont.load_default(size=26)
+
+    def xy(index: int, value: float) -> tuple[int, int]:
+        x = left + int(index / max(len(values) - 1, 1) * plot_width)
+        y = top + int((high - value) / max(high - low, 0.01) * plot_height)
+        return x, y
+
+    for step in range(6):
+        value = low + (high - low) * step / 5
+        y = xy(0, value)[1]
+        draw.line((left, y, width - right, y), fill="#26364a", width=1)
+        draw.text((12, y - 8), f"${value:.0f}", fill="#9fb0c3", font=small)
+
+    starting_y = xy(0, scoreboard.STARTING_BANKROLL_USD)[1]
+    draw.line((left, starting_y, width - right, starting_y), fill="#3b4a5e", width=1)
+    draw.text((width - 230, starting_y - 20), "start $1,000", fill="#6b7f97", font=small)
+
+    line_points = [xy(index, value) for index, value in enumerate(values)]
+    draw.line(line_points, fill="#7dd3fc", width=3)
+
+    busts = 0
+    for index in range(1, len(values)):
+        if values[index - 1] > 0 and values[index] <= 0.01:
+            busts += 1
+            x, y = xy(index, values[index])
+            draw.ellipse((x - 7, y - 7, x + 7, y + 7), fill="#ef4444")
+
+    current, peak = values[-1], max(values)
+    draw.text((left, 20), f"{bot} BANKROLL", fill="#f8fafc", font=title_font)
+    draw.text(
+        (left, 52),
+        f"Current ${current:.2f} · Peak ${peak:.2f} · {busts} bust(s) shown on this chart",
+        fill="#b8c7d9", font=small,
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output, format="PNG", optimize=True)
+    return {"current": current, "peak": peak, "busts": busts}
 
 
 def render_bot_held_trade(connection: Any, bot: str) -> str:
@@ -97,19 +160,53 @@ def render_bot_held_trade(connection: Any, bot: str) -> str:
     ))
 
 
-def render_bot_winners_losers(connection: Any, bot: str) -> str:
-    trades = scoreboard.recent_closed_trades(connection, bot, limit=20)
-    lines = [f"## {bot} — Winners & Losers"]
+def _render_trade_feed(bot: str, label: str, marker: str, trades: list[dict[str, Any]]) -> str:
+    lines = [f"## {bot} — {label}"]
     if not trades:
-        lines.append("No closed trades yet.")
+        lines.append(f"No {label.lower()} yet.")
         return "\n".join(lines)
     for trade in trades:
-        marker = {"WIN": "🟩", "LOSS": "🟥"}.get(trade["outcome"], "⬜")
-        lines.append(
-            f"{marker} **{trade['outcome']}** · ${trade['pnl_usd']:+.2f} · "
-            f"gen {trade['generation']} · {trade['closed_at']}"
-        )
+        lines.append(f"{marker} ${trade['pnl_usd']:+.2f} · gen {trade['generation']} · {trade['closed_at']}")
     return "\n".join(lines)
+
+
+def render_bot_winners(connection: Any, bot: str) -> str:
+    trades = scoreboard.recent_closed_trades(connection, bot, limit=20, outcome="WIN")
+    return _render_trade_feed(bot, "Winners", "🟩", trades)
+
+
+def render_bot_losers(connection: Any, bot: str) -> str:
+    trades = scoreboard.recent_closed_trades(connection, bot, limit=20, outcome="LOSS")
+    return _render_trade_feed(bot, "Losers", "🟥", trades)
+
+
+def _replace_bot_chart(
+    tracker: discord_transport.DiscordTracker,
+    channel_id: str,
+    path: Path,
+    caption: str,
+    search_token: str,
+) -> str:
+    """Discord can't edit an attachment in place, so an "updating chart" is
+    really post-new-then-delete-old (same approach
+    upgrade_batch_44._replace_chart_message already uses)."""
+    recent = tracker._request("GET", f"/channels/{channel_id}/messages?limit=50")
+    old_ids = [
+        str(message.get("id") or "")
+        for message in (recent if isinstance(recent, list) else [])
+        if ((message.get("author") or {}).get("bot") or message.get("webhook_id"))
+        and search_token in discord_transport.message_search_text(message)
+    ]
+    response = tracker.send_channel_file(channel_id, path, content=caption[:1900])
+    new_id = str((response or {}).get("id") or "")
+    for old_id in old_ids:
+        if old_id and old_id != new_id:
+            try:
+                tracker._request("DELETE", f"/channels/{channel_id}/messages/{old_id}")
+            except discord_transport.DiscordError as exc:
+                if "HTTP 404" not in str(exc):
+                    raise
+    return new_id
 
 
 def publish_bot_surfaces(
@@ -118,27 +215,58 @@ def publish_bot_surfaces(
     tracker: discord_transport.DiscordTracker,
     bot: str,
 ) -> dict[str, Any]:
-    """Per-bot dashboard/held-trade/winners-losers cards, same
-    failure-isolated shape as publish_competition_surfaces above. The
-    winners/losers channel is one upserted "last 20 trades" card (matching
-    render_rivalry()'s already-working "last N events" pattern) rather than
-    one Discord message per trade - no new cursor/state bookkeeping needed."""
+    """Per-bot dashboard (stat card + bankroll chart), held-trade,
+    winners, and losers surfaces - same failure-isolated shape as
+    publish_competition_surfaces above. Winners/losers are each one
+    upserted "last 20 trades" card in their OWN channel (owner request:
+    separate channels, not one combined feed), matching render_rivalry()'s
+    already-working "last N events" pattern - no per-trade message/cursor
+    bookkeeping needed."""
     prefix = bot.lower()
     result: dict[str, Any] = {"ok": False, "published": (), "error": None}
     published: list[str] = []
-    surface_ids = (f"{prefix}-dashboard-card", f"{prefix}-held-trade-card", f"{prefix}-winners-losers-card")
+    surface_ids = (
+        f"{prefix}-dashboard-card", f"{prefix}-dashboard-chart", f"{prefix}-held-trade-card",
+        f"{prefix}-winners-card", f"{prefix}-losers-card",
+    )
     try:
+        surfaces.reconcile_canonical_bot_surfaces(surface_connection)
+        dashboard_channel_id = _resolve_channel_id(tracker, f"{prefix}-dashboard")
+        message_id, _ = tracker.upsert_singleton_message(
+            dashboard_channel_id, render_bot_dashboard(score_connection, bot), f"{prefix}-dashboard"
+        )
+        surfaces.record_surface_event(
+            surface_connection, surface_id=surface_ids[0], event_type="PUBLISH", detail=f"message_id={message_id}",
+        )
+        published.append(surface_ids[0])
+
+        points = scoreboard.bankroll_history(score_connection, bot)
+        output = CHART_DIR / f"{prefix}-bankroll.png"
+        metrics = render_bankroll_chart(bot, points, output)
+        caption = (
+            f"📈 **{bot} bankroll** · current ${metrics['current']:.2f} · "
+            f"peak ${metrics['peak']:.2f} · {metrics['busts']} bust(s) shown"
+        )
+        chart_message_id = _replace_bot_chart(
+            tracker, dashboard_channel_id, output, caption, f"{prefix}-bankroll-chart"
+        )
+        surfaces.record_surface_event(
+            surface_connection, surface_id=surface_ids[1], event_type="PUBLISH",
+            detail=f"message_id={chart_message_id}",
+        )
+        published.append(surface_ids[1])
+
         cards = (
-            (surface_ids[0], render_bot_dashboard(score_connection, bot), f"{prefix}-dashboard", f"{prefix}-dashboard"),
-            (surface_ids[1], render_bot_held_trade(score_connection, bot), f"{prefix}-held-trade", f"{prefix}-held-trades"),
-            (surface_ids[2], render_bot_winners_losers(score_connection, bot), f"{prefix}-winners-losers", f"{prefix}-winners-losers"),
+            (surface_ids[2], render_bot_held_trade(score_connection, bot), f"{prefix}-held-trade", f"{prefix}-held-trades"),
+            (surface_ids[3], render_bot_winners(score_connection, bot), f"{prefix}-winners", f"{prefix}-winners"),
+            (surface_ids[4], render_bot_losers(score_connection, bot), f"{prefix}-losers", f"{prefix}-losers"),
         )
         for surface_id, body, token, channel_name in cards:
             channel_id = _resolve_channel_id(tracker, channel_name)
-            message_id, _ = tracker.upsert_singleton_message(channel_id, body, token)
+            card_message_id, _ = tracker.upsert_singleton_message(channel_id, body, token)
             surfaces.record_surface_event(
                 surface_connection, surface_id=surface_id, event_type="PUBLISH",
-                detail=f"message_id={message_id}",
+                detail=f"message_id={card_message_id}",
             )
             published.append(surface_id)
         result.update(ok=True, published=tuple(published))

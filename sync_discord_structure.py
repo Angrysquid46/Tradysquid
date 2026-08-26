@@ -119,12 +119,14 @@ CHANNELS = [
     # single neutral ledger already shared by both bots (see
     # rivalry_presentation.py, which already reads it the same way for the
     # combined #blacktide-vs-claude scoreboard).
-    ChannelSpec("AXIOM", "axiom-dashboard", "AXIOM bankroll, lifetime P/L, trade count, win rate, and streak."),
+    ChannelSpec("AXIOM", "axiom-dashboard", "AXIOM stat cards (balance, generation, P/L, win rate, streak, drawdown) plus a bankroll history chart."),
     ChannelSpec("AXIOM", "axiom-held-trades", "AXIOM's current live position, updated on open/close."),
-    ChannelSpec("AXIOM", "axiom-winners-losers", "Every AXIOM closed trade, tagged WIN or LOSS with P/L."),
-    ChannelSpec("BLACKTIDE", "blacktide-dashboard", "BLACKTIDE bankroll, lifetime P/L, trade count, win rate, and streak."),
+    ChannelSpec("AXIOM", "axiom-winners", "AXIOM's winning closed trades."),
+    ChannelSpec("AXIOM", "axiom-losers", "AXIOM's losing closed trades."),
+    ChannelSpec("BLACKTIDE", "blacktide-dashboard", "BLACKTIDE stat cards (balance, generation, P/L, win rate, streak, drawdown) plus a bankroll history chart."),
     ChannelSpec("BLACKTIDE", "blacktide-held-trades", "BLACKTIDE's current live position, updated on open/close."),
-    ChannelSpec("BLACKTIDE", "blacktide-winners-losers", "Every BLACKTIDE closed trade, tagged WIN or LOSS with P/L."),
+    ChannelSpec("BLACKTIDE", "blacktide-winners", "BLACKTIDE's winning closed trades."),
+    ChannelSpec("BLACKTIDE", "blacktide-losers", "BLACKTIDE's losing closed trades."),
     # Reconciled 2026-08-19: these are live channels the bot already writes
     # to that had drifted out of this spec entirely. Declared with their
     # CURRENT topics so the sync is a no-op - the point is that a future
@@ -283,6 +285,10 @@ DELETE_CHANNELS = {
     # above instead, since the frozen updater still posts to it by name.
     "scanner-status", "api-errors", "update-status", "provider-status",
     "system-activity", "automation-diagnostics", "universe-watch",
+    # Retired 2026-08-26 - owner: "I was hoping for separate channels not
+    # 1" for winners/losers. Split into axiom-winners/axiom-losers and
+    # blacktide-winners/blacktide-losers above.
+    "axiom-winners-losers", "blacktide-winners-losers",
 }
 
 DELETE_CATEGORIES = {
@@ -310,12 +316,14 @@ CHANNEL_STARTERS = {
     "ask-tradebot": "Use `/ask` or `/explain`; general conversation belongs in #general-chat.",
     "examples-and-reviews": "Paper-trade examples and completed reviews appear here.",
     "system-health": "Updated by the local supervisor and engine.",
-    "axiom-dashboard": "Updated as AXIOM's bankroll, trades, and stats change.",
+    "axiom-dashboard": "Updated every 5 minutes: stat cards plus a bankroll history chart.",
     "axiom-held-trades": "Updated when AXIOM opens or closes its position.",
-    "axiom-winners-losers": "Updated immediately when an AXIOM position closes.",
-    "blacktide-dashboard": "Updated as BLACKTIDE's bankroll, trades, and stats change.",
+    "axiom-winners": "Updated immediately when an AXIOM position closes profitably.",
+    "axiom-losers": "Updated immediately when an AXIOM position closes without a profit.",
+    "blacktide-dashboard": "Updated every 5 minutes: stat cards plus a bankroll history chart.",
     "blacktide-held-trades": "Updated when BLACKTIDE opens or closes its position.",
-    "blacktide-winners-losers": "Updated immediately when a BLACKTIDE position closes.",
+    "blacktide-winners": "Updated immediately when a BLACKTIDE position closes profitably.",
+    "blacktide-losers": "Updated immediately when a BLACKTIDE position closes without a profit.",
     "strategy-control": "Owner-only; reflects both live SPY 0DTE strategy toggles (1-minute and 5-minute).",
     "strategy-settings": "Mirrors the filters each strategy is currently using.",
     "strategy-versions": "Updated when a strategy's configuration hash changes.",

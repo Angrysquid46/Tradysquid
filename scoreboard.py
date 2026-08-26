@@ -432,27 +432,58 @@ def lifetime_pnl(connection: sqlite3.Connection, bot: str) -> float:
 
 
 def recent_closed_trades(
-    connection: sqlite3.Connection, bot: str, *, limit: int = 20
+    connection: sqlite3.Connection, bot: str, *, limit: int = 20, outcome: str | None = None
 ) -> list[dict[str, Any]]:
-    """Public, privacy-safe closed-trade feed for a winners/losers channel:
+    """Public, privacy-safe closed-trade feed for winners/losers channels:
     outcome and P/L only, never contract/side/fill - the private-strategy
     signals current_position_status()'s raw row exposes for internal use
-    only. Newest first."""
+    only. Newest first. `outcome` ("WIN"/"LOSS"/"SCRATCH") filters before
+    limiting, so a separate winners channel and a separate losers channel
+    each get their own real most-recent-N, not a shared feed split after
+    the fact."""
     rows = connection.execute(
         "SELECT trade_id, generation, closed_at, pnl_usd FROM official_trades "
-        "WHERE bot=? AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT ?",
-        (bot, limit),
+        "WHERE bot=? AND closed_at IS NOT NULL ORDER BY closed_at DESC",
+        (bot,),
     ).fetchall()
-    return [
-        {
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        row_outcome = "WIN" if row["pnl_usd"] > 0 else "LOSS" if row["pnl_usd"] < 0 else "SCRATCH"
+        if outcome and row_outcome != outcome:
+            continue
+        result.append({
             "trade_id": row["trade_id"],
             "generation": row["generation"],
             "closed_at": row["closed_at"],
             "pnl_usd": row["pnl_usd"],
-            "outcome": "WIN" if row["pnl_usd"] > 0 else "LOSS" if row["pnl_usd"] < 0 else "SCRATCH",
-        }
-        for row in rows
+            "outcome": row_outcome,
+        })
+        if len(result) >= limit:
+            break
+    return result
+
+
+def bankroll_history(
+    connection: sqlite3.Connection, bot: str, generation: int | None = None
+) -> list[dict[str, Any]]:
+    """Public bankroll-over-time series for a chart, oldest first. Two
+    points per closed trade (before and after), using each trade's real
+    recorded entry_bankroll rather than accumulating locally - a bust
+    reset is then just what the data already shows (entry_bankroll snaps
+    back to STARTING_BANKROLL_USD once bust_check_job starts the next
+    generation), not something this has to simulate."""
+    trades = _closed_trades(connection, bot, generation)
+    points: list[dict[str, Any]] = [
+        {"at": None, "bankroll": STARTING_BANKROLL_USD, "generation": trades[0]["generation"] if trades else (generation or 1)}
     ]
+    for row in trades:
+        points.append({"at": row["closed_at"], "bankroll": row["entry_bankroll"], "generation": row["generation"]})
+        points.append({
+            "at": row["closed_at"],
+            "bankroll": row["entry_bankroll"] + row["pnl_usd"],
+            "generation": row["generation"],
+        })
+    return points
 
 
 # The exact key set scoreboard_snapshot() returns - exported so other
