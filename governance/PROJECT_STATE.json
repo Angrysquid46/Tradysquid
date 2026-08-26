@@ -1,9 +1,9 @@
 {
-  "last_updated": "2026-08-26T11:31:42.609554-05:00",
+  "last_updated": "2026-08-26T15:08:49.136887-05:00",
   "branch": "main",
-  "observed_head_at_write": "d970a1ba588ded5e14ca887deedea9bcec3d2109",
-  "commit_subject": "Record provider event schema repair",
-  "current_phase": "Phase 16",
+  "observed_head_at_write": "f722d80080848b4d64f623ee80faf2954f4fc3d6",
+  "commit_subject": "Record runtime schema migration",
+  "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
