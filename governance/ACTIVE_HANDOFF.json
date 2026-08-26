@@ -1,19 +1,5 @@
 {
-  "active": true,
-  "work_id": "28d2c852-4a5a-4a94-a7dc-b9246bd848b8",
-  "actor": "Claude",
-  "task": "axiom-aggression-rebuild",
-  "method": "Rewrite AXIOM's private strategy: expand from 3 to 6 entry hypotheses (add vwap_momentum/volatility_breakout/gap_and_go), add per-signal confidence scoring, confidence-weighted contract delta targeting in contract_selection.select_contract, lower MIN_SAMPLE_BEFORE_EVOLVE 10->6, bump premium_cap_usd 450->500, rewrite rivalry voice lines",
-  "started_at": "2026-08-26T17:10:01.485617-05:00",
-  "starting_commit": "f46652fbb24331b00fb459dbaf23b8ef348a81a4",
-  "process_id": 33264,
-  "owner_request": "Owner directive 2026-08-26: full authority to rebuild AXIOM's signals/aggression/rivalry voice from scratch, bound only by shared immutable rules (1 open trade, $1000 bankroll)",
-  "before_state": "",
-  "reason": "Owner directive 2026-08-26: full authority to rebuild AXIOM's signals/aggression/rivalry voice from scratch, bound only by shared immutable rules (1 open trade, $1000 bankroll)",
-  "intended_scope": "bots/claude/hypotheses.py, bots/claude/parameters.py, bots/claude/contract_selection.py, bots/claude/runtime.py, bots/claude/backtest_runner.py, test_axiom_*.py",
-  "expected_effects": "",
-  "required_tests": "pytest test_axiom_hypotheses.py test_axiom_contract_selection.py test_axiom_evolution.py test_axiom_runtime.py plus live real-data verification",
-  "risks": "",
-  "next_safe_action_if_interrupted": "",
-  "phase": "15"
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-26T17:10:42.921668-05:00"
 }
