@@ -111,7 +111,7 @@ def test_publish_chapter_covers_every_lesson_in_the_module(db, monkeypatch):
 
 # --- real chapter content sanity checks --------------------------------------
 
-@pytest.mark.parametrize("chapter", [1, 2, 3, 4, 5])
+@pytest.mark.parametrize("chapter", list(range(1, 44)))
 def test_real_chapter_modules_load_and_every_lesson_has_sections(chapter):
     module = pub.load_chapter(chapter)
     assert module.CHAPTER == chapter
@@ -123,8 +123,13 @@ def test_real_chapter_modules_load_and_every_lesson_has_sections(chapter):
             assert len(section.body.strip()) > 40, "section body looks like a placeholder"
 
 
+def test_all_forty_three_chapters_have_a_module():
+    for chapter in range(1, 44):
+        pub.load_chapter(chapter)  # raises ModuleNotFoundError if missing
+
+
 def test_real_chapter_lesson_numbers_are_sequential_starting_at_one():
-    for chapter in range(1, 6):
+    for chapter in range(1, 44):
         module = pub.load_chapter(chapter)
         numbers = [lesson.lesson_number for lesson in module.LESSONS]
         assert numbers == list(range(1, len(numbers) + 1))

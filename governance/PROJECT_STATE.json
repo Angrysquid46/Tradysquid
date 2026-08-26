@@ -1,10 +1,10 @@
 {
-  "last_updated": "2026-08-25T21:20:00.000000-05:00",
+  "last_updated": "2026-08-25T22:35:00.000000-05:00",
   "branch": "main",
-  "observed_head_at_write": "ae84c78708bb76e56f76e466ec9f3f02ab820c55",
-  "commit_subject": "Merge pull request #342 from Angrysquid46/learning-center-phase16",
+  "observed_head_at_write": "ec1b3c12b3e0ebca295ebb464544058ee8d49ed7",
+  "commit_subject": "Refresh governance/PROJECT_STATE.json to the post-PR-342 HEAD (#343)",
   "current_phase": "Phase 16",
-  "current_subphase": "Phase 15 in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341). Phase 16 (Learning Center population) batch 1 merged (PR #342): learning_center_publish.py pipeline live-verified (idempotent re-publish confirmed), Chapters 1-5 (27 lessons, 80 cards) published live to their lc-NN- Discord channels, /learn topic: registered and live-verified. 38 of 43 chapters remain - phase is NOT complete, per its own completion criteria (\"full 43-chapter curriculum\"), and should stay current_phase=\"Phase 16\" until the rest are done in follow-up sessions.",
+  "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
