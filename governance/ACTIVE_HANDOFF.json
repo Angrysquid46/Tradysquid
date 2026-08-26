@@ -1,5 +1,22 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-25T18:29:40.166454-05:00"
+  "active": true,
+  "work_id": "e585393e-6e15-4dd0-9c85-f70bf79343b4",
+  "actor": "Codex",
+  "task": "Phase 16 remediation: replace skimmed curriculum with complete topic lessons",
+  "method": "Reopen Phase 16, build a machine-readable 43-chapter source-topic coverage contract from the owner-provided contents pages, add substantive original lessons for every missing topic, validate lesson depth/search/linking/firewall, publish idempotently through the existing Learning Center publisher, merge via PR/CI/updater, and reconcile governance.",
+  "started_at": "2026-08-26T04:09:05.370939-05:00",
+  "starting_commit": "27de9fa7586af921dd3f51c0e0d2ef0fa3895a7b",
+  "process_id": 26428,
+  "owner_request": "Owner audit established that the 110-lesson implementation omitted or collapsed many chapter topics and does not satisfy the master specification's comprehensive-not-skimmed completion criterion.",
+  "before_state": "Phase 16 incorrectly marked complete with 43 files, 110 lessons and 223 short cards; major omissions exist across most chapters, especially 18, 27, 28, 30, 32, 33, 37, 38, 40 and 41.",
+  "reason": "Owner audit established that the 110-lesson implementation omitted or collapsed many chapter topics and does not satisfy the master specification's comprehensive-not-skimmed completion criterion.",
+  "intended_scope": "learning_center human curriculum modules, Learning Center publishing/index tests, and governance state only; no competitor-private files, trading runtime, market data, scorekeeper, updater, or immutable rules.",
+  "expected_effects": "Every owner-supplied chapter topic receives searchable stable-ID lesson coverage with mechanics, math or worked example where applicable, risks, selection/management guidance and mistakes; live Discord Learning Center republished after green validation.",
+  "required_tests": "New exhaustive chapter/topic coverage and depth tests; existing learning_center_publish/index tests; full repository tests; static trader-firewall checks; publisher dry run and authorized live idempotent reconciliation.",
+  "risks": "Large Discord card expansion, message limits, stale jump links, accidental shallow templating, incomplete transcription of photographed contents, and unrelated active paper-trading services; mitigate with coverage manifest, per-topic depth assertions, bounded cards, idempotent publishing, and no trading-file changes.",
+  "next_safe_action_if_interrupted": "Add the machine-readable photographed-contents topic inventory and tests proving every required topic maps to a substantive lesson; then review output chapter-by-chapter before publishing.",
+  "phase": "Phase 16",
+  "last_checkpoint_at": "2026-08-26T04:19:44.071782-05:00",
+  "last_successful_action": "Phase 16 reopened after owner audit. Implemented first remediation draft: 53 new substantive lessons / 212 new section cards covering every omission identified across Chapters 1-43; combined curriculum is now 163 lessons / 435 cards. Existing stable lesson IDs preserved by append-only overlay. Focused Learning Center tests pass 66/66. Not complete: add exhaustive owner-source topic/depth contract, perform content review, full tests, PR/CI, deploy and live Discord republish.",
+  "next_safe_action": "Add the machine-readable photographed-contents topic inventory and tests proving every required topic maps to a substantive lesson; then review output chapter-by-chapter before publishing."
 }

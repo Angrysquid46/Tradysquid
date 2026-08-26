@@ -29,6 +29,7 @@ load_env()
 import argparse
 import importlib
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import discord_transport
@@ -67,7 +68,16 @@ def _resolve_channel_id(tracker: discord_transport.DiscordTracker, name: str) ->
 
 
 def load_chapter(chapter: int) -> Any:
-    return importlib.import_module(f"learning_center.chapters.ch{chapter:02d}")
+    module = importlib.import_module(f"learning_center.chapters.ch{chapter:02d}")
+    # Phase 16 remediation preserves the stable IDs already published by the
+    # first pass and appends the owner-requested source-topic lessons after
+    # them.  Return a view rather than mutating module.LESSONS, so repeated
+    # dry-runs/publishes in one process cannot duplicate supplements.
+    from learning_center.expanded_curriculum import supplement_lessons
+
+    lessons = list(module.LESSONS)
+    lessons.extend(supplement_lessons(chapter, len(lessons) + 1))
+    return SimpleNamespace(CHAPTER=module.CHAPTER, LESSONS=lessons)
 
 
 def _lesson_card_text(chapter: int, lesson: Lesson, section: Section) -> str:

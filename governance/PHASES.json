@@ -192,7 +192,7 @@
     {
       "phase_number": 16,
       "name": "Full Learning Center population",
-      "status": "complete",
+      "status": "in_progress",
       "dependencies": [
         "Phase 10"
       ],
