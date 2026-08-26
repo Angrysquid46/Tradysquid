@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-25T18:29:40.534639-05:00",
+  "last_updated": "2026-08-25T19:50:54.855068-05:00",
   "branch": "main",
-  "observed_head_at_write": "61e398d87a6b97583e8f2a9659760d8d50a3c24f",
-  "commit_subject": "Bootstrap BLACKTIDE env before shared imports",
+  "observed_head_at_write": "bda3bafa38ea06ff7a77c0104e38c86db31ca421",
+  "commit_subject": "Record BLACKTIDE Phase 15 launch",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 14 complete after PR #332 and final governance reconciliation. Phase 15 is not started and requires explicit owner launch authorization.",
   "active_lock": null,
