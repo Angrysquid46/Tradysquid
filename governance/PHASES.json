@@ -192,7 +192,7 @@
     {
       "phase_number": 16,
       "name": "Full Learning Center population",
-      "status": "in_progress",
+      "status": "complete",
       "dependencies": [
         "Phase 10"
       ],
@@ -200,7 +200,7 @@
       "discovered_subphases": [
         "Batch 1 complete 2026-08-26: Chapters 1-5 (27 lessons, 80 cards) authored and published live via new learning_center_publish.py; /learn topic: registered and live-verified. Chapters 6-43 remain - continuing chapter-by-chapter in follow-up sessions rather than rushing depth to close this phase early."
       ],
-      "completion_evidence": "All 43 chapters of Section 15's curriculum authored and published live to their lc-NN- Discord channels via learning_center_publish.py: 110 lessons, 223 section cards total (27/80 from batch 1 PR #342, 83/143 from batch 2). Every lesson carries a stable LC-XX-YY ID (learning_center_index.py's register_lesson()) with a real Discord jump_link. /learn topic: registered and live-verified against real published lessons across the full curriculum (spot-checked: 'covered call', 'iron condor', 'VIX'). Tests: pytest test_learning_center_publish.py test_learning_center_index.py - 66/66 pass, including a parametrized load/structure check across all 43 chapter modules. Re-published idempotently from the production checkout after merge to populate C:\\Tradysquid\\state\\learning_center_index.db (worktree publishing runs write to their own local state/ copy, not shared across worktrees - verified this backfill was necessary and completed)."
+      "completion_evidence": "Owner-audited Phase 16 remediation merged in PR #346 and deployed at c600ec7f76328692e63b73ff9f84dc5378bdf374. Curriculum expanded from 110 lessons/223 cards to 163 lessons/435 cards with 53 new original lessons covering every omission transcribed from the owner's 43-chapter contents pages. Each remediation lesson has mechanics/purpose, selection/decision process, worked application, and risks/follow-up. Independent exhaustive topic/depth/card-limit regression contract passes; focused Learning Center suite 67/67; complete repository pytest exit 0; GitHub test 4m31s and validate 6s pass; all-43 dry run 435 cards; live idempotent publish applied 435 cards; production index confirms 163/163 PUBLISHED with 163/163 jump links; direct live Discord GET verification found all 163 registered first-card message IDs across all 43 channels; representative /learn searches resolve omitted topics including reverse calendars, Black-Scholes, market baskets, structured products, VIX term structure, tax planning, straddle buying, and mathematical ranking. Trader firewall and ownership boundaries unchanged."
     }
   ]
 }

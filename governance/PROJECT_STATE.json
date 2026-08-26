@@ -1,16 +1,11 @@
 {
-  "last_updated": "2026-08-26T04:19:44.474934-05:00",
-  "branch": "codex/phase16-complete-lessons",
-  "observed_head_at_write": "0bc992e479aeaff20c596a7e150b8e50a412fd82",
-  "commit_subject": "Fix competition-surfaces spam: skip publishing when nothing changed (#345)",
+  "last_updated": "2026-08-26T04:45:32.107522-05:00",
+  "branch": "main",
+  "observed_head_at_write": "c600ec7f76328692e63b73ff9f84dc5378bdf374",
+  "commit_subject": "Expand Phase 16 into complete topic lessons",
   "current_phase": "Phase 16",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
-  "active_lock": {
-    "actor": "Codex",
-    "task": "Phase 16 remediation: replace skimmed curriculum with complete topic lessons",
-    "work_id": "e585393e-6e15-4dd0-9c85-f70bf79343b4",
-    "started_at": "2026-08-26T04:09:05.370939-05:00"
-  },
+  "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
 }
