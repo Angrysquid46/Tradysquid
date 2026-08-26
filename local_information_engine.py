@@ -778,7 +778,11 @@ def competition_surfaces_job(connection: sqlite3.Connection) -> str:
 
     combined_fingerprint = _fingerprint({
         "snapshots": [scoreboard.scoreboard_snapshot(score_connection, bot) for bot in scoreboard.BOTS],
-        "rivalry_count": len(rivalry.public_rivalry_history(rivalry_connection, limit=12)),
+        # Fingerprint the rendered, referee-validated card rather than the
+        # raw event count.  A stale/demo rivalry record can be filtered out
+        # without creating a new event, and the Discord singleton still has
+        # to be refreshed when that presentation rule changes.
+        "rivalry_card": rivalry_presentation.render_rivalry(score_connection, rivalry_connection),
     })
     results = []
     if get_state(connection, "competition-surfaces:combined:fingerprint") == combined_fingerprint:
@@ -920,6 +924,14 @@ JOBS = [
         background=True,
         provider_heavy=True,
         retry_interval=timedelta(minutes=10),
+    ),
+    Job(
+        "market-memory-collection",
+        timedelta(minutes=15),
+        upgrade_batch_44.market_memory_collection_job,
+        background=True,
+        provider_heavy=True,
+        retry_interval=timedelta(minutes=15),
     ),
     Job(
         "spy-technicals-refresh",

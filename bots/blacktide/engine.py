@@ -38,6 +38,7 @@ class Position:
     entry_price: float
     opened_at: datetime
     entry_state: str = "UNKNOWN"
+    entry_family: str = "UNKNOWN"
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,7 @@ class BLACKTIDE:
             raise ValueError("invalid or overlapping entry")
         self.position = Position(trade_id, str(decision.contract_symbol), decision.side,  # type: ignore[arg-type]
                                  decision.contracts, decision.price, opened_at,
-                                 decision.market_state or "UNKNOWN")
+                                 decision.market_state or "UNKNOWN", decision.family or "UNKNOWN")
 
     def apply_exit(self, decision: Decision) -> Position:
         if decision.action != "EXIT" or self.position is None:

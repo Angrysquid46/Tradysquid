@@ -30,9 +30,27 @@ def render_scoreboard(connection: Any) -> str:
     return "\n".join(lines)
 
 
-def render_rivalry(connection: Any) -> str:
+def render_rivalry(score_connection: Any, rivalry_connection: Any) -> str:
+    """Render only rivalry claims which can be tied to the referee.
+
+    Presentation must never revive an old test/demo message as if it were
+    a live result.  Any record that carries a trade reference is shown only
+    when that exact immutable, closed trade exists for the named speaker.
+    General session messages without a reference remain allowed.
+    """
     lines = ["## BLACKTIDE vs AXIOM — Rivalry"]
-    for item in reversed(rivalry.public_rivalry_history(connection, limit=12)):
+    verified: list[dict[str, Any]] = []
+    for item in rivalry.public_rivalry_history(rivalry_connection, limit=50):
+        reference = str(item.get("trade_reference") or "").strip()
+        if reference:
+            row = score_connection.execute(
+                "SELECT 1 FROM official_trades WHERE trade_id=? AND bot=? AND closed_at IS NOT NULL",
+                (reference, item["speaker"]),
+            ).fetchone()
+            if row is None:
+                continue
+        verified.append(item)
+    for item in reversed(verified[:12]):
         lines.append(f"**{item['speaker']}** · {item['message']}")
     if len(lines) == 1:
         lines.append("No official rivalry events yet.")
@@ -354,7 +372,7 @@ def publish_competition_surfaces(
         channel_id = _channel_id(tracker)
         cards = (
             ("competition-scoreboard-card", render_scoreboard(score_connection), "TSQ-COMPETITION-SCOREBOARD"),
-            ("competition-rivalry-card", render_rivalry(rivalry_connection), "TSQ-COMPETITION-RIVALRY"),
+            ("competition-rivalry-card", render_rivalry(score_connection, rivalry_connection), "TSQ-COMPETITION-RIVALRY"),
         )
         for surface_id, body, token in cards:
             message_id, _ = tracker.upsert_singleton_message(channel_id, body, token)

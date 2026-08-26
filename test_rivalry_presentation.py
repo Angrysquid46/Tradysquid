@@ -91,6 +91,16 @@ def test_discord_outage_is_returned_and_cannot_touch_official_trade(monkeypatch)
     assert surfaces.compute_health(manifest, "competition-scoreboard-card") == surfaces.PUBLISH_FAILED
 
 
+def test_rivalry_card_hides_a_claim_without_a_matching_closed_trade(monkeypatch):
+    score, chat, _manifest = _connections(monkeypatch)
+    rivalry.record_rivalry_event(
+        chat, rivalry_event_id="stale-demo", event_group_id="demo", trigger="TRADE_CLOSED_WIN",
+        speaker="AXIOM", message="invented win", trade_reference="not-in-referee",
+        public_score_snapshot={"bot": "AXIOM"}, now=__import__("datetime").datetime.now().astimezone(),
+    )
+    assert "invented win" not in presentation.render_rivalry(score, chat)
+
+
 def test_closed_trade_feed_contains_referee_audit_fields():
     connection = _closed_trade()
     try:

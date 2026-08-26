@@ -875,6 +875,41 @@ def _replace_chart_message(
 
 
 SPY_TECHNICALS_STATE_KEY = "upgrade44:spy-technicals"
+MARKET_MEMORY_COLLECTION_STATE_KEY = "upgrade44:market-memory-collection"
+
+
+def market_memory_collection_job(connection: Any) -> str:
+    """Collect one real completed SPY session after the US cash close.
+
+    The technical renderer is intentionally read-only, so it cannot make
+    stale history fresh by itself.  This lightweight scheduler bridge is
+    the missing producer: it calls the existing append-only collection
+    cycle once per weekday, after 3:45pm New York time, and records its
+    receipt.  No values are fabricated when the provider has not supplied
+    a completed session yet.
+    """
+    from zoneinfo import ZoneInfo
+    import market_memory
+
+    eastern = _now().astimezone(ZoneInfo("America/New_York"))
+    if eastern.weekday() >= 5:
+        return "waiting for next trading day"
+    if (eastern.hour, eastern.minute) < (15, 45):
+        return "waiting for completed US cash session"
+    session = eastern.date().isoformat()
+    state = _state_json(connection, MARKET_MEMORY_COLLECTION_STATE_KEY)
+    if state.get("session") == session:
+        return f"already collected {session}"
+    result = market_memory.run_collection_cycle("SPY")
+    _set_state_json(
+        connection,
+        MARKET_MEMORY_COLLECTION_STATE_KEY,
+        {"session": session, "collected_at": _iso(), "result": result},
+    )
+    _engine().store_observation(connection, "market-memory-collection", result)
+    daily = result.get("daily", {}).get("new_bars", 0)
+    intraday = result.get("intraday_5min", {}).get("new_bars", 0)
+    return f"real SPY session {session} collected: {daily} daily / {intraday} five-minute new bars"
 
 
 def spy_technicals_job(connection: Any) -> str:

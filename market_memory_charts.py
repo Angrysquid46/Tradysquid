@@ -54,7 +54,7 @@ CHART_DIR = ROOT / "docs" / "market-memory"
 # Bump to force a re-render after changing drawing code - without this a
 # rendering fix stays invisible until the next new bar arrives, because
 # the job's fingerprint guard would consider the data unchanged.
-RENDER_VERSION = "spy-technicals-v1"
+RENDER_VERSION = "spy-technicals-v2-focused"
 
 MARKET_TZ = ZoneInfo("America/New_York")
 
@@ -790,41 +790,70 @@ def _coverage_tile(
 def render_all(
     conn: sqlite3.Connection, ticker: str = "SPY", out_dir: Path | None = None
 ) -> list[tuple[str, Path, str]]:
-    """Renders every board that has enough data. Returns
-    (key, path, caption) triples; a board with too little history is
-    skipped rather than emitted broken."""
+    """Render readable, one-purpose technical charts.
+
+    The original boards deliberately collected many indicators, but each
+    image contained four panels and was impractical on a phone.  We still
+    calculate from the same read-only stored bars; this publisher simply
+    promotes the useful individual panels into their own Discord images.
+    The coverage matrix is intentionally left in the summary card rather
+    than posted as a tiny, unreadable table image.
+    """
     out_dir = out_dir or CHART_DIR
     rows_daily = load_joined(conn, ticker, "daily")
     rows_5m = load_joined(conn, ticker, "5min")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    source_paths = {
+        "intraday": out_dir / ".spy-technicals-intraday-board.png",
+        "short": out_dir / ".spy-technicals-short-board.png",
+        "medium": out_dir / ".spy-technicals-medium-board.png",
+        "long": out_dir / ".spy-technicals-long-board.png",
+    }
+    rendered = {
+        "intraday": render_intraday(rows_5m, source_paths["intraday"]),
+        "short": render_short(rows_daily, source_paths["short"]),
+        "medium": render_medium(rows_daily, source_paths["medium"]),
+        "long": render_long(rows_daily, source_paths["long"]),
+    }
+    requests = (
+        ("session-price", "intraday", 0, "📈 **SPY session price & VWAP** — last completed 5-minute session; not live."),
+        ("intraday-momentum", "intraday", 2, "📉 **SPY intraday momentum** — RSI(14) over the last five completed sessions."),
+        ("short-trend", "short", 0, "📊 **SPY short trend** — 30 sessions: close, EMA9, EMA20, and SMA20."),
+        ("macd", "short", 2, "〽️ **SPY MACD** — 90 daily sessions; stored MACD and signal only."),
+        ("year-trend", "medium", 0, "🗓️ **SPY one-year trend** — close versus SMA20, SMA50, and SMA200."),
+        ("volatility", "medium", 1, "🌡️ **SPY volatility** — one-year ATR percentile from stored daily bars."),
+        ("five-year-trend", "long", 0, "🏔️ **SPY five-year trend** — close versus SMA50 and SMA200."),
+        ("full-history", "long", 1, "🧭 **SPY full history** — log-scale close and SMA200 from the research store."),
+    )
+    boards: list[tuple[str, Path, str]] = []
+    for key, source_key, panel_index, caption in requests:
+        source = rendered[source_key]
+        if source is None:
+            continue
+        output = out_dir / f"spy-technicals-{key}.png"
+        _extract_panel(source, panel_index, output)
+        boards.append((key, output, caption))
+    for source in source_paths.values():
+        try:
+            source.unlink()
+        except FileNotFoundError:
+            pass
+    return boards
 
-    boards: list[tuple[str, Path | None, str]] = [
-        (
-            "intraday",
-            render_intraday(rows_5m, out_dir / "spy-technicals-intraday.png"),
-            f"📈 **{ticker} intraday (5-min)** - last completed session, VWAP re-anchored per session. Not live.",
-        ),
-        (
-            "short",
-            render_short(rows_daily, out_dir / "spy-technicals-short.png"),
-            f"📊 **{ticker} short horizon** - 30 / 90 daily bars, Bollinger, MACD, RSI and ADX.",
-        ),
-        (
-            "medium",
-            render_medium(rows_daily, out_dir / "spy-technicals-medium.png"),
-            f"🗓️ **{ticker} medium horizon** - one year, the 200-day, ATR percentile and structure runs.",
-        ),
-        (
-            "long",
-            render_long(rows_daily, out_dir / "spy-technicals-long.png"),
-            f"🏔️ **{ticker} long horizon** - 5 years plus full stored history on a log axis.",
-        ),
-        (
-            "coverage",
-            render_coverage(conn, ticker, rows_daily, rows_5m, out_dir / "spy-technicals-coverage.png"),
-            f"🧭 **{ticker} coverage** - every tracked feature, its latest value and real population counts.",
-        ),
-    ]
-    return [(key, path, caption) for key, path, caption in boards if path is not None]
+
+def _extract_panel(source: Path, panel_index: int, output: Path) -> Path:
+    """Turn one board quadrant into a large, phone-readable chart image."""
+    from PIL import Image
+
+    if not 0 <= panel_index < len(PANEL_ORIGINS):
+        raise ValueError(f"unknown panel index {panel_index}")
+    x, y = PANEL_ORIGINS[panel_index]
+    with Image.open(source) as image:
+        panel = image.crop((x, y, x + PANEL_W, y + PANEL_H))
+        enlarged = panel.resize((PANEL_W * 2, PANEL_H * 2), Image.Resampling.LANCZOS)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        enlarged.save(output, format="PNG", optimize=True)
+    return output
 
 
 FORWARD_HORIZONS = (5, 10, 20)

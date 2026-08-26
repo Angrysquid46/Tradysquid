@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 
 import backtest_lab
+import rivalry
 import scoreboard
 
 from .engine import BLACKTIDE, CONTRACT_MULTIPLIER, Decision, Position
@@ -69,8 +70,16 @@ class BlacktideRuntime:
             self.evolution.record(Outcome(
                 position.trade_id, self.engine.generation, pnl,
                 (decision.price / position.entry_price) - 1,
-                "RECOVERED_OR_PRIVATE", position.entry_state, as_of.isoformat(),
+                position.entry_family, position.entry_state, as_of.isoformat(),
+                exit_reason=decision.reason,
+                held_minutes=round((as_of - position.opened_at).total_seconds() / 60, 2),
             ))
+            # Presentation happens only after the referee accepted the
+            # immutable close.  It has no route back into BLACKTIDE's
+            # decision path and is rate-limited by the neutral rivalry
+            # store, so a real result can be acknowledged without turning
+            # the channel into an unverified activity feed.
+            self._record_verified_rivalry(connection, position.trade_id, pnl)
             self.evolution.evaluate(self.engine)
             self.engine.apply_exit(decision)
         elif decision.action == "BUST":
@@ -87,3 +96,31 @@ class BlacktideRuntime:
                 event="STARTED", detail="bankroll reset to $1,000",
             )
         return decision
+
+    @staticmethod
+    def _record_verified_rivalry(
+        scoreboard_connection: sqlite3.Connection,
+        trade_id: str,
+        pnl_usd: float,
+    ) -> None:
+        trigger = "TRADE_CLOSED_WIN" if pnl_usd > 0 else "TRADE_CLOSED_LOSS"
+        outcome = "closed green" if pnl_usd > 0 else "took a controlled loss"
+        message = f"BLACKTIDE {outcome}: ${pnl_usd:+.2f} on an official close. AXIOM, the ledger has receipts."
+        connection = rivalry.connect_db()
+        try:
+            rivalry.record_rivalry_event(
+                connection,
+                rivalry_event_id=str(uuid.uuid4()),
+                event_group_id=trade_id,
+                trigger=trigger,
+                speaker=SCOREBOARD_BOT,
+                target="AXIOM",
+                message=message,
+                public_score_snapshot=scoreboard.scoreboard_snapshot(scoreboard_connection, SCOREBOARD_BOT),
+                trade_reference=trade_id,
+                generation=scoreboard.current_generation(scoreboard_connection, SCOREBOARD_BOT),
+            )
+        except rivalry.RivalryLimitExceeded:
+            pass
+        finally:
+            connection.close()

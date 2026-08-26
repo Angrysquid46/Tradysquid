@@ -25,6 +25,8 @@ class Outcome:
     family: str
     market_state: str
     closed_at: str
+    exit_reason: str = "UNKNOWN"
+    held_minutes: float | None = None
 
 
 class EvolutionLoop:

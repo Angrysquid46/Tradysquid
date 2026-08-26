@@ -164,17 +164,20 @@ def test_display_time_normalizes_both_stored_encodings_to_the_same_label():
 # Rendering
 # ---------------------------------------------------------------------------
 
-def test_renders_all_five_boards_from_a_real_synthetic_store():
+def test_renders_focused_phone_readable_charts_from_a_real_synthetic_store():
     from PIL import Image
 
     with _store() as (conn, out_dir, _db):
         boards = mmc.render_all(conn, "SPY", out_dir)
-        assert {key for key, _, _ in boards} == {"intraday", "short", "medium", "long", "coverage"}
+        assert {key for key, _, _ in boards} == {
+            "session-price", "intraday-momentum", "short-trend", "macd",
+            "year-trend", "volatility", "five-year-trend", "full-history",
+        }
         for _, path, caption in boards:
             assert path.exists()
             assert path.stat().st_size > 10_000
             with Image.open(path) as image:
-                assert image.size == (mmc.WIDTH, mmc.HEIGHT)
+                assert image.size == (mmc.PANEL_W * 2, mmc.PANEL_H * 2)
             assert caption.strip()
 
 
@@ -199,8 +202,8 @@ def test_sparse_history_degrades_instead_of_raising():
         conn.close()
 
     keys = {key for key, _, _ in boards}
-    assert "intraday" not in keys  # no intraday bars at all -> skipped, not broken
-    assert {"short", "medium", "long"} <= keys
+    assert "session-price" not in keys  # no intraday bars at all -> skipped, not broken
+    assert {"short-trend", "year-trend", "five-year-trend"} <= keys
 
 
 def test_renders_when_every_feature_column_is_null():
@@ -337,7 +340,7 @@ def test_spy_technicals_job_skips_discord_when_the_data_is_unchanged():
             uploads_after_first = upload.call_count
             second = upgrade_batch_44.spy_technicals_job(object())
 
-    assert uploads_after_first == 5
+    assert uploads_after_first == 8
     assert card.call_count == 1
     assert upload.call_count == uploads_after_first  # no new uploads on the second run
     assert "no repost" in second
