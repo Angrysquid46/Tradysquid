@@ -187,7 +187,25 @@ def test_evolve_disables_hypothesis_already_at_every_bound(tmp_path, monkeypatch
     assert state["enabled"] == 0
 
 
-def test_evolve_does_nothing_on_positive_fitness(tmp_path, monkeypatch):
+def test_evolve_does_nothing_on_exactly_zero_fitness(tmp_path, monkeypatch):
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    sb = scoreboard.connect_db()
+    conn = _evo_conn(tmp_path)
+    before = evolution.get_hypothesis_params(conn, "trend_continuation")
+    _attribute_n_trades(sb, conn, "trend_continuation", [0.0] * MIN_SAMPLE_BEFORE_EVOLVE, "t")
+
+    applied = evolution.update_fitness_and_evolve(conn, log_path=None)
+
+    assert applied == []
+    after = evolution.get_hypothesis_params(conn, "trend_continuation")
+    assert after == before
+
+
+def test_evolve_on_positive_fitness_is_a_noop_when_already_at_the_loose_default(tmp_path, monkeypatch):
+    """A never-tightened hypothesis starts AT its loosest bound by design
+    (every MUTATION_SPECS field's loose bound equals its own
+    HYPOTHESIS_DEFAULTS value) - positive fitness has nowhere looser to
+    go yet, so this must be a genuine no-op, not a silent no-change bug."""
     monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
     sb = scoreboard.connect_db()
     conn = _evo_conn(tmp_path)
@@ -201,6 +219,58 @@ def test_evolve_does_nothing_on_positive_fitness(tmp_path, monkeypatch):
     assert after == before
 
 
+def test_evolve_loosens_one_deterministic_step_after_a_prior_tighten(tmp_path, monkeypatch):
+    """Owner directive 2026-08-26 ('evolve as aggressively as it wants'):
+    once a hypothesis has been tightened by a losing streak, a later
+    winning streak gets it back some room - the mirror of tightening,
+    exercised from the only state where loosening has anywhere to go."""
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    sb = scoreboard.connect_db()
+    conn = _evo_conn(tmp_path)
+    defaults = evolution.get_hypothesis_params(conn, "trend_continuation")
+    _attribute_n_trades(sb, conn, "trend_continuation", [-50.0] * MIN_SAMPLE_BEFORE_EVOLVE, "loss")
+    tightened_applied = evolution.update_fitness_and_evolve(conn, log_path=None)
+    assert tightened_applied and tightened_applied[0]["event"] == "TIGHTENED"
+    tightened = evolution.get_hypothesis_params(conn, "trend_continuation")
+    assert tightened != defaults
+
+    # hypothesis_fitness averages over ALL attributed trades ever, so the
+    # win batch must clearly outweigh the prior loss batch's -50s for the
+    # cumulative average to land positive, not merely offset it to zero.
+    _attribute_n_trades(sb, conn, "trend_continuation", [200.0] * MIN_SAMPLE_BEFORE_EVOLVE, "win")
+    applied = evolution.update_fitness_and_evolve(conn, log_path=None)
+
+    assert len(applied) == 1
+    assert applied[0]["event"] == "LOOSENED_PROFITABLE"
+    after = evolution.get_hypothesis_params(conn, "trend_continuation")
+    specs = MUTATION_SPECS["trend_continuation"]
+    for key, (step, lower, upper) in specs.items():
+        expected = max(lower, min(upper, tightened[key] - step))
+        assert after[key] == expected, key
+    # One tighten step then one loosen step must land exactly back at the
+    # original default - not past it in either direction.
+    assert after == defaults
+
+
+def test_evolve_loosening_never_exceeds_the_original_default(tmp_path, monkeypatch):
+    """Repeated positive-fitness cycles after tightening must clamp at
+    the default, not walk past it into something looser than
+    parameters.py ever specified."""
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    sb = scoreboard.connect_db()
+    conn = _evo_conn(tmp_path)
+    defaults = evolution.get_hypothesis_params(conn, "trend_continuation")
+    _attribute_n_trades(sb, conn, "trend_continuation", [-50.0] * MIN_SAMPLE_BEFORE_EVOLVE, "loss")
+    evolution.update_fitness_and_evolve(conn, log_path=None)
+
+    for i in range(20):
+        _attribute_n_trades(sb, conn, "trend_continuation", [50.0] * MIN_SAMPLE_BEFORE_EVOLVE, f"g{i}")
+        evolution.update_fitness_and_evolve(conn, log_path=None)
+
+    after = evolution.get_hypothesis_params(conn, "trend_continuation")
+    assert after == defaults
+
+
 def test_evolve_skips_hypothesis_below_minimum_sample(tmp_path, monkeypatch):
     monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
     sb = scoreboard.connect_db()
@@ -209,3 +279,102 @@ def test_evolve_skips_hypothesis_below_minimum_sample(tmp_path, monkeypatch):
 
     applied = evolution.update_fitness_and_evolve(conn, log_path=None)
     assert applied == []
+
+
+# --- loosen_starved_hypotheses: drought-based loosening ---------------------
+
+def test_drought_loosens_a_never_fired_hypothesis_past_the_threshold(tmp_path, monkeypatch):
+    """A hypothesis with zero attributed trades ever can never reach
+    MIN_SAMPLE_BEFORE_EVOLVE, so fitness-based evolution alone could
+    never touch it - the drought path is the other half of bidirectional
+    evolution, independent of measured fitness."""
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    conn = _evo_conn(tmp_path)
+    defaults = evolution.get_hypothesis_params(conn, "mean_reversion_extreme")
+    # Already at the loose default, so there is nothing to loosen yet -
+    # tighten it manually first so drought has somewhere real to go.
+    specs = MUTATION_SPECS["mean_reversion_extreme"]
+    tightened, _ = evolution._tighten(defaults, specs)
+    conn.execute(
+        "UPDATE hypothesis_state SET params_json=? WHERE name=?",
+        (__import__("json").dumps(tightened), "mean_reversion_extreme"),
+    )
+    conn.commit()
+    # Back-date the seed row itself so _hours_since_last_signal() sees a
+    # real drought instead of "just seeded a moment ago".
+    conn.execute(
+        "UPDATE hypothesis_state SET updated_at=? WHERE name=?",
+        ("2020-01-01T00:00:00-05:00", "mean_reversion_extreme"),
+    )
+    conn.commit()
+
+    applied = evolution.loosen_starved_hypotheses(conn, log_path=None, drought_hours=1.0)
+
+    assert len(applied) == 1
+    assert applied[0]["event"] == "LOOSENED_DROUGHT"
+    assert applied[0]["hypothesis"] == "mean_reversion_extreme"
+    after = evolution.get_hypothesis_params(conn, "mean_reversion_extreme")
+    for key, (step, lower, upper) in specs.items():
+        expected = max(lower, min(upper, tightened[key] - step))
+        assert after[key] == expected, key
+
+
+def test_drought_does_nothing_before_the_threshold_elapses(tmp_path, monkeypatch):
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    conn = _evo_conn(tmp_path)
+    defaults = evolution.get_hypothesis_params(conn, "momentum_acceleration")
+    specs = MUTATION_SPECS["momentum_acceleration"]
+    tightened, _ = evolution._tighten(defaults, specs)
+    conn.execute(
+        "UPDATE hypothesis_state SET params_json=? WHERE name=?",
+        (__import__("json").dumps(tightened), "momentum_acceleration"),
+    )
+    conn.commit()
+    # updated_at stays "now" (default seed time) - well under the drought
+    # threshold.
+
+    applied = evolution.loosen_starved_hypotheses(conn, log_path=None, drought_hours=3.0)
+
+    assert applied == []
+    assert evolution.get_hypothesis_params(conn, "momentum_acceleration") == tightened
+
+
+def test_drought_does_nothing_when_already_at_the_loose_default(tmp_path, monkeypatch):
+    """A never-tightened hypothesis is already as loose as it gets - a
+    drought must not error or fabricate a change with nowhere to go."""
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    conn = _evo_conn(tmp_path)
+    conn.execute(
+        "UPDATE hypothesis_state SET updated_at=? WHERE name=?",
+        ("2020-01-01T00:00:00-05:00", "trend_continuation"),
+    )
+    conn.commit()
+
+    applied = evolution.loosen_starved_hypotheses(conn, log_path=None, drought_hours=1.0)
+
+    assert applied == []
+
+
+def test_drought_uses_the_most_recent_attributed_trade_not_just_seed_time(tmp_path, monkeypatch):
+    """A hypothesis that fired recently must not be treated as starved
+    just because it was seeded long ago."""
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    sb = scoreboard.connect_db()
+    conn = _evo_conn(tmp_path)
+    defaults = evolution.get_hypothesis_params(conn, "trend_continuation")
+    specs = MUTATION_SPECS["trend_continuation"]
+    tightened, _ = evolution._tighten(defaults, specs)
+    conn.execute(
+        "UPDATE hypothesis_state SET params_json=?, updated_at=? WHERE name=?",
+        (__import__("json").dumps(tightened), "2020-01-01T00:00:00-05:00", "trend_continuation"),
+    )
+    conn.commit()
+    # One real, freshly-attributed trade - the drought clock should reset
+    # to that, not the stale 2020 seed timestamp.
+    _open_and_close(sb, "recent-1", 10.0)
+    evolution.record_trade_attribution(conn, trade_id="recent-1", hypothesis_name="trend_continuation", generation=1)
+
+    applied = evolution.loosen_starved_hypotheses(conn, log_path=None, drought_hours=1.0)
+
+    assert applied == []
+    assert evolution.get_hypothesis_params(conn, "trend_continuation") == tightened

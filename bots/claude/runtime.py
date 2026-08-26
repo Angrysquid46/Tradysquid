@@ -307,12 +307,19 @@ def bust_check_job(connection) -> str:
 def evolve_job(connection) -> str:
     """Re-judges every enabled hypothesis against its OWN attributed real
     closed trades (scoreboard.py, the official ledger) and deterministically
-    tightens/retires underperformers. No live Tradier calls - reads only
-    already-recorded scoreboard/attribution data."""
+    tightens/loosens/retires it (see evolution.update_fitness_and_evolve's
+    own docstring for the bidirectional 2026-08-26 owner directive). Also
+    runs the drought check (evolution.loosen_starved_hypotheses) - a
+    hypothesis with zero trades can never reach MIN_SAMPLE_BEFORE_EVOLVE,
+    so fitness-based evolution alone could never touch it; the drought
+    path is what keeps a hypothesis that simply never fires from staying
+    frozen at its original strictness forever. No live Tradier calls -
+    reads only already-recorded scoreboard/attribution data."""
     evo_conn = evolution.connect_db()
     applied = evolution.update_fitness_and_evolve(evo_conn)
+    applied += evolution.loosen_starved_hypotheses(evo_conn)
     if not applied:
-        return "no hypothesis had enough sample/negative fitness to evolve"
+        return "no hypothesis had enough sample/negative fitness to evolve, and none in drought"
     return f"{len(applied)} hypothesis evolution step(s) applied: " + ", ".join(
         f"{e['hypothesis']}:{e['event']}" for e in applied
     )

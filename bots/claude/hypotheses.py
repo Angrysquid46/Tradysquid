@@ -44,8 +44,15 @@ def trend_continuation(current_price: float, features: dict[str, Any], params: d
 
     stack = (features.get("short_term_trend"), features.get("medium_term_trend"), features.get("long_term_trend"))
     signals["ma_stack"] = stack
-    if any(t != want for t in stack):
-        return EntryDecision(False, None, f"MA stack not fully aligned {stack}", signals)
+    agreement = sum(1 for t in stack if t == want)
+    signals["ma_stack_agreement"] = agreement
+    # Owner directive 2026-08-26: was unanimous (3-of-3) - blocked a real
+    # VERY_STRONG/clear-DI setup for an entire session solely because the
+    # long-term MA disagreed with short+medium. min_ma_stack_agreement is
+    # itself a tunable (parameters.py), evolvable in either direction
+    # (evolution.py's _tighten()/_loosen()) rather than a hardcoded 3.
+    if agreement < params["min_ma_stack_agreement"]:
+        return EntryDecision(False, None, f"MA stack not aligned enough {stack} ({agreement}/3)", signals)
 
     macd_hist = features.get("macd_histogram")
     signals["macd_histogram"] = macd_hist
