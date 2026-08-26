@@ -224,12 +224,20 @@ class DiscordTracker:
         search_token: str,
         components: list[dict[str, Any]] | None = None,
     ) -> tuple[str, int]:
-        """Keep exactly one bot-authored card for a stable title in a channel."""
+        """Keep exactly one bot-authored card for a stable title in a channel.
+
+        Bug fixed 2026-08-26: this never actually passed search_token into
+        discord_card()'s footer_suffix, so message_search_text() (which
+        only checks content/embed title/description/fields/footer) could
+        never find the message it had just posted - every call created a
+        brand-new card instead of patching the existing one. Affected every
+        caller repeatedly posting the same search_token, including the
+        blacktide-vs-claude scoreboard/rivalry cards live since PR #338."""
         if not channel_id or not search_token:
             return "", 0
         payload = {
             "content": "",
-            "embeds": [discord_card(content[:6000])],
+            "embeds": [discord_card(content[:6000], footer_suffix=search_token)],
             "allowed_mentions": {"parse": []},
         }
         if components:
