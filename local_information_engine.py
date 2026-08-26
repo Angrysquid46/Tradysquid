@@ -119,6 +119,27 @@ def connect_db() -> sqlite3.Connection:
             content TEXT NOT NULL
         );
 
+        -- The local provider-event consumer owns its own durable queue.
+        -- This schema must be present in every local-information database;
+        -- otherwise the startup heartbeat can fail before the engine can
+        -- publish any Discord surfaces after an upgrade.
+        CREATE TABLE IF NOT EXISTS provider_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_key TEXT UNIQUE NOT NULL,
+            provider TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0,
+            received_at TEXT NOT NULL,
+            available_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'PENDING',
+            payload_json TEXT NOT NULL,
+            processed_at TEXT,
+            error TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS provider_event_queue
+            ON provider_events(status, priority DESC, available_at, id);
+
         CREATE TABLE IF NOT EXISTS daily_data_manifest (
             trading_day TEXT PRIMARY KEY,
             expected_minutes INTEGER NOT NULL,
