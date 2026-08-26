@@ -189,7 +189,11 @@ def _replace_bot_chart(
 ) -> str:
     """Discord can't edit an attachment in place, so an "updating chart" is
     really post-new-then-delete-old (same approach
-    upgrade_batch_44._replace_chart_message already uses)."""
+    upgrade_batch_44._replace_chart_message already uses). search_token
+    must actually appear in the posted message content - send_channel_file
+    sets plain `content` (no embed/footer), and message_search_text() only
+    matches literal text, so the token is appended to the caption itself
+    (same bug class fixed in discord_transport.upsert_singleton_message)."""
     recent = tracker._request("GET", f"/channels/{channel_id}/messages?limit=50")
     old_ids = [
         str(message.get("id") or "")
@@ -197,7 +201,8 @@ def _replace_bot_chart(
         if ((message.get("author") or {}).get("bot") or message.get("webhook_id"))
         and search_token in discord_transport.message_search_text(message)
     ]
-    response = tracker.send_channel_file(channel_id, path, content=caption[:1900])
+    stamped_caption = f"{caption[:1850]}\n-# {search_token}"
+    response = tracker.send_channel_file(channel_id, path, content=stamped_caption)
     new_id = str((response or {}).get("id") or "")
     for old_id in old_ids:
         if old_id and old_id != new_id:
