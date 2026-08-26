@@ -126,7 +126,8 @@ def test_hypothesis_fitness_computed_at_minimum_sample(tmp_path, monkeypatch):
     monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
     sb = scoreboard.connect_db()
     conn = _evo_conn(tmp_path)
-    pnls = [10.0] * 5 + [-30.0] * 5  # mean = -10.0
+    half = MIN_SAMPLE_BEFORE_EVOLVE // 2
+    pnls = [10.0] * half + [-30.0] * (MIN_SAMPLE_BEFORE_EVOLVE - half)  # mean = -10.0
     _attribute_n_trades(sb, conn, "trend_continuation", pnls, "t")
 
     fitness, sample_size = evolution.hypothesis_fitness(conn, "trend_continuation")

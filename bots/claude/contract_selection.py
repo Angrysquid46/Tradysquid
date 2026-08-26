@@ -1,6 +1,6 @@
-"""Phase 13: AXIOM's contract selection - 0DTE long calls/puts only, per
-Section 4's immutable scope ("long 0DTE CALLS and PUTS, buy to open and
-sell to close" - no spreads, no shorts, no multi-leg).
+"""AXIOM's contract selection - 0DTE long calls/puts only, per Section 4's
+immutable scope ("long 0DTE CALLS and PUTS, buy to open and sell to
+close" - no spreads, no shorts, no multi-leg).
 
 Operates over the exact shape backtest_lab.MarketView.options_as_of()
 returns: a list of chain rows for one point-in-time snapshot.
@@ -23,21 +23,35 @@ def select_contract(
     side: str,
     today: date,
     params: dict[str, float],
+    confidence: float = 0.5,
 ) -> dict[str, Any] | None:
-    """Returns the eligible contract whose delta is closest to the middle
-    of the configured band, or None if nothing qualifies. Filters, in
-    order: 0DTE only, Tier-A data only, matching side, delta band,
-    premium cap, spread sanity. `params` is the FIRING hypothesis's own
-    parameter dict (bots/claude/parameters.py's HYPOTHESIS_DEFAULTS
+    """Returns the eligible contract closest to a confidence-biased target
+    delta within the configured band, or None if nothing qualifies.
+    Filters, in order: 0DTE only, Tier-A data only, matching side, delta
+    band, premium cap, spread sanity. `params` is the FIRING hypothesis's
+    own parameter dict (bots/claude/parameters.py's HYPOTHESIS_DEFAULTS
     shape) - delta band and premium cap are no longer one global
-    constant, they belong to whichever hypothesis produced the signal."""
+    constant, they belong to whichever hypothesis produced the signal.
+
+    Owner directive 2026-08-26 ("build anything with its own signals and
+    aggression"): `confidence` (0.0-1.0, from the firing hypothesis's own
+    EntryDecision.signals - see hypotheses.py's `_confidence`) biases the
+    target delta toward delta_min (cheaper, further OTM, more leveraged)
+    as conviction rises, and toward delta_max (pricier, more ITM-like,
+    safer) as it falls. At confidence=0.5 this is exactly the old
+    band-midpoint behavior - a neutral read isn't punished or rewarded,
+    only a genuinely strong or genuinely weak signal shifts where in the
+    band AXIOM buys. sizing.position_size still commits the full
+    available bankroll regardless (no fractional-risk throttle), so this
+    is where conviction actually expresses itself."""
     contract_side = _SIDE_MAP.get(side)
     if contract_side is None:
         return None
 
     today_iso = today.isoformat()
     delta_min, delta_max = params["delta_min"], params["delta_max"]
-    band_mid = (delta_min + delta_max) / 2
+    confidence = max(0.0, min(1.0, confidence))
+    target_delta = delta_max - confidence * (delta_max - delta_min)
     eligible: list[dict[str, Any]] = []
 
     for contract in contracts:
@@ -63,4 +77,4 @@ def select_contract(
     if not eligible:
         return None
 
-    return min(eligible, key=lambda c: abs(abs(c["delta"]) - band_mid))
+    return min(eligible, key=lambda c: abs(abs(c["delta"]) - target_delta))

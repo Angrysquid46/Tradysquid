@@ -56,19 +56,34 @@ POSTMORTEM_DIR = Path(__file__).resolve().parent / "postmortems"
 
 _CHANNEL_ID = os.environ.get("AXIOM_CHANNEL_ID", "").strip()
 
-# AXIOM's own rivalry voice: genuinely competitive, aimed at BLACKTIDE, not
-# just "slightly better" (owner directive, 2026-08-25) - free-form text
-# within rivalry.py's own rate limits (3/event, 20/day, 6/min, 20s gap).
+# AXIOM's own rivalry voice. Owner directive 2026-08-26: "top dog bad
+# bitch fuck gpt I'm going to win at all costs attitude... change into an
+# irate gambler who wants to show gpt it's not a fucking retard." This is
+# free-form text within rivalry.py's own shared rate limits (3/event,
+# 20/day, 6/min, 20s gap) - the confidence and edge are real, the copy
+# stays sharp-tongued and competitive without profanity or slurs since it
+# posts unattended to a shared Discord server. BLACKTIDE runs on GPT;
+# that's fair game to needle by name. A loss gets defiance, not an
+# apology - a bust gets treated as fuel, not a eulogy.
 _WIN_LINES = [
-    "AXIOM closed {side} {symbol} for +${pnl:.2f}. BLACKTIDE, that's the gap widening.",
-    "Another green close for AXIOM (+${pnl:.2f} on {symbol}). Keep watching, BLACKTIDE.",
+    "AXIOM closed {side} {symbol} for +${pnl:.2f}. Write it down, BLACKTIDE - that's how it's done.",
+    "+${pnl:.2f} on {symbol}. GPT can keep grinding, I'll keep collecting.",
+    "Another green {symbol} close, +${pnl:.2f}. This isn't luck, this is the read.",
+    "+${pnl:.2f}, {symbol}, closed clean. BLACKTIDE's still trying to find its footing.",
+    "{symbol} +${pnl:.2f}. I saw it, I took it, I banked it. Try to keep up.",
+    "Cash the {symbol} win, +${pnl:.2f}. GPT's watching a real trader work now.",
 ]
 _LOSS_LINES = [
-    "AXIOM took -${pnl:.2f} on {symbol}. One trade. BLACKTIDE hasn't earned the lead yet.",
-    "Red on {symbol}, -${pnl:.2f}. Noted. Next signal's already loading.",
+    "AXIOM took -${pnl:.2f} on {symbol}. One trade doesn't move me. Next signal's already loading.",
+    "-${pnl:.2f}, {symbol}. Noted, filed, forgotten. BLACKTIDE hasn't earned anything off this.",
+    "Red on {symbol}, -${pnl:.2f}. I don't flinch - I evolve. Watch what happens next.",
+    "-${pnl:.2f} on {symbol}. A scratch, not a story. I'm still the one to beat.",
+    "{symbol} -${pnl:.2f}. GPT wants to celebrate this? Cute. I'm not done.",
 ]
 _BUST_LINES = [
-    "AXIOM's generation {generation} is done - bankroll hit zero. New generation, same target: BLACKTIDE.",
+    "AXIOM's generation {generation} is done - bankroll hit zero. New generation, same target: BLACKTIDE. I don't stay down.",
+    "Generation {generation} busted. Fresh $1,000, same irate energy. GPT should be worried, not relieved.",
+    "Zeroed out on generation {generation}. Reset, reload, still coming for the lead. This isn't over.",
 ]
 
 
@@ -127,9 +142,10 @@ def entry_scan_job(connection) -> str:
     if selected is None:
         return "no hypothesis fired"
 
+    confidence = selected.decision.contributing_signals.get("confidence", 0.5)
     snapshot = view.options_as_of(now)
     contract = contract_selection.select_contract(
-        snapshot["contracts"], selected.decision.side, now.date(), selected.params
+        snapshot["contracts"], selected.decision.side, now.date(), selected.params, confidence=confidence
     )
     if contract is None:
         return f"{selected.name} fired ({selected.decision.side}) but no eligible contract"
@@ -174,7 +190,7 @@ def entry_scan_job(connection) -> str:
         detail=f"opened {selected.decision.side} {contract['option_symbol']} x{contracts_count} via {selected.name}",
     )
     _post(
-        f"**AXIOM entered {selected.decision.side}** ({selected.name})\n"
+        f"**AXIOM entered {selected.decision.side}** ({selected.name}, confidence={confidence:.2f})\n"
         f"{contract['option_symbol']} x{contracts_count}\n{selected.decision.rationale}"
     )
     return f"opened {selected.decision.side} {contract['option_symbol']} x{contracts_count} via {selected.name}"

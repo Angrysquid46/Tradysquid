@@ -27,6 +27,11 @@ class _FakeBars:
 class _FakeDecision:
     side: str = "CALL"
     rationale: str = "test"
+    contributing_signals: dict = None
+
+    def __post_init__(self):
+        if self.contributing_signals is None:
+            self.contributing_signals = {"confidence": 0.5}
 
 
 @dataclass
@@ -50,7 +55,7 @@ def _setup(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime.signal, "entry_decision", lambda conn, price, features: _FakeSelected())
     monkeypatch.setattr(
         runtime.contract_selection, "select_contract",
-        lambda contracts, side, today, params: {
+        lambda contracts, side, today, params, confidence=0.5: {
             "option_symbol": "SPY260825C00500000", "ask": 4.0, "bid": 3.9, "delta": 0.45,
         },
     )
