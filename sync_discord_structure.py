@@ -75,7 +75,6 @@ CATEGORY_ORDER = [
     "LEARNING CENTER",
     "AXIOM",
     "BLACKTIDE",
-    "RIVALRY",
     "OWNER CONTROL",
 ]
 
@@ -136,10 +135,6 @@ CHANNELS = [
     ChannelSpec("START HERE", "bot-commands", "Complete TradeBot slash-command reference and ticker-context instructions."),
     ChannelSpec("START HERE", "risk-management", "Options risk disclosures and pre-trade safety checklist."),
     # Phase 9 (Master Spec Section 7): official head-to-head results, lead
-    # changes, busts, milestones, and bounded bot-to-bot trash talk -
-    # separate from operational trade channels. No persona/response logic
-    # exists yet (Phase 11+); this is the channel that work will post into.
-    ChannelSpec("RIVALRY", "blacktide-vs-claude", "Official head-to-head competition results, lead changes, busts, milestones, and bounded bot-to-bot rivalry."),
     # Phase 10 (Master Spec Section 15): the 43-chapter options-education
     # curriculum shell. lc- prefix avoids colliding with the existing,
     # narrower Learning Center system's unrelated channels (e.g.

@@ -50,26 +50,7 @@ SURFACE_STATUSES = ("UPDATED", "VERIFIED_UNAFFECTED", "RETIRED", DESYNCHRONIZED,
 # The complete dynamic competition presentation inventory.  Operational
 # channels that contain ordinary stream messages are not singleton/dynamic
 # surfaces.  Every competition card has one stable owner and producer here.
-CANONICAL_COMPETITION_SURFACES = (
-    {
-        "surface_id": "competition-scoreboard-card", "category": "RIVALRY",
-        "channel": "blacktide-vs-claude", "owner": "Shared",
-        "purpose": "Public redacted competition scoreboard",
-        "producer": "rivalry_presentation.publish_competition_surfaces",
-        "publisher": "discord_transport.DiscordTracker", "update_mode": UPDATE_MODE_PERIODIC,
-        "expected_silence": False, "max_silence_minutes": 5,
-        "event_types": ("SCOREBOARD",), "schema_version": "phase14-v1",
-    },
-    {
-        "surface_id": "competition-rivalry-card", "category": "RIVALRY",
-        "channel": "blacktide-vs-claude", "owner": "Shared",
-        "purpose": "Bounded public rivalry history",
-        "producer": "rivalry_presentation.publish_competition_surfaces",
-        "publisher": "discord_transport.DiscordTracker", "update_mode": UPDATE_MODE_EVENT_DRIVEN,
-        "expected_silence": True, "event_types": ("RIVALRY",),
-        "schema_version": "phase14-v1",
-    },
-)
+CANONICAL_COMPETITION_SURFACES: tuple[dict[str, object], ...] = ()
 
 
 # Per-bot AXIOM/BLACKTIDE dashboard surfaces (rivalry_presentation.

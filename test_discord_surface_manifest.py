@@ -172,6 +172,5 @@ def test_canonical_competition_reconciliation_retires_orphans(db):
     assert retired == ("old-rivalry-card",)
     rows = db.execute("SELECT surface_id, enabled, status FROM surfaces").fetchall()
     indexed = {row["surface_id"]: dict(row) for row in rows}
-    assert set(indexed) >= {"competition-scoreboard-card", "competition-rivalry-card"}
     assert indexed["old-rivalry-card"]["enabled"] == 0
     assert indexed["old-rivalry-card"]["status"] == "RETIRED"

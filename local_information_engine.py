@@ -33,7 +33,6 @@ import diagnostic_upgrade_system as diagnostics
 import requests
 import trade_intelligence
 import upgrade_batch_44
-import rivalry
 import rivalry_presentation
 import scoreboard
 import discord_surface_manifest
@@ -753,47 +752,19 @@ def _fingerprint(payload: Any) -> str:
 
 
 def competition_surfaces_job(connection: sqlite3.Connection) -> str:
-    """Publishes rivalry_presentation.py's cards - the combined
-    #blacktide-vs-claude scoreboard plus each bot's own #axiom-*/
-    #blacktide-* dashboard/held-trade/winners-losers channels. Previously
-    fully built but never registered here, so none of it had ever posted.
+    """Publish each bot's own dashboard, held-position, and closed-trade cards.
 
-    Fingerprints each bot's scoreboard snapshot (and the combined pair's
-    two snapshots + rivalry history length) before publishing, and skips
-    the actual Discord calls entirely when nothing has changed since the
-    last cycle - owner-reported bug, 2026-08-26: the dashboard chart can't
-    be edited in place (Discord has no attachment-edit endpoint), so
-    _replace_bot_chart() was deleting and reposting a brand-new message
-    every 5 minutes regardless of whether the bankroll/generation/trade
-    count had actually moved - a fresh "new message" notification for
-    literally unchanged data, every single cycle, for hours."""
+    The former combined rivalry hub is retired; audited results remain in
+    each bot's dedicated channels and neutral scorekeeper.
+    """
     tracker = discord_transport.DiscordTracker(
         discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID
     )
     if not tracker.enabled:
         return "Discord tracker disabled"
     score_connection = scoreboard.connect_db()
-    rivalry_connection = rivalry.connect_db()
     surface_connection = discord_surface_manifest.connect_db()
-
-    combined_fingerprint = _fingerprint({
-        "snapshots": [scoreboard.scoreboard_snapshot(score_connection, bot) for bot in scoreboard.BOTS],
-        # Fingerprint the rendered, referee-validated card rather than the
-        # raw event count.  A stale/demo rivalry record can be filtered out
-        # without creating a new event, and the Discord singleton still has
-        # to be refreshed when that presentation rule changes.
-        "rivalry_card": rivalry_presentation.render_rivalry(score_connection, rivalry_connection),
-    })
     results = []
-    if get_state(connection, "competition-surfaces:combined:fingerprint") == combined_fingerprint:
-        results.append("combined:unchanged")
-    else:
-        combined = rivalry_presentation.publish_competition_surfaces(
-            score_connection, rivalry_connection, surface_connection, tracker
-        )
-        results.append(f"combined:{'ok' if combined['ok'] else combined['error']}")
-        if combined["ok"]:
-            set_state(connection, "competition-surfaces:combined:fingerprint", combined_fingerprint)
 
     for bot in scoreboard.BOTS:
         bot_fingerprint = _fingerprint({

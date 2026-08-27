@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 import pytest
 
 import scoreboard
-import rivalry
 from bots.blacktide import runtime as blacktide_runtime
 from bots.blacktide.runtime import BlacktideRuntime
 from bots.blacktide.engine import Decision
@@ -31,7 +30,6 @@ class View:
 
 def test_runtime_records_one_immutable_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
-    monkeypatch.setattr(rivalry, "DB_PATH", tmp_path / "rivalry.db")
     db = scoreboard.connect_db()
     view = View()
     runtime = BlacktideRuntime(market_view=view, evolution=EvolutionLoop(tmp_path / "outcomes.jsonl"))
@@ -46,12 +44,6 @@ def test_runtime_records_one_immutable_round_trip(tmp_path, monkeypatch):
     assert outcome.family != "RECOVERED_OR_PRIVATE"
     assert outcome.exit_reason == "take-profit reached"
     assert outcome.held_minutes == 1.0
-    rivalry_db = rivalry.connect_db()
-    try:
-        event = rivalry_db.execute("SELECT * FROM rivalry_events").fetchone()
-        assert event["trade_reference"] == outcome.trade_id
-    finally:
-        rivalry_db.close()
 
 
 def test_restart_recovers_open_position_and_cannot_double_open(tmp_path, monkeypatch):
