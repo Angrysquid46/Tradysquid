@@ -15,6 +15,10 @@ import scoreboard
 CHANNEL_NAME = "blacktide-vs-claude"
 CHART_DIR = Path(__file__).resolve().parent / "docs" / "tickers"
 LEGACY_RIVALRY_TOKEN = "TSQ-COMPETITION-RIVALRY"
+# Bump when a persisted per-bot Discord surface changes shape. The scheduler
+# fingerprints this so a presentation release refreshes old cards even when
+# the underlying trade facts have not changed.
+BOT_SURFACE_FORMAT_VERSION = "per-event-trade-cards-v1"
 
 
 def render_scoreboard(connection: Any) -> str:
