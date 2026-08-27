@@ -145,6 +145,7 @@ CHANNELS = [
     # narrower Learning Center system's unrelated channels (e.g.
     # 07-technical-analysis is not curriculum chapter 7). No lesson
     # content yet - population is Phase 16.
+    ChannelSpec("LEARNING CENTER", "learning-index", "Start here: the complete 43-chapter curriculum, organized as Topic 1 through Topic N in every chapter."),
     ChannelSpec("LEARNING CENTER", "lc-01-definitions", "Chapter 1: Definitions."),
     ChannelSpec("LEARNING CENTER", "lc-02-covered-call-writing", "Chapter 2: Covered Call Writing."),
     ChannelSpec("LEARNING CENTER", "lc-03-call-buying", "Chapter 3: Call Buying."),
@@ -257,7 +258,7 @@ DELETE_CHANNELS = {
     "27-scams-security-myths", "32-dealer-gamma-and-hedging",
     "33-fair-value-and-mean-reversion", "34-the-market-clock",
     "35-algorithmic-glossary", "36-commodities-and-fixed-income",
-    "learning-index", "ask-tradebot", "examples-and-reviews", "learning-start",
+    "ask-tradebot", "examples-and-reviews", "learning-start",
     # Retired 2026-08-24 - owner: "it's an old system destroy it now." The
     # upgrade-batch-via-GitHub-and-Discord workflow (/upgrade-add family)
     # and the diagnostic system's #upgrade-review reporting channel were
