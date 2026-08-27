@@ -1,16 +1,11 @@
 {
-  "last_updated": "2026-08-27T09:02:33.562956-05:00",
+  "last_updated": "2026-08-27T09:09:44.235937-05:00",
   "branch": "main",
-  "observed_head_at_write": "dbe6049841360e6f5738fed90b2382fa37820e11",
-  "commit_subject": "Record Learning Center repair completion (#354)",
+  "observed_head_at_write": "b5112bc386ff02d43f888d7052efcfa6b8d38910",
+  "commit_subject": "Default BLACKTIDE to current Central session (#355)",
   "current_phase": "15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
-  "active_lock": {
-    "actor": "Codex",
-    "task": "Make BLACKTIDE run the current weekday RTH session automatically",
-    "work_id": "2eb1b639-bb35-4d23-8db2-a99b564298b1",
-    "started_at": "2026-08-27T09:02:32.786292-05:00"
-  },
+  "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
 }
