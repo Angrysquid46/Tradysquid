@@ -285,11 +285,16 @@ DELETE_CHANNELS = {
     # 1" for winners/losers. Split into axiom-winners/axiom-losers and
     # blacktide-winners/blacktide-losers above.
     "axiom-winners-losers", "blacktide-winners-losers",
+    # Retired 2026-08-27: the head-to-head rivalry feature is permanently
+    # removed. Keep this in the reconciliation list so a legacy deployment
+    # cannot leave the channel behind or recreate it during a later sync.
+    "blacktide-vs-claude",
 }
 
 DELETE_CATEGORIES = {
     "ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE",
     "LIVE TRADING DESK", "PERFORMANCE", "STRATEGY CONTROL", "SYSTEM",
+    "RIVALRY",
     *_OLD_STRATEGY_CATEGORY_NAMES,
     STRATEGIES_CATEGORY_NAME,
 }
@@ -340,11 +345,9 @@ placed - everything here is paper money.
 Two things run side by side:
 - **Live SPY 0DTE strategies** (opening-range breakout, key levels, and
   friends) - see #how-trades-are-found and #market-intelligence.
-- **AXIOM vs BLACKTIDE** - two independently-built AI paper-traders
-  competing head-to-head from the same $1,000 starting bankroll. Each has
-  its own dashboard/held-trades/winners-losers channels under #axiom and
-  #blacktide; the combined head-to-head scoreboard lives in
-  #blacktide-vs-claude.
+- **Independent paper-trader records** - each trader has its own dashboard,
+  held-trades, winners, and losers channels. These are educational paper
+  results, not a contest or a trading signal.
 
 Start with #rules-and-risk, then #how-to-use-tradebot.""",
     "rules-and-risk": """# Rules, Risk, and Conduct
