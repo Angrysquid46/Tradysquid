@@ -85,6 +85,63 @@ def _lesson_card_text(chapter: int, lesson: Lesson, section: Section) -> str:
     return f"## {lesson_code} — {lesson.title}\n### {section.heading}\n{section.body}"
 
 
+def chapter_topic_index_text(chapter: int, lessons: list[Lesson]) -> str:
+    """Return a member-facing Topic 1 through Topic N chapter outline."""
+    title = index.CHAPTERS[chapter]
+    lines = [
+        f"## Chapter {chapter:02d} — {title}",
+        f"**{len(lessons)} numbered topics.** Read them in order, or use `/learn topic:` to jump to a concept.",
+        "",
+    ]
+    lines.extend(
+        f"**Topic {lesson.lesson_number}:** `{index.lesson_id(chapter, lesson.lesson_number)}` — {lesson.title}"
+        for lesson in lessons
+    )
+    return "\n".join(lines)
+
+
+def publish_chapter_topic_index(
+    tracker: discord_transport.DiscordTracker,
+    chapter: int,
+    lessons: list[Lesson],
+    *,
+    apply: bool,
+) -> dict[str, Any]:
+    """Upsert the chapter's table of contents in its own Discord channel."""
+    if not apply:
+        return {"chapter": chapter, "applied": False, "topics": len(lessons)}
+    channel_id = _resolve_channel_id(tracker, index.chapter_channel_name(chapter))
+    tracker.upsert_singleton_message(
+        channel_id,
+        chapter_topic_index_text(chapter, lessons),
+        f"LC-CHAPTER-INDEX-{chapter:02d}",
+    )
+    return {"chapter": chapter, "applied": True, "topics": len(lessons)}
+
+
+def publish_learning_index(
+    tracker: discord_transport.DiscordTracker,
+    chapters: list[int],
+    *,
+    apply: bool,
+) -> list[dict[str, Any]]:
+    """Upsert one compact, mobile-readable chapter outline per selected chapter."""
+    if not apply:
+        return [{"chapter": chapter, "applied": False} for chapter in chapters]
+    index_channel_id = _resolve_channel_id(tracker, "learning-index")
+    results: list[dict[str, Any]] = []
+    for chapter in chapters:
+        lessons = list(load_chapter(chapter).LESSONS)
+        channel_id = _resolve_channel_id(tracker, index.chapter_channel_name(chapter))
+        content = chapter_topic_index_text(chapter, lessons)
+        content += f"\n\nOpen the chapter: <#{channel_id}>"
+        tracker.upsert_singleton_message(
+            index_channel_id, content, f"LC-LEARNING-INDEX-{chapter:02d}"
+        )
+        results.append({"chapter": chapter, "applied": True, "topics": len(lessons)})
+    return results
+
+
 def publish_lesson(
     connection: Any,
     tracker: discord_transport.DiscordTracker,
@@ -141,10 +198,12 @@ def publish_chapter(
     apply: bool,
 ) -> list[dict[str, Any]]:
     module = load_chapter(chapter)
-    return [
+    results = [
         publish_lesson(connection, tracker, chapter, lesson, apply=apply)
         for lesson in module.LESSONS
     ]
+    publish_chapter_topic_index(tracker, chapter, list(module.LESSONS), apply=apply)
+    return results
 
 
 def _parse_chapter_range(value: str) -> list[int]:
@@ -163,6 +222,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chapters", required=True, help='e.g. "1-5" or "1,3,7"')
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--index", action="store_true",
+        help="also refresh #learning-index with one Chapter -> Topic 1..N card per selected chapter",
+    )
     args = parser.parse_args(argv)
     chapters = _parse_chapter_range(args.chapters)
 
@@ -184,6 +247,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {status} {result['lesson_id']} - {result['cards']} card(s)")
             if result.get("jump_link"):
                 print(f"    {result['jump_link']}")
+    if args.index:
+        index_results = publish_learning_index(tracker, chapters, apply=args.apply)
+        print(f"Learning index: {len(index_results)} chapter table(s) {'published' if args.apply else 'planned'}.")
     mode = "Applied" if args.apply else "Dry run - no Discord changes made; pass --apply to publish"
     print(f"{mode}. {total_cards} card(s) across {len(chapters)} chapter(s).")
     return 0

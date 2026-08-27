@@ -17,7 +17,10 @@ class FakeTracker:
         self.posted: list[tuple[str, str, str]] = []
 
     def _request(self, method, path):
-        return [{"id": self.channel_id, "name": index.chapter_channel_name(1)}]
+        return [
+            {"id": self.channel_id, "name": index.chapter_channel_name(1)},
+            {"id": "learning-index", "name": "learning-index"},
+        ]
 
     def upsert_singleton_message(self, channel_id, content, search_token):
         self.posted.append((channel_id, content, search_token))
@@ -133,3 +136,48 @@ def test_real_chapter_lesson_numbers_are_sequential_starting_at_one():
         module = pub.load_chapter(chapter)
         numbers = [lesson.lesson_number for lesson in module.LESSONS]
         assert numbers == list(range(1, len(numbers) + 1))
+
+
+def test_every_real_lesson_has_complete_search_and_navigation_metadata():
+    for chapter in range(1, 44):
+        for lesson in pub.load_chapter(chapter).LESSONS:
+            assert lesson.title.strip()
+            assert lesson.topics
+            assert lesson.keywords
+            assert lesson.related_concepts
+
+
+def test_every_related_lesson_id_exists_in_the_complete_curriculum():
+    all_lessons = {
+        index.lesson_id(chapter, lesson.lesson_number)
+        for chapter in range(1, 44)
+        for lesson in pub.load_chapter(chapter).LESSONS
+    }
+    for chapter in range(1, 44):
+        for lesson in pub.load_chapter(chapter).LESSONS:
+            assert set(lesson.related_concepts) <= all_lessons
+
+
+def test_chapter_topic_index_lists_every_numbered_lesson_in_order():
+    module = pub.load_chapter(1)
+    content = pub.chapter_topic_index_text(1, list(module.LESSONS))
+    assert "Chapter 01 — Definitions" in content
+    for lesson in module.LESSONS:
+        assert f"Topic {lesson.lesson_number}:" in content
+        assert f"`LC-01-{lesson.lesson_number:02d}`" in content
+
+
+def test_all_chapter_topic_indexes_fit_one_discord_message():
+    for chapter in range(1, 44):
+        content = pub.chapter_topic_index_text(chapter, list(pub.load_chapter(chapter).LESSONS))
+        assert len(content) <= 2_000
+
+
+def test_publish_learning_index_uses_one_card_per_selected_chapter(db):
+    tracker = FakeTracker()
+    results = pub.publish_learning_index(tracker, [1], apply=True)
+    assert results == [{"chapter": 1, "applied": True, "topics": 9}]
+    assert len(tracker.posted) == 1
+    _, content, token = tracker.posted[0]
+    assert token == "LC-LEARNING-INDEX-01"
+    assert "Topic 9:" in content

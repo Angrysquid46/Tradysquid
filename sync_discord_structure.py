@@ -418,21 +418,14 @@ logic neither side can see into. Every trade either one makes is recorded
 through the same neutral, shared scorekeeper, so #axiom-dashboard,
 #blacktide-dashboard, and the combined #blacktide-vs-claude scoreboard are
 always describing real, audited paper trades - never a simulation of one.""",
-    "learning-index": """# Complete Learning Center
-Use the numbered channels in order, or jump directly to the topic you need.
+    "learning-index": """# Complete Learning Center — 43-Chapter Options Curriculum
+Each card below is one chapter. Every chapter lists **Topic 1 through its final
+numbered topic** and links to its own `#lc-…` channel. Start with Chapter 01
+and work forward, or use `/learn topic:` to jump directly to a concept.
 
-**Foundations:** #01-market-basics → #02-options-basics → #03-option-chain
-**Pricing:** #04-pricing-and-greeks → #05-volatility
-**Analysis:** #06-charts → #07-technical-analysis
-**Structures:** #08-strategies → #09-spreads
-**Risk and execution:** #10-risk-management → #11-trade-management
-**Lifecycle:** #12-expiration-assignment → #13-events-and-catalysts
-**Improvement:** #14-psychology-journaling → #15-backtesting-stats
-**Real-world rules:** #16-taxes-and-rules → #17-scams-and-myths
-
-Use #examples-and-reviews for walkthroughs and `/ask question:` or
-`/explain topic:` in #ask-tradebot for definitions. Master maximum loss,
-liquidity, and expiration behavior before worrying about clever strategies.""",
+This is education, not personalized financial advice. Options can lose the
+entire premium and some strategies can create assignment or larger loss risk.
+Understand the risk, liquidity, and expiration rules before trading.""",
     "01-market-basics": """# Market and Stock Basics
 Learn what you are trading before adding leverage.
 
