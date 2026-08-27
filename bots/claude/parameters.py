@@ -143,6 +143,15 @@ _SHARED_POSITION_SPECS: dict[str, tuple[float, float, float]] = {
     "stop_loss_pct": (0.03, -0.35, -0.15),
 }
 
+# Exported so evolution.py's extreme-drought loosening (owner directive
+# 2026-08-27: a hypothesis that can only ever walk back to its ORIGINAL
+# default has no answer for a structurally quiet session where even the
+# default is too strict - "you win contests with 0 work" was a fair call
+# on that gap) knows which fields are position MECHANICS (what happens
+# once a trade fires) versus entry GATES (whether one ever can) - only
+# the latter get pushed past their normal floor under sustained drought.
+SHARED_POSITION_KEYS = frozenset(_SHARED_POSITION_SPECS.keys())
+
 MUTATION_SPECS: dict[str, dict[str, tuple[float, float, float]]] = {
     "trend_continuation": {
         "min_trend_strength_level": (1, 2, 3),

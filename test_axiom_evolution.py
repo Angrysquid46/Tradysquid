@@ -6,6 +6,8 @@ disabling once every tunable parameter is already at its bound."""
 
 from __future__ import annotations
 
+import json
+
 import pytest
 import scoreboard
 
@@ -454,3 +456,122 @@ def test_drought_uses_the_most_recent_attributed_trade_not_just_seed_time(tmp_pa
 
     assert applied == []
     assert evolution.get_hypothesis_params(conn, "trend_continuation") == tightened
+
+
+# --- loosen_extreme_drought: past-the-default tier -------------------------
+# Owner directive 2026-08-27 ("you win contests with 0 work"): a fair call
+# on a real gap - ordinary drought loosening can only ever walk a field
+# back to its ORIGINAL default, which is no answer once the default
+# itself is too strict for a genuinely quiet session (real example:
+# relative_volume 0.48 against every hypothesis's 1.2-1.4x floor).
+
+def _backdate(conn, name, hours_ago_iso="2020-01-01T00:00:00-05:00"):
+    conn.execute("UPDATE hypothesis_state SET updated_at=? WHERE name=?", (hours_ago_iso, name))
+    conn.commit()
+
+
+def test_extreme_drought_does_nothing_before_ordinary_loosening_is_exhausted(tmp_path):
+    """A hypothesis still at its normal default has real room for
+    ordinary loosen_starved_hypotheses to use first - extreme must not
+    jump the queue."""
+    conn = _evo_conn(tmp_path)
+    # Tighten trend_continuation once so ordinary drought has somewhere
+    # to go, then back-date past even the EXTREME threshold - if the
+    # tiering is wrong, extreme would fire instead of/alongside ordinary.
+    defaults = evolution.get_hypothesis_params(conn, "trend_continuation")
+    specs = MUTATION_SPECS["trend_continuation"]
+    tightened, _ = evolution._tighten(defaults, specs)
+    conn.execute(
+        "UPDATE hypothesis_state SET params_json=? WHERE name=?",
+        (json.dumps(tightened), "trend_continuation"),
+    )
+    conn.commit()
+    _backdate(conn, "trend_continuation")
+
+    applied = evolution.loosen_extreme_drought(
+        conn, log_path=None, extreme_drought_hours=evolution.EXTREME_DROUGHT_HOURS
+    )
+
+    assert applied == []  # ordinary loosening hasn't run yet - not at the normal loose bound
+
+
+def test_extreme_drought_pushes_entry_gates_past_the_normal_default(tmp_path):
+    conn = _evo_conn(tmp_path)
+    # Fresh-seeded rows already sit at the normal default (ordinary
+    # loosening has nothing to do) - only the drought clock needs
+    # pushing past EXTREME_DROUGHT_HOURS.
+    _backdate(conn, "trend_continuation")
+
+    applied = evolution.loosen_extreme_drought(conn, log_path=None)
+
+    assert len(applied) == 1
+    event = applied[0]
+    assert event["hypothesis"] == "trend_continuation"
+    assert event["event"] == "LOOSENED_EXTREME_DROUGHT"
+    after = evolution.get_hypothesis_params(conn, "trend_continuation")
+    # relative_volume_min: default 1.2, step 0.2 -> pushed to 1.0
+    assert after["relative_volume_min"] == pytest.approx(1.0)
+    # min_ma_stack_agreement: default 2, step 1 -> pushed to 1
+    assert after["min_ma_stack_agreement"] == 1
+    # min_trend_strength_level: default 2, step 1 -> pushed to 1
+    assert after["min_trend_strength_level"] == 1
+
+
+def test_extreme_drought_never_touches_position_mechanics_fields(tmp_path):
+    """delta/premium/profit/stop govern what happens once a trade fires,
+    not whether one ever can - extreme drought must leave them exactly at
+    their normal default, not push them past it too."""
+    conn = _evo_conn(tmp_path)
+    before = evolution.get_hypothesis_params(conn, "mean_reversion_extreme")
+    _backdate(conn, "mean_reversion_extreme")
+
+    applied = evolution.loosen_extreme_drought(conn, log_path=None)
+
+    assert len(applied) == 1
+    after = evolution.get_hypothesis_params(conn, "mean_reversion_extreme")
+    for key in ("delta_min", "delta_max", "premium_cap_usd", "profit_target_pct", "stop_loss_pct"):
+        assert after[key] == before[key], key
+
+
+def test_extreme_drought_applies_at_most_one_step_past_default(tmp_path):
+    """Repeated calls (simulating the drought persisting indefinitely)
+    must not keep walking the field further and further - exactly one
+    step past default, then a genuine no-op forever after."""
+    conn = _evo_conn(tmp_path)
+    _backdate(conn, "trend_continuation")
+
+    first = evolution.loosen_extreme_drought(conn, log_path=None)
+    assert len(first) == 1
+    after_first = evolution.get_hypothesis_params(conn, "trend_continuation")
+
+    second = evolution.loosen_extreme_drought(conn, log_path=None)
+    assert second == []
+    assert evolution.get_hypothesis_params(conn, "trend_continuation") == after_first
+
+
+def test_ordinary_drought_loosening_does_not_claw_back_an_extreme_loosened_value(tmp_path):
+    """The interaction bug this suite exists to prevent: once extreme
+    drought pushes a field past the normal default, ordinary
+    loosen_starved_hypotheses must recognize it as already loose enough
+    and leave it alone - not snap it back up to the normal default via
+    _loosen()'s own max(lower, ...) clamp."""
+    conn = _evo_conn(tmp_path)
+    _backdate(conn, "trend_continuation")
+    evolution.loosen_extreme_drought(conn, log_path=None)
+    extreme_state = evolution.get_hypothesis_params(conn, "trend_continuation")
+    assert extreme_state["relative_volume_min"] == pytest.approx(1.0)  # sanity: extreme step landed
+
+    applied = evolution.loosen_starved_hypotheses(conn, log_path=None, drought_hours=evolution.DROUGHT_HOURS)
+
+    assert applied == []
+    after = evolution.get_hypothesis_params(conn, "trend_continuation")
+    assert after["relative_volume_min"] == pytest.approx(1.0)  # NOT clawed back to 1.2
+
+
+def test_extreme_drought_respects_a_hypothesis_with_no_non_shared_fields():
+    """A hypothesis whose entire MUTATION_SPECS is position-mechanics
+    fields (none exist today, but _extreme_specs must degrade to a
+    genuine no-op rather than erroring) - guards _extreme_specs directly."""
+    specs = MUTATION_SPECS["trend_continuation"]
+    shared_only = {k: v for k, v in specs.items() if k in evolution.SHARED_POSITION_KEYS}
+    assert evolution._extreme_specs(shared_only) == {}
