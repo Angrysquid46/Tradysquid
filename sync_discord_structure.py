@@ -418,7 +418,8 @@ logic neither side can see into. Every trade either one makes is recorded
 through the same neutral, shared scorekeeper, so #axiom-dashboard,
 #blacktide-dashboard, and the combined #blacktide-vs-claude scoreboard are
 always describing real, audited paper trades - never a simulation of one.""",
-    "learning-index": """# Complete Learning Center — 43-Chapter Options Curriculum
+    "learning-index": """# Complete Learning Center
+## 43-Chapter Options Curriculum
 Each card below is one chapter. Every chapter lists **Topic 1 through its final
 numbered topic** and links to its own `#lc-…` channel. Start with Chapter 01
 and work forward, or use `/learn topic:` to jump directly to a concept.
