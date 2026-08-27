@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-27T10:54:00-05:00",
+  "last_updated": "2026-08-27T11:45:00-05:00",
   "branch": "main",
-  "observed_head_at_write": "122a443eda62aec2576d7f6c5cbe00223a5bea88",
-  "commit_subject": "Merge pull request #365 from Angrysquid46/codex/record-live-repair-completion-20260827",
+  "observed_head_at_write": "9433bce78499f05814d442499b0b7c35bdbe962c",
+  "commit_subject": "Allow BLACKTIDE launch on current deployment state",
   "current_phase": "15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
