@@ -19,13 +19,12 @@ STARTUP_GRACE = timedelta(minutes=20)
 
 REQUIRED_JOBS = (
     "self-diagnostics",
-    "premarket-visibility",
-    "managed-ticker-news",
-    "managed-ticker-information",
-    "outcome-learning",
-    "system-activity",
+    "provider-event-queue",
+    "spy-market-data-capture",
+    "active-premarket",
     "active-market-regime",
     "intraday-chart-refresh",
+    "competition-surfaces",
 )
 
 
@@ -46,7 +45,7 @@ def _latest_receipt(connection: Any, name: str) -> dict[str, Any] | None:
 
 def _market_open() -> bool:
     try:
-        return bool(diagnostics.spy_scanner.market_is_open_now()[0])
+        return bool(diagnostics.market_data.market_is_open_now()[0])
     except Exception:
         return False
 

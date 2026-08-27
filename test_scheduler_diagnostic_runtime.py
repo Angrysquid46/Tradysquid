@@ -24,6 +24,20 @@ class FakeJob:
 
 
 class SchedulerDiagnosticRuntimeTests(unittest.TestCase):
+    def test_required_jobs_match_the_current_live_scheduler_contract(self) -> None:
+        self.assertEqual(
+            scheduler_runtime.REQUIRED_JOBS,
+            (
+                "self-diagnostics",
+                "provider-event-queue",
+                "spy-market-data-capture",
+                "active-premarket",
+                "active-market-regime",
+                "intraday-chart-refresh",
+                "competition-surfaces",
+            ),
+        )
+
     def connection(self):
         connection = sqlite3.connect(":memory:")
         connection.row_factory = sqlite3.Row
