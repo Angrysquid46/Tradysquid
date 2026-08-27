@@ -1,5 +1,19 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-26T21:50:11.249768-05:00"
+  "active": true,
+  "work_id": "2eb1b639-bb35-4d23-8db2-a99b564298b1",
+  "actor": "Codex",
+  "task": "Make BLACKTIDE run the current weekday RTH session automatically",
+  "method": "Replace date-pinned launch behavior with current-session scheduling and verify a live current-day process",
+  "started_at": "2026-08-27T09:02:32.786292-05:00",
+  "starting_commit": "dbe6049841360e6f5738fed90b2382fa37820e11",
+  "process_id": 10300,
+  "owner_request": "",
+  "before_state": "",
+  "reason": "",
+  "intended_scope": "",
+  "expected_effects": "",
+  "required_tests": "",
+  "risks": "",
+  "next_safe_action_if_interrupted": "",
+  "phase": null
 }
