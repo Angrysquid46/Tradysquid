@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-27T18:27:05.032839-05:00",
-  "branch": "codex/retire-rivalry-system",
-  "observed_head_at_write": "926461f9c6c263acff540959bacd234c7a8d790e",
-  "commit_subject": "Retire Discord rivalry automation",
+  "last_updated": "2026-08-27T18:39:57.6045528-05:00",
+  "branch": "main",
+  "observed_head_at_write": "d158319581c3cd857035a7c5e546d47f16241b41",
+  "commit_subject": "Merge pull request #375 from Angrysquid46/codex/retire-rivalry-system",
   "current_phase": "15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
