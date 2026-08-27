@@ -232,6 +232,13 @@ def deploy_if_needed(*, force: bool = False) -> bool:
                 "workflow-log",
             )
             return True
+        supervisor.write_state(
+            last_update_status="UP_TO_DATE",
+            last_update_detail=f"{local[:12]} matches origin/main",
+            deployed_sha=local,
+            local_sha=local,
+            last_remote_sha=remote,
+        )
         return False
 
     try:
