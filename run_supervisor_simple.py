@@ -197,6 +197,41 @@ def deploy_if_needed(*, force: bool = False) -> bool:
         supervisor.write_state(last_update_status="FETCH_FAILED", last_update_detail=str(exc))
         return False
     if remote == local and not force:
+        # A Git client or an operator can fast-forward the shared checkout
+        # outside this process.  In that case the files match origin/main,
+        # but the managed services can still be executing the older loaded
+        # modules.  Reconcile the recorded deployed version before treating
+        # the checkout as a no-op, so the main loop performs one controlled
+        # restart after validating the already-present code.
+        state = supervisor.state_payload()
+        deployed = str(state.get("deployed_sha") or "")
+        if deployed and not local.startswith(deployed):
+            valid, validation_detail = validate_checkout()
+            if not valid:
+                supervisor.write_state(
+                    last_update_status="RECONCILIATION_FAILED",
+                    last_update_detail=validation_detail,
+                )
+                return False
+            supervisor.write_state(
+                last_update_status="DEPLOYED",
+                last_update_detail=(
+                    "Reconciled externally fast-forwarded main checkout. "
+                    + validation_detail
+                )[:1600],
+                rollback_result="NOT_NEEDED",
+                deployed_sha=local,
+                local_sha=local,
+                last_known_working_sha=local,
+                last_deployment_finished_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                discord_results=[],
+            )
+            supervisor.discord_post(
+                "✅ **Tradysquid code reconciliation validated**\n"
+                f"Restarting services on `{local[:12]}`.",
+                "workflow-log",
+            )
+            return True
         return False
 
     try:
