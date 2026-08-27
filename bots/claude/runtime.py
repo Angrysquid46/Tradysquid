@@ -329,11 +329,18 @@ def evolve_job(connection) -> str:
     hypothesis with zero trades can never reach MIN_SAMPLE_BEFORE_EVOLVE,
     so fitness-based evolution alone could never touch it; the drought
     path is what keeps a hypothesis that simply never fires from staying
-    frozen at its original strictness forever. No live Tradier calls -
-    reads only already-recorded scoreboard/attribution data."""
+    frozen at its original strictness forever. Owner directive 2026-08-27
+    ("you win contests with 0 work"): loosen_starved_hypotheses alone can
+    only walk a field back to its ORIGINAL default, which is no answer on
+    a session quiet enough that even the default is too strict -
+    evolution.loosen_extreme_drought is the second tier, pushing entry
+    gates one further step past default once ordinary loosening has
+    nowhere left to go and the drought has doubled. No live Tradier calls
+    - reads only already-recorded scoreboard/attribution data."""
     evo_conn = evolution.connect_db()
     applied = evolution.update_fitness_and_evolve(evo_conn)
     applied += evolution.loosen_starved_hypotheses(evo_conn)
+    applied += evolution.loosen_extreme_drought(evo_conn)
     if not applied:
         return "no hypothesis had enough sample/negative fitness to evolve, and none in drought"
     return f"{len(applied)} hypothesis evolution step(s) applied: " + ", ".join(

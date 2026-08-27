@@ -27,7 +27,12 @@ import scoreboard
 
 from bots.claude import hypotheses
 from bots.claude.decision import EntryDecision
-from bots.claude.parameters import HYPOTHESIS_DEFAULTS, MIN_SAMPLE_BEFORE_EVOLVE, MUTATION_SPECS
+from bots.claude.parameters import (
+    HYPOTHESIS_DEFAULTS,
+    MIN_SAMPLE_BEFORE_EVOLVE,
+    MUTATION_SPECS,
+    SHARED_POSITION_KEYS,
+)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "state" / "axiom_evolution.db"
@@ -269,9 +274,21 @@ def _loosen(params: dict[str, float], specs: dict[str, tuple[float, float, float
 
 
 def _all_at_loose_bound(params: dict[str, float], specs: dict[str, tuple[float, float, float]]) -> bool:
+    """True once every field is AT OR PAST its loose bound - not just
+    exactly equal to it. Exact equality alone would be a real bug once
+    loosen_extreme_drought exists: after it pushes a field past the
+    normal default, plain loosen_starved_hypotheses would see
+    params[key] != default, wrongly conclude there's still room to
+    loosen, call _loosen() with the NORMAL specs, and _loosen()'s own
+    max(lower, ...) clamp would snap the value straight back up to the
+    normal default - silently undoing the extreme step every cycle."""
     for key, (step, lower, upper) in specs.items():
+        value = params.get(key)
+        if value is None:
+            return False
         bound = lower if step > 0 else upper
-        if params.get(key) != bound:
+        past = value <= bound if step > 0 else value >= bound
+        if not past:
             return False
     return True
 
@@ -399,6 +416,84 @@ def loosen_starved_hypotheses(
         connection.commit()
         event = {
             "event": "LOOSENED_DROUGHT", "hypothesis": name,
+            "hours_since_signal": hours, "changes": changes,
+        }
+        _log_event(event, log_path)
+        applied.append(event)
+    return applied
+
+
+# Owner directive 2026-08-27 ("you win contests with 0 work"): a fair call
+# on a real gap - loosen_starved_hypotheses above can only ever walk a
+# field back to its ORIGINAL DEFAULT, never past it. On a genuinely quiet
+# session (today: relative_volume 0.48, less than half of the 1.2-1.4x
+# floor every hypothesis requires by default), the default itself is the
+# thing standing between AXIOM and any trade at all, and ordinary drought
+# loosening has nowhere left to go once it hits that floor. Extreme
+# drought is the second tier: after TWICE the ordinary drought window with
+# still nothing fired AND ordinary loosening already exhausted, entry
+# GATES (not position mechanics - delta/premium/profit/stop still stay at
+# their normal bound, since those govern what happens once a trade fires,
+# not whether one ever can) get pushed one further deterministic step past
+# their default, bounded, logged, still fully reversible in spirit (a
+# later win streak's LOOSENED_PROFITABLE/ordinary drought path both still
+# operate off the SAME normal specs, so nothing here is a permanent
+# ratchet on the rest of the system).
+EXTREME_DROUGHT_HOURS = DROUGHT_HOURS * 2.0
+
+
+def _extreme_specs(specs: dict[str, tuple[float, float, float]]) -> dict[str, tuple[float, float, float]]:
+    """One more deterministic step past each entry-gating field's normal
+    loose bound (never touches SHARED_POSITION_KEYS). Same step size, so
+    'how far past default' is exactly as deliberate a choice as every
+    other bound in this file, not an arbitrary multiplier."""
+    extreme: dict[str, tuple[float, float, float]] = {}
+    for key, (step, lower, upper) in specs.items():
+        if key in SHARED_POSITION_KEYS:
+            continue
+        if step > 0:
+            extreme[key] = (step, lower - step, upper)
+        else:
+            extreme[key] = (step, lower, upper - step)
+    return extreme
+
+
+def loosen_extreme_drought(
+    connection: sqlite3.Connection,
+    log_path: Path | None = LOG_PATH,
+    extreme_drought_hours: float = EXTREME_DROUGHT_HOURS,
+) -> list[dict[str, Any]]:
+    """The second tier past loosen_starved_hypotheses: only engages once
+    ordinary loosening has nothing left to do (_all_at_loose_bound is
+    already true for the hypothesis's full normal specs) AND the drought
+    has persisted past `extreme_drought_hours`. Only entry-gating fields
+    move; delta/premium/profit/stop are untouched. Bounded to exactly one
+    step past default per field, never re-applied once that step has
+    already been taken (checked via _all_at_loose_bound against the
+    extreme specs)."""
+    applied: list[dict[str, Any]] = []
+    for name in get_enabled_hypotheses(connection):
+        hours = _hours_since_last_signal(connection, name)
+        if hours < extreme_drought_hours:
+            continue
+        state = get_hypothesis_state(connection, name)
+        params = _merge_with_defaults(name, json.loads(state["params_json"]))
+        specs = MUTATION_SPECS[name]
+        if not _all_at_loose_bound(params, specs):
+            continue  # ordinary drought loosening still has room - let it go first
+        extreme = _extreme_specs(specs)
+        if not extreme or _all_at_loose_bound(params, extreme):
+            continue
+        new_params, changes = _loosen(params, extreme)
+        if not changes:
+            continue
+        connection.execute(
+            "UPDATE hypothesis_state SET params_json=?, generation=generation+1, updated_at=? WHERE name=?",
+            (json.dumps(new_params), _now_iso(), name),
+        )
+        connection.commit()
+        event = {
+            "event": "LOOSENED_EXTREME_DROUGHT", "hypothesis": name,
             "hours_since_signal": hours, "changes": changes,
         }
         _log_event(event, log_path)
