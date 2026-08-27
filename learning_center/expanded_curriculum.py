@@ -24,13 +24,14 @@ class Supplement:
     risks: str
 
 
-def _lesson(number: int, spec: Supplement) -> Lesson:
+def _lesson(chapter: int, number: int, spec: Supplement) -> Lesson:
+    """Build a remediation lesson with its immediate study prerequisite."""
     return Lesson(
         lesson_number=number,
         title=spec.title,
         topics=spec.topics,
         keywords=spec.topics,
-        related_concepts=(),
+        related_concepts=(f"LC-{chapter:02d}-{number - 1:02d}",),
         sections=(
             Section("Mechanics and purpose", spec.mechanics),
             Section("Selection and decision process", spec.decision),
@@ -41,7 +42,10 @@ def _lesson(number: int, spec: Supplement) -> Lesson:
 
 
 def supplement_lessons(chapter: int, first_number: int) -> list[Lesson]:
-    return [_lesson(first_number + offset, spec) for offset, spec in enumerate(SUPPLEMENTS.get(chapter, ()))]
+    return [
+        _lesson(chapter, first_number + offset, spec)
+        for offset, spec in enumerate(SUPPLEMENTS.get(chapter, ()))
+    ]
 
 
 SUPPLEMENTS: dict[int, tuple[Supplement, ...]] = {
