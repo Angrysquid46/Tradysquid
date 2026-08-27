@@ -293,3 +293,23 @@ def public_rivalry_history(
         record["callbacks_used"] = json.loads(record.pop("callbacks_used_json"))
         results.append(record)
     return results
+
+
+def record_discord_message_id(
+    connection: sqlite3.Connection, *, rivalry_event_id: str, discord_message_id: str
+) -> None:
+    """Attach the idempotent Discord receipt for one already-verified event.
+
+    The official event is written before any network call.  Recording the
+    resulting message ID lets presentation retry safely without turning an
+    event history into a repeatedly reposted wall of text.
+    """
+    if not rivalry_event_id or not discord_message_id:
+        raise ValueError("rivalry_event_id and discord_message_id are required")
+    result = connection.execute(
+        "UPDATE rivalry_events SET discord_message_id=? WHERE rivalry_event_id=?",
+        (discord_message_id, rivalry_event_id),
+    )
+    if result.rowcount != 1:
+        raise ValueError(f"Unknown rivalry event: {rivalry_event_id!r}")
+    connection.commit()

@@ -14,6 +14,7 @@ import scoreboard
 
 CHANNEL_NAME = "blacktide-vs-claude"
 CHART_DIR = Path(__file__).resolve().parent / "docs" / "tickers"
+LEGACY_RIVALRY_TOKEN = "TSQ-COMPETITION-RIVALRY"
 
 
 def render_scoreboard(connection: Any) -> str:
@@ -30,15 +31,13 @@ def render_scoreboard(connection: Any) -> str:
     return "\n".join(lines)
 
 
-def render_rivalry(score_connection: Any, rivalry_connection: Any) -> str:
-    """Render only rivalry claims which can be tied to the referee.
+def _verified_rivalry_events(score_connection: Any, rivalry_connection: Any) -> list[dict[str, Any]]:
+    """Return public events whose trade claims have referee proof.
 
-    Presentation must never revive an old test/demo message as if it were
-    a live result.  Any record that carries a trade reference is shown only
-    when that exact immutable, closed trade exists for the named speaker.
-    General session messages without a reference remain allowed.
+    Presentation must never revive an old test/demo message as if it were a
+    live result. Any event with a trade reference is shown only when that
+    exact immutable, closed trade exists for the named speaker.
     """
-    lines = ["## BLACKTIDE vs AXIOM — Rivalry"]
     verified: list[dict[str, Any]] = []
     for item in rivalry.public_rivalry_history(rivalry_connection, limit=50):
         reference = str(item.get("trade_reference") or "").strip()
@@ -50,11 +49,37 @@ def render_rivalry(score_connection: Any, rivalry_connection: Any) -> str:
             if row is None:
                 continue
         verified.append(item)
-    for item in reversed(verified[:12]):
-        lines.append(f"**{item['speaker']}** · {item['message']}")
-    if len(lines) == 1:
-        lines.append("No official rivalry events yet.")
-    return "\n".join(lines)
+    return verified
+
+
+def render_rivalry(score_connection: Any, rivalry_connection: Any) -> str:
+    """Render a compact status, never a historical receipt wall.
+
+    Each verified rivalry event has its own Discord card.  This compact value
+    remains useful to the scheduler fingerprint without cramming history into
+    one edited message.
+    """
+    verified = _verified_rivalry_events(score_connection, rivalry_connection)
+    awaiting = sum(not str(item.get("discord_message_id") or "").strip() for item in verified)
+    if not verified:
+        return "## BLACKTIDE vs AXIOM — Rivalry\nNo official rivalry events yet."
+    return (
+        "## BLACKTIDE vs AXIOM — Rivalry\n"
+        f"{len(verified)} verified event cards · {awaiting} awaiting publication."
+    )
+
+
+def render_rivalry_event(item: dict[str, Any]) -> str:
+    """Render one verifiable rivalry event as one readable Discord card."""
+    timestamp = datetime.fromisoformat(str(item["timestamp"])).strftime("%b %d, %Y %I:%M %p")
+    outcome = "Verified win" if item["trigger"] == "TRADE_CLOSED_WIN" else "Verified loss"
+    return "\n".join((
+        "## BLACKTIDE vs AXIOM",
+        f"### {item['speaker']} — {outcome}",
+        item["message"],
+        "### Referee receipt",
+        f"Official paper close verified · {timestamp}",
+    ))
 
 
 def _channel_id(tracker: discord_transport.DiscordTracker) -> str:
@@ -65,6 +90,20 @@ def _channel_id(tracker: discord_transport.DiscordTracker) -> str:
             f"expected exactly one #{CHANNEL_NAME} channel, found {len(matches)}"
         )
     return matches[0]
+
+
+def _remove_legacy_rivalry_wall(tracker: discord_transport.DiscordTracker, channel_id: str) -> int:
+    """Delete the retired history-wall card; individual event cards replace it."""
+    messages = tracker._request("GET", f"/channels/{channel_id}/messages?limit=100")
+    removed = 0
+    for message in messages if isinstance(messages, list) else []:
+        if LEGACY_RIVALRY_TOKEN not in discord_transport.message_search_text(message):
+            continue
+        message_id = str(message.get("id") or "")
+        if message_id:
+            tracker._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
+            removed += 1
+    return removed
 
 
 _BOT_CHANNEL_ID_CACHE: dict[str, str] = {}
@@ -384,10 +423,7 @@ def publish_competition_surfaces(
     published: list[str] = []
     try:
         channel_id = _channel_id(tracker)
-        cards = (
-            ("competition-scoreboard-card", render_scoreboard(score_connection), "TSQ-COMPETITION-SCOREBOARD"),
-            ("competition-rivalry-card", render_rivalry(score_connection, rivalry_connection), "TSQ-COMPETITION-RIVALRY"),
-        )
+        cards = (("competition-scoreboard-card", render_scoreboard(score_connection), "TSQ-COMPETITION-SCOREBOARD"),)
         for surface_id, body, token in cards:
             message_id, _ = tracker.upsert_singleton_message(channel_id, body, token)
             surfaces.record_surface_event(
@@ -395,6 +431,24 @@ def publish_competition_surfaces(
                 detail=f"message_id={message_id}",
             )
             published.append(surface_id)
+        _remove_legacy_rivalry_wall(tracker, channel_id)
+        for event in reversed(_verified_rivalry_events(score_connection, rivalry_connection)):
+            if str(event.get("discord_message_id") or "").strip():
+                continue
+            event_id = str(event["rivalry_event_id"])
+            message_id, _ = tracker.upsert_singleton_message(
+                channel_id, render_rivalry_event(event), f"TSQ-RIVALRY-{event_id}"
+            )
+            rivalry.record_discord_message_id(
+                rivalry_connection,
+                rivalry_event_id=event_id,
+                discord_message_id=message_id,
+            )
+            surfaces.record_surface_event(
+                surface_connection, surface_id="competition-rivalry-card", event_type="PUBLISH",
+                detail=f"event_id={event_id}; message_id={message_id}",
+            )
+            published.append(f"competition-rivalry-card:{event_id}")
         result.update(ok=True, published=tuple(published))
     except Exception as exc:  # presentation failure must remain isolated
         for surface_id in ("competition-scoreboard-card", "competition-rivalry-card"):

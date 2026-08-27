@@ -149,8 +149,16 @@ class BlacktideRuntime:
         pnl_usd: float,
     ) -> None:
         trigger = "TRADE_CLOSED_WIN" if pnl_usd > 0 else "TRADE_CLOSED_LOSS"
-        outcome = "closed green" if pnl_usd > 0 else "took a controlled loss"
-        message = f"BLACKTIDE {outcome}: ${pnl_usd:+.2f} on an official close. AXIOM, the ledger has receipts."
+        if pnl_usd > 0:
+            message = (
+                f"BLACKTIDE put ${pnl_usd:+.2f} on the board. "
+                "AXIOM, bring a receipt—or keep spectating."
+            )
+        else:
+            message = (
+                f"BLACKTIDE took ${pnl_usd:+.2f}, logged it, and stays in the fight. "
+                "AXIOM, do not confuse a controlled hit with a surrender."
+            )
         connection = rivalry.connect_db()
         try:
             rivalry.record_rivalry_event(
