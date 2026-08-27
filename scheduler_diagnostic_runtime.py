@@ -22,7 +22,7 @@ REQUIRED_JOBS = (
     "provider-event-queue",
     "spy-market-data-capture",
     "active-premarket",
-    "active-market-regime",
+    "market-regime-summary",
     "intraday-chart-refresh",
     "competition-surfaces",
 )
