@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-27T09:14:52.599165-05:00",
-  "branch": "axiom-fix-stale-hypothesis-params",
-  "observed_head_at_write": "7301b2676da64f0d3efbd67ed9a2a78076a73de0",
-  "commit_subject": "AXIOM: backfill missing hypothesis param keys instead of crashing evolution.py",
+  "last_updated": "2026-08-27T09:27:10.504565-05:00",
+  "branch": "main",
+  "observed_head_at_write": "b97c9280d8e7bac40dc9fece096a1079850b59d5",
+  "commit_subject": "AXIOM: backfill missing hypothesis param keys instead of crashing evolution.py (#357)",
   "current_phase": "15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
