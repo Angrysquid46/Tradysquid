@@ -161,6 +161,17 @@ class TcpOpenRetryTests(unittest.TestCase):
                 self.assertFalse(diagnostics._tcp_open(8876, attempts=3, retry_delay=0.01))
             self.assertEqual(fake_sleep.call_count, 2)
 
+    def test_supervisor_uses_its_fresh_mutex_heartbeat_when_tcp_backlog_is_full(self) -> None:
+        state = {
+            "supervisor": "ONLINE",
+            "supervisor_heartbeat_at": diagnostics.iso_now(),
+            "service_health": {},
+        }
+        with patch.object(diagnostics, "_tcp_open", return_value=False):
+            checks = diagnostics._service_checks(state)
+        supervisor = next(check for check in checks if check.key == "service-supervisor")
+        self.assertTrue(supervisor.passed)
+
 
 class DiagnosticUpgradeSystemTests(unittest.TestCase):
     def setUp(self) -> None:

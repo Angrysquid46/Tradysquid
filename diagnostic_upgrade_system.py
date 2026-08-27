@@ -626,6 +626,18 @@ def _service_checks(state: dict[str, Any]) -> list[HealthCheck]:
     results: list[HealthCheck] = []
     for name, port in CORE_PORTS.items():
         open_now = _tcp_open(port)
+        # Port 8876 is deliberately a single-instance mutex: it listens but
+        # never accepts connections. A socket connect can therefore lose the
+        # tiny backlog race even while the supervisor is healthy. Its own
+        # fresh heartbeat is the authoritative liveness signal; keep the
+        # TCP probe for every actual request-serving service.
+        if name == "supervisor" and not open_now:
+            heartbeat = _parse_time(state.get("supervisor_heartbeat_at"))
+            open_now = bool(
+                state.get("supervisor") == "ONLINE"
+                and heartbeat
+                and now() - heartbeat <= timedelta(minutes=5)
+            )
         optional = name == "ngrok" and not any(
             (ROOT / candidate).exists() for candidate in ("ngrok.exe",)
         )
