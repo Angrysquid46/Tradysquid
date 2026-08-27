@@ -11,6 +11,13 @@ from bots.claude.parameters import HYPOTHESIS_DEFAULTS
 PARAMS = dict(HYPOTHESIS_DEFAULTS["trend_continuation"])
 MID_DAY = datetime(2026, 8, 25, 12, 0, 0)
 
+# Boundary-behavior tests below use explicit literal target/stop values
+# rather than PARAMS - the exact numbers change as parameters.py's real
+# defaults get tuned (2026-08-27: 40%/-35% -> 100%/-20%, a verified real
+# improvement), but should_exit's boundary MATH must stay correct
+# regardless of what today's tuned default happens to be.
+_TARGET_STOP_PARAMS = dict(PARAMS, profit_target_pct=0.40, stop_loss_pct=-0.35)
+
 
 def _trade(entry_price=4.0):
     return {"entry_price": entry_price}
@@ -18,27 +25,27 @@ def _trade(entry_price=4.0):
 
 def test_profit_target_fires_at_or_above_threshold():
     contract = {"bid": 5.61, "ask": 5.62}  # pnl_pct = 0.4025, just past +40%
-    decision = should_exit(_trade(), contract, MID_DAY, PARAMS)
+    decision = should_exit(_trade(), contract, MID_DAY, _TARGET_STOP_PARAMS)
     assert decision.should_exit is True
     assert decision.reason == PROFIT_TARGET
 
 
 def test_no_exit_just_below_profit_target():
     contract = {"bid": 5.59, "ask": 5.60}  # pnl_pct = 0.3975, just short of +40%
-    decision = should_exit(_trade(), contract, MID_DAY, PARAMS)
+    decision = should_exit(_trade(), contract, MID_DAY, _TARGET_STOP_PARAMS)
     assert decision.should_exit is False
 
 
 def test_stop_loss_fires_at_or_below_threshold():
     contract = {"bid": 2.59, "ask": 2.60}  # pnl_pct = -0.3525, past -35%
-    decision = should_exit(_trade(), contract, MID_DAY, PARAMS)
+    decision = should_exit(_trade(), contract, MID_DAY, _TARGET_STOP_PARAMS)
     assert decision.should_exit is True
     assert decision.reason == STOP_LOSS
 
 
 def test_no_exit_just_above_stop_loss():
     contract = {"bid": 2.61, "ask": 2.62}  # pnl_pct = -0.3475, just short of -35%
-    decision = should_exit(_trade(), contract, MID_DAY, PARAMS)
+    decision = should_exit(_trade(), contract, MID_DAY, _TARGET_STOP_PARAMS)
     assert decision.should_exit is False
 
 
