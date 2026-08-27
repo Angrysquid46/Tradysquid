@@ -282,6 +282,81 @@ def test_evolve_skips_hypothesis_below_minimum_sample(tmp_path, monkeypatch):
     assert applied == []
 
 
+# --- stale stored params (a row seeded before a HYPOTHESIS_DEFAULTS field
+# was added must not crash - this happened live 2026-08-27: trend_continuation's
+# stored row predated min_ma_stack_agreement and crashed axiom-evolve) ------
+
+def _drop_key_from_stored_params(conn, name, key):
+    import json as _json
+    row = conn.execute("SELECT params_json FROM hypothesis_state WHERE name=?", (name,)).fetchone()
+    stale = _json.loads(row["params_json"])
+    del stale[key]
+    conn.execute(
+        "UPDATE hypothesis_state SET params_json=? WHERE name=?", (_json.dumps(stale), name)
+    )
+    conn.commit()
+
+
+def test_get_hypothesis_params_backfills_a_field_missing_from_a_stale_row(tmp_path):
+    conn = _evo_conn(tmp_path)
+    _drop_key_from_stored_params(conn, "trend_continuation", "min_ma_stack_agreement")
+
+    params = evolution.get_hypothesis_params(conn, "trend_continuation")
+
+    assert params["min_ma_stack_agreement"] == 2  # HYPOTHESIS_DEFAULTS value, backfilled
+    assert params["min_trend_strength_level"] == 2  # untouched fields still present
+
+
+def test_get_hypothesis_params_prefers_a_real_stored_value_over_the_default(tmp_path):
+    """Backfilling a genuinely missing key must never clobber a value
+    evolution.py has already tuned away from its default for a key that
+    IS present."""
+    conn = _evo_conn(tmp_path)
+    _drop_key_from_stored_params(conn, "trend_continuation", "min_ma_stack_agreement")
+    conn.execute(
+        "UPDATE hypothesis_state SET params_json=json_set(params_json, '$.min_trend_strength_level', 3) "
+        "WHERE name='trend_continuation'"
+    )
+    conn.commit()
+
+    params = evolution.get_hypothesis_params(conn, "trend_continuation")
+
+    assert params["min_trend_strength_level"] == 3  # real stored (evolved) value wins
+    assert params["min_ma_stack_agreement"] == 2  # missing key still backfilled
+
+
+def test_evolve_does_not_crash_on_a_stale_row_missing_a_newer_field(tmp_path, monkeypatch):
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    sb = scoreboard.connect_db()
+    conn = _evo_conn(tmp_path)
+    _drop_key_from_stored_params(conn, "trend_continuation", "min_ma_stack_agreement")
+    _attribute_n_trades(sb, conn, "trend_continuation", [-50.0] * MIN_SAMPLE_BEFORE_EVOLVE, "t")
+
+    applied = evolution.update_fitness_and_evolve(conn, log_path=None)  # must not raise
+
+    assert len(applied) == 1
+    assert applied[0]["event"] == "TIGHTENED"
+    after = evolution.get_hypothesis_params(conn, "trend_continuation")
+    assert "min_ma_stack_agreement" in after
+
+
+def test_drought_does_not_crash_on_a_stale_row_missing_a_newer_field(tmp_path, monkeypatch):
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    conn = _evo_conn(tmp_path)
+    _drop_key_from_stored_params(conn, "trend_continuation", "min_ma_stack_agreement")
+    conn.execute(
+        "UPDATE hypothesis_state SET updated_at=? WHERE name=?",
+        ("2020-01-01T00:00:00-05:00", "trend_continuation"),
+    )
+    conn.commit()
+
+    applied = evolution.loosen_starved_hypotheses(conn, log_path=None, drought_hours=1.0)  # must not raise
+
+    # Already at every loose bound except the backfilled field, which is
+    # ALSO already at its loose default (2) - genuinely nothing to loosen.
+    assert applied == []
+
+
 # --- loosen_starved_hypotheses: drought-based loosening ---------------------
 
 def test_drought_loosens_a_never_fired_hypothesis_past_the_threshold(tmp_path, monkeypatch):

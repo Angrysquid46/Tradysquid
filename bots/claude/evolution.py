@@ -96,13 +96,27 @@ def _ensure_seeded(connection: sqlite3.Connection) -> None:
     connection.commit()
 
 
+def _merge_with_defaults(name: str, stored: dict[str, float]) -> dict[str, float]:
+    """A row seeded before a HYPOTHESIS_DEFAULTS schema change (a new
+    field added to some hypothesis after it was already running live)
+    would otherwise be missing that key forever - _ensure_seeded's
+    ON CONFLICT DO NOTHING never updates an existing row. Every read of
+    stored params goes through this so a newly-added field is present
+    (at its documented default) starting the very next read, not just
+    the next time evolution happens to touch that hypothesis. Stored
+    values always win over defaults for keys both sides have - this only
+    backfills what's genuinely missing, it never reverts a real evolved
+    value back to its default."""
+    return {**HYPOTHESIS_DEFAULTS[name], **stored}
+
+
 def get_hypothesis_params(connection: sqlite3.Connection, name: str) -> dict[str, float]:
     row = connection.execute(
         "SELECT params_json FROM hypothesis_state WHERE name=?", (name,)
     ).fetchone()
     if row is None:
         return dict(HYPOTHESIS_DEFAULTS[name])
-    return json.loads(row["params_json"])
+    return _merge_with_defaults(name, json.loads(row["params_json"]))
 
 
 def get_hypothesis_state(connection: sqlite3.Connection, name: str) -> dict[str, Any]:
@@ -293,7 +307,7 @@ def update_fitness_and_evolve(
         if fitness is None or fitness == 0:
             continue
         state = get_hypothesis_state(connection, name)
-        params = json.loads(state["params_json"])
+        params = _merge_with_defaults(name, json.loads(state["params_json"]))
         specs = MUTATION_SPECS[name]
 
         if fitness < 0:
@@ -371,7 +385,7 @@ def loosen_starved_hypotheses(
         if hours < drought_hours:
             continue
         state = get_hypothesis_state(connection, name)
-        params = json.loads(state["params_json"])
+        params = _merge_with_defaults(name, json.loads(state["params_json"]))
         specs = MUTATION_SPECS[name]
         if _all_at_loose_bound(params, specs):
             continue
