@@ -53,6 +53,15 @@ def test_chapter_channel_names_do_not_collide_with_existing_declared_channels():
         assert all_names.count(name) == 1
 
 
+def test_learning_index_is_a_canonical_learning_center_channel_not_a_retired_legacy_channel():
+    import sync_discord_structure as sds
+
+    matching = [channel for channel in sds.CHANNELS if channel.name == "learning-index"]
+    assert len(matching) == 1
+    assert matching[0].category == "LEARNING CENTER"
+    assert "learning-index" not in sds.DELETE_CHANNELS
+
+
 def test_chapter_channel_name_rejects_out_of_range_chapter():
     with pytest.raises(ValueError, match="Unknown chapter"):
         lc.chapter_channel_name(0)
