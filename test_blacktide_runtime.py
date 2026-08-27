@@ -4,7 +4,9 @@ import pytest
 
 import scoreboard
 import rivalry
+from bots.blacktide import runtime as blacktide_runtime
 from bots.blacktide.runtime import BlacktideRuntime
+from bots.blacktide.engine import Decision
 from bots.blacktide.evolution import EvolutionLoop
 
 
@@ -77,3 +79,15 @@ def test_restart_recovers_later_generation_after_bust(tmp_path, monkeypatch):
     restarted.recover(db)
     assert restarted.engine.generation == 2
     assert restarted.engine.position is None
+
+
+def test_runtime_records_and_coalesces_no_action_audit(tmp_path, monkeypatch):
+    monkeypatch.setattr(blacktide_runtime, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(blacktide_runtime, "DECISION_LOG_PATH", tmp_path / "decision-audit.jsonl")
+    monkeypatch.setattr(blacktide_runtime, "DECISION_STATE_PATH", tmp_path / "decision-audit-state.json")
+    decision = Decision("NO_ACTION", "no approved transition in FAILED_EXPANSION")
+    BlacktideRuntime._record_decision(decision, NOW)
+    BlacktideRuntime._record_decision(decision, NOW + timedelta(minutes=1))
+    lines = (tmp_path / "decision-audit.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert '"action": "NO_ACTION"' in lines[0]

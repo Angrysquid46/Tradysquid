@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 import backtest_lab
 import rivalry
@@ -14,6 +16,9 @@ from .engine import BLACKTIDE, CONTRACT_MULTIPLIER, Decision, Position
 from .evolution import EvolutionLoop, Outcome
 
 SCOREBOARD_BOT = "BLACKTIDE"
+STATE_DIR = Path(__file__).resolve().parents[2] / "state" / "blacktide"
+DECISION_LOG_PATH = STATE_DIR / "decision-audit.jsonl"
+DECISION_STATE_PATH = STATE_DIR / "decision-audit-state.json"
 
 
 class BlacktideRuntime:
@@ -21,6 +26,45 @@ class BlacktideRuntime:
         self.engine = engine or BLACKTIDE()
         self.market_view = market_view or backtest_lab.MarketView("SPY")
         self.evolution = evolution or EvolutionLoop()
+
+    @staticmethod
+    def _record_decision(decision: Decision, as_of: datetime) -> None:
+        """Persist changed decisions, without making audit I/O a trade gate.
+
+        A scanner declining a setup is valid, but it must be explainable.
+        Repeated identical NO_ACTION cycles are coalesced to one record every
+        five minutes; entries/exits/busts are always recorded.
+        """
+        payload = {
+            "observed_at": as_of.isoformat(),
+            "action": decision.action,
+            "reason": decision.reason,
+            "side": decision.side,
+            "contract_symbol": decision.contract_symbol,
+            "price": decision.price,
+            "contracts": decision.contracts,
+            "family": decision.family,
+            "market_state": decision.market_state,
+        }
+        signature = json.dumps({key: payload[key] for key in payload if key != "observed_at"}, sort_keys=True)
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            previous: dict[str, str] = {}
+            if DECISION_STATE_PATH.exists():
+                previous = json.loads(DECISION_STATE_PATH.read_text(encoding="utf-8"))
+            previous_at = datetime.fromisoformat(str(previous.get("observed_at") or "")) if previous.get("observed_at") else None
+            unchanged = previous.get("signature") == signature
+            recent = bool(previous_at and (as_of - previous_at).total_seconds() < 300)
+            if decision.action == "NO_ACTION" and unchanged and recent:
+                return
+            with DECISION_LOG_PATH.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, sort_keys=True) + "\n")
+            temporary = DECISION_STATE_PATH.with_suffix(".tmp")
+            temporary.write_text(json.dumps({"signature": signature, "observed_at": as_of.isoformat()}), encoding="utf-8")
+            temporary.replace(DECISION_STATE_PATH)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            # Audit visibility must not block an otherwise valid paper exit.
+            return
 
     def recover(self, connection: sqlite3.Connection) -> None:
         """Reconstruct private process memory from the authoritative referee."""
@@ -48,6 +92,7 @@ class BlacktideRuntime:
             options=self.market_view.options_as_of(as_of),
             bars=self.market_view.bars_as_of(as_of, lookback_minutes=120),
         )
+        self._record_decision(decision, as_of)
         if decision.action == "ENTER":
             trade_id = f"blacktide-{uuid.uuid4()}"
             scoreboard.record_trade_open(
