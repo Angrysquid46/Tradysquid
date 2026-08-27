@@ -25,6 +25,23 @@ class ExitDecision:
     pnl_pct: float | None = None
 
 
+def force_close_at(now: datetime) -> datetime:
+    return now.replace(hour=FORCE_CLOSE_HOUR, minute=FORCE_CLOSE_MINUTE, second=0, microsecond=0)
+
+
+def past_entry_cutoff(now: datetime) -> bool:
+    """A brand-new 0DTE entry made at/after the force-close time has no
+    real chance to develop before should_exit() force-closes it anyway -
+    it just pays the bid/ask spread for a near-guaranteed small loss.
+    Found live in the real backtest 2026-08-27: 20 of 21 TIME_FORCE_CLOSE
+    trades had opened AFTER this exact cutoff, some over an hour past it -
+    exits.py enforced the cutoff on the exit side, nothing enforced it on
+    the entry side. Same cutoff, opposite direction: entries stop exactly
+    where holds get force-ended, so nothing ever opens with zero runway
+    left to actually move."""
+    return now >= force_close_at(now)
+
+
 def should_exit(
     open_trade: dict[str, Any],
     current_contract: dict[str, Any],
@@ -38,10 +55,7 @@ def should_exit(
     profit_target_pct/stop_loss_pct belong to that hypothesis, not one
     global constant. The force-close time is the one exception: a shared
     safety backstop under whatever target/stop is currently active."""
-    force_close_at = now.replace(
-        hour=FORCE_CLOSE_HOUR, minute=FORCE_CLOSE_MINUTE, second=0, microsecond=0,
-    )
-    if now >= force_close_at:
+    if now >= force_close_at(now):
         return ExitDecision(True, TIME_FORCE_CLOSE)
 
     entry_price = open_trade["entry_price"]

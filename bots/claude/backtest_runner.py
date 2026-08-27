@@ -73,6 +73,8 @@ def _simulate_day(
         causal = backtest_lab.compute_features(window)
 
         if open_trade is None:
+            if exits.past_entry_cutoff(current_dt):
+                continue
             selected = evolution.select_hypothesis(evo_conn, current_price, causal or {}, fitness_fn=local_fitness_fn)
             if selected is None:
                 continue

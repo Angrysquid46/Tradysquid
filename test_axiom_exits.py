@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from bots.claude.exits import PROFIT_TARGET, STOP_LOSS, TIME_FORCE_CLOSE, should_exit
+from bots.claude.exits import PROFIT_TARGET, STOP_LOSS, TIME_FORCE_CLOSE, past_entry_cutoff, should_exit
 from bots.claude.parameters import HYPOTHESIS_DEFAULTS
 
 PARAMS = dict(HYPOTHESIS_DEFAULTS["trend_continuation"])
@@ -63,3 +63,29 @@ def test_force_close_overrides_a_still_open_profit_window():
     decision = should_exit(_trade(), contract, at_boundary, PARAMS)
     assert decision.should_exit is True
     assert decision.reason == TIME_FORCE_CLOSE
+
+
+# --- past_entry_cutoff: found live in the real 2026-08-27 backtest - 20 of
+# 21 TIME_FORCE_CLOSE trades had opened AFTER this exact cutoff, some over
+# an hour past it, paying spread for a near-guaranteed small loss with zero
+# runway to actually move. exits.py enforced the cutoff on exits only;
+# nothing enforced it on entries until now. ---
+
+def test_past_entry_cutoff_false_well_before_boundary():
+    assert past_entry_cutoff(datetime(2026, 8, 25, 10, 0, 0)) is False
+
+
+def test_past_entry_cutoff_false_one_second_before_boundary():
+    assert past_entry_cutoff(datetime(2026, 8, 25, 14, 44, 59)) is False
+
+
+def test_past_entry_cutoff_true_at_the_exact_boundary():
+    """Same boundary should_exit() uses - the two must agree exactly, or a
+    trade could open and be force-closed on the very same tick."""
+    assert past_entry_cutoff(datetime(2026, 8, 25, 14, 45, 0)) is True
+
+
+def test_past_entry_cutoff_true_well_after_boundary():
+    """The exact failure mode found live: an entry over an hour past the
+    cutoff."""
+    assert past_entry_cutoff(datetime(2026, 8, 25, 15, 51, 0)) is True
