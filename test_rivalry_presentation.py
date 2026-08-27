@@ -78,7 +78,7 @@ def test_presentation_redacts_open_trade_and_reconciles_cards(monkeypatch):
     rendered = "\n".join(tracker.cards)
     assert "Position OPEN" in rendered
     assert "SPY-SECRET" not in rendered
-    assert len(result["published"]) == 2
+    assert result["published"] == ("competition-scoreboard-card",)
 
 
 def test_discord_outage_is_returned_and_cannot_touch_official_trade(monkeypatch):
@@ -99,6 +99,40 @@ def test_rivalry_card_hides_a_claim_without_a_matching_closed_trade(monkeypatch)
         public_score_snapshot={"bot": "AXIOM"}, now=__import__("datetime").datetime.now().astimezone(),
     )
     assert "invented win" not in presentation.render_rivalry(score, chat)
+
+
+def test_verified_rivalry_event_posts_one_separate_receipted_card(monkeypatch):
+    score, chat, manifest = _connections(monkeypatch)
+    scoreboard.record_trade_open(
+        score, trade_id="rivalry-close", bot="BLACKTIDE", generation=1,
+        opened_at="2026-08-27T10:00:00-05:00", side="CALL",
+        contract_symbol="SPY260827C00766000", entry_price=1.0,
+        contracts=1, entry_bankroll=1000.0,
+    )
+    scoreboard.record_trade_close(
+        score, trade_id="rivalry-close", closed_at="2026-08-27T10:05:00-05:00",
+        exit_price=1.1, pnl_usd=10.0,
+    )
+    rivalry.record_rivalry_event(
+        chat, rivalry_event_id="rivalry-event", event_group_id="rivalry-close",
+        trigger="TRADE_CLOSED_WIN", speaker="BLACKTIDE", target="AXIOM",
+        message="BLACKTIDE brought a receipt.", trade_reference="rivalry-close",
+        public_score_snapshot=scoreboard.scoreboard_snapshot(score, "BLACKTIDE"),
+        now=__import__("datetime").datetime.now().astimezone(),
+    )
+    tracker = Tracker()
+    first = presentation.publish_competition_surfaces(score, chat, manifest, tracker)
+    second = presentation.publish_competition_surfaces(score, chat, manifest, tracker)
+    event_cards = [card for card in tracker.cards if "BLACKTIDE brought a receipt." in card]
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert len(event_cards) == 1
+    assert "### BLACKTIDE — Verified win" in event_cards[0]
+    assert "Official paper close verified" in event_cards[0]
+    stored = chat.execute(
+        "SELECT discord_message_id FROM rivalry_events WHERE rivalry_event_id='rivalry-event'"
+    ).fetchone()[0]
+    assert stored == "TSQ-RIVALRY-rivalry-event"
 
 
 def test_closed_trade_feed_contains_referee_audit_fields():
