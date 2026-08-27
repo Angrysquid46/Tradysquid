@@ -59,6 +59,15 @@ class FakeEngine:
         self.state[f"observation:{kind}"] = payload
 
 
+class DiscordCheckTests(unittest.TestCase):
+    def test_discord_checks_use_current_transport_not_removed_engine_helper(self) -> None:
+        tracker = FakeTracker([{"id": "1", "name": "workflow-log"}])
+        with patch.object(upgrade_batch_44, "_tracker", return_value=tracker):
+            checks, channels = diagnostics._discord_checks()
+        self.assertEqual(channels["workflow-log"]["id"], "1")
+        self.assertTrue(all(check.passed for check in checks))
+
+
 class MeaningfullyDirtyTests(unittest.TestCase):
     def test_runtime_mutable_paths_are_filtered_out(self) -> None:
         # Real noise caught live: this check was flagging docs/index.html

@@ -736,7 +736,12 @@ def _git_checks(state: dict[str, Any]) -> list[HealthCheck]:
 
 
 def _discord_checks() -> tuple[list[HealthCheck], dict[str, dict[str, Any]]]:
-    tracker = _engine().discord_tracker()
+    # The old scanner-owned ``local_information_engine.discord_tracker``
+    # helper was removed during the clean rebuild.  Dashboard publishers now
+    # construct the narrow Discord transport directly through upgrade_batch_44;
+    # diagnostics must use the same supported path instead of making every
+    # health cycle fail before it can inspect the live guild.
+    tracker = upgrade_batch_44._tracker()
     if not tracker:
         return [
             HealthCheck(

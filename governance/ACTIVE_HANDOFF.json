@@ -1,5 +1,19 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-27T09:14:52.424546-05:00"
+  "active": true,
+  "work_id": "e57c8b80-6194-4ecb-a053-14b86a6acf3e",
+  "actor": "Codex",
+  "task": "Repair verified live deployment-state, diagnostics, and operational-status blockers",
+  "method": "targeted production repair, tests, approved deployment, restart, and live verification",
+  "started_at": "2026-08-27T09:55:20.710225-05:00",
+  "starting_commit": "b97c9280d8e7bac40dc9fece096a1079850b59d5",
+  "process_id": 33800,
+  "owner_request": "",
+  "before_state": "",
+  "reason": "",
+  "intended_scope": "",
+  "expected_effects": "",
+  "required_tests": "",
+  "risks": "",
+  "next_safe_action_if_interrupted": "",
+  "phase": null
 }
