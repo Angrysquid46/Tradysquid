@@ -1,9 +1,9 @@
 {
-  "last_updated": "2026-08-27T18:39:57.6045528-05:00",
+  "last_updated": "2026-08-27T18:45:54.572536-05:00",
   "branch": "main",
-  "observed_head_at_write": "d158319581c3cd857035a7c5e546d47f16241b41",
-  "commit_subject": "Merge pull request #375 from Angrysquid46/codex/retire-rivalry-system",
-  "current_phase": "15",
+  "observed_head_at_write": "9f092502d02978b2737899844be9280cb1071e47",
+  "commit_subject": "Permanently retire legacy rivalry Discord layout",
+  "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
