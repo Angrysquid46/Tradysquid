@@ -54,7 +54,7 @@ def run(*, session_date: date, require_clean_start: bool = True) -> list[Check]:
     deployed = str(state.get("deployed_sha") or "")
     checks = [Check(
         "deployed-main", bool(head != "unknown" and deployed and head.startswith(deployed)
-                              and state.get("last_update_status") == "DEPLOYED"),
+                              and state.get("last_update_status") in {"DEPLOYED", "UP_TO_DATE"}),
         f"head={head[:12]} deployed={deployed[:12]} status={state.get('last_update_status')}",
     ), Check("single-instance", instance_port_free(), "BLACKTIDE instance port must be free")]
 

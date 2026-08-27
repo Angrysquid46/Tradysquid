@@ -18,6 +18,20 @@ def test_preflight_passes_clean_state_and_live_dependencies(tmp_path, monkeypatc
     assert checks and all(item.passed for item in checks)
 
 
+def test_preflight_accepts_current_healthy_up_to_date_deployment(tmp_path, monkeypatch):
+    monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
+    monkeypatch.setattr(preflight, "_head", lambda: "abc123")
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "supervisor-state.json").write_text(
+        '{"deployed_sha":"abc123","last_update_status":"UP_TO_DATE"}'
+    )
+    monkeypatch.setattr(preflight, "ROOT", tmp_path)
+    monkeypatch.setattr(preflight, "instance_port_free", lambda port=8892: True)
+    monkeypatch.setattr(preflight.market_data, "get_quote", lambda *a, **k: {"symbol": "SPY"})
+    monkeypatch.setattr(preflight.market_data, "get_expirations", lambda *a, **k: ["2026-08-26"])
+    assert all(item.passed for item in preflight.run(session_date=date(2026, 8, 26)))
+
+
 def test_preflight_fails_closed_on_dirty_official_start(tmp_path, monkeypatch):
     monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
     db = scoreboard.connect_db()
