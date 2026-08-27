@@ -106,6 +106,22 @@ def _remove_legacy_rivalry_wall(tracker: discord_transport.DiscordTracker, chann
     return removed
 
 
+def _remove_legacy_singleton_card(
+    tracker: discord_transport.DiscordTracker, channel_id: str, legacy_token: str
+) -> int:
+    """Remove a retired aggregate card before immutable event cards replace it."""
+    messages = tracker._request("GET", f"/channels/{channel_id}/messages?limit=100")
+    removed = 0
+    for message in messages if isinstance(messages, list) else []:
+        if legacy_token not in discord_transport.message_search_text(message):
+            continue
+        message_id = str(message.get("id") or "")
+        if message_id:
+            tracker._request("DELETE", f"/channels/{channel_id}/messages/{message_id}")
+            removed += 1
+    return removed
+
+
 _BOT_CHANNEL_ID_CACHE: dict[str, str] = {}
 
 
@@ -289,6 +305,11 @@ def _render_trade_feed(bot: str, label: str, marker: str, trades: list[dict[str,
     return "\n".join(lines)
 
 
+def render_closed_trade_card(bot: str, label: str, marker: str, trade: dict[str, Any]) -> str:
+    """Render one immutable, fully auditable closed trade as one card."""
+    return _render_trade_feed(bot, f"{label} · Official Close", marker, [trade])
+
+
 def render_bot_winners(connection: Any, bot: str) -> str:
     trades = scoreboard.recent_closed_trades(connection, bot, limit=20, outcome="WIN")
     return _render_trade_feed(bot, "Winners", "🟩", trades)
@@ -341,11 +362,10 @@ def publish_bot_surfaces(
 ) -> dict[str, Any]:
     """Per-bot dashboard (stat card + bankroll chart), held-trade,
     winners, and losers surfaces - same failure-isolated shape as
-    publish_competition_surfaces above. Winners/losers are each one
-    upserted "last 20 trades" card in their OWN channel (owner request:
-    separate channels, not one combined feed), matching render_rivalry()'s
-    already-working "last N events" pattern - no per-trade message/cursor
-    bookkeeping needed."""
+    publish_competition_surfaces above. Winners and losers each get one
+    immutable, idempotent Discord card per official close. The dashboard,
+    chart, and held-position view remain live-state cards that update in
+    place rather than creating scheduler-driven duplicate messages."""
     prefix = bot.lower()
     result: dict[str, Any] = {"ok": False, "published": (), "error": None}
     published: list[str] = []
@@ -380,19 +400,37 @@ def publish_bot_surfaces(
         )
         published.append(surface_ids[1])
 
-        cards = (
-            (surface_ids[2], render_bot_held_trade(score_connection, bot), f"{prefix}-held-trade", f"{prefix}-held-trades"),
-            (surface_ids[3], render_bot_winners(score_connection, bot), f"{prefix}-winners", f"{prefix}-winners"),
-            (surface_ids[4], render_bot_losers(score_connection, bot), f"{prefix}-losers", f"{prefix}-losers"),
+        held_channel_id = _resolve_channel_id(tracker, f"{prefix}-held-trades")
+        held_message_id, _ = tracker.upsert_singleton_message(
+            held_channel_id, render_bot_held_trade(score_connection, bot), f"{prefix}-held-trade"
         )
-        for surface_id, body, token, channel_name in cards:
+        surfaces.record_surface_event(
+            surface_connection, surface_id=surface_ids[2], event_type="PUBLISH",
+            detail=f"message_id={held_message_id}",
+        )
+        published.append(surface_ids[2])
+
+        for surface_id, label, marker, outcome, channel_name in (
+            (surface_ids[3], "Winner", "🟩", "WIN", f"{prefix}-winners"),
+            (surface_ids[4], "Loser", "🟥", "LOSS", f"{prefix}-losers"),
+        ):
             channel_id = _resolve_channel_id(tracker, channel_name)
-            card_message_id, _ = tracker.upsert_singleton_message(channel_id, body, token)
-            surfaces.record_surface_event(
-                surface_connection, surface_id=surface_id, event_type="PUBLISH",
-                detail=f"message_id={card_message_id}",
+            _remove_legacy_singleton_card(tracker, channel_id, channel_name)
+            trades = scoreboard.recent_closed_trades(
+                score_connection, bot, limit=20, outcome=outcome
             )
-            published.append(surface_id)
+            for trade in reversed(trades):
+                trade_id = str(trade["trade_id"])
+                card_message_id, _ = tracker.upsert_singleton_message(
+                    channel_id,
+                    render_closed_trade_card(bot, label, marker, trade),
+                    f"TSQ-{prefix.upper()}-{outcome}-{trade_id}",
+                )
+                surfaces.record_surface_event(
+                    surface_connection, surface_id=surface_id, event_type="PUBLISH",
+                    detail=f"trade_id={trade_id}; message_id={card_message_id}",
+                )
+                published.append(f"{surface_id}:{trade_id}")
         result.update(ok=True, published=tuple(published))
     except Exception as exc:  # presentation failure must remain isolated
         for surface_id in surface_ids:

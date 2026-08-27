@@ -96,9 +96,9 @@ CANONICAL_BOT_SURFACES = tuple(
          UPDATE_MODE_PERIODIC, False, ("PUBLISH",)),
         ("held-trade-card", "{bot}-held-trades", "{}'s current OPEN/FLAT position card",
          UPDATE_MODE_EVENT_DRIVEN, True, ("PUBLISH",)),
-        ("winners-card", "{bot}-winners", "{}'s recent winning closed trades",
+        ("winners-card", "{bot}-winners", "{}'s immutable one-card-per-winning-close receipts",
          UPDATE_MODE_EVENT_DRIVEN, True, ("PUBLISH",)),
-        ("losers-card", "{bot}-losers", "{}'s recent losing closed trades",
+        ("losers-card", "{bot}-losers", "{}'s immutable one-card-per-losing-close receipts",
          UPDATE_MODE_EVENT_DRIVEN, True, ("PUBLISH",)),
     )
 )
