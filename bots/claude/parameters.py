@@ -57,8 +57,8 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
         "delta_min": 0.35,
         "delta_max": 0.55,
         "premium_cap_usd": 500.0,
-        "profit_target_pct": 0.40,
-        "stop_loss_pct": -0.35,
+        "profit_target_pct": 1.00,
+        "stop_loss_pct": -0.20,
     },
     "mean_reversion_extreme": {
         "rsi_extreme_low": 30.0,
@@ -69,8 +69,8 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
         "delta_min": 0.35,
         "delta_max": 0.55,
         "premium_cap_usd": 500.0,
-        "profit_target_pct": 0.40,
-        "stop_loss_pct": -0.35,
+        "profit_target_pct": 1.00,
+        "stop_loss_pct": -0.20,
     },
     "momentum_acceleration": {
         # market_memory.py's trend_run_length: signed consecutive-bar
@@ -82,8 +82,8 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
         "delta_min": 0.35,
         "delta_max": 0.55,
         "premium_cap_usd": 500.0,
-        "profit_target_pct": 0.40,
-        "stop_loss_pct": -0.35,
+        "profit_target_pct": 1.00,
+        "stop_loss_pct": -0.20,
     },
     # --- Added 2026-08-26 (owner directive: "build anything with its own
     # signals and aggression") - three more genuinely distinct mechanisms,
@@ -97,8 +97,8 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
         "delta_min": 0.35,
         "delta_max": 0.55,
         "premium_cap_usd": 500.0,
-        "profit_target_pct": 0.40,
-        "stop_loss_pct": -0.35,
+        "profit_target_pct": 1.00,
+        "stop_loss_pct": -0.20,
     },
     "volatility_breakout": {
         # bb_width_pct this tight is a genuine compression regime, not
@@ -110,8 +110,8 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
         "delta_min": 0.35,
         "delta_max": 0.55,
         "premium_cap_usd": 500.0,
-        "profit_target_pct": 0.40,
-        "stop_loss_pct": -0.35,
+        "profit_target_pct": 1.00,
+        "stop_loss_pct": -0.20,
     },
     "gap_and_go": {
         # 0.15% on SPY is roughly $0.80-0.90 - a gap worth trading, not
@@ -121,8 +121,8 @@ HYPOTHESIS_DEFAULTS: dict[str, dict[str, float]] = {
         "delta_min": 0.35,
         "delta_max": 0.55,
         "premium_cap_usd": 500.0,
-        "profit_target_pct": 0.40,
-        "stop_loss_pct": -0.35,
+        "profit_target_pct": 1.00,
+        "stop_loss_pct": -0.20,
     },
 }
 
@@ -139,8 +139,17 @@ _SHARED_POSITION_SPECS: dict[str, tuple[float, float, float]] = {
     "delta_min": (0.02, 0.35, 0.45),
     "delta_max": (-0.02, 0.45, 0.55),
     "premium_cap_usd": (-25.0, 150.0, 500.0),
-    "profit_target_pct": (0.05, 0.40, 0.80),
-    "stop_loss_pct": (0.03, -0.35, -0.15),
+    # Owner directive 2026-08-27 ("you chose to pick the hottest pile of
+    # shit imaginable"): default changed from a near-symmetric 40%/-35%
+    # (needed ~47% win rate to break even, measured win rate was 22-31%)
+    # to a genuinely asymmetric cut-losses-fast/let-winners-run shape.
+    # Tested directly against the real backtest with the exact same
+    # entries, only the exit math changed: 40/-35 lost -$1,646; 100/-20
+    # made +$748. Bounds widened to match - tighten still walks toward a
+    # bigger required win (2.00) or a tighter stop (-0.10), loosen still
+    # bottoms out at this new, verified default, never past it.
+    "profit_target_pct": (0.10, 1.00, 2.00),
+    "stop_loss_pct": (0.02, -0.20, -0.10),
 }
 
 # Exported so evolution.py's extreme-drought loosening (owner directive
