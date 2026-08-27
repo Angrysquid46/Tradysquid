@@ -213,12 +213,26 @@ def _format_timestamp(value: object) -> str:
         return str(value or "not recorded")
 
 
+def _closed_session_label(value: object) -> str:
+    """Return a visible calendar-day divider for a closed trade."""
+    try:
+        timestamp = datetime.fromisoformat(str(value))
+        return f"Closed {timestamp.strftime('%b')} {timestamp.day}, {timestamp.year}"
+    except (TypeError, ValueError):
+        return "Closed date unavailable"
+
+
 def _render_trade_feed(bot: str, label: str, marker: str, trades: list[dict[str, Any]]) -> str:
     lines = [f"## {bot} — {label}"]
     if not trades:
         lines.append(f"No {label.lower()} yet.")
         return "\n".join(lines)
+    previous_session: str | None = None
     for trade in trades:
+        session = _closed_session_label(trade.get("closed_at"))
+        if session != previous_session:
+            lines.extend((f"### {session}", ""))
+            previous_session = session
         entry = float(trade["entry_price"])
         exit_price = float(trade["exit_price"])
         percent = ((exit_price - entry) / entry) * 100 if entry else 0.0
