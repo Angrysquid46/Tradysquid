@@ -1,19 +1,5 @@
 {
-  "active": true,
-  "work_id": "a82dad84-68d8-4e25-878f-00ae2be3d616",
-  "actor": "Codex",
-  "task": "Repair Learning Center chapter/topic navigation and supplemental metadata",
-  "method": "Publish a 43-chapter topic index, add chapter-level tables of contents, and complete related-topic metadata with regression coverage",
-  "started_at": "2026-08-26T21:10:16.982351-05:00",
-  "starting_commit": "34b64c16e57ede7a6d70a77ee8bbe62e635062aa",
-  "process_id": 30964,
-  "owner_request": "",
-  "before_state": "",
-  "reason": "",
-  "intended_scope": "",
-  "expected_effects": "",
-  "required_tests": "",
-  "risks": "",
-  "next_safe_action_if_interrupted": "",
-  "phase": null
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-26T21:50:11.249768-05:00"
 }
