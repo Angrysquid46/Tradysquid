@@ -1,19 +1,5 @@
 {
-  "active": true,
-  "work_id": "5509dd9a-85f2-412d-890d-b7e4313430fc",
-  "actor": "Claude",
-  "task": "axiom-extreme-drought-loosening",
-  "method": "Add loosen_extreme_drought: second loosening tier that pushes entry-gating fields (never position-mechanics fields) one further deterministic step past their normal default once ordinary drought loosening is exhausted AND the drought has persisted past 2x the normal threshold. Fixed a real interaction bug where the ordinary loosener would claw back an extreme-loosened value via exact-equality bound checking.",
-  "started_at": "2026-08-27T11:50:26.270562-05:00",
-  "starting_commit": "d06e3383ea8495ab7fb8dd1f40957743121b2dbb",
-  "process_id": 24620,
-  "owner_request": "Owner directive 2026-08-27 (\"you win contests with 0 work\"): loosen_starved_hypotheses can only ever walk a field back to its ORIGINAL default, which is no answer when the default itself is too strict for a genuinely quiet session (real example today: relative_volume 0.48 against every hypothesis's 1.2-1.4x floor)",
-  "before_state": "",
-  "reason": "Owner directive 2026-08-27 (\"you win contests with 0 work\"): loosen_starved_hypotheses can only ever walk a field back to its ORIGINAL default, which is no answer when the default itself is too strict for a genuinely quiet session (real example today: relative_volume 0.48 against every hypothesis's 1.2-1.4x floor)",
-  "intended_scope": "bots/claude/evolution.py, bots/claude/parameters.py, bots/claude/runtime.py, test_axiom_evolution.py",
-  "expected_effects": "",
-  "required_tests": "pytest test_axiom_evolution.py (7 new tests) plus full AXIOM suite; verified directly against the real live state/axiom_evolution.db",
-  "risks": "",
-  "next_safe_action_if_interrupted": "",
-  "phase": "15"
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-27T11:50:56.009812-05:00"
 }
