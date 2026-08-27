@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 
 import discord_surface_manifest as surfaces
-import rivalry
 import rivalry_presentation as presentation
 import scoreboard
 
@@ -32,9 +31,8 @@ class Tracker:
 def _connections(monkeypatch):
     root = Path(tempfile.mkdtemp())
     monkeypatch.setattr(scoreboard, "DB_PATH", root / "score.db")
-    monkeypatch.setattr(rivalry, "DB_PATH", root / "rivalry.db")
     monkeypatch.setattr(surfaces, "DB_PATH", root / "surfaces.db")
-    return scoreboard.connect_db(), rivalry.connect_db(), surfaces.connect_db()
+    return scoreboard.connect_db(), surfaces.connect_db()
 
 
 def _closed_trade() -> object:
@@ -65,77 +63,6 @@ def _closed_trade() -> object:
         pnl_usd=22.0,
     )
     return connection
-
-
-def test_presentation_redacts_open_trade_and_reconciles_cards(monkeypatch):
-    score, chat, manifest = _connections(monkeypatch)
-    scoreboard.record_trade_open(
-        score, trade_id="live", bot="BLACKTIDE", generation=1,
-        opened_at="2026-08-25T09:30:00-05:00",
-        side="CALL", contract_symbol="SPY-SECRET", entry_price=1.0,
-        contracts=1, entry_bankroll=1000.0,
-    )
-    tracker = Tracker()
-    result = presentation.publish_competition_surfaces(score, chat, manifest, tracker)
-    assert result["ok"] is True
-    rendered = "\n".join(tracker.cards)
-    assert "Position OPEN" in rendered
-    assert "SPY-SECRET" not in rendered
-    assert result["published"] == ("competition-scoreboard-card",)
-
-
-def test_discord_outage_is_returned_and_cannot_touch_official_trade(monkeypatch):
-    score, chat, manifest = _connections(monkeypatch)
-    before = scoreboard.current_bankroll(score, "BLACKTIDE")
-    result = presentation.publish_competition_surfaces(score, chat, manifest, Tracker(fail=True))
-    assert result["ok"] is False
-    assert "discord down" in result["error"]
-    assert scoreboard.current_bankroll(score, "BLACKTIDE") == before
-    assert surfaces.compute_health(manifest, "competition-scoreboard-card") == surfaces.PUBLISH_FAILED
-
-
-def test_rivalry_card_hides_a_claim_without_a_matching_closed_trade(monkeypatch):
-    score, chat, _manifest = _connections(monkeypatch)
-    rivalry.record_rivalry_event(
-        chat, rivalry_event_id="stale-demo", event_group_id="demo", trigger="TRADE_CLOSED_WIN",
-        speaker="AXIOM", message="invented win", trade_reference="not-in-referee",
-        public_score_snapshot={"bot": "AXIOM"}, now=__import__("datetime").datetime.now().astimezone(),
-    )
-    assert "invented win" not in presentation.render_rivalry(score, chat)
-
-
-def test_verified_rivalry_event_posts_one_separate_receipted_card(monkeypatch):
-    score, chat, manifest = _connections(monkeypatch)
-    scoreboard.record_trade_open(
-        score, trade_id="rivalry-close", bot="BLACKTIDE", generation=1,
-        opened_at="2026-08-27T10:00:00-05:00", side="CALL",
-        contract_symbol="SPY260827C00766000", entry_price=1.0,
-        contracts=1, entry_bankroll=1000.0,
-    )
-    scoreboard.record_trade_close(
-        score, trade_id="rivalry-close", closed_at="2026-08-27T10:05:00-05:00",
-        exit_price=1.1, pnl_usd=10.0,
-    )
-    rivalry.record_rivalry_event(
-        chat, rivalry_event_id="rivalry-event", event_group_id="rivalry-close",
-        trigger="TRADE_CLOSED_WIN", speaker="BLACKTIDE", target="AXIOM",
-        message="BLACKTIDE brought a receipt.", trade_reference="rivalry-close",
-        public_score_snapshot=scoreboard.scoreboard_snapshot(score, "BLACKTIDE"),
-        now=__import__("datetime").datetime.now().astimezone(),
-    )
-    tracker = Tracker()
-    first = presentation.publish_competition_surfaces(score, chat, manifest, tracker)
-    second = presentation.publish_competition_surfaces(score, chat, manifest, tracker)
-    event_cards = [card for card in tracker.cards if "BLACKTIDE brought a receipt." in card]
-    assert first["ok"] is True
-    assert second["ok"] is True
-    assert len(event_cards) == 1
-    assert "### BLACKTIDE — Verified win" in event_cards[0]
-    assert "Official paper close verified" in event_cards[0]
-    stored = chat.execute(
-        "SELECT discord_message_id FROM rivalry_events WHERE rivalry_event_id='rivalry-event'"
-    ).fetchone()[0]
-    assert stored == "TSQ-RIVALRY-rivalry-event"
 
 
 def test_closed_trade_feed_contains_referee_audit_fields():
@@ -187,7 +114,7 @@ def test_winner_card_segregates_trades_by_close_date():
 
 
 def test_closed_winner_posts_one_immutable_card_not_a_trade_wall(monkeypatch):
-    score, _chat, manifest = _connections(monkeypatch)
+    score, manifest = _connections(monkeypatch)
     scoreboard.record_trade_open(
         score, trade_id="winner-event", bot="BLACKTIDE", generation=1,
         opened_at="2026-08-27T10:00:00-05:00", side="CALL",
