@@ -50,6 +50,11 @@ class _FakeSelected:
 def _setup(tmp_path, monkeypatch):
     monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
     monkeypatch.setattr(runtime.evolution, "DB_PATH", tmp_path / "axiom_evolution.db")
+    # Pinned well before the 14:45 entry cutoff (past_entry_cutoff, added
+    # 2026-08-27) - these tests exercise entry_scan_job's happy/error
+    # paths, not the cutoff itself, and must stay deterministic regardless
+    # of the real wall-clock time the suite happens to run at.
+    monkeypatch.setattr(runtime.market_data, "now_ct", lambda: datetime(2026, 8, 25, 10, 0, 0))
     monkeypatch.setattr(runtime.backtest_lab, "MarketView", lambda symbol: _FakeBars())
     monkeypatch.setattr(runtime.backtest_lab, "compute_features", lambda bars: {})
     monkeypatch.setattr(runtime.signal, "entry_decision", lambda conn, price, features: _FakeSelected())
@@ -59,6 +64,25 @@ def _setup(tmp_path, monkeypatch):
             "option_symbol": "SPY260825C00500000", "ask": 4.0, "bid": 3.9, "delta": 0.45,
         },
     )
+
+
+def test_entry_scan_job_refuses_new_positions_past_the_entry_cutoff(tmp_path, monkeypatch):
+    """Found live in the real 2026-08-27 backtest: 20 of 21 TIME_FORCE_CLOSE
+    trades had opened after this exact cutoff. entry_scan_job must refuse
+    outright, never reaching signal.entry_decision at all."""
+    _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime.market_data, "now_ct", lambda: datetime(2026, 8, 25, 15, 51, 0))
+
+    def _should_not_be_called(conn, price, features):
+        raise AssertionError("entry_decision must not be reached past the entry cutoff")
+
+    monkeypatch.setattr(runtime.signal, "entry_decision", _should_not_be_called)
+
+    result = runtime.entry_scan_job(None)
+
+    assert result == "past entry cutoff, no new positions today"
+    sb = scoreboard.connect_db()
+    assert scoreboard.current_position_status(sb, "AXIOM") is None
 
 
 def test_entry_scan_job_handles_provider_failure_without_raising(tmp_path, monkeypatch):

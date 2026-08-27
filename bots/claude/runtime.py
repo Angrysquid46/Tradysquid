@@ -130,6 +130,8 @@ def entry_scan_job(connection) -> str:
         return "position already open"
 
     now = market_data.now_ct()
+    if exits.past_entry_cutoff(now):
+        return "past entry cutoff, no new positions today"
     view = backtest_lab.MarketView("SPY")
     bars = view.bars_as_of(now, lookback_minutes=16 * 60)
     if not bars:

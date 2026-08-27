@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-27T11:50:56.182227-05:00",
-  "branch": "axiom-extreme-drought-loosening",
-  "observed_head_at_write": "0b79dbfcde64897aafd7db46082c912cc4b881ea",
-  "commit_subject": "AXIOM: add extreme-drought loosening past the normal default floor",
+  "last_updated": "2026-08-27T12:51:44.014631-05:00",
+  "branch": "axiom-entry-cutoff-fix",
+  "observed_head_at_write": "ae260884dfea7ab7d098c88d15759fe195cff4b1",
+  "commit_subject": "AXIOM: refuse new entries past the 14:45 CT force-close cutoff",
   "current_phase": "15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
