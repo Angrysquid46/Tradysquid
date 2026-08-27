@@ -1,5 +1,19 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-27T17:20:08.182588-05:00"
+  "active": true,
+  "work_id": "6cfb04f0-75af-4c78-9540-caadee5dd087",
+  "actor": "Claude",
+  "task": "axiom-asymmetric-exits",
+  "method": "Changed profit_target_pct/stop_loss_pct defaults from near-symmetric 40%/-35% to genuinely asymmetric 100%/-20%",
+  "started_at": "2026-08-27T17:29:19.995598-05:00",
+  "starting_commit": "a7fca34f29b4415b7608f75fee3f393e46df8a08",
+  "process_id": 23320,
+  "owner_request": "Real backtest: 40/-35 lost -$1,646, 100/-20 made +$748/+$386, identical entries",
+  "before_state": "",
+  "reason": "Real backtest: 40/-35 lost -$1,646, 100/-20 made +$748/+$386, identical entries",
+  "intended_scope": "bots/claude/parameters.py, test_axiom_exits.py",
+  "expected_effects": "",
+  "required_tests": "pytest test_axiom_exits.py plus full AXIOM suite; verified against real captured data",
+  "risks": "",
+  "next_safe_action_if_interrupted": "",
+  "phase": "15"
 }
