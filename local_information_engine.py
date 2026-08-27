@@ -796,7 +796,10 @@ def competition_surfaces_job(connection: sqlite3.Connection) -> str:
             set_state(connection, "competition-surfaces:combined:fingerprint", combined_fingerprint)
 
     for bot in scoreboard.BOTS:
-        bot_fingerprint = _fingerprint(scoreboard.scoreboard_snapshot(score_connection, bot))
+        bot_fingerprint = _fingerprint({
+            "snapshot": scoreboard.scoreboard_snapshot(score_connection, bot),
+            "presentation_format": rivalry_presentation.BOT_SURFACE_FORMAT_VERSION,
+        })
         state_key = f"competition-surfaces:{bot}:fingerprint"
         if get_state(connection, state_key) == bot_fingerprint:
             results.append(f"{bot}:unchanged")

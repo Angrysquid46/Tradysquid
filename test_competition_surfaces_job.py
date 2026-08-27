@@ -82,3 +82,18 @@ def test_a_real_trade_change_triggers_a_republish_for_that_bot_only(connections,
     assert calls["bots"] == ["AXIOM"], "only the bot whose state actually changed should republish"
     assert "AXIOM:ok" in result
     assert "BLACKTIDE:unchanged" in result
+
+
+def test_bot_presentation_format_change_refreshes_both_bot_surfaces(connections, monkeypatch):
+    calls = _stub_publishers(monkeypatch)
+    lie.competition_surfaces_job(connections)
+    calls["combined"] = 0
+    calls["bots"] = []
+
+    monkeypatch.setattr(lie.rivalry_presentation, "BOT_SURFACE_FORMAT_VERSION", "test-v2")
+    result = lie.competition_surfaces_job(connections)
+
+    assert calls["combined"] == 0
+    assert calls["bots"] == list(scoreboard.BOTS)
+    assert "AXIOM:ok" in result
+    assert "BLACKTIDE:ok" in result
