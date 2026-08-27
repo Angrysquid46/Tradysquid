@@ -128,6 +128,27 @@ def test_winner_card_renders_full_closed_trade_audit_details():
     assert "Trade ID: `closed-trade-1`" in card
 
 
+def test_winner_card_segregates_trades_by_close_date():
+    connection = _closed_trade()
+    try:
+        scoreboard.record_trade_open(
+            connection, trade_id="closed-trade-2", bot="BLACKTIDE", generation=1,
+            opened_at="2026-08-27T10:03:20-05:00", side="CALL",
+            contract_symbol="SPY260827C00766000", entry_price=0.85,
+            contracts=1, entry_bankroll=1022.0,
+        )
+        scoreboard.record_trade_close(
+            connection, trade_id="closed-trade-2", closed_at="2026-08-27T10:12:20-05:00",
+            exit_price=0.96, pnl_usd=11.0,
+        )
+        card = presentation.render_bot_winners(connection, "BLACKTIDE")
+    finally:
+        connection.close()
+    assert "### Closed Aug 27, 2026" in card
+    assert "### Closed Aug 26, 2026" in card
+    assert card.index("### Closed Aug 27, 2026") < card.index("### Closed Aug 26, 2026")
+
+
 def test_live_held_trade_remains_redacted():
     path = Path(tempfile.mkdtemp()) / "scoreboard.db"
     original = scoreboard.DB_PATH
