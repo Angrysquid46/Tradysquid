@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+import json
+from dataclasses import asdict
+from pathlib import Path
 from datetime import datetime
 
 import backtest_lab
@@ -14,19 +17,24 @@ from .evolution import EvolutionLoop, Outcome
 
 
 SCOREBOARD_BOT = "RIPTIDE"
+TELEMETRY_PATH = Path(__file__).resolve().parents[2] / "state" / "riptide" / "decision-telemetry.jsonl"
 
 
 class RiptideRuntime:
-    def __init__(self, *, engine: Riptide | None = None, market_view=None, evolution: EvolutionLoop | None = None):
+    def __init__(self, *, engine: Riptide | None = None, market_view=None, evolution: EvolutionLoop | None = None,
+                 telemetry_path: Path | None = None):
         self.engine = engine or Riptide()
         self.market_view = market_view or backtest_lab.MarketView("SPY")
         self.evolution = evolution or EvolutionLoop()
+        self.telemetry_path = telemetry_path or TELEMETRY_PATH
 
     def recover(self, connection: sqlite3.Connection) -> None:
         self.engine.generation = scoreboard.current_generation(connection, SCOREBOARD_BOT)
         row = scoreboard.current_position_status(connection, SCOREBOARD_BOT)
         if row is None:
             self.engine.position = None
+            return
+        if self.engine.position is not None and self.engine.position.trade_id == str(row["trade_id"]):
             return
         side = str(row["side"]).lower()
         if side not in ("call", "put"):
@@ -36,13 +44,21 @@ class RiptideRuntime:
     def evaluate(self, as_of: datetime, connection: sqlite3.Connection) -> Decision:
         self.recover(connection)
         bankroll = scoreboard.current_bankroll(connection, SCOREBOARD_BOT)
+        market = self.market_view.market_as_of(as_of)
+        options = self.market_view.options_as_of(as_of)
+        bars = self.market_view.bars_as_of(as_of, lookback_minutes=90)
         decision = self.engine.decide(
             as_of=as_of,
             bankroll=bankroll,
-            market=self.market_view.market_as_of(as_of),
-            options=self.market_view.options_as_of(as_of),
-            bars=self.market_view.bars_as_of(as_of, lookback_minutes=90),
+            market=market,
+            options=options,
+            bars=bars,
         )
+        self.telemetry_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = asdict(decision)
+        payload.update({"observed_at": as_of.isoformat(), "bankroll": bankroll})
+        with self.telemetry_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
         if decision.action == "ENTER":
             trade_id = f"riptide-{uuid.uuid4()}"
             scoreboard.record_trade_open(connection, trade_id=trade_id, bot=SCOREBOARD_BOT,
@@ -50,14 +66,16 @@ class RiptideRuntime:
                                          side=str(decision.side), contract_symbol=str(decision.contract_symbol),
                                          entry_price=float(decision.price), contracts=decision.contracts,
                                          entry_bankroll=bankroll)
-            self.engine.apply_entry(decision, trade_id=trade_id, opened_at=as_of)
+            selected = next((row for row in options.get("contracts", []) if str(row.get("option_symbol")) == decision.contract_symbol), {})
+            self.engine.apply_entry(decision, trade_id=trade_id, opened_at=as_of,
+                                    entry_iv=float(selected["iv"]) if selected.get("iv") is not None else None)
         elif decision.action == "EXIT":
             position = self.engine.position
             if position is None or decision.price is None:
                 raise RuntimeError("RIPTIDE emitted invalid exit")
             pnl = (decision.price - position.entry_price) * position.contracts * CONTRACT_MULTIPLIER
             scoreboard.record_trade_close(connection, trade_id=position.trade_id, closed_at=as_of.isoformat(), exit_price=decision.price, pnl_usd=pnl)
-            self.evolution.record(Outcome(position.trade_id, self.engine.generation, (decision.price / position.entry_price) - 1, decision.reason, as_of.isoformat()))
+            self.evolution.record(Outcome(position.trade_id, self.engine.generation, (decision.price / position.entry_price) - 1, decision.reason, as_of.isoformat(), position.setup))
             self.evolution.evaluate(self.engine)
             self.engine.apply_exit(decision)
         elif decision.action == "BUST":

@@ -19,6 +19,7 @@ class Outcome:
     return_pct: float
     exit_reason: str
     closed_at: str
+    family: str = "UNKNOWN"
 
 
 class EvolutionLoop:
@@ -39,5 +40,6 @@ class EvolutionLoop:
 
     def evaluate(self, engine: Riptide) -> dict[str, object]:
         rows = self.load()
-        engine.evolve([row.return_pct for row in rows])
-        return {"sample": len(rows), "volume_ratio": engine.parameters.breakout_volume_ratio}
+        engine.evolve(rows)
+        return {"sample": len(rows), "risk_fraction": engine.parameters.base_risk_fraction,
+                "exploration_rate": engine.parameters.exploration_rate}
