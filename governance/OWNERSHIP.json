@@ -112,7 +112,7 @@
       "readers": ["Owner", "Codex", "Claude"],
       "writers": ["Owner", "Codex", "Claude"],
       "protected": false,
-      "purpose": "Phase 8: Section 6's neutral, immutable competition scorekeeper - the sole official trade ledger for both BLACKTIDE and AXIOM, outside either private trader."
+      "purpose": "Phase 8: Section 6's neutral, immutable competition scorekeeper - the sole official trade ledger, outside any private trader. AXIOM permanently removed 2026-08-27 (owner directive)."
     },
     {
       "path": "discord_surface_manifest.py",
@@ -128,7 +128,7 @@
       "readers": ["Owner", "Codex", "Claude"],
       "writers": ["Owner", "Codex", "Claude"],
       "protected": false,
-      "purpose": "Phase 9: Section 7's bounded, rate-limited rivalry event system BLACKTIDE and AXIOM both post trash talk through - never a code path either trader's decisions can read."
+      "purpose": "Phase 9: Section 7's bounded, rate-limited rivalry event system - never a code path a trader's decisions can read. AXIOM permanently removed 2026-08-27 (owner directive)."
     },
     {
       "path": "rivalry_presentation.py",
@@ -153,14 +153,6 @@
       "writers": ["Codex"],
       "protected": true,
       "purpose": "Phase 11 (Section 11): BLACKTIDE's private trader, built in Phase 12. Only Codex may write here. Claude must not request, inspect, infer, copy, modify, or train from anything under this path (Section 3's private-competitor boundary) - this entry enforces the write side; the read-side boundary is convention (this directory's own AGENTS.md), not a technical sandbox."
-    },
-    {
-      "path": "bots/claude/",
-      "owner": "CLAUDE_ONLY",
-      "readers": ["Owner", "Claude"],
-      "writers": ["Claude"],
-      "protected": true,
-      "purpose": "Phase 11 (Section 11): Claude's private trader, built in Phase 13. Only Claude may write here. ChatGPT/Codex must not modify or consume Claude-private strategy intelligence (Section 3's private-competitor boundary) - this entry enforces the write side; the read-side boundary is convention (this directory's own AGENTS.md), not a technical sandbox."
     },
     {
       "path": "bots/riptide/",

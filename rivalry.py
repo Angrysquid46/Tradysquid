@@ -1,7 +1,8 @@
 """Phase 9: rivalry event system (Master Spec Section 7). Bounded,
-traceable public trash-talk between BLACKTIDE and AXIOM, triggered by
-real competition events - never a code path that can open, close, or
-size a trade, and never imported by anything that does.
+traceable public trash-talk between competing bots, triggered by real
+competition events - never a code path that can open, close, or size a
+trade, and never imported by anything that does. AXIOM (Claude's
+competitor) was permanently removed 2026-08-27 (owner directive).
 
 No persona/response-generation logic exists here - no bot exists yet to
 generate rivalry messages (Phase 11+). This module is the bounded,
@@ -49,7 +50,7 @@ TRIGGERS = (
 # day (Phase 14 audit finding - nothing previously enforced this).
 _ONCE_PER_DAY_TRIGGERS = ("SESSION_OPEN", "SESSION_CLOSE")
 
-BOTS = ("BLACKTIDE", "AXIOM")
+BOTS = ("BLACKTIDE",)
 
 # scoreboard.scoreboard_snapshot()'s own public key set, duplicated here
 # rather than pulled in from that module directly - rivalry.py must stay

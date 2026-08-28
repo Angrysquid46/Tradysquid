@@ -34,8 +34,10 @@ def _python_files(directory: Path) -> list[Path]:
 
 
 def test_bot_directories_exist():
+    """AXIOM permanently removed 2026-08-27 (owner directive) - bots/claude/
+    was deleted entirely, deliberately, not a regression to catch."""
     assert BLACKTIDE_DIR.is_dir()
-    assert CLAUDE_DIR.is_dir()
+    assert not CLAUDE_DIR.exists()
     assert RIPTIDE_DIR.is_dir()
 
 

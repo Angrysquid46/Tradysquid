@@ -17,7 +17,7 @@ def db(monkeypatch):
     connection.close()
 
 
-def _open(db, trade_id, *, bot="AXIOM", generation=1, entry_bankroll, opened_at="2026-08-24T09:00:00"):
+def _open(db, trade_id, *, bot="BLACKTIDE", generation=1, entry_bankroll, opened_at="2026-08-24T09:00:00"):
     sb.record_trade_open(
         db, trade_id=trade_id, bot=bot, generation=generation, opened_at=opened_at,
         side="CALL", contract_symbol="SPY260824C00500000", entry_price=1.0,
@@ -77,7 +77,7 @@ def test_record_trade_close_stores_the_computed_pnl_not_the_caller_value(db):
         db, trade_id="t1", closed_at="2026-08-24T09:05:00",
         exit_price=1.5, pnl_usd=50.0,
     )
-    assert sb.total_pnl(db, "AXIOM") == pytest.approx(50.0)
+    assert sb.total_pnl(db, "BLACKTIDE") == pytest.approx(50.0)
 
 
 def test_record_trade_open_allows_new_trade_after_prior_one_closes(db):
@@ -102,31 +102,31 @@ def test_record_generation_event_rejects_unknown_bot_and_event(db):
     with pytest.raises(ValueError, match="Unknown bot"):
         sb.record_generation_event(db, bot="Nobody", generation=1, event="STARTED")
     with pytest.raises(ValueError, match="Unknown generation event"):
-        sb.record_generation_event(db, bot="AXIOM", generation=1, event="WHATEVER")
+        sb.record_generation_event(db, bot="BLACKTIDE", generation=1, event="WHATEVER")
 
 
 def test_generation_transitions_are_sequential_and_referee_enforced(db):
     with pytest.raises(ValueError, match="positive-bankroll bust"):
-        sb.record_generation_event(db, bot="AXIOM", generation=1, event="BUSTED")
+        sb.record_generation_event(db, bot="BLACKTIDE", generation=1, event="BUSTED")
     sb.record_generation_event(
-        db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1001,
+        db, bot="BLACKTIDE", generation=1, event="BUSTED", minimum_qualifying_cost=1001,
     )
     with pytest.raises(ValueError, match="duplicate"):
         sb.record_generation_event(
-            db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1001,
+            db, bot="BLACKTIDE", generation=1, event="BUSTED", minimum_qualifying_cost=1001,
         )
     with pytest.raises(ValueError, match="advance exactly one"):
-        sb.record_generation_event(db, bot="AXIOM", generation=999, event="STARTED")
-    sb.record_generation_event(db, bot="AXIOM", generation=2, event="STARTED")
+        sb.record_generation_event(db, bot="BLACKTIDE", generation=999, event="STARTED")
+    sb.record_generation_event(db, bot="BLACKTIDE", generation=2, event="STARTED")
     with pytest.raises(ValueError, match="advance exactly one"):
-        sb.record_generation_event(db, bot="AXIOM", generation=2, event="STARTED")
+        sb.record_generation_event(db, bot="BLACKTIDE", generation=2, event="STARTED")
 
 
 def test_generation_transition_rejected_while_position_open(db):
     _open(db, "open", entry_bankroll=1000)
     with pytest.raises(ValueError, match="position is open"):
         sb.record_generation_event(
-            db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1001,
+            db, bot="BLACKTIDE", generation=1, event="BUSTED", minimum_qualifying_cost=1001,
         )
 
 
@@ -148,13 +148,13 @@ def test_scoreboard_snapshot_keys_constant_matches_the_real_return_shape(five_tr
     """rivalry.py's public_score_snapshot schema check trusts this
     constant to match reality - if scoreboard_snapshot()'s shape ever
     changes without updating SCOREBOARD_SNAPSHOT_KEYS, this must fail."""
-    snapshot = sb.scoreboard_snapshot(five_trade_generation, "AXIOM")
+    snapshot = sb.scoreboard_snapshot(five_trade_generation, "BLACKTIDE")
     assert set(snapshot.keys()) == sb.SCOREBOARD_SNAPSHOT_KEYS
 
 
 def test_public_snapshot_redacts_live_position_details(db):
     _open(db, "secret-live", entry_bankroll=1000)
-    snapshot = sb.scoreboard_snapshot(db, "AXIOM")
+    snapshot = sb.scoreboard_snapshot(db, "BLACKTIDE")
     assert snapshot["current_position_status"] == "OPEN"
     serialized = json.dumps(snapshot)
     assert "SPY260824C00500000" not in serialized
@@ -162,47 +162,47 @@ def test_public_snapshot_redacts_live_position_details(db):
 
 
 def test_trade_count_and_total_pnl(five_trade_generation):
-    assert sb.trade_count(five_trade_generation, "AXIOM") == 5
-    assert sb.total_pnl(five_trade_generation, "AXIOM") == pytest.approx(300)
+    assert sb.trade_count(five_trade_generation, "BLACKTIDE") == 5
+    assert sb.total_pnl(five_trade_generation, "BLACKTIDE") == pytest.approx(300)
 
 
 def test_current_bankroll(five_trade_generation):
-    assert sb.current_bankroll(five_trade_generation, "AXIOM") == pytest.approx(1300)
+    assert sb.current_bankroll(five_trade_generation, "BLACKTIDE") == pytest.approx(1300)
 
 
 def test_win_rate(five_trade_generation):
-    assert sb.win_rate(five_trade_generation, "AXIOM") == pytest.approx(0.6)
+    assert sb.win_rate(five_trade_generation, "BLACKTIDE") == pytest.approx(0.6)
 
 
 def test_profit_factor(five_trade_generation):
-    assert sb.profit_factor(five_trade_generation, "AXIOM") == pytest.approx(380 / 80)
+    assert sb.profit_factor(five_trade_generation, "BLACKTIDE") == pytest.approx(380 / 80)
 
 
 def test_expectancy(five_trade_generation):
-    assert sb.expectancy(five_trade_generation, "AXIOM") == pytest.approx(60)
+    assert sb.expectancy(five_trade_generation, "BLACKTIDE") == pytest.approx(60)
 
 
 def test_average_and_largest_winner_loser(five_trade_generation):
-    assert sb.average_winner(five_trade_generation, "AXIOM") == pytest.approx(380 / 3)
-    assert sb.average_loser(five_trade_generation, "AXIOM") == pytest.approx(-40)
-    assert sb.largest_winner(five_trade_generation, "AXIOM") == pytest.approx(200)
-    assert sb.largest_loser(five_trade_generation, "AXIOM") == pytest.approx(-50)
+    assert sb.average_winner(five_trade_generation, "BLACKTIDE") == pytest.approx(380 / 3)
+    assert sb.average_loser(five_trade_generation, "BLACKTIDE") == pytest.approx(-40)
+    assert sb.largest_winner(five_trade_generation, "BLACKTIDE") == pytest.approx(200)
+    assert sb.largest_loser(five_trade_generation, "BLACKTIDE") == pytest.approx(-50)
 
 
 def test_max_and_current_drawdown(five_trade_generation):
-    assert sb.max_drawdown(five_trade_generation, "AXIOM") == pytest.approx(-50)
-    assert sb.current_drawdown(five_trade_generation, "AXIOM") == pytest.approx(0)
+    assert sb.max_drawdown(five_trade_generation, "BLACKTIDE") == pytest.approx(-50)
+    assert sb.current_drawdown(five_trade_generation, "BLACKTIDE") == pytest.approx(0)
 
 
 def test_current_streak(five_trade_generation):
-    streak = sb.current_streak(five_trade_generation, "AXIOM")
+    streak = sb.current_streak(five_trade_generation, "BLACKTIDE")
     assert streak == {"type": "WIN", "length": 1}
 
 
 def test_profit_factor_none_when_no_losses(db):
     _open(db, "t1", entry_bankroll=1000)
     _close(db, "t1", 100)
-    assert sb.profit_factor(db, "AXIOM") is None
+    assert sb.profit_factor(db, "BLACKTIDE") is None
 
 
 def test_metrics_none_for_bot_with_no_trades(db):
@@ -217,46 +217,46 @@ def test_metrics_none_for_bot_with_no_trades(db):
 
 def test_bust_and_new_generation_resets_bankroll_but_keeps_lifetime_history(five_trade_generation):
     db = five_trade_generation
-    sb.record_generation_event(db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1301)
-    sb.record_generation_event(db, bot="AXIOM", generation=2, event="STARTED")
-    _open(db, "t5", bot="AXIOM", generation=2, entry_bankroll=1000, opened_at="2026-08-24T10:00:00")
+    sb.record_generation_event(db, bot="BLACKTIDE", generation=1, event="BUSTED", minimum_qualifying_cost=1301)
+    sb.record_generation_event(db, bot="BLACKTIDE", generation=2, event="STARTED")
+    _open(db, "t5", bot="BLACKTIDE", generation=2, entry_bankroll=1000, opened_at="2026-08-24T10:00:00")
     _close(db, "t5", -200, closed_at="2026-08-24T10:05:00")
 
-    assert sb.current_generation(db, "AXIOM") == 2
-    assert sb.current_bankroll(db, "AXIOM") == pytest.approx(800)  # 1000 - 200, not 1300 - 200
-    assert sb.lifetime_pnl(db, "AXIOM") == pytest.approx(100)      # 300 - 200
-    assert sb.bust_count(db, "AXIOM") == 1
+    assert sb.current_generation(db, "BLACKTIDE") == 2
+    assert sb.current_bankroll(db, "BLACKTIDE") == pytest.approx(800)  # 1000 - 200, not 1300 - 200
+    assert sb.lifetime_pnl(db, "BLACKTIDE") == pytest.approx(100)      # 300 - 200
+    assert sb.bust_count(db, "BLACKTIDE") == 1
 
 
 def test_best_worst_generation_and_generation_over_generation_improvement(five_trade_generation):
     db = five_trade_generation
-    sb.record_generation_event(db, bot="AXIOM", generation=1, event="BUSTED", minimum_qualifying_cost=1301)
-    sb.record_generation_event(db, bot="AXIOM", generation=2, event="STARTED")
-    _open(db, "t5", bot="AXIOM", generation=2, entry_bankroll=1000, opened_at="2026-08-24T10:00:00")
+    sb.record_generation_event(db, bot="BLACKTIDE", generation=1, event="BUSTED", minimum_qualifying_cost=1301)
+    sb.record_generation_event(db, bot="BLACKTIDE", generation=2, event="STARTED")
+    _open(db, "t5", bot="BLACKTIDE", generation=2, entry_bankroll=1000, opened_at="2026-08-24T10:00:00")
     _close(db, "t5", -200, closed_at="2026-08-24T10:05:00")
 
-    assert sb.best_generation(db, "AXIOM") == 1
-    assert sb.worst_generation(db, "AXIOM") == 2
-    assert sb.generation_over_generation_improvement(db, "AXIOM") == pytest.approx(-200 - 300)
+    assert sb.best_generation(db, "BLACKTIDE") == 1
+    assert sb.worst_generation(db, "BLACKTIDE") == 2
+    assert sb.generation_over_generation_improvement(db, "BLACKTIDE") == pytest.approx(-200 - 300)
 
 
 def test_generation_over_generation_improvement_none_with_only_one_generation(five_trade_generation):
-    assert sb.generation_over_generation_improvement(five_trade_generation, "AXIOM") is None
+    assert sb.generation_over_generation_improvement(five_trade_generation, "BLACKTIDE") is None
 
 
 # --- current_position_status / snapshot / leader ------------------------------
 
 def test_current_position_status_reflects_the_open_trade(db):
-    assert sb.current_position_status(db, "AXIOM") is None
+    assert sb.current_position_status(db, "BLACKTIDE") is None
     _open(db, "t1", entry_bankroll=1000)
-    status = sb.current_position_status(db, "AXIOM")
+    status = sb.current_position_status(db, "BLACKTIDE")
     assert status["trade_id"] == "t1"
     assert status["closed_at"] is None
 
 
 def test_scoreboard_snapshot_bundles_every_metric(five_trade_generation):
-    snapshot = sb.scoreboard_snapshot(five_trade_generation, "AXIOM")
-    assert snapshot["bot"] == "AXIOM"
+    snapshot = sb.scoreboard_snapshot(five_trade_generation, "BLACKTIDE")
+    assert snapshot["bot"] == "BLACKTIDE"
     assert snapshot["generation"] == 1
     assert snapshot["current_bankroll"] == pytest.approx(1300)
     assert snapshot["lifetime_pnl"] == pytest.approx(300)
@@ -269,13 +269,13 @@ def test_current_leader_none_when_no_trades_exist(db):
 
 
 def test_current_leader_picks_the_higher_lifetime_pnl(five_trade_generation):
-    assert sb.current_leader(five_trade_generation) == "AXIOM"
+    assert sb.current_leader(five_trade_generation) == "BLACKTIDE"
 
 
 def test_current_leader_none_on_a_tie(db):
-    _open(db, "t1", bot="AXIOM", entry_bankroll=1000)
+    _open(db, "t1", bot="BLACKTIDE", entry_bankroll=1000)
     _close(db, "t1", 100)
-    _open(db, "t2", bot="BLACKTIDE", entry_bankroll=1000)
+    _open(db, "t2", bot="RIPTIDE", entry_bankroll=1000)
     _close(db, "t2", 100)
     assert sb.current_leader(db) is None
 
@@ -283,8 +283,8 @@ def test_current_leader_none_on_a_tie(db):
 # --- recent_closed_trades / bankroll_history -----------------------------------
 
 def test_recent_closed_trades_outcome_filter_separates_wins_and_losses(five_trade_generation):
-    wins = sb.recent_closed_trades(five_trade_generation, "AXIOM", outcome="WIN")
-    losses = sb.recent_closed_trades(five_trade_generation, "AXIOM", outcome="LOSS")
+    wins = sb.recent_closed_trades(five_trade_generation, "BLACKTIDE", outcome="WIN")
+    losses = sb.recent_closed_trades(five_trade_generation, "BLACKTIDE", outcome="LOSS")
     assert [round(t["pnl_usd"]) for t in wins] == [80, 200, 100]
     assert [round(t["pnl_usd"]) for t in losses] == [-30, -50]
     assert all(t["outcome"] == "WIN" for t in wins)
@@ -292,17 +292,17 @@ def test_recent_closed_trades_outcome_filter_separates_wins_and_losses(five_trad
 
 
 def test_recent_closed_trades_outcome_filter_respects_limit(five_trade_generation):
-    wins = sb.recent_closed_trades(five_trade_generation, "AXIOM", limit=1, outcome="WIN")
+    wins = sb.recent_closed_trades(five_trade_generation, "BLACKTIDE", limit=1, outcome="WIN")
     assert len(wins) == 1
     assert round(wins[0]["pnl_usd"]) == 80
 
 
 def test_bankroll_history_matches_the_hand_calculated_equity_curve(five_trade_generation):
-    points = sb.bankroll_history(five_trade_generation, "AXIOM")
+    points = sb.bankroll_history(five_trade_generation, "BLACKTIDE")
     values = [round(p["bankroll"]) for p in points]
     assert values == [1000, 1000, 1100, 1100, 1050, 1050, 1250, 1250, 1220, 1220, 1300]
 
 
 def test_bankroll_history_on_an_empty_bot_is_just_the_starting_point(db):
-    points = sb.bankroll_history(db, "AXIOM")
+    points = sb.bankroll_history(db, "BLACKTIDE")
     assert points == [{"at": None, "bankroll": sb.STARTING_BANKROLL_USD, "generation": 1}]

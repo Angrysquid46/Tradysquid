@@ -36,20 +36,20 @@ def test_check_ownership_ignores_paths_with_no_ownership_entry():
     assert coordination.check_ownership("Claude", ["some_random_new_file.py"]) == []
 
 
-def test_check_ownership_enforces_the_bot_directory_boundary_both_ways():
-    """Phase 11: bots/blacktide/ (writers=[Codex]) and bots/claude/
-    (writers=[Claude]) are real, protected, directory-prefix entries now -
-    each actor may write its own directory, neither may write the other's."""
+def test_check_ownership_enforces_the_bot_directory_boundary():
+    """Phase 11: bots/blacktide/ (writers=[Codex]) is a real, protected,
+    directory-prefix entry - Codex may write its own directory, Claude may
+    not. AXIOM permanently removed 2026-08-27 (owner directive): bots/
+    claude/ was deleted along with its OWNERSHIP.json entry, so the
+    mirror "Claude may write its own directory" half of this test no
+    longer has a real subject - bots/claude/strategy.py now has no
+    ownership entry at all, same as any other unassigned path
+    (test_check_ownership_ignores_paths_with_no_ownership_entry)."""
     assert coordination.check_ownership("Codex", ["bots/blacktide/strategy.py"]) == []
-    assert coordination.check_ownership("Claude", ["bots/claude/strategy.py"]) == []
 
     blacktide_violation = coordination.check_ownership("Claude", ["bots/blacktide/strategy.py"])
     assert blacktide_violation
     assert "bots/blacktide/strategy.py" in blacktide_violation[0]
-
-    claude_violation = coordination.check_ownership("Codex", ["bots/claude/strategy.py"])
-    assert claude_violation
-    assert "bots/claude/strategy.py" in claude_violation[0]
 
 
 def test_check_ownership_bot_directory_boundary_covers_nested_paths():

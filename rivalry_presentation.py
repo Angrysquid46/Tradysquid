@@ -19,15 +19,15 @@ LEGACY_RIVALRY_TOKEN = "TSQ-COMPETITION-RIVALRY"
 # fingerprints this so a presentation release refreshes old cards even when
 # the underlying trade facts have not changed.
 BOT_SURFACE_FORMAT_VERSION = "per-event-trade-cards-v1"
-# AXIOM is retired from active public presentation. Its immutable historical
-# ledger rows remain available to the neutral scorekeeper, but RIPTIDE is the
-# live second challenger shown on Discord.
+# AXIOM permanently removed 2026-08-27 (owner directive) - no longer in
+# scoreboard.BOTS/rivalry.BOTS either, not just this presentation list.
+# RIPTIDE is the live second challenger shown on Discord.
 PUBLIC_BOTS = ("BLACKTIDE", "RIPTIDE")
 
 
 def render_scoreboard(connection: Any) -> str:
-    rows = [scoreboard.scoreboard_snapshot(connection, bot) for bot in scoreboard.BOTS]
-    lines = ["## BLACKTIDE vs AXIOM — Official Scoreboard"]
+    rows = [scoreboard.scoreboard_snapshot(connection, bot) for bot in PUBLIC_BOTS]
+    lines = ["## Official Scoreboard"]
     for row in rows:
         lines.extend((
             f"### {row['bot']}",
@@ -70,9 +70,9 @@ def render_rivalry(score_connection: Any, rivalry_connection: Any) -> str:
     verified = _verified_rivalry_events(score_connection, rivalry_connection)
     awaiting = sum(not str(item.get("discord_message_id") or "").strip() for item in verified)
     if not verified:
-        return "## BLACKTIDE vs AXIOM — Rivalry\nNo official rivalry events yet."
+        return "## Rivalry\nNo official rivalry events yet."
     return (
-        "## BLACKTIDE vs AXIOM — Rivalry\n"
+        "## Rivalry\n"
         f"{len(verified)} verified event cards · {awaiting} awaiting publication."
     )
 
@@ -82,7 +82,7 @@ def render_rivalry_event(item: dict[str, Any]) -> str:
     timestamp = datetime.fromisoformat(str(item["timestamp"])).strftime("%b %d, %Y %I:%M %p")
     outcome = "Verified win" if item["trigger"] == "TRADE_CLOSED_WIN" else "Verified loss"
     return "\n".join((
-        "## BLACKTIDE vs AXIOM",
+        "## Rivalry",
         f"### {item['speaker']} — {outcome}",
         item["message"],
         "### Referee receipt",

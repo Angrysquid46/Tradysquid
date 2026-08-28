@@ -68,7 +68,8 @@ def test_immutable_rules_match_master_spec_section_four_exactly():
     assert rules["money_resets_history_does_not"] is True
     boundary = data["private_competitor_boundary"]
     assert boundary["competitors"]["BLACKTIDE"]["owner"] == "ChatGPT/Codex"
-    assert boundary["competitors"]["AXIOM"]["owner"] == "Claude"
+    assert "AXIOM" not in boundary["competitors"]
+    assert boundary["removed_competitors"]["AXIOM"]["owner"] == "Claude"
 
 
 # --- Dynamic mirror: governed by ai_coordination.py's begin/checkpoint/finish ---
