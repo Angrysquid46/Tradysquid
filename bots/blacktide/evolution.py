@@ -33,8 +33,15 @@ class EvolutionLoop:
     stages = ("OBSERVE", "RECORD", "MEASURE", "DIAGNOSE", "HYPOTHESIZE",
               "TEST", "CHALLENGE", "VALIDATE", "PROMOTE_OR_REJECT")
 
-    def __init__(self, path: Path | None = None):
+    def __init__(self, path: Path | None = None, state_path: Path | None = None):
         self.path = path or STATE_DIR / "outcomes.jsonl"
+        self.state_path = state_path or STATE_DIR / "promoted-learning.json"
+
+    def apply(self, engine: BLACKTIDE) -> None:
+        if not self.state_path.exists(): return
+        try:
+            data=json.loads(self.state_path.read_text(encoding="utf-8")); engine.parameters=Parameters(**data["parameters"])
+        except (OSError,ValueError,TypeError,KeyError,json.JSONDecodeError): return
 
     def record(self, outcome: Outcome) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,6 +90,7 @@ class EvolutionLoop:
         shift, _, score = max(stable, key=lambda row: row[2])
         old = engine.parameters
         engine.parameters = Parameters(**{**asdict(old), "opportunity_threshold": min(.62, max(.38, old.opportunity_threshold + shift))})
+        self.state_path.parent.mkdir(parents=True,exist_ok=True); tmp=self.state_path.with_suffix(".tmp"); tmp.write_text(json.dumps({"parameters":asdict(engine.parameters),"sample":len(rows),"decision":"PROMOTE"},sort_keys=True),encoding="utf-8"); tmp.replace(self.state_path)
         receipt.update(decision="PROMOTE", shift=shift, baseline=baseline, holdout_score=score,
                        train_count=len(train), holdout_count=len(holdout))
         return receipt

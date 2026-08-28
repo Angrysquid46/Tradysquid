@@ -25,6 +25,8 @@ class BlacktideRuntime:
         self.engine = engine or BLACKTIDE()
         self.market_view = market_view or backtest_lab.MarketView("SPY")
         self.evolution = evolution or EvolutionLoop()
+        if hasattr(self.evolution, "apply"):
+            self.evolution.apply(self.engine)
 
     @staticmethod
     def _record_decision(decision: Decision, as_of: datetime) -> None:

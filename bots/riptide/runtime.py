@@ -26,6 +26,8 @@ class RiptideRuntime:
         self.engine = engine or Riptide()
         self.market_view = market_view or backtest_lab.MarketView("SPY")
         self.evolution = evolution or EvolutionLoop()
+        if hasattr(self.evolution, "apply"):
+            self.evolution.apply(self.engine)
         self.telemetry_path = telemetry_path or TELEMETRY_PATH
 
     def recover(self, connection: sqlite3.Connection) -> None:

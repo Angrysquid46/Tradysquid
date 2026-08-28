@@ -34,3 +34,15 @@ def test_evolution_receipt_contains_every_guard_stage(tmp_path):
     receipt = loop.evaluate(BLACKTIDE())
     assert receipt["stages"] == loop.stages
     assert receipt["decision"] in ("PROMOTE", "REJECT")
+
+
+def test_promoted_parameters_persist_across_restart(tmp_path):
+    loop = EvolutionLoop(tmp_path / "outcomes.jsonl", tmp_path / "learning.json")
+    engine = BLACKTIDE()
+    for i in range(40):
+        loop.record(outcome(i, .08))
+    receipt = loop.evaluate(engine)
+    if receipt["decision"] == "PROMOTE":
+        restarted = BLACKTIDE()
+        loop.apply(restarted)
+        assert restarted.parameters == engine.parameters

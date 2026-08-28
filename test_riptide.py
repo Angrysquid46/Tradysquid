@@ -1,6 +1,7 @@
 from datetime import datetime,timedelta
 import pytest
 from bots.riptide.engine import FAMILIES,Riptide
+from bots.riptide.evolution import EvolutionLoop,Outcome
 NOW=datetime(2026,8,28,10,0)
 def bars(kind="trend",n=40):
     out=[]
@@ -71,3 +72,13 @@ def test_chronological_replay_is_active_varied_and_rapidly_redeploys():
     assert entries/eligible_flat>=.8
     assert len(set(entered))>=5
     assert set(entered).issubset(set(FAMILIES))
+
+def test_family_learning_suppresses_loser_and_persists(tmp_path):
+    loop=EvolutionLoop(tmp_path/"outcomes.jsonl",tmp_path/"learning.json")
+    for i in range(8):
+        loop.record(Outcome(str(i),1,-.12,"stop",f"2026-08-28T12:{i:02}:00","VWAP_RECLAIM_REJECTION"))
+    first=Riptide(); state=loop.evaluate(first)
+    assert dict(first.parameters.family_bias)["VWAP_RECLAIM_REJECTION"]<0
+    restarted=Riptide(); loop.apply(restarted)
+    assert restarted.parameters==first.parameters
+    assert state["sample"]==8
