@@ -1,5 +1,19 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-28T11:25:18.519114-05:00"
+  "active": true,
+  "work_id": "5dd6b639-f30e-4d16-a9c1-4a49a5ba5854",
+  "actor": "Codex",
+  "task": "repair merge-aware governance freshness check",
+  "method": "Use authoritative first-parent history so a merge commit containing PROJECT_STATE is recognized exactly; add regression coverage.",
+  "started_at": "2026-08-28T11:31:29.997391-05:00",
+  "starting_commit": "85065ecb2b5e3f8659516ea423dbbc94d7e47eeb",
+  "process_id": 34144,
+  "owner_request": "Final RIPTIDE handoff verification exposed false PROJECT_STATE_STALE after normal PR merge.",
+  "before_state": "RIPTIDE rebuild is merged, deployed, live, and in one official paper position; governance-only PR 379 is merged/deployed but verify falsely skips its merge commit.",
+  "reason": "Final RIPTIDE handoff verification exposed false PROJECT_STATE_STALE after normal PR merge.",
+  "intended_scope": "ai_coordination.py, governance regression test, and required governance records only.",
+  "expected_effects": "Fresh merged governance reconciliation verifies READY_CLEAR without weakening exact synchronization.",
+  "required_tests": "Focused governance tests, full repository tests or unchanged-code justification, PR CI, merge, deployed receipt, verify READY_CLEAR.",
+  "risks": "Do not weaken freshness or accept stale commits; first-parent must equal exact HEAD.",
+  "next_safe_action_if_interrupted": "Run governance tests, commit/PR/CI/merge/deploy, finish and verify.",
+  "phase": "Phase 15"
 }

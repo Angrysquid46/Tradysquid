@@ -154,7 +154,7 @@ def _dispatching_git_stub(rev_parse_result, state_commit):
     def git_stub(*args):
         if args[:2] == ("rev-parse", "HEAD"):
             return rev_parse_result
-        if args[:3] == ("log", "-1", "--format=%H"):
+        if args[:4] == ("log", "--first-parent", "-1", "--format=%H"):
             return state_commit
         raise AssertionError(f"unexpected git call: {args}")
     return git_stub

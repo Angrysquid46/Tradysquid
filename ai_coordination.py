@@ -192,7 +192,11 @@ def check_state_freshness() -> dict[str, Any]:
     if LOCK_PATH.exists():
         return result
     try:
-        state_commit = git("log", "-1", "--format=%H", "--", "governance/PROJECT_STATE.json")
+        # Follow authoritative mainline history. Without --first-parent Git's
+        # history simplification can skip a merge commit whose second parent
+        # already contains the same state file, falsely declaring a freshly
+        # merged governance reconciliation stale.
+        state_commit = git("log", "--first-parent", "-1", "--format=%H", "--", "governance/PROJECT_STATE.json")
     except RuntimeError:
         state_commit = ""
     result["state_record_commit"] = state_commit
