@@ -57,11 +57,15 @@ CANONICAL_COMPETITION_SURFACES: tuple[dict[str, object], ...] = ()
 # publish_bot_surfaces) - same registration requirement as
 # CANONICAL_COMPETITION_SURFACES above (record_surface_event() raises on
 # an unregistered surface_id), generated rather than hand-duplicated since
-# both bots' surface sets are identical in shape.
+# both bots' surface sets are identical in shape. AXIOM (Claude's
+# competitor) permanently removed 2026-08-27 (owner directive) - dropped
+# from this generator so reconcile_canonical_bot_surfaces below retires
+# its surfaces via the same register-then-retire-obsolete path every
+# other surface uses.
 CANONICAL_BOT_SURFACES = tuple(
     {
         "surface_id": f"{bot.lower()}-{suffix}", "category": bot,
-        "channel": channel.format(bot=bot.lower()), "owner": "Claude" if bot == "AXIOM" else "Codex",
+        "channel": channel.format(bot=bot.lower()), "owner": "Codex",
         "purpose": purpose.format(bot),
         "producer": "rivalry_presentation.publish_bot_surfaces",
         "publisher": "discord_transport.DiscordTracker", "update_mode": update_mode,

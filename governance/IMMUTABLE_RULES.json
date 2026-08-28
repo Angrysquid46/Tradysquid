@@ -19,9 +19,13 @@
         "machine_id": "BLACKTIDE_SPY",
         "subtitle": "Autonomous SPY Options Evolution Engine",
         "owner": "ChatGPT/Codex"
-      },
+      }
+    },
+    "removed_competitors": {
       "AXIOM": {
-        "owner": "Claude"
+        "owner": "Claude",
+        "removed": "2026-08-27",
+        "reason": "Owner directive: permanently removed from the competition, code and Discord both, after failing to demonstrate a working live trade across the competition's opening two sessions."
       }
     },
     "rule": "Claude must not request, inspect, infer, copy, modify, or train from BLACKTIDE-private strategy intelligence. ChatGPT/Codex must not modify or consume Claude-private strategy intelligence.",

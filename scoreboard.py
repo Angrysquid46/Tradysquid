@@ -1,9 +1,8 @@
 """Phase 8: neutral competition scorekeeper (Master Spec Section 6).
 
-Authoritative accounting for the BLACKTIDE-vs-AXIOM competition, kept
-outside both private traders. Consumes only official trade records this
-module itself writes through two narrow entry points - no bot exists yet
-(Phase 11+), so this waits idle until one calls record_trade_open/close.
+Authoritative accounting for the competition, kept outside any private
+trader. Consumes only official trade records this module itself writes
+through two narrow entry points.
 
 Immutability is enforced by API design, not file permissions: this data
 lives in a gitignored runtime SQLite file, so governance/OWNERSHIP.json's
@@ -31,10 +30,17 @@ DB_PATH = ROOT / "state" / "scoreboard.db"
 STARTING_BANKROLL_USD = 1000.0
 MAX_OPEN_TRADES_PER_BOT = 1
 
-# AXIOM remains recognized solely to preserve its immutable historical receipts
-# and keep its protected code isolated. Active public competition surfaces use
-# rivalry_presentation.PUBLIC_BOTS and no longer include it.
-BOTS = ("BLACKTIDE", "AXIOM", "RIPTIDE")
+# AXIOM permanently removed 2026-08-27 (owner directive, given and
+# confirmed twice: "delete axioms entire presence in the code and the
+# discord... no traces of it in the system" / "kill axiom remove its
+# corpse"). Its historical rows in state/scoreboard.db are untouched
+# (official_completed_trades_immutable=true still applies to what already
+# happened) - dropping it here only stops any NEW row from ever being
+# recorded under that name, and stops it from being enumerated by
+# anything that iterates BOTS (confirmed to be exactly one call site,
+# rivalry_presentation.render_scoreboard, fixed in the same change to use
+# rivalry_presentation.PUBLIC_BOTS directly instead).
+BOTS = ("BLACKTIDE", "RIPTIDE")
 
 
 def connect_db() -> sqlite3.Connection:
@@ -547,6 +553,14 @@ def scoreboard_snapshot(connection: sqlite3.Connection, bot: str) -> dict[str, A
 
 
 def current_leader(connection: sqlite3.Connection) -> str | None:
+    """"Leader" is a comparison against a rival - with fewer than two
+    registered bots there is nothing to lead against, so this returns
+    None rather than crashing on ordered[1] or fabricating a trivial
+    "leader" of a field of one. (Not reachable today with BOTS at two
+    entries, but a real bug the AXIOM removal would have introduced here
+    if BOTS had shrunk to one - guarded defensively regardless.)"""
+    if len(BOTS) < 2:
+        return None
     totals = {bot: lifetime_pnl(connection, bot) for bot in BOTS}
     if all(value == 0 for value in totals.values()):
         return None
