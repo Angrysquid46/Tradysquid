@@ -1,22 +1,5 @@
 {
-  "active": true,
-  "work_id": "eec72de2-f041-47bf-9a2d-ba0cd72acf33",
-  "actor": "Codex",
-  "task": "autonomous validated learning for BLACKTIDE and RIPTIDE",
-  "method": "Upgrade each private bot independently so official outcomes drive family/regime/holding/sizing learning, chronological validation, stability gates, automatic promotion/rejection, loss suppression, and durable restart-safe state without cross-bot intelligence.",
-  "started_at": "2026-08-28T13:58:02.381497-05:00",
-  "starting_commit": "f21b50bfae880dd3f8c3236b3fdc7f62f0caad2c",
-  "process_id": 40068,
-  "owner_request": "Owner requires both active competitors to improve autonomously without daily handholding; RIPTIDE evidence showed its current global-only adjustment is insufficient.",
-  "before_state": "Both bots are live paper competitors; RIPTIDE completed 29 trades today with 7 wins and current global-only evolution cannot suppress losing families; BLACKTIDE has its own existing private evolution which must be independently audited and hardened without sharing intelligence.",
-  "reason": "Owner requires both active competitors to improve autonomously without daily handholding; RIPTIDE evidence showed its current global-only adjustment is insufficient.",
-  "intended_scope": "bots/blacktide, bots/riptide, their tests, and necessary governance records only; no shared referee rules, updater, brokerage execution, or cross-private imports.",
-  "expected_effects": "Each bot learns privately from its own immutable official closed outcomes, validates candidate adaptations causally, persists promoted state, rejects unstable/overfit changes, and self-corrects losing behavior while retaining its identity.",
-  "required_tests": "Per-bot attribution, regime/family learning, chronological holdout, minimum sample, stability, anti-overfit, persistence/restart, promotion/rejection, loss suppression, safety invariants, focused and full repository suites, CI, deployment, process verification.",
-  "risks": "Overfitting one day, both bots converging, suppressing all activity, corrupting private state, live process loading incompatible state; mitigate with independent designs, bounded parameters, immutable append-only receipts, minimum samples, holdouts, and flat-safe deployment.",
-  "next_safe_action_if_interrupted": "Add explicit persistence/promotion regression cases, inspect diffs, commit/PR/CI/deploy, then flat-safe restart each bot and verify promoted state loads.",
-  "phase": "Phase 15",
-  "last_checkpoint_at": "2026-08-28T14:02:08.690667-05:00",
-  "last_successful_action": "Implemented durable restart-safe promoted learning for both bots; RIPTIDE now applies chronological family-specific loss/reward bias in addition to bounded risk/exploration, and BLACKTIDE persists validated threshold promotions. Focused 15 and complete repository suite pass.",
-  "next_safe_action": "Add explicit persistence/promotion regression cases, inspect diffs, commit/PR/CI/deploy, then flat-safe restart each bot and verify promoted state loads."
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-28T16:04:51.968778-05:00"
 }
