@@ -73,8 +73,8 @@ CATEGORY_ORDER = [
     "COMMUNITY",
     "MARKET INTELLIGENCE",
     "LEARNING CENTER",
-    "AXIOM",
     "BLACKTIDE",
+    "RIPTIDE",
     "OWNER CONTROL",
 ]
 
@@ -112,20 +112,20 @@ CHANNELS = [
     # to any frozen file.
     ChannelSpec("OWNER CONTROL", "system-health", "Local service health, freshness, queue depth, and restarts."),
     ChannelSpec("OWNER CONTROL", "workflow-log", "Release and deployment history."),
-    # AXIOM (Claude) and BLACKTIDE (Codex) each get their own category:
+    # BLACKTIDE and RIPTIDE each get their own paper-trader category:
     # a balance/trades/stats dashboard, a live held-trades card, and a
     # closed-trade winners/losers feed - all built on scoreboard.py, the
     # single neutral ledger already shared by both bots (see
     # rivalry_presentation.py, which already reads it the same way for the
     # combined #blacktide-vs-claude scoreboard).
-    ChannelSpec("AXIOM", "axiom-dashboard", "AXIOM stat cards (balance, generation, P/L, win rate, streak, drawdown) plus a bankroll history chart."),
-    ChannelSpec("AXIOM", "axiom-held-trades", "AXIOM's current live position, updated on open/close."),
-    ChannelSpec("AXIOM", "axiom-winners", "AXIOM's winning closed trades."),
-    ChannelSpec("AXIOM", "axiom-losers", "AXIOM's losing closed trades."),
     ChannelSpec("BLACKTIDE", "blacktide-dashboard", "BLACKTIDE stat cards (balance, generation, P/L, win rate, streak, drawdown) plus a bankroll history chart."),
     ChannelSpec("BLACKTIDE", "blacktide-held-trades", "BLACKTIDE's current live position, updated on open/close."),
     ChannelSpec("BLACKTIDE", "blacktide-winners", "BLACKTIDE's winning closed trades."),
     ChannelSpec("BLACKTIDE", "blacktide-losers", "BLACKTIDE's losing closed trades."),
+    ChannelSpec("RIPTIDE", "riptide-dashboard", "RIPTIDE stat cards (balance, generation, P/L, win rate, streak, drawdown) plus a bankroll history chart."),
+    ChannelSpec("RIPTIDE", "riptide-held-trades", "RIPTIDE's current live position, updated on open/close."),
+    ChannelSpec("RIPTIDE", "riptide-winners", "RIPTIDE's winning closed trades."),
+    ChannelSpec("RIPTIDE", "riptide-losers", "RIPTIDE's losing closed trades."),
     # Reconciled 2026-08-19: these are live channels the bot already writes
     # to that had drifted out of this spec entirely. Declared with their
     # CURRENT topics so the sync is a no-op - the point is that a future
@@ -285,6 +285,7 @@ DELETE_CHANNELS = {
     # 1" for winners/losers. Split into axiom-winners/axiom-losers and
     # blacktide-winners/blacktide-losers above.
     "axiom-winners-losers", "blacktide-winners-losers",
+    "axiom-dashboard", "axiom-held-trades", "axiom-winners", "axiom-losers",
     # Retired 2026-08-27: the head-to-head rivalry feature is permanently
     # removed. Keep this in the reconciliation list so a legacy deployment
     # cannot leave the channel behind or recreate it during a later sync.
@@ -294,7 +295,7 @@ DELETE_CHANNELS = {
 DELETE_CATEGORIES = {
     "ARCHIVE - LEGACY", "TICKER • F", "TICKER • VALE",
     "LIVE TRADING DESK", "PERFORMANCE", "STRATEGY CONTROL", "SYSTEM",
-    "RIVALRY",
+    "RIVALRY", "AXIOM",
     *_OLD_STRATEGY_CATEGORY_NAMES,
     STRATEGIES_CATEGORY_NAME,
 }
@@ -317,14 +318,14 @@ CHANNEL_STARTERS = {
     "ask-tradebot": "Use `/ask` or `/explain`; general conversation belongs in #general-chat.",
     "examples-and-reviews": "Paper-trade examples and completed reviews appear here.",
     "system-health": "Updated by the local supervisor and engine.",
-    "axiom-dashboard": "Updated every 5 minutes: stat cards plus a bankroll history chart.",
-    "axiom-held-trades": "Updated when AXIOM opens or closes its position.",
-    "axiom-winners": "Updated immediately when an AXIOM position closes profitably.",
-    "axiom-losers": "Updated immediately when an AXIOM position closes without a profit.",
     "blacktide-dashboard": "Updated every 5 minutes: stat cards plus a bankroll history chart.",
     "blacktide-held-trades": "Updated when BLACKTIDE opens or closes its position.",
     "blacktide-winners": "Updated immediately when a BLACKTIDE position closes profitably.",
     "blacktide-losers": "Updated immediately when a BLACKTIDE position closes without a profit.",
+    "riptide-dashboard": "Updated every 5 minutes: stat cards plus a bankroll history chart.",
+    "riptide-held-trades": "Updated when RIPTIDE opens or closes its position.",
+    "riptide-winners": "Updated immediately when a RIPTIDE position closes profitably.",
+    "riptide-losers": "Updated immediately when a RIPTIDE position closes without a profit.",
     "strategy-control": "Owner-only; reflects both live SPY 0DTE strategy toggles (1-minute and 5-minute).",
     "strategy-settings": "Mirrors the filters each strategy is currently using.",
     "strategy-versions": "Updated when a strategy's configuration hash changes.",
@@ -372,7 +373,7 @@ Type `/`, choose a command, complete its fields, and send it.
 • `/scan-now scope:` — owner-only manual scan and reporting.
 Scheduled research posts on its own into #market-intelligence
 (premarket/breaking-alerts/charts-and-levels/news-and-events/market-regime/
-spy-technicals); AXIOM and BLACKTIDE's own dashboards update themselves as
+spy-technicals); BLACKTIDE and RIPTIDE's own dashboards update themselves as
 their paper trades open and close.
 The hidden supervisor starts services, checks GitHub for approved releases,
 restarts failures, synchronizes Discord, and reports deployments. The system is
@@ -410,13 +411,11 @@ Every position force-closes at end of day; 0DTE never holds overnight.
 Quotes, assignment, exercise, slippage, and total-loss risk still require
 individual review. Educational only—not financial advice.
 
-**AXIOM and BLACKTIDE are separate.** They're two independently-built AI
-paper-traders (AXIOM is Claude's, BLACKTIDE is Codex's) competing head-to-head
-from the same $1,000 starting bankroll, each with its own private entry/exit
-logic neither side can see into. Every trade either one makes is recorded
-through the same neutral, shared scorekeeper, so #axiom-dashboard,
-#blacktide-dashboard, and the combined #blacktide-vs-claude scoreboard are
-always describing real, audited paper trades - never a simulation of one.""",
+**BLACKTIDE and RIPTIDE are separate.** They're independently-built AI
+paper-traders with their own private entry/exit logic and a $1,000 paper
+generation bankroll. Every trade is recorded through the same neutral shared
+scorekeeper, so their dashboards describe audited paper trades—not a
+simulation or a trading recommendation.""",
     "learning-index": """# Complete Learning Center
 ## 43-Chapter Options Curriculum
 Each card below is one chapter. Every chapter lists **Topic 1 through its final

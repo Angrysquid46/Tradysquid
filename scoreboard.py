@@ -31,7 +31,10 @@ DB_PATH = ROOT / "state" / "scoreboard.db"
 STARTING_BANKROLL_USD = 1000.0
 MAX_OPEN_TRADES_PER_BOT = 1
 
-BOTS = ("BLACKTIDE", "AXIOM")
+# AXIOM remains recognized solely to preserve its immutable historical receipts
+# and keep its protected code isolated. Active public competition surfaces use
+# rivalry_presentation.PUBLIC_BOTS and no longer include it.
+BOTS = ("BLACKTIDE", "AXIOM", "RIPTIDE")
 
 
 def connect_db() -> sqlite3.Connection:

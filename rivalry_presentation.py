@@ -19,6 +19,10 @@ LEGACY_RIVALRY_TOKEN = "TSQ-COMPETITION-RIVALRY"
 # fingerprints this so a presentation release refreshes old cards even when
 # the underlying trade facts have not changed.
 BOT_SURFACE_FORMAT_VERSION = "per-event-trade-cards-v1"
+# AXIOM is retired from active public presentation. Its immutable historical
+# ledger rows remain available to the neutral scorekeeper, but RIPTIDE is the
+# live second challenger shown on Discord.
+PUBLIC_BOTS = ("BLACKTIDE", "RIPTIDE")
 
 
 def render_scoreboard(connection: Any) -> str:

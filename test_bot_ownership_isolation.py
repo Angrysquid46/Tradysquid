@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 BLACKTIDE_DIR = ROOT / "bots" / "blacktide"
 CLAUDE_DIR = ROOT / "bots" / "claude"
+RIPTIDE_DIR = ROOT / "bots" / "riptide"
 
 _CROSS_REFERENCE_RE = re.compile(r"bots[./\\]blacktide|bots[./\\]claude")
 _BLACKTIDE_PATH_RE = re.compile(r"bots[./\\]blacktide")
@@ -35,6 +36,7 @@ def _python_files(directory: Path) -> list[Path]:
 def test_bot_directories_exist():
     assert BLACKTIDE_DIR.is_dir()
     assert CLAUDE_DIR.is_dir()
+    assert RIPTIDE_DIR.is_dir()
 
 
 def test_claude_directory_never_references_blacktide():
@@ -59,6 +61,14 @@ def test_blacktide_directory_never_references_claude():
         text = path.read_text(encoding="utf-8")
         assert not _CLAUDE_PATH_RE.search(text), (
             f"{path.relative_to(ROOT)} must never reference the bots/claude path"
+        )
+
+
+def test_riptide_directory_never_references_other_private_bots():
+    for path in _python_files(RIPTIDE_DIR):
+        text = path.read_text(encoding="utf-8")
+        assert not _CROSS_REFERENCE_RE.search(text), (
+            f"{path.relative_to(ROOT)} must never reference another private bot path"
         )
 
 

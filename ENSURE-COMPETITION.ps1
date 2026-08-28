@@ -1,9 +1,8 @@
 <#
-Watchdog for AXIOM (Claude's Phase 15 competition process), parallel to
-ENSURE-SUPERVISOR.ps1 but for bots/claude instead of the main Tradysquid
-stack. AXIOM owns a single-instance TCP lock port (127.0.0.1:8879 per
-bots/claude/scheduler.py) - if nothing is listening on it, AXIOM isn't
-running, so relaunch it hidden via start_axiom_hidden.vbs -> start_axiom.cmd
+Watchdog for RIPTIDE (Codex's independent paper challenger), parallel to
+ENSURE-SUPERVISOR.ps1 but separate from the main Tradysquid stack. RIPTIDE
+owns a single-instance TCP lock port (127.0.0.1:8893). If nothing is
+listening on it, RIPTIDE is relaunched hidden via start_riptide_hidden.vbs.
 (which owns its own crash-restart loop; this watchdog only recovers from the
 whole process tree being gone, e.g. after a reboot or the window being
 closed).
@@ -38,7 +37,7 @@ function Test-PortListening {
 }
 
 $bots = @(
-    @{ Name = 'AXIOM'; Port = 8879; StopFlag = Join-Path $StateDir 'axiom-stop.flag'; Launcher = Join-Path $Root 'start_axiom_hidden.vbs' }
+    @{ Name = 'RIPTIDE'; Port = 8893; StopFlag = Join-Path $StateDir 'riptide-stop.flag'; Launcher = Join-Path $Root 'start_riptide_hidden.vbs' }
 )
 
 $unhealthy = @()

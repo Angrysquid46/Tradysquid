@@ -766,7 +766,7 @@ def competition_surfaces_job(connection: sqlite3.Connection) -> str:
     surface_connection = discord_surface_manifest.connect_db()
     results = []
 
-    for bot in scoreboard.BOTS:
+    for bot in rivalry_presentation.PUBLIC_BOTS:
         bot_fingerprint = _fingerprint({
             "snapshot": scoreboard.scoreboard_snapshot(score_connection, bot),
             "presentation_format": rivalry_presentation.BOT_SURFACE_FORMAT_VERSION,

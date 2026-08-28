@@ -36,7 +36,7 @@ def _stub_publishers(monkeypatch):
 def test_first_run_publishes_everything(connections, monkeypatch):
     calls = _stub_publishers(monkeypatch)
     result = lie.competition_surfaces_job(connections)
-    assert calls["bots"] == list(scoreboard.BOTS)
+    assert calls["bots"] == list(lie.rivalry_presentation.PUBLIC_BOTS)
     assert "unchanged" not in result
 
 
@@ -48,7 +48,7 @@ def test_second_run_with_no_state_change_skips_every_publish_call(connections, m
     result = lie.competition_surfaces_job(connections)
 
     assert calls["bots"] == [], "unchanged state must not repost any per-bot dashboard/chart/held-trade cards"
-    for bot in scoreboard.BOTS:
+    for bot in lie.rivalry_presentation.PUBLIC_BOTS:
         assert f"{bot}:unchanged" in result
 
 
@@ -59,7 +59,7 @@ def test_a_real_trade_change_triggers_a_republish_for_that_bot_only(connections,
 
     score_connection = scoreboard.connect_db()
     scoreboard.record_trade_open(
-        score_connection, trade_id="t1", bot="AXIOM", generation=1,
+        score_connection, trade_id="t1", bot="RIPTIDE", generation=1,
         opened_at="2026-08-26T09:30:00-05:00", side="CALL",
         contract_symbol="SPY-SECRET", entry_price=1.0, contracts=1,
         entry_bankroll=1000.0,
@@ -67,8 +67,8 @@ def test_a_real_trade_change_triggers_a_republish_for_that_bot_only(connections,
 
     result = lie.competition_surfaces_job(connections)
 
-    assert calls["bots"] == ["AXIOM"], "only the bot whose state actually changed should republish"
-    assert "AXIOM:ok" in result
+    assert calls["bots"] == ["RIPTIDE"], "only the active public bot whose state changed should republish"
+    assert "RIPTIDE:ok" in result
     assert "BLACKTIDE:unchanged" in result
 
 
@@ -81,6 +81,6 @@ def test_bot_presentation_format_change_refreshes_both_bot_surfaces(connections,
     monkeypatch.setattr(lie.rivalry_presentation, "BOT_SURFACE_FORMAT_VERSION", "test-v2")
     result = lie.competition_surfaces_job(connections)
 
-    assert calls["bots"] == list(scoreboard.BOTS)
-    assert "AXIOM:ok" in result
+    assert calls["bots"] == list(lie.rivalry_presentation.PUBLIC_BOTS)
+    assert "RIPTIDE:ok" in result
     assert "BLACKTIDE:ok" in result

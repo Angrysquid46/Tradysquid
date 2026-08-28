@@ -161,6 +161,14 @@
       "writers": ["Claude"],
       "protected": true,
       "purpose": "Phase 11 (Section 11): Claude's private trader, built in Phase 13. Only Claude may write here. ChatGPT/Codex must not modify or consume Claude-private strategy intelligence (Section 3's private-competitor boundary) - this entry enforces the write side; the read-side boundary is convention (this directory's own AGENTS.md), not a technical sandbox."
+    },
+    {
+      "path": "bots/riptide/",
+      "owner": "BLACKTIDE_ONLY",
+      "readers": ["Owner", "Codex"],
+      "writers": ["Codex"],
+      "protected": true,
+      "purpose": "Owner-authorized Phase 15 independent Codex-owned RIPTIDE paper challenger. Only Codex may write here; it may not read or use BLACKTIDE or Claude private strategy intelligence."
     }
   ],
   "scoped_instructions_convention": "Each BLACKTIDE_ONLY/CLAUDE_ONLY directory (created Phase 11+, e.g. bots/blacktide, bots/claude) must contain its own AGENTS.md scoped to that directory, following the nearest-file convention: an agent reads the root AGENTS.md plus the nearest scoped AGENTS.md above its working path. This file's writers field for that directory's entry is the authoritative machine-readable grant; the scoped AGENTS.md is a human/agent-readable restatement of the same rule, not a separate grant. Root AGENTS.md must not enumerate bot directories in advance of the phase that creates them.",
