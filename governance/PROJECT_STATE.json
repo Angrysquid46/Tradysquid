@@ -1,16 +1,11 @@
 {
-  "last_updated": "2026-08-28T11:14:55.861819-05:00",
-  "branch": "codex/riptide-intelligent-degenerate-rebuild",
-  "observed_head_at_write": "13e941a543b3d9ba2f8b82aadfb46fc043dc74eb",
-  "commit_subject": "Permanently remove AXIOM from the competition (#377)",
+  "last_updated": "2026-08-28T11:25:19.068258-05:00",
+  "branch": "main",
+  "observed_head_at_write": "be02746a11c2b4fc89e2f9d0a53b244f24d7122f",
+  "commit_subject": "Merge pull request #378 from Angrysquid46/codex/riptide-intelligent-degenerate-rebuild",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
-  "active_lock": {
-    "actor": "Codex",
-    "task": "RIPTIDE intelligent-degenerate full strategy rebuild and same-session relaunch",
-    "work_id": "7a60ba2e-d1ab-4ec9-a6de-90bc7c29f688",
-    "started_at": "2026-08-28T11:04:24.717677-05:00"
-  },
+  "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
 }
