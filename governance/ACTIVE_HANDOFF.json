@@ -1,22 +1,5 @@
 {
-  "active": true,
-  "work_id": "7a60ba2e-d1ab-4ec9-a6de-90bc7c29f688",
-  "actor": "Codex",
-  "task": "RIPTIDE intelligent-degenerate full strategy rebuild and same-session relaunch",
-  "method": "Reject and replace the existing compression-breakout engine with a unique multi-family causal gambling architecture, action-pressure system, competing internal styles, adaptive sizing/exits/evolution, decision telemetry, activity metrics and chronological behavioral/adversarial tests; merge by PR/CI, deploy through existing updater, replace only RIPTIDE process, then verify active evaluation and legitimate paper trading before market close.",
-  "started_at": "2026-08-28T11:04:24.717677-05:00",
-  "starting_commit": "13e941a543b3d9ba2f8b82aadfb46fc043dc74eb",
-  "process_id": 42500,
-  "owner_request": "Owner explicitly rejected the low-activity compression breakout as behaviorally opposite to the requested intelligent degenerate gambler and authorized a full same-depth rebuild.",
-  "before_state": "RIPTIDE is live on port 8893, Gen1//0 trades/FLAT, but has one restrictive compression-breakout family and returned NO_ACTION through today's liquid session; BLACKTIDE and shared runtime are healthy and off-limits except neutral interfaces.",
-  "reason": "Owner explicitly rejected the low-activity compression breakout as behaviorally opposite to the requested intelligent degenerate gambler and authorized a full same-depth rebuild.",
-  "intended_scope": "bots/riptide private implementation and tests; only necessary governance records. Do not inspect or edit bots/blacktide, removed Claude/AXIOM state, shared competition law, referee, market data, updater, or unrelated Discord surfaces.",
-  "expected_effects": "RIPTIDE becomes a unique high-activity, multi-family paper competitor using Tier-A causal observations, broad but scored actionability, escalating action pressure, aggressive adaptive sizing, fast exits/re-entry, private outcome evolution and auditable activity telemetry; one official position and real ask/bid accounting remain absolute.",
-  "required_tests": "Architecture/unit tests for all required families/states/scores/action pressure/sizing/exits/evolution/telemetry; chronological regime replays and holdout activity comparisons; no-timer/random-buy proof; stale/provider/missing/affordability/API and referee adversarial tests; full RIPTIDE/shared/full repo tests; PR CI; deployment receipt; live process/preflight/evaluation/trade verification.",
-  "risks": "Market-close deadline, overtrading into poor liquidity, accidental forced quota trades, lookahead, false replay evidence, restart during an official position, and touching competing private code. Mitigate by preserve old process until green deployment, causal fixtures, explicit actionability floor, Tier-A/fill/referee gates, flat-state cutover, and strict ownership scope.",
-  "next_safe_action_if_interrupted": "Commit intended RIPTIDE and governance files, push PR, run CI, merge, verify updater deployment, then perform flat-state live RIPTIDE cutover and observe evaluations.",
-  "phase": "Phase 15",
-  "last_checkpoint_at": "2026-08-28T11:14:55.472225-05:00",
-  "last_successful_action": "Rebuilt RIPTIDE as unique 12-family intelligent-degenerate engine with action pressure, aggressive adaptive sizing, fast exits, telemetry, evolution integration, API snapshot reuse, and chronological activity acceptance tests; full repository suite passes.",
-  "next_safe_action": "Commit intended RIPTIDE and governance files, push PR, run CI, merge, verify updater deployment, then perform flat-state live RIPTIDE cutover and observe evaluations."
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-28T11:25:18.519114-05:00"
 }
