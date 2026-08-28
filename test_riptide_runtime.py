@@ -4,6 +4,7 @@ import pytest
 
 import scoreboard
 from bots.riptide.evolution import EvolutionLoop
+from bots.riptide.engine import FAMILIES
 from bots.riptide.runtime import RiptideRuntime
 
 
@@ -30,11 +31,14 @@ def test_runtime_records_immutable_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(scoreboard, "DB_PATH", tmp_path / "scoreboard.db")
     monkeypatch.setattr(scoreboard, "BOTS", ("BLACKTIDE", "RIPTIDE"))
     connection, view = scoreboard.connect_db(), View()
-    runtime = RiptideRuntime(market_view=view, evolution=EvolutionLoop(tmp_path / "outcomes.jsonl"))
+    runtime = RiptideRuntime(market_view=view, evolution=EvolutionLoop(tmp_path / "outcomes.jsonl"),
+                             telemetry_path=tmp_path / "decision-telemetry.jsonl")
     assert runtime.evaluate(NOW, connection).action == "ENTER"
     assert scoreboard.current_position_status(connection, "RIPTIDE") is not None
     view.bid = 1.55
     assert runtime.evaluate(NOW + timedelta(minutes=1), connection).action == "EXIT"
     assert scoreboard.trade_count(connection, "RIPTIDE") == 1
-    assert scoreboard.total_pnl(connection, "RIPTIDE") == pytest.approx(150.0)
-    assert EvolutionLoop(tmp_path / "outcomes.jsonl").load()[0].exit_reason == "take-profit reached"
+    assert scoreboard.total_pnl(connection, "RIPTIDE") == pytest.approx(250.0)
+    outcome = EvolutionLoop(tmp_path / "outcomes.jsonl").load()[0]
+    assert outcome.exit_reason == "aggressive profit capture"
+    assert outcome.family in FAMILIES
