@@ -14,6 +14,9 @@
   "expected_effects": "RIPTIDE becomes the second publicly surfaced paper trader; AXIOM public channels/watchdog route are retired; no brokerage orders are possible.",
   "required_tests": "ownership isolation, engine/runtime/scheduler/preflight/launch tests, syntax, focused integration, CI",
   "risks": "A process or layout migration could leave stale AXIOM surfaces; migration will occur only after RIPTIDE passes tests and starts successfully.",
-  "next_safe_action_if_interrupted": "Create RIPTIDE ownership boundary and independent implementation, then validate before public-route cutover.",
-  "phase": "Phase 15"
+  "next_safe_action_if_interrupted": "Push the current-main deployment receipt, wait for normal updater retry, then verify deployment before live cutover.",
+  "phase": "Phase 15",
+  "last_checkpoint_at": "2026-08-27T19:20:19.085868-05:00",
+  "last_successful_action": "PR #376 merged at 468326c with all CI checks green. The supervisor fetched main but retained its prior WRONG_BRANCH result instead of retrying installation; no frozen updater code has been changed. RIPTIDE has not been started and AXIOM has not been stopped.",
+  "next_safe_action": "Push the current-main deployment receipt, wait for normal updater retry, then verify deployment before live cutover."
 }

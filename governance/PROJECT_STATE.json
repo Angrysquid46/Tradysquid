@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-27T18:57:48.110430-05:00",
+  "last_updated": "2026-08-27T19:20:19.474279-05:00",
   "branch": "main",
-  "observed_head_at_write": "b13056cdac202b20245fbb0e6135260a5696c236",
-  "commit_subject": "Record rivalry layout retirement completion",
+  "observed_head_at_write": "468326ca023aab85438a0bf911ea74144711e1f5",
+  "commit_subject": "Merge pull request #376 from Angrysquid46/codex/riptide-replacement",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": {
