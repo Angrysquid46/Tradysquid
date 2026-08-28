@@ -1,16 +1,11 @@
 {
-  "last_updated": "2026-08-27T19:38:47.554435-05:00",
+  "last_updated": "2026-08-27T19:39:27.526169-05:00",
   "branch": "remove-axiom-entirely",
-  "observed_head_at_write": "76b09bd9abdcf73c6c71ffb18bbce61988ebfb7c",
-  "commit_subject": "Record RIPTIDE live launch",
+  "observed_head_at_write": "a1d606605900be16985ca678847e46147214d0cf",
+  "commit_subject": "Permanently remove AXIOM from the competition - code, Discord, and infra",
   "current_phase": "15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
-  "active_lock": {
-    "actor": "Claude",
-    "task": "remove-axiom-entirely",
-    "work_id": "d7b5c627-0276-479a-88d7-cd377f683093",
-    "started_at": "2026-08-27T19:38:47.168052-05:00"
-  },
+  "active_lock": null,
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
 }

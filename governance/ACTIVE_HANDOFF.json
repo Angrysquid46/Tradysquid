@@ -1,19 +1,5 @@
 {
-  "active": true,
-  "work_id": "d7b5c627-0276-479a-88d7-cd377f683093",
-  "actor": "Claude",
-  "task": "remove-axiom-entirely",
-  "method": "Delete bots/claude/ and all test_axiom_*.py entirely; remove AXIOM from scoreboard.py/rivalry.py BOTS rosters (preserving RIPTIDE, Codex's already-launched second competitor); fix rivalry_presentation.render_scoreboard to use PUBLIC_BOTS instead of raw scoreboard.BOTS; add a defensive guard to scoreboard.current_leader(); delete launch/watchdog scripts and unregister the Windows scheduled task; update governance/IMMUTABLE_RULES.json, OWNERSHIP.json, PHASES.json honestly, without erasing history or touching Codex's own RIPTIDE-related entries",
-  "started_at": "2026-08-27T19:38:47.168052-05:00",
-  "starting_commit": "76b09bd9abdcf73c6c71ffb18bbce61988ebfb7c",
-  "process_id": 26372,
-  "owner_request": "Owner directive 2026-08-27, repeated and confirmed explicitly twice: 'delete axioms entire presence in the code and the discord. entirely I want no traces if it in the system' / 'kill axiom remove its corpse gpt is replacing it'. Rebased against origin/main after Codex independently shipped RIPTIDE (bots/riptide/, PR #376) as AXIOM's replacement mid-session - re-verified every shared file's current state before editing so nothing of Codex's RIPTIDE work was touched or reverted",
-  "before_state": "",
-  "reason": "Owner directive 2026-08-27, repeated and confirmed explicitly twice: 'delete axioms entire presence in the code and the discord. entirely I want no traces if it in the system' / 'kill axiom remove its corpse gpt is replacing it'. Rebased against origin/main after Codex independently shipped RIPTIDE (bots/riptide/, PR #376) as AXIOM's replacement mid-session - re-verified every shared file's current state before editing so nothing of Codex's RIPTIDE work was touched or reverted",
-  "intended_scope": "bots/claude/ (deleted), test_axiom_*.py (deleted), scoreboard.py, rivalry.py, rivalry_presentation.py, discord_surface_manifest.py, launch/watchdog scripts (deleted), governance/IMMUTABLE_RULES.json, governance/OWNERSHIP.json, governance/PHASES.json, and the tests exercising all of the above (sync_discord_structure.py and test_competition_surfaces_job.py deliberately untouched - Codex already correctly handled AXIOM removal there as part of the RIPTIDE rollout)",
-  "expected_effects": "",
-  "required_tests": "Full pytest suite (excluding known pre-existing environmental subprocess-handle failures, confirmed identical on main); live Discord category+channel deletion via direct API calls, already executed and verified earlier this session",
-  "risks": "",
-  "next_safe_action_if_interrupted": "",
-  "phase": "15"
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-27T19:39:27.360254-05:00"
 }
