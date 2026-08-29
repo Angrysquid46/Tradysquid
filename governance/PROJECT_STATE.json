@@ -1,11 +1,16 @@
 {
-  "last_updated": "2026-08-28T20:57:19.543945-05:00",
+  "last_updated": "2026-08-28T21:56:26.076159-05:00",
   "branch": "main",
-  "observed_head_at_write": "f2d8a19fc4f919f472db81039e8624a6643297fe",
-  "commit_subject": "Merge pull request #386 from Angrysquid46/codex/surge-reactive-exits",
+  "observed_head_at_write": "b9a81a7d6568ca7116cbfa001895df020d5513be",
+  "commit_subject": "Merge pull request #387 from Angrysquid46/codex/surge-reactive-finish",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
-  "active_lock": null,
+  "active_lock": {
+    "actor": "Codex",
+    "task": "SURGE robust profitability search on captured data",
+    "work_id": "36549fdf-e7c3-4069-a113-a90099cae092",
+    "started_at": "2026-08-28T21:19:20.570089-05:00"
+  },
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
 }
