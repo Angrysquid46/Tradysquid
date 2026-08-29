@@ -40,7 +40,7 @@ MAX_OPEN_TRADES_PER_BOT = 1
 # anything that iterates BOTS (confirmed to be exactly one call site,
 # rivalry_presentation.render_scoreboard, fixed in the same change to use
 # rivalry_presentation.PUBLIC_BOTS directly instead).
-BOTS = ("BLACKTIDE", "RIPTIDE")
+BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE")
 
 
 def connect_db() -> sqlite3.Connection:

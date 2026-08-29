@@ -22,7 +22,7 @@ BOT_SURFACE_FORMAT_VERSION = "per-event-trade-cards-v1"
 # AXIOM permanently removed 2026-08-27 (owner directive) - no longer in
 # scoreboard.BOTS/rivalry.BOTS either, not just this presentation list.
 # RIPTIDE is the live second challenger shown on Discord.
-PUBLIC_BOTS = ("BLACKTIDE", "RIPTIDE")
+PUBLIC_BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE")
 
 
 def render_scoreboard(connection: Any) -> str:

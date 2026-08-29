@@ -1,5 +1,22 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-28T22:01:16.178019-05:00"
+  "active": true,
+  "work_id": "a3d19f6d-de42-4d0b-9700-54e4c10f014f",
+  "actor": "Codex",
+  "task": "Launch SURGE as competition trader number 3",
+  "method": "Promote the owner-selected 3-minute raw-profit research configuration into an isolated paper-only SURGE package, register it with neutral competition/public surfaces, validate, merge, deploy through frozen updater, and live-verify.",
+  "started_at": "2026-08-28T22:05:29.422106-05:00",
+  "starting_commit": "a0eea99a1c3bd8a3fbcc75fd5dd1f5c9c9f70510",
+  "process_id": 36440,
+  "owner_request": "Owner explicitly selected the highest raw-profit 3-minute configuration as SURGE and designated it competitor number 3 despite disclosed overfitting risk.",
+  "before_state": "SURGE exists only as a research backtest; competition currently has BLACKTIDE and RIPTIDE. Main a0eea99 is automatically deployed and updater receipt is UP_TO_DATE with rollback NOT_NEEDED.",
+  "reason": "Owner explicitly selected the highest raw-profit 3-minute configuration as SURGE and designated it competitor number 3 despite disclosed overfitting risk.",
+  "intended_scope": "New bots/surge private package, SURGE launch/runtime tests, explicitly necessary neutral scoreboard/rivalry/surface/watchdog registration, governance ownership/state; no BLACKTIDE or RIPTIDE private changes and no updater modifications.",
+  "expected_effects": "Adds third paper competitor with ,000 Gen 1 ledger, one open position maximum, public SURGE surfaces, and standalone runtime; no brokerage orders.",
+  "required_tests": "Ownership/isolation, engine causality, observed ask/bid fills, referee recovery, runtime/preflight, complete pytest, CI, updater receipt, process health and official ledger verification.",
+  "risks": "Selected strategy is hindsight-best and failed validation; live losses/bust are possible. New competitor registration touches shared presentation and startup orchestration but frozen updater code remains untouched.",
+  "next_safe_action_if_interrupted": "Commit intended files, open PR, pass CI, merge, await existing updater, reconcile live Discord surfaces, launch SURGE only, and verify port/ledger/evaluations.",
+  "phase": "Phase 15",
+  "last_checkpoint_at": "2026-08-28T22:10:58.581121-05:00",
+  "last_successful_action": "Implemented isolated SURGE competitor #3 with exact owner-selected 3-minute configuration, causal Tier-A selected-contract execution, observed ask/bid accounting, restart-safe peak tracking, neutral referee registration, public surface declarations, scheduler/launch/preflight, and tests. 55 focused plus complete repository suite pass.",
+  "next_safe_action": "Commit intended files, open PR, pass CI, merge, await existing updater, reconcile live Discord surfaces, launch SURGE only, and verify port/ledger/evaluations."
 }
