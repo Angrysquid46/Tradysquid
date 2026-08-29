@@ -1,5 +1,19 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-28T20:41:28.356735-05:00"
+  "active": true,
+  "work_id": "1deaf8f1-32df-45f1-baa2-f6baa68dd91c",
+  "actor": "Codex",
+  "task": "SURGE reactive two-sided profit-rider backtest",
+  "method": "Replace coarse time exits with quote-by-quote observed-bid peak tracking, rapid failure stops, underlying-move giveback exits, and short maximum exposure for both call and put impulses; rerun captured sessions and compare honestly.",
+  "started_at": "2026-08-28T20:45:22.434572-05:00",
+  "starting_commit": "7a929ddecd878ee468c8587799f6d920f5f52b2e",
+  "process_id": 40276,
+  "owner_request": "Owner wants SURGE highly reactive, capturing short-term profit while riding continuing winners in both directions.",
+  "before_state": "SURGE research v0.1 produced +236 over 15 captured-data trades but relied heavily on 12-minute time exits and suffered a -160 late-session failure.",
+  "reason": "Owner wants SURGE highly reactive, capturing short-term profit while riding continuing winners in both directions.",
+  "intended_scope": "surge_backtest.py, its tests, reproducible backtest receipts, and governance only; no live launch or competitor changes.",
+  "expected_effects": "SURGE monitors each captured option bid and underlying snapshot, exits failed moves faster, trails profitable impulses, and remains two-sided.",
+  "required_tests": "Call/put symmetry, peak trailing, hard failure, no-lookahead, observed bid/ask, actual full captured replay, full repository tests, PR/CI/merge.",
+  "risks": "Overfitting five sessions and cutting winners too early; compare against v0.1 and disclose deterioration.",
+  "next_safe_action_if_interrupted": "Implement reactive exit state machine, add tests, rerun Aug 24-28, compare metrics, then merge validated research.",
+  "phase": "Phase 15"
 }
