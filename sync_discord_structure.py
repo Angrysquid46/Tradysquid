@@ -75,6 +75,7 @@ CATEGORY_ORDER = [
     "LEARNING CENTER",
     "BLACKTIDE",
     "RIPTIDE",
+    "SURGE",
     "OWNER CONTROL",
 ]
 
@@ -126,6 +127,10 @@ CHANNELS = [
     ChannelSpec("RIPTIDE", "riptide-held-trades", "RIPTIDE's current live position, updated on open/close."),
     ChannelSpec("RIPTIDE", "riptide-winners", "RIPTIDE's winning closed trades."),
     ChannelSpec("RIPTIDE", "riptide-losers", "RIPTIDE's losing closed trades."),
+    ChannelSpec("SURGE", "surge-dashboard", "SURGE stat cards (balance, generation, P/L, win rate, streak, drawdown) plus a bankroll history chart."),
+    ChannelSpec("SURGE", "surge-held-trades", "SURGE's current live position, updated on open/close."),
+    ChannelSpec("SURGE", "surge-winners", "SURGE's winning closed trades."),
+    ChannelSpec("SURGE", "surge-losers", "SURGE's losing closed trades."),
     # Reconciled 2026-08-19: these are live channels the bot already writes
     # to that had drifted out of this spec entirely. Declared with their
     # CURRENT topics so the sync is a no-op - the point is that a future

@@ -161,6 +161,14 @@
       "writers": ["Codex"],
       "protected": true,
       "purpose": "Owner-authorized Phase 15 independent Codex-owned RIPTIDE paper challenger. Only Codex may write here; it may not read or use BLACKTIDE or Claude private strategy intelligence."
+    },
+    {
+      "path": "bots/surge/",
+      "owner": "BLACKTIDE_ONLY",
+      "readers": ["Owner", "Codex"],
+      "writers": ["Codex"],
+      "protected": true,
+      "purpose": "Owner-selected Phase 15 SURGE paper competitor using the three-minute causal impulse strategy. Only Codex may write here."
     }
   ],
   "scoped_instructions_convention": "Each BLACKTIDE_ONLY/CLAUDE_ONLY directory (created Phase 11+, e.g. bots/blacktide, bots/claude) must contain its own AGENTS.md scoped to that directory, following the nearest-file convention: an agent reads the root AGENTS.md plus the nearest scoped AGENTS.md above its working path. This file's writers field for that directory's entry is the authoritative machine-readable grant; the scoped AGENTS.md is a human/agent-readable restatement of the same rule, not a separate grant. Root AGENTS.md must not enumerate bot directories in advance of the phase that creates them.",
