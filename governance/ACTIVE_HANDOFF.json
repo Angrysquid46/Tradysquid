@@ -1,5 +1,19 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-28T16:04:51.968778-05:00"
+  "active": true,
+  "work_id": "e4c92e15-f5e1-467f-8af3-6b7b96197d97",
+  "actor": "Codex",
+  "task": "SURGE causal impulse-move captured-data backtest",
+  "method": "Build a non-live research engine that labels historical impulses with future bars, makes replay decisions only from completed point-in-time bars, selects captured 0DTE contracts at observed ask, exits at later observed bid, detects chop, records reproducible metrics and missed/caught moves.",
+  "started_at": "2026-08-28T20:28:48.385287-05:00",
+  "starting_commit": "612921b67a370a8e1074b87ba6a2acd9ea6a6043",
+  "process_id": 9564,
+  "owner_request": "Owner explicitly requested backtesting the proposed aggressive move-attacker using all available captured timestamped SPY bars and options tables.",
+  "before_state": "No SURGE trader exists. Captured bars span multiple August sessions and captured quote/chain snapshots exist; existing live competitors and their private code are out of scope.",
+  "reason": "Owner explicitly requested backtesting the proposed aggressive move-attacker using all available captured timestamped SPY bars and options tables.",
+  "intended_scope": "New SURGE research/backtest files and tests, backtest receipts, necessary governance records. No live launch, no brokerage orders, no changes to BLACKTIDE/RIPTIDE/private competitors or shared updater.",
+  "expected_effects": "Produce an honest causal backtest showing detected impulse moves, chop avoidance, observed ask/bid option P/L, misses, false positives, and limitations of current captured data.",
+  "required_tests": "No-lookahead labels/decisions, point-in-time contract fills, chop rejection, fingerprint/receipt, focused tests, execute actual captured-data backtest and report exact results.",
+  "risks": "Sparse bars/options overlap, hindsight leakage, interpolation fantasies, overfitting; fail closed when no contemporaneous option snapshot exists and separate labels from decision inputs.",
+  "next_safe_action_if_interrupted": "Inspect captured schemas/session overlap, implement causal impulse detector and replay runner, test, execute, and record receipt.",
+  "phase": "Phase 15"
 }
