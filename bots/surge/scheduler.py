@@ -5,7 +5,7 @@ import scoreboard
 from .runtime import SurgeRuntime
 CENTRAL=ZoneInfo("America/Chicago")
 def cycle_allowed(now,has_open_position):
-    local=now.astimezone(CENTRAL);minute=local.hour*60+local.minute
+    local=(now.replace(tzinfo=CENTRAL) if now.tzinfo is None else now.astimezone(CENTRAL));minute=local.hour*60+local.minute
     return local.weekday()<5 and 8*60+35<=minute<=(15*60+5 if has_open_position else 14*60+35)
 def build_scheduler(runtime=None):
     trader=runtime or SurgeRuntime();scheduler=BackgroundScheduler(timezone="America/Chicago")
