@@ -1,22 +1,5 @@
 {
-  "active": true,
-  "work_id": "36549fdf-e7c3-4069-a113-a90099cae092",
-  "actor": "Codex",
-  "task": "SURGE robust profitability search on captured data",
-  "method": "Build deterministic coarse-to-fine causal strategy search with chronological discovery validation and untouched holdout, realistic observed ask/bid execution, stress tests, and baseline comparisons.",
-  "started_at": "2026-08-28T21:19:20.570089-05:00",
-  "starting_commit": "b9a81a7d6568ca7116cbfa001895df020d5513be",
-  "process_id": 40544,
-  "owner_request": "Owner authorized open-ended research for the most profitable defensible strategy available from the complete captured dataset.",
-  "before_state": "Current SURGE reactive benchmark produced +197 across Aug 24-28 but has no systematic train/validation/holdout optimizer.",
-  "reason": "Owner authorized open-ended research for the most profitable defensible strategy available from the complete captured dataset.",
-  "intended_scope": "surge research optimizer, focused tests, reproducible research receipt, and governance records only; no live launch or competitor changes.",
-  "expected_effects": "Research artifacts and candidate selection only; no broker, Discord, scheduler, scorekeeper, or live trading effects.",
-  "required_tests": "Focused optimizer causality/reproducibility tests, chronological replay, stress/sensitivity checks, complete repository pytest, CI.",
-  "risks": "Only five captured sessions makes overfitting severe; final holdout must remain untouched until selection and claims must stay provisional.",
-  "next_safe_action_if_interrupted": "Commit intended research/governance files, push PR, run CI, merge, finish coordination, and report honest results.",
-  "phase": "Phase 15",
-  "last_checkpoint_at": "2026-08-28T21:56:25.680019-05:00",
-  "last_successful_action": "Built deterministic 288-candidate SURGE optimizer, corrected cross-session replay liquidation, ran sealed Aug 28 holdout and adverse-fill stress. Robust selection failed holdout; hindsight winner is explicitly non-promotable. Six focused and full repository tests pass.",
-  "next_safe_action": "Commit intended research/governance files, push PR, run CI, merge, finish coordination, and report honest results."
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-28T22:01:16.178019-05:00"
 }
