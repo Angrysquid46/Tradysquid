@@ -3,8 +3,10 @@ import json,socket,subprocess
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from .env_bootstrap import ROOT,bootstrap
+bootstrap()
 import market_api_budget,market_data,scoreboard
-ROOT=Path(__file__).resolve().parents[2];INSTANCE_PORT=8894
+INSTANCE_PORT=8894
 @dataclass(frozen=True)
 class Check:name:str;passed:bool;detail:str
 def port_free(port=INSTANCE_PORT):
