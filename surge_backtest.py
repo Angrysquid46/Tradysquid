@@ -32,6 +32,15 @@ def _contract(options,side,bankroll):
         except (KeyError,TypeError,ValueError,ZeroDivisionError):pass
     return min(rows,key=lambda x:(abs(abs(float(x["delta"]))-.5),float(x["ask"]))) if rows else None
 
+def _reactive_exit(position,bid,held,opposite,chop):
+    position["peak_bid"]=max(position.get("peak_bid",bid),bid)
+    change=bid/position["ask"]-1; peak=position["peak_bid"]/position["ask"]-1
+    if change<=-.22:return "FAST_FAILURE_STOP"
+    if peak>=.15 and bid<=position["peak_bid"]*.90:return "PROFIT_TRAIL"
+    if held>=1.5 and (opposite or chop):return "IMPULSE_REVERSAL"
+    if held>=12:return "MAX_HOLD"
+    return None
+
 def timestamps(start:date,end:date):
     glob=str(ROOT/"data"/"market"/"chain"/"SPY"/"**"/"*.parquet").replace("\\","/")
     q="select distinct captured_at from read_parquet(?,union_by_name=true) where cast(captured_at as date) between ? and ? order by captured_at"
@@ -46,8 +55,7 @@ def run(start:date,end:date,bankroll=1000.):
             quote=next((x for x in opts.get("contracts",[]) if x.get("option_symbol")==position["symbol"]),None)
             if not quote or quote.get("bid") is None:continue
             bid=float(quote["bid"]); held=(now-position["time"]).total_seconds()/60; opposite=side and side!=position["side"]
-            change=bid/position["ask"]-1
-            reason="TRAIL_PROFIT" if change>=.25 else "IMPULSE_FAILED" if opposite or state=="CHOP" else "TIME" if held>=12 else None
+            reason=_reactive_exit(position,bid,held,bool(opposite),state=="CHOP")
             if reason:
                 pnl=(bid-position["ask"])*position["qty"]*100; bankroll+=pnl
                 trades.append(Trade(position["time"].isoformat(),now.isoformat(),position["side"],position["symbol"],position["ask"],bid,position["qty"],round(pnl,2),reason,position["score"]));position=None
@@ -58,7 +66,7 @@ def run(start:date,end:date,bankroll=1000.):
         if evidence==consumed:stats["duplicate_evidence_rejections"]+=1;continue
         contract=_contract(opts,side,bankroll)
         if not contract:continue
-        ask=float(contract["ask"]); qty=max(1,int(bankroll*.35//(ask*100)));position={"time":now,"side":side,"symbol":contract["option_symbol"],"ask":ask,"qty":qty,"score":score};consumed=evidence;stats["entries"]+=1
+        ask=float(contract["ask"]); qty=max(1,int(bankroll*.35//(ask*100)));position={"time":now,"side":side,"symbol":contract["option_symbol"],"ask":ask,"peak_bid":float(contract["bid"]),"qty":qty,"score":score};consumed=evidence;stats["entries"]+=1
     result={"start":start.isoformat(),"end":end.isoformat(),"starting_bankroll":1000.,"ending_bankroll":round(bankroll,2),"pnl":round(bankroll-1000,2),"stats":stats,"trades":[asdict(x) for x in trades],"dataset_fingerprint":backtest_lab.dataset_fingerprint("SPY",start,end),"limitations":"Captured snapshots only; no interpolation. Open final position excluded until an observed exit bid exists."}
     return result
 
