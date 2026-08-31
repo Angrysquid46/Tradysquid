@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -13,6 +15,29 @@ from bots.grok.market_adapter import GrokMarketAdapter
 from bots.grok.runtime import GrokRuntime
 
 CENTRAL = ZoneInfo("America/Chicago")
+CYCLE_HEALTH_PATH = Path(__file__).resolve().parents[2] / "state" / "grok" / "cycle-health.json"
+
+
+def _write_cycle_health(*, observed_at: datetime, status: str, action: str) -> None:
+    """Persist strategy-neutral proof that the scheduled cycle completed.
+
+    Action is intentionally coarse; no signals, thresholds, candidates, or
+    private reasoning cross the GROK ownership boundary.
+    """
+    CYCLE_HEALTH_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary = CYCLE_HEALTH_PATH.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(
+            {
+                "observed_at": observed_at.isoformat(),
+                "status": status,
+                "action": action,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    temporary.replace(CYCLE_HEALTH_PATH)
 
 
 def cycle_allowed(now: datetime, has_open_position: bool) -> bool:
@@ -53,7 +78,18 @@ def build_scheduler(runtime: GrokRuntime | None = None) -> BackgroundScheduler:
             now = datetime.now(CENTRAL)
             open_pos = scoreboard.current_position_status(c, BOT_NAME) is not None
             if cycle_allowed(now, open_pos):
-                trader.cycle()
+                try:
+                    decision = trader.cycle()
+                except Exception:
+                    _write_cycle_health(observed_at=now, status="ERROR", action="UNKNOWN")
+                    raise
+                _write_cycle_health(
+                    observed_at=now,
+                    status="COMPLETED",
+                    action=str(getattr(decision, "action", "UNKNOWN")),
+                )
+            else:
+                _write_cycle_health(observed_at=now, status="IDLE", action="NO_ACTION")
         finally:
             c.close()
 

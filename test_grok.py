@@ -135,3 +135,31 @@ def test_scheduler_runtime_uses_cross_thread_scoreboard_connection(monkeypatch):
 
     scheduler_module.build_runtime()
     assert captured["connect_kwargs"] == {"check_same_thread": False}
+
+
+def test_scheduler_records_strategy_neutral_cycle_health(monkeypatch, tmp_path):
+    import json
+    from types import SimpleNamespace
+    import bots.grok.scheduler as scheduler_module
+
+    class Connection:
+        def close(self):
+            pass
+
+    class Runtime:
+        def cycle(self):
+            return SimpleNamespace(action="NO_ACTION", private_detail="must not leak")
+
+    health_path = tmp_path / "cycle-health.json"
+    monkeypatch.setattr(scheduler_module, "CYCLE_HEALTH_PATH", health_path)
+    monkeypatch.setattr(scheduler_module.scoreboard, "connect_db", lambda: Connection())
+    monkeypatch.setattr(scheduler_module.scoreboard, "current_position_status", lambda *_: None)
+    monkeypatch.setattr(scheduler_module, "cycle_allowed", lambda *_: True)
+
+    scheduler = scheduler_module.build_scheduler(Runtime())
+    scheduler.get_jobs()[0].func()
+    payload = json.loads(health_path.read_text(encoding="utf-8"))
+
+    assert payload["status"] == "COMPLETED"
+    assert payload["action"] == "NO_ACTION"
+    assert set(payload) == {"observed_at", "status", "action"}

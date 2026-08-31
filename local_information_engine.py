@@ -862,7 +862,7 @@ JOBS = [
     ),
     Job(
         "spy-bars-capture",
-        timedelta(minutes=20),
+        timedelta(minutes=1),
         market_data_collector.bars_capture_job,
         market_hours_only=True,
         background=True,

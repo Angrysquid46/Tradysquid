@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -398,3 +398,9 @@ def test_ensure_manifest_row_uses_expected_session_minutes(monkeypatch, tmp_path
         ("2026-11-27",),
     ).fetchone()
     assert row[0] == 210
+
+
+def test_live_bar_capture_runs_each_minute_for_minute_scale_traders():
+    job = next(job for job in engine.JOBS if job.name == "spy-bars-capture")
+    assert job.interval == timedelta(minutes=1)
+    assert job.callback is collector.bars_capture_job
