@@ -178,6 +178,14 @@
       "writers": ["Grok"],
       "protected": true,
       "purpose": "Independent Grok/xAI-owned SPY 0DTE paper competitor. Only Grok may write private strategy intelligence here. Must not read or consume BLACKTIDE, RIPTIDE, or SURGE private strategy."
+    },
+    {
+      "path": "bots/grok/runtime.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Grok"],
+      "writers": ["Codex", "Grok"],
+      "protected": true,
+      "purpose": "Operational lifecycle boundary only. Codex may repair process startup, recovery, and safety gating here with owner authorization; GROK strategy intelligence remains exclusively owned under bots/grok/."
     }
   ],
   "scoped_instructions_convention": "Each BLACKTIDE_ONLY/CLAUDE_ONLY/GROK_ONLY directory must contain its own AGENTS.md scoped to that directory.",

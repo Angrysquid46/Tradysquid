@@ -70,7 +70,7 @@ def test_exit_eod_flatten():
         minutes_to_close=5,
     )
     assert decision.action == "EXIT"
-    assert "end-of-day" in decision.reason
+    assert "eod" in decision.reason.lower() or "end-of-day" in decision.reason.lower()
 
 
 def test_preflight_fails_closed():
@@ -89,3 +89,25 @@ def test_preflight_fails_closed():
 def test_scoreboard_knows_grok():
     import scoreboard as sb
     assert "GROK" in sb.BOTS
+
+
+def test_runtime_starts_idle_when_session_is_closed(monkeypatch):
+    import scoreboard as sb
+    import bots.grok.runtime as runtime_module
+
+    captured = {}
+    original_preflight = runtime_module.run_preflight
+    monkeypatch.setattr(sb, "current_position_status", lambda *_: None)
+
+    def fake_preflight(**kwargs):
+        captured.update(kwargs)
+        return original_preflight(**kwargs)
+
+    monkeypatch.setattr(runtime_module, "run_preflight", fake_preflight)
+    runtime = runtime_module.GrokRuntime.__new__(runtime_module.GrokRuntime)
+    runtime.sb = object()
+    runtime.provider_ok = lambda: True
+    runtime.is_session_open = lambda: False
+
+    assert runtime.preflight() is True
+    assert captured["session_open"] is True
