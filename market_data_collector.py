@@ -16,8 +16,11 @@ increments it.
 
 from __future__ import annotations
 
+import json
 import re
-from datetime import date, datetime, time
+from collections import defaultdict
+from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from typing import Any
 
 import market_api_budget
@@ -25,6 +28,7 @@ import market_data
 import market_data_store
 
 COLLECTOR_VERSION = "market-data-collector-v1"
+BAR_BACKFILL_CALENDAR_DAYS = 7
 # Fallback only - a full regular-hours session. expected_session_minutes()
 # below is the real answer for a specific trading day; this is what it
 # falls back to if the calendar lookup fails, not the primary source.
@@ -192,6 +196,167 @@ def classify_bar_row(
     return row, data_class
 
 
+def bar_trading_day(timestamp: int | float) -> date:
+    """Derive the physical partition from the provider bar timestamp."""
+    return datetime.fromtimestamp(int(timestamp), market_data.MARKET_TZ).date()
+
+
+def _existing_bar_timestamps(symbol: str) -> set[int]:
+    root = market_data_store.DATA_ROOT / market_data_store.BARS_DATASET / symbol
+    if not root.exists() or not any(root.rglob("*.parquet")):
+        return set()
+    glob = market_data_store.dataset_glob(market_data_store.BARS_DATASET, symbol)
+    rows = market_data_store.query(
+        f"SELECT DISTINCT bar_timestamp FROM read_parquet('{glob}')"
+    )
+    return {int(row["bar_timestamp"]) for row in rows}
+
+
+def ingest_bar_rows(
+    symbol: str,
+    bars: list[dict[str, Any]],
+    captured_at: datetime,
+) -> dict[str, Any]:
+    """Validate, globally deduplicate, and partition bars by their own date.
+
+    One provider response may span several sessions.  The capture date is
+    provenance, never the storage partition key.
+    """
+    existing = _existing_bar_timestamps(symbol)
+    grouped: dict[date, list[dict[str, Any]]] = defaultdict(list)
+    invalid = 0
+    duplicates = 0
+    seen: set[int] = set()
+    for bar in bars:
+        timestamp = bar.get("timestamp")
+        if timestamp is None:
+            invalid += 1
+            continue
+        timestamp = int(timestamp)
+        if timestamp in existing or timestamp in seen:
+            duplicates += 1
+            continue
+        row, cls = classify_bar_row(bar, symbol, captured_at)
+        if cls == REJECTED:
+            invalid += 1
+            continue
+        seen.add(timestamp)
+        grouped[bar_trading_day(timestamp)].append(row)
+
+    written = 0
+    partitions: dict[str, int] = {}
+    for trading_day, rows in sorted(grouped.items()):
+        if market_data_store.write_bars(symbol, trading_day, captured_at, rows):
+            written += len(rows)
+            partitions[trading_day.isoformat()] = len(rows)
+    return {
+        "written": written,
+        "invalid": invalid,
+        "duplicates": duplicates,
+        "partitions": partitions,
+    }
+
+
+def repair_bar_partitions(symbol: str, captured_at: datetime) -> dict[str, int]:
+    """Add correctly partitioned copies of legacy misplaced rows.
+
+    The trusted store is append-only, so incorrect legacy part-files are not
+    deleted or rewritten.  Queries deduplicate by timestamp; this function
+    restores the physical per-day partitions required by point-in-time reads.
+    """
+    root = market_data_store.DATA_ROOT / market_data_store.BARS_DATASET / symbol
+    if not root.exists() or not any(root.rglob("*.parquet")):
+        return {}
+    glob = market_data_store.dataset_glob(market_data_store.BARS_DATASET, symbol)
+    rows = market_data_store.query(
+        f"SELECT * FROM read_parquet('{glob}', filename=true)"
+    )
+    correctly_stored: dict[date, set[int]] = defaultdict(set)
+    misplaced: dict[date, dict[int, dict[str, Any]]] = defaultdict(dict)
+    for row in rows:
+        timestamp = int(row["bar_timestamp"])
+        trading_day = bar_trading_day(timestamp)
+        expected_dir = market_data_store.partition_dir(
+            market_data_store.BARS_DATASET, symbol, trading_day
+        ).resolve()
+        actual = Path(str(row["filename"])).resolve().parent
+        clean = {key: value for key, value in row.items() if key != "filename"}
+        if actual == expected_dir:
+            correctly_stored[trading_day].add(timestamp)
+        else:
+            misplaced[trading_day].setdefault(timestamp, clean)
+
+    repaired: dict[str, int] = {}
+    for trading_day, by_timestamp in sorted(misplaced.items()):
+        rows_to_copy = [
+            row for timestamp, row in sorted(by_timestamp.items())
+            if timestamp not in correctly_stored[trading_day]
+        ]
+        if rows_to_copy and market_data_store.write_bars(
+            symbol, trading_day, captured_at, rows_to_copy
+        ):
+            repaired[trading_day.isoformat()] = len(rows_to_copy)
+    return repaired
+
+
+def session_bar_completeness(symbol: str, trading_day: date) -> dict[str, Any]:
+    """Audit distinct regular-session minutes across the whole append-only tree."""
+    root = market_data_store.DATA_ROOT / market_data_store.BARS_DATASET / symbol
+    expected = expected_session_minutes(trading_day)
+    start = datetime.combine(trading_day, time(8, 30), market_data.MARKET_TZ)
+    expected_timestamps = [int((start + timedelta(minutes=i)).timestamp()) for i in range(expected)]
+    observed: set[int] = set()
+    if root.exists() and any(root.rglob("*.parquet")):
+        glob = market_data_store.dataset_glob(market_data_store.BARS_DATASET, symbol)
+        rows = market_data_store.query(
+            f"SELECT DISTINCT bar_timestamp FROM read_parquet('{glob}') "
+            "WHERE bar_timestamp >= ? AND bar_timestamp < ?",
+            [expected_timestamps[0], expected_timestamps[-1] + 60],
+        )
+        observed = {int(row["bar_timestamp"]) for row in rows}
+    missing = [ts for ts in expected_timestamps if ts not in observed]
+    periods: list[dict[str, str]] = []
+    if missing:
+        gap_start = previous = missing[0]
+        for timestamp in missing[1:]:
+            if timestamp - previous > 60:
+                periods.append({
+                    "start": datetime.fromtimestamp(gap_start, market_data.MARKET_TZ).isoformat(),
+                    "end": datetime.fromtimestamp(previous, market_data.MARKET_TZ).isoformat(),
+                })
+                gap_start = timestamp
+            previous = timestamp
+        periods.append({
+            "start": datetime.fromtimestamp(gap_start, market_data.MARKET_TZ).isoformat(),
+            "end": datetime.fromtimestamp(previous, market_data.MARKET_TZ).isoformat(),
+        })
+    return {
+        "trading_day": trading_day.isoformat(),
+        "expected": expected,
+        "received": expected - len(missing),
+        "missing": len(missing),
+        "missing_periods": periods,
+        "complete": not missing,
+    }
+
+
+def record_bar_completeness(connection: Any, result: dict[str, Any]) -> None:
+    ensure_manifest_row(connection, result["trading_day"])
+    connection.execute(
+        "UPDATE daily_data_manifest SET missing_periods_json=?, "
+        "received_bar_minutes=?, bar_grade=?, bar_audited_at=? "
+        "WHERE trading_day=?",
+        (
+            json.dumps(result["missing_periods"], separators=(",", ":")),
+            result["received"],
+            "A" if result["complete"] else "REJECT",
+            market_data.now_ct().isoformat(),
+            result["trading_day"],
+        ),
+    )
+    connection.commit()
+
+
 def ensure_manifest_row(connection, trading_day: str) -> None:
     expected_minutes = expected_session_minutes(date.fromisoformat(trading_day))
     connection.execute(
@@ -343,41 +508,28 @@ def capture_cycle_job(connection) -> str:
 def bars_capture_job(connection) -> str:
     symbol = market_data.TICKER
     now = market_data.now_ct()
-    trading_day = now.date()
-
-    glob_pattern = market_data_store.dataset_glob(
-        market_data_store.BARS_DATASET, symbol, trading_day
-    )
-    existing_dir = market_data_store.partition_dir(
-        market_data_store.BARS_DATASET, symbol, trading_day
-    )
-    last_timestamp = 0
-    if existing_dir.exists() and any(existing_dir.glob("*.parquet")):
-        rows = market_data_store.query(
-            f"SELECT MAX(bar_timestamp) AS max_ts FROM read_parquet('{glob_pattern}')"
-        )
-        if rows and rows[0].get("max_ts") is not None:
-            last_timestamp = int(rows[0]["max_ts"])
 
     if not market_api_budget.request_allowed(market_api_budget.PRIORITY_SHARED_SPY_OBSERVATIONS):
         return "bars capture skipped: budget gate blocked shared SPY observations"
 
     try:
-        bars = market_data.get_recent_intraday_history(symbol, "1min", calendar_days=1)
+        bars = market_data.get_recent_intraday_history(
+            symbol, "1min", calendar_days=BAR_BACKFILL_CALENDAR_DAYS
+        )
     except Exception as exc:
         return f"bars capture failed: {type(exc).__name__}: {exc}"
 
-    new_rows = []
-    invalid = 0
-    for bar in bars:
-        timestamp = bar.get("timestamp")
-        if timestamp is None or int(timestamp) <= last_timestamp:
-            continue
-        row, cls = classify_bar_row(bar, symbol, now)
-        if cls == REJECTED:
-            invalid += 1
-            continue
-        new_rows.append(row)
-
-    market_data_store.write_bars(symbol, trading_day, now, new_rows)
-    return f"{len(new_rows)} new bars written; {invalid} invalid; last_timestamp={last_timestamp}"
+    result = ingest_bar_rows(symbol, bars, now)
+    audited_days = sorted({bar_trading_day(bar["timestamp"]) for bar in bars if bar.get("timestamp") is not None})
+    incomplete = []
+    if connection is not None:
+        for trading_day in audited_days:
+            audit = session_bar_completeness(symbol, trading_day)
+            record_bar_completeness(connection, audit)
+            if not audit["complete"]:
+                incomplete.append(f"{trading_day}:{audit['missing']}")
+    return (
+        f"{result['written']} new bars written; {result['invalid']} invalid; "
+        f"{result['duplicates']} duplicates; partitions={result['partitions']}; "
+        f"incomplete={','.join(incomplete) if incomplete else 'none'}"
+    )

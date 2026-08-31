@@ -147,6 +147,14 @@ Confirm the information engine supplies evidence at least as frequently as the t
 - `state/local-information.db`, table `job_runs`, records job status and detail.
 - Shared REST access goes through the existing quota/cache path; do not create an independent polling loop that bypasses priority and budget controls.
 
+The bar collector uses a weekend-safe rolling backfill window, globally
+deduplicates provider timestamps, and partitions every bar by the bar's own
+Central-time market date—not by the date on which it was downloaded. Audit a
+range with `python audit_bar_history.py --start YYYY-MM-DD --end YYYY-MM-DD`.
+Use `--apply` only for an owner-authorized additive repair from verified
+provider rows. Formal backtests must reject any session whose bar audit is not
+complete; missing minutes may never be silently interpolated.
+
 Fresh quote/chain data does not compensate for stale bars. Validate each required evidence stream independently, using provider/market timestamps rather than file modification time alone.
 
 ### Production launcher and restart loop

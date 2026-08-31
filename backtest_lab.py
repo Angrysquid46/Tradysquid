@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import market_data
+import market_data_collector
 import market_data_store as store
 import market_memory
 
@@ -32,6 +33,24 @@ TIER_C = "C"
 INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
 
 DEFAULT_TOLERANCE_MINUTES = 5
+
+
+def require_complete_bar_sessions(
+    symbol: str, trading_days: list[date] | tuple[date, ...] | set[date]
+) -> list[dict[str, Any]]:
+    """Fail closed before a formal backtest consumes an incomplete session."""
+    results = [
+        market_data_collector.session_bar_completeness(symbol, day)
+        for day in sorted(set(trading_days))
+    ]
+    incomplete = [result for result in results if not result["complete"]]
+    if incomplete:
+        detail = "; ".join(
+            f"{item['trading_day']} missing {item['missing']} minute(s)"
+            for item in incomplete
+        )
+        raise ValueError(f"INCOMPLETE_BAR_SESSION: {detail}")
+    return results
 
 
 def _iso(value: datetime) -> str:
