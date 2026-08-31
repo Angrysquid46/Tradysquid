@@ -21,8 +21,8 @@ LEGACY_RIVALRY_TOKEN = "TSQ-COMPETITION-RIVALRY"
 BOT_SURFACE_FORMAT_VERSION = "per-event-trade-cards-v1"
 # AXIOM permanently removed 2026-08-27 (owner directive) - no longer in
 # scoreboard.BOTS/rivalry.BOTS either, not just this presentation list.
-# RIPTIDE is the live second challenger shown on Discord.
-PUBLIC_BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE")
+# GROK added 2026-08-30 as independent Grok/xAI competitor.
+PUBLIC_BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK")
 
 
 def render_scoreboard(connection: Any) -> str:
@@ -336,12 +336,7 @@ def _replace_bot_chart(
     search_token: str,
 ) -> str:
     """Discord can't edit an attachment in place, so an "updating chart" is
-    really post-new-then-delete-old (same approach
-    upgrade_batch_44._replace_chart_message already uses). search_token
-    must actually appear in the posted message content - send_channel_file
-    sets plain `content` (no embed/footer), and message_search_text() only
-    matches literal text, so the token is appended to the caption itself
-    (same bug class fixed in discord_transport.upsert_singleton_message)."""
+    really post-new-then-delete-old."""
     recent = tracker._request("GET", f"/channels/{channel_id}/messages?limit=50")
     old_ids = [
         str(message.get("id") or "")
@@ -369,11 +364,7 @@ def publish_bot_surfaces(
     bot: str,
 ) -> dict[str, Any]:
     """Per-bot dashboard (stat card + bankroll chart), held-trade,
-    winners, and losers surfaces - same failure-isolated shape as
-    publish_competition_surfaces above. Winners and losers each get one
-    immutable, idempotent Discord card per official close. The dashboard,
-    chart, and held-position view remain live-state cards that update in
-    place rather than creating scheduler-driven duplicate messages."""
+    winners, and losers surfaces."""
     prefix = bot.lower()
     result: dict[str, Any] = {"ok": False, "published": (), "error": None}
     published: list[str] = []
@@ -462,7 +453,7 @@ def publish_competition_surfaces(
     """Publish both persistent cards; errors are recorded and returned.
 
     No exception crosses this presentation boundary, so Discord/rivalry can
-    never alter or stop trading.  Callers can alert on the returned health.
+    never alter or stop trading.
     """
     surfaces.reconcile_canonical_competition_surfaces(surface_connection)
     result: dict[str, Any] = {"ok": False, "published": (), "error": None}
