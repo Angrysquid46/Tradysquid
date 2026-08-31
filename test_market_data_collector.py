@@ -384,6 +384,40 @@ def test_bars_capture_always_requests_current_session_separately(monkeypatch, sc
     assert calls == [(date(2026, 8, 31), date(2026, 8, 31))]
 
 
+def test_bars_capture_audits_current_day_even_when_provider_returns_no_rows(
+    manifest_db, monkeypatch, scratch_data_root
+):
+    ct = ZoneInfo("America/Chicago")
+    monkeypatch.setattr(collector.market_data, "TICKER", "SPY")
+    monkeypatch.setattr(
+        collector.market_data, "now_ct",
+        lambda: datetime(2026, 8, 31, 15, 30, tzinfo=ct),
+    )
+    monkeypatch.setattr(
+        collector.market_data, "get_intraday_history_range",
+        lambda symbol, interval, start, end: [],
+    )
+    monkeypatch.setattr(
+        collector, "session_bar_completeness",
+        lambda symbol, day: {
+            "trading_day": day.isoformat(), "expected": 390, "received": 385,
+            "missing": 5, "missing_periods": [], "complete": False,
+        },
+    )
+    manifest_db.execute(
+        "INSERT INTO engine_state(key,value,updated_at) VALUES(?,?,?)",
+        (collector.BAR_BACKFILL_STATE_KEY, "2026-08-31", "now"),
+    )
+    manifest_db.commit()
+    summary = collector.bars_capture_job(manifest_db)
+    assert "incomplete=2026-08-31:5" in summary
+    row = manifest_db.execute(
+        "SELECT received_bar_minutes,bar_grade FROM daily_data_manifest "
+        "WHERE trading_day='2026-08-31'"
+    ).fetchone()
+    assert tuple(row) == (385, "REJECT")
+
+
 def test_bars_capture_backfills_each_prior_day_once_without_provider_cap(
     manifest_db, monkeypatch, scratch_data_root
 ):

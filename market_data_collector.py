@@ -554,7 +554,10 @@ def bars_capture_job(connection) -> str:
             connection.commit()
 
     result = ingest_bar_rows(symbol, bars, now)
-    audited_days = sorted({bar_trading_day(bar["timestamp"]) for bar in bars if bar.get("timestamp") is not None})
+    audited_days = sorted({
+        now.date(),
+        *(bar_trading_day(bar["timestamp"]) for bar in bars if bar.get("timestamp") is not None),
+    })
     incomplete = []
     if connection is not None:
         for trading_day in audited_days:
