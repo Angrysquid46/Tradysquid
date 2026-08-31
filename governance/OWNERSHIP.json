@@ -186,6 +186,14 @@
       "writers": ["Codex", "Grok"],
       "protected": true,
       "purpose": "Operational lifecycle boundary only. Codex may repair process startup, recovery, and safety gating here with owner authorization; GROK strategy intelligence remains exclusively owned under bots/grok/."
+    },
+    {
+      "path": "bots/grok/scheduler.py",
+      "owner": "SHARED_CORE",
+      "readers": ["Owner", "Codex", "Grok"],
+      "writers": ["Codex", "Grok"],
+      "protected": true,
+      "purpose": "Operational scheduling boundary only. Codex may repair scheduler lifecycle, concurrency, and process health with owner authorization; GROK strategy intelligence remains exclusively owned under bots/grok/."
     }
   ],
   "scoped_instructions_convention": "Each BLACKTIDE_ONLY/CLAUDE_ONLY/GROK_ONLY directory must contain its own AGENTS.md scoped to that directory.",
