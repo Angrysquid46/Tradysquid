@@ -29,6 +29,7 @@ import market_data_store
 
 COLLECTOR_VERSION = "market-data-collector-v1"
 BAR_BACKFILL_CALENDAR_DAYS = 7
+BAR_BACKFILL_STATE_KEY = "bars-backfill:last-complete-attempt"
 # Fallback only - a full regular-hours session. expected_session_minutes()
 # below is the real answer for a specific trading day; this is what it
 # falls back to if the calendar lookup fails, not the primary source.
@@ -513,11 +514,44 @@ def bars_capture_job(connection) -> str:
         return "bars capture skipped: budget gate blocked shared SPY observations"
 
     try:
-        bars = market_data.get_recent_intraday_history(
-            symbol, "1min", calendar_days=BAR_BACKFILL_CALENDAR_DAYS
+        # Always request the current session separately. Tradier caps a wide
+        # timesales response at 1,950 rows (five full sessions); a single
+        # seven-day request can therefore omit today and silently stale live
+        # traders.
+        bars = market_data.get_intraday_history_range(
+            symbol, "1min", now.date(), now.date()
         )
     except Exception as exc:
         return f"bars capture failed: {type(exc).__name__}: {exc}"
+
+    backfill_row = (
+        connection.execute(
+            "SELECT value FROM engine_state WHERE key=?", (BAR_BACKFILL_STATE_KEY,)
+        ).fetchone()
+        if connection is not None else None
+    )
+    backfill_due = connection is not None and (
+        backfill_row is None or str(backfill_row[0]) != now.date().isoformat()
+    )
+    backfill_errors: list[str] = []
+    if backfill_due:
+        historical: list[dict[str, Any]] = []
+        for offset in range(BAR_BACKFILL_CALENDAR_DAYS, 0, -1):
+            day = now.date() - timedelta(days=offset)
+            try:
+                historical.extend(
+                    market_data.get_intraday_history_range(symbol, "1min", day, day)
+                )
+            except Exception as exc:
+                backfill_errors.append(f"{day}:{type(exc).__name__}")
+        bars.extend(historical)
+        if not backfill_errors:
+            connection.execute(
+                "INSERT INTO engine_state(key,value,updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (BAR_BACKFILL_STATE_KEY, now.date().isoformat(), now.isoformat()),
+            )
+            connection.commit()
 
     result = ingest_bar_rows(symbol, bars, now)
     audited_days = sorted({bar_trading_day(bar["timestamp"]) for bar in bars if bar.get("timestamp") is not None})
@@ -531,5 +565,6 @@ def bars_capture_job(connection) -> str:
     return (
         f"{result['written']} new bars written; {result['invalid']} invalid; "
         f"{result['duplicates']} duplicates; partitions={result['partitions']}; "
-        f"incomplete={','.join(incomplete) if incomplete else 'none'}"
+        f"incomplete={','.join(incomplete) if incomplete else 'none'}; "
+        f"backfill_errors={','.join(backfill_errors) if backfill_errors else 'none'}"
     )
