@@ -6,7 +6,7 @@ from pathlib import Path
 from .env_bootstrap import ROOT,bootstrap
 bootstrap()
 import market_api_budget,market_data,scoreboard
-INSTANCE_PORT=8894
+INSTANCE_PORT=8895
 @dataclass(frozen=True)
 class Check:name:str;passed:bool;detail:str
 def port_free(port=INSTANCE_PORT):
@@ -18,7 +18,7 @@ def run(session_date:date,require_clean_start=True):
     try:state=json.loads((ROOT/"state"/"supervisor-state.json").read_text())
     except Exception:state={}
     p=subprocess.run(["git","rev-parse","HEAD"],cwd=ROOT,capture_output=True,text=True);head=p.stdout.strip();deployed=str(state.get("deployed_sha") or "")
-    checks=[Check("deployed-main",bool(deployed and head.startswith(deployed) and state.get("last_update_status") in {"DEPLOYED","UP_TO_DATE"}),f"head={head[:12]} deployed={deployed[:12]}"),Check("single-instance",port_free(),"SURGE port 8894 free")]
+    checks=[Check("deployed-main",bool(deployed and head.startswith(deployed) and state.get("last_update_status") in {"DEPLOYED","UP_TO_DATE"}),f"head={head[:12]} deployed={deployed[:12]}"),Check("single-instance",port_free(),"SURGE port 8895 free")]
     c=scoreboard.connect_db()
     try:g=scoreboard.current_generation(c,"SURGE");b=scoreboard.current_bankroll(c,"SURGE");t=scoreboard.trade_count(c,"SURGE");flat=scoreboard.current_position_status(c,"SURGE") is None
     finally:c.close()
