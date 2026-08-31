@@ -1,15 +1,15 @@
 {
-  "last_updated": "2026-08-31T11:57:32.799314-05:00",
+  "last_updated": "2026-08-31T12:41:31.511229-05:00",
   "branch": "main",
-  "observed_head_at_write": "0b504b96f6e003806b282c6e037824002cc9dc8d",
-  "commit_subject": "Merge pull request #399 from Angrysquid46/codex/grok-scheduler-thread-fix",
+  "observed_head_at_write": "1f0458f076766ce38eac8e96daf28b55484fe607",
+  "commit_subject": "Merge pull request #400 from Angrysquid46/codex/live-trader-evidence-freshness",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": {
     "actor": "Codex",
-    "task": "Restore live evidence freshness and trader health telemetry",
-    "work_id": "5b3699ae-030c-4c78-b5ba-a2b81cb5eb51",
-    "started_at": "2026-08-31T11:57:32.020758-05:00"
+    "task": "Create canonical add-a-trader production runbook",
+    "work_id": "b844ae7b-60a3-4629-be94-e0f7afaf5e09",
+    "started_at": "2026-08-31T12:41:30.690913-05:00"
   },
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
