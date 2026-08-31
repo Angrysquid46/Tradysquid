@@ -111,3 +111,27 @@ def test_runtime_starts_idle_when_session_is_closed(monkeypatch):
 
     assert runtime.preflight() is True
     assert captured["session_open"] is True
+
+
+def test_scheduler_runtime_uses_cross_thread_scoreboard_connection(monkeypatch):
+    import bots.grok.scheduler as scheduler_module
+
+    captured = {}
+
+    class FakeAdapter:
+        features = chain = underlying = is_session_open = minutes_to_close = provider_ok = staticmethod(lambda: None)
+
+    class FakeRuntime:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    def fake_connect_db(**kwargs):
+        captured["connect_kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(scheduler_module, "GrokMarketAdapter", FakeAdapter)
+    monkeypatch.setattr(scheduler_module, "GrokRuntime", FakeRuntime)
+    monkeypatch.setattr(scheduler_module.scoreboard, "connect_db", fake_connect_db)
+
+    scheduler_module.build_runtime()
+    assert captured["connect_kwargs"] == {"check_same_thread": False}

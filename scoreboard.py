@@ -35,9 +35,13 @@ MAX_OPEN_TRADES_PER_BOT = 1
 BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK")
 
 
-def connect_db() -> sqlite3.Connection:
+def connect_db(*, check_same_thread: bool = True) -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH, timeout=10)
+    connection = sqlite3.connect(
+        DB_PATH,
+        timeout=10,
+        check_same_thread=check_same_thread,
+    )
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA busy_timeout=10000")

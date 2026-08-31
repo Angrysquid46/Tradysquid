@@ -27,7 +27,11 @@ def cycle_allowed(now: datetime, has_open_position: bool) -> bool:
 
 def build_runtime() -> GrokRuntime:
     adapter = GrokMarketAdapter()
-    conn = scoreboard.connect_db()
+    # APScheduler executes cycle() on a worker thread. This connection belongs
+    # to the long-lived runtime and therefore must explicitly permit that
+    # operational handoff; short-lived scheduler bookkeeping connections stay
+    # thread-bound below.
+    conn = scoreboard.connect_db(check_same_thread=False)
     return GrokRuntime(
         scoreboard_conn=conn,
         get_features=adapter.features,
