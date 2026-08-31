@@ -313,7 +313,7 @@ def test_bars_capture_job_skipped_when_budget_gate_blocks(monkeypatch, scratch_d
     def boom_if_called(*args, **kwargs):
         raise AssertionError("Tradier should not be called while the budget gate blocks")
 
-    monkeypatch.setattr(collector.market_data, "get_recent_intraday_history", boom_if_called)
+    monkeypatch.setattr(collector.market_data, "get_intraday_history_range", boom_if_called)
     monkeypatch.setattr(market_api_budget, "request_allowed", lambda priority: False)
 
     summary = collector.bars_capture_job(None)
@@ -330,8 +330,8 @@ def test_bars_capture_job_dedupes_against_already_written_bars(monkeypatch, scra
         {"time": "t2", "timestamp": 160, "open": 1.5, "high": 2, "low": 1, "close": 1.8, "volume": 20, "vwap": 1.6},
     ]
     monkeypatch.setattr(
-        collector.market_data, "get_recent_intraday_history",
-        lambda symbol, interval, calendar_days: all_bars,
+        collector.market_data, "get_intraday_history_range",
+        lambda symbol, interval, start, end: all_bars,
     )
 
     first = collector.bars_capture_job(None)
@@ -367,7 +367,7 @@ def test_ingest_bar_rows_partitions_each_bar_by_its_market_date(scratch_data_roo
         assert list(store.partition_dir(store.BARS_DATASET, "SPY", day).glob("*.parquet"))
 
 
-def test_bars_capture_uses_weekend_safe_backfill_window(monkeypatch, scratch_data_root):
+def test_bars_capture_always_requests_current_session_separately(monkeypatch, scratch_data_root):
     ct = ZoneInfo("America/Chicago")
     monkeypatch.setattr(collector.market_data, "TICKER", "SPY")
     monkeypatch.setattr(
@@ -377,12 +377,42 @@ def test_bars_capture_uses_weekend_safe_backfill_window(monkeypatch, scratch_dat
     calls = []
     monkeypatch.setattr(
         collector.market_data,
-        "get_recent_intraday_history",
-        lambda symbol, interval, calendar_days: calls.append(calendar_days) or [],
+        "get_intraday_history_range",
+        lambda symbol, interval, start, end: calls.append((start, end)) or [],
     )
     collector.bars_capture_job(None)
-    assert calls == [collector.BAR_BACKFILL_CALENDAR_DAYS]
-    assert collector.BAR_BACKFILL_CALENDAR_DAYS >= 3
+    assert calls == [(date(2026, 8, 31), date(2026, 8, 31))]
+
+
+def test_bars_capture_backfills_each_prior_day_once_without_provider_cap(
+    manifest_db, monkeypatch, scratch_data_root
+):
+    ct = ZoneInfo("America/Chicago")
+    monkeypatch.setattr(collector.market_data, "TICKER", "SPY")
+    monkeypatch.setattr(
+        collector.market_data, "now_ct",
+        lambda: datetime(2026, 8, 31, 8, 31, tzinfo=ct),
+    )
+    monkeypatch.setattr(collector, "BAR_BACKFILL_CALENDAR_DAYS", 3)
+    monkeypatch.setattr(collector, "session_bar_completeness", lambda symbol, day: {
+        "trading_day": day.isoformat(), "expected": 390, "received": 390,
+        "missing": 0, "missing_periods": [], "complete": True,
+    })
+    calls = []
+    monkeypatch.setattr(
+        collector.market_data, "get_intraday_history_range",
+        lambda symbol, interval, start, end: calls.append((start, end)) or [],
+    )
+    collector.bars_capture_job(manifest_db)
+    assert calls == [
+        (date(2026, 8, 31), date(2026, 8, 31)),
+        (date(2026, 8, 28), date(2026, 8, 28)),
+        (date(2026, 8, 29), date(2026, 8, 29)),
+        (date(2026, 8, 30), date(2026, 8, 30)),
+    ]
+    calls.clear()
+    collector.bars_capture_job(manifest_db)
+    assert calls == [(date(2026, 8, 31), date(2026, 8, 31))]
 
 
 def test_session_bar_completeness_reports_exact_gap(monkeypatch, scratch_data_root):
