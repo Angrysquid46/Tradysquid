@@ -154,6 +154,18 @@ def connect_db() -> sqlite3.Connection:
         );
         """
     )
+    manifest_columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(daily_data_manifest)")
+    }
+    for name, declaration in (
+        ("received_bar_minutes", "INTEGER NOT NULL DEFAULT 0"),
+        ("bar_grade", "TEXT NOT NULL DEFAULT ''"),
+        ("bar_audited_at", "TEXT NOT NULL DEFAULT ''"),
+    ):
+        if name not in manifest_columns:
+            connection.execute(
+                f"ALTER TABLE daily_data_manifest ADD COLUMN {name} {declaration}"
+            )
     connection.commit()
     return connection
 

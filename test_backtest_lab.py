@@ -196,6 +196,38 @@ def test_compute_features_matches_market_memory_directly(scratch):
 
 # --- dataset_fingerprint ---------------------------------------------------------
 
+def test_formal_backtest_rejects_incomplete_bar_session(monkeypatch):
+    monkeypatch.setattr(
+        lab.market_data_collector,
+        "session_bar_completeness",
+        lambda symbol, day: {
+            "trading_day": day.isoformat(), "expected": 390,
+            "received": 389, "missing": 1, "missing_periods": [],
+            "complete": False,
+        },
+    )
+    with pytest.raises(ValueError, match="INCOMPLETE_BAR_SESSION.*missing 1"):
+        lab.require_complete_bar_sessions("SPY", {date(2026, 8, 24)})
+
+
+def test_formal_backtest_accepts_only_complete_bar_sessions(monkeypatch):
+    monkeypatch.setattr(
+        lab.market_data_collector,
+        "session_bar_completeness",
+        lambda symbol, day: {
+            "trading_day": day.isoformat(), "expected": 390,
+            "received": 390, "missing": 0, "missing_periods": [],
+            "complete": True,
+        },
+    )
+    result = lab.require_complete_bar_sessions(
+        "SPY", {date(2026, 8, 25), date(2026, 8, 24)}
+    )
+    assert [item["trading_day"] for item in result] == ["2026-08-24", "2026-08-25"]
+
+
+# --- dataset_fingerprint ---------------------------------------------------------
+
 def test_dataset_fingerprint_stable_across_repeat_calls(scratch):
     now = datetime(2026, 8, 24, 9, 31, 0)
     store.write_quote("SPY", now.date(), now, [_quote_row(now)])

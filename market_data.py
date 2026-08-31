@@ -222,6 +222,23 @@ def get_recent_intraday_history(
     hardcoded to a single day (today)."""
     end = now_ct().date()
     start = end - timedelta(days=calendar_days)
+    return get_intraday_history_range(symbol, interval, start, end)
+
+
+def get_intraday_history_range(
+    symbol: str,
+    interval: str,
+    start: date,
+    end: date,
+) -> list[dict[str, Any]]:
+    """Return an explicit inclusive date range of regular-session bars.
+
+    Explicit dates are required for deterministic gap repair.  A relative
+    ``calendar_days`` window silently skips Friday when the next run is on
+    Monday and cannot be used to prove a historical session complete.
+    """
+    if end < start:
+        raise ValueError("intraday history end must be on or after start")
     data = tradier_get(
         "/markets/timesales",
         {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import pytest
@@ -340,6 +341,97 @@ def test_bars_capture_job_dedupes_against_already_written_bars(monkeypatch, scra
     # both should be deduped against what is already on disk.
     second = collector.bars_capture_job(None)
     assert "0 new bars written" in second
+
+
+def _bar(at: datetime, value: float = 1.0):
+    return {
+        "time": at.isoformat(), "timestamp": int(at.timestamp()),
+        "open": value, "high": value + 1, "low": value - 0.5,
+        "close": value + 0.25, "volume": 10, "vwap": value,
+    }
+
+
+def test_ingest_bar_rows_partitions_each_bar_by_its_market_date(scratch_data_root):
+    ct = ZoneInfo("America/Chicago")
+    captured = datetime(2026, 8, 25, 8, 31, tzinfo=ct)
+    result = collector.ingest_bar_rows(
+        "SPY",
+        [
+            _bar(datetime(2026, 8, 24, 14, 59, tzinfo=ct)),
+            _bar(datetime(2026, 8, 25, 8, 30, tzinfo=ct)),
+        ],
+        captured,
+    )
+    assert result["partitions"] == {"2026-08-24": 1, "2026-08-25": 1}
+    for day in (date(2026, 8, 24), date(2026, 8, 25)):
+        assert list(store.partition_dir(store.BARS_DATASET, "SPY", day).glob("*.parquet"))
+
+
+def test_bars_capture_uses_weekend_safe_backfill_window(monkeypatch, scratch_data_root):
+    ct = ZoneInfo("America/Chicago")
+    monkeypatch.setattr(collector.market_data, "TICKER", "SPY")
+    monkeypatch.setattr(
+        collector.market_data, "now_ct",
+        lambda: datetime(2026, 8, 31, 8, 31, tzinfo=ct),
+    )
+    calls = []
+    monkeypatch.setattr(
+        collector.market_data,
+        "get_recent_intraday_history",
+        lambda symbol, interval, calendar_days: calls.append(calendar_days) or [],
+    )
+    collector.bars_capture_job(None)
+    assert calls == [collector.BAR_BACKFILL_CALENDAR_DAYS]
+    assert collector.BAR_BACKFILL_CALENDAR_DAYS >= 3
+
+
+def test_session_bar_completeness_reports_exact_gap(monkeypatch, scratch_data_root):
+    ct = ZoneInfo("America/Chicago")
+    day = date(2026, 8, 24)
+    start = datetime(2026, 8, 24, 8, 30, tzinfo=ct)
+    monkeypatch.setattr(collector, "expected_session_minutes", lambda value: 3)
+    collector.ingest_bar_rows("SPY", [_bar(start), _bar(start + timedelta(minutes=2))], start)
+    result = collector.session_bar_completeness("SPY", day)
+    assert result["received"] == 2
+    assert result["missing"] == 1
+    assert result["missing_periods"] == [{
+        "start": "2026-08-24T08:31:00-05:00",
+        "end": "2026-08-24T08:31:00-05:00",
+    }]
+
+
+def test_record_bar_completeness_has_independent_bar_grade(manifest_db, monkeypatch):
+    manifest_db.execute(
+        "INSERT INTO daily_data_manifest "
+        "(trading_day, expected_minutes, received_quote_minutes, received_chain_snapshots, grade) "
+        "VALUES ('2026-08-24', 390, 390, 390, 'A')"
+    )
+    manifest_db.commit()
+    monkeypatch.setattr(
+        collector.market_data, "now_ct", lambda: datetime(2026, 8, 24, 15, 1)
+    )
+    collector.record_bar_completeness(manifest_db, {
+        "trading_day": "2026-08-24", "received": 363, "complete": False,
+        "missing_periods": [{"start": "x", "end": "y"}],
+    })
+    row = manifest_db.execute(
+        "SELECT grade, received_bar_minutes, bar_grade FROM daily_data_manifest "
+        "WHERE trading_day='2026-08-24'"
+    ).fetchone()
+    assert tuple(row) == ("A", 363, "REJECT")
+
+
+def test_repair_bar_partitions_adds_correct_copy_without_deleting_source(scratch_data_root):
+    ct = ZoneInfo("America/Chicago")
+    monday = datetime(2026, 8, 24, 14, 59, tzinfo=ct)
+    captured = datetime(2026, 8, 25, 8, 31, tzinfo=ct)
+    source = store.write_bars("SPY", date(2026, 8, 25), captured, [
+        collector.classify_bar_row(_bar(monday), "SPY", captured)[0]
+    ])
+    repaired = collector.repair_bar_partitions("SPY", captured)
+    assert repaired == {"2026-08-24": 1}
+    assert source.exists()
+    assert list(store.partition_dir(store.BARS_DATASET, "SPY", date(2026, 8, 24)).glob("*.parquet"))
 
 
 # --- expected_session_minutes (Phase 14 audit finding) -----------------------

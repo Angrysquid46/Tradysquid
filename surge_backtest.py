@@ -117,7 +117,9 @@ def replay(snapshots,start:date,end:date,bankroll=1000.,config=StrategyConfig(),
     return result
 
 def run(start:date,end:date,bankroll=1000.,config=StrategyConfig(),fill_penalty=0.):
-    return replay(load_snapshots(start,end),start,end,bankroll,config,fill_penalty)
+    snapshots=load_snapshots(start,end)
+    backtest_lab.require_complete_bar_sessions("SPY",{stamp.date() for stamp,_,_ in snapshots})
+    return replay(snapshots,start,end,bankroll,config,fill_penalty)
 
 if __name__=="__main__":
     import argparse
