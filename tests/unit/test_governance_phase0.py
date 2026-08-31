@@ -47,11 +47,11 @@ def test_no_phase_is_started_out_of_order():
             )
 
 
-def test_ownership_file_defines_all_five_classes():
+def test_ownership_file_defines_all_declared_classes():
     data = _load("OWNERSHIP.json")
     assert set(data["ownership_classes"]) == {
         "SHARED_CORE", "SHARED_DATA", "BLACKTIDE_ONLY",
-        "CLAUDE_ONLY", "HUMAN_LEARNING_CENTER",
+        "CLAUDE_ONLY", "HUMAN_LEARNING_CENTER", "GROK_ONLY",
     }
     paths = {entry["path"] for entry in data["entries"]}
     assert "governance/" in paths

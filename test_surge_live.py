@@ -1,5 +1,6 @@
 from datetime import datetime,timedelta
 from bots.surge.engine import Surge
+from bots.surge.preflight import INSTANCE_PORT
 from bots.surge.scheduler import cycle_allowed
 def bars(step=.2):return [{"close":100+i*step,"high":100+i*step+.05,"low":100+i*step-.05} for i in range(20)]
 def test_exact_three_minute_signal_and_tier_a_entry():
@@ -12,3 +13,6 @@ def test_exit_uses_observed_bid_and_rides_winner():
     quote["bid"]=1.16;out=bot.decide(now+timedelta(minutes=2),1000,{"tier":"A"},{"tier":"A","contracts":[quote]},bars());assert out.action=="EXIT" and out.price==1.16
 def test_market_window():
     assert cycle_allowed(datetime(2026,8,28,10),False)
+
+def test_instance_port_is_reserved_for_surge():
+    assert INSTANCE_PORT == 8895
