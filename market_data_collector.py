@@ -3,10 +3,11 @@ manifest bookkeeping (Master Spec Section 9). Two scheduler jobs:
 
 - capture_cycle_job: every minute, SPY quotes + the 0DTE chain snapshot
   (mirrors market_data_pilot.py's proven per-minute shape).
-- bars_capture_job: every ~20 minutes, the accumulated 1-minute OHLCV bar
-  series (a low-frequency batch pull - get_recent_intraday_history returns
-  the whole day's series in one call, so polling it every minute would
-  just re-fetch the same growing series for no benefit).
+- bars_capture_job: every minute, the accumulated 1-minute OHLCV bar series.
+  The provider returns the growing day in one call and the writer deduplicates
+  by bar timestamp. Minute-scale live traders require newly completed bars;
+  a 20-minute batch cadence leaves their evidence stale even while quotes and
+  chains remain current.
 
 daily_data_manifest's schema lives in local_information_engine.py's
 connect_db() alongside job_runs/engine_state; this module only reads and
