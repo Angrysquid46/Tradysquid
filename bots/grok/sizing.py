@@ -1,7 +1,8 @@
-"""GROK position sizing — private model within competition constraints.
+"""GROK position sizing — DEGEN MODE.
 
-Never exceeds bankroll. Never opens a second official trade.
-Scales mildly with confidence and opportunity quality.
+Hard constraints (never exceed bankroll; one official trade) are absolute.
+Within that box: size like you mean it. Prefer more contracts on cheap
+premium when confidence is high. Bust → reset is the referee's problem.
 """
 
 from __future__ import annotations
@@ -16,12 +17,16 @@ def decide_contracts(
     spread_pct: float,
     params: dict[str, Any] | None = None,
 ) -> int:
-    """Return number of contracts (0 means unaffordable / skip).
+    """Return contracts (0 = skip).
 
-    Constraints:
-    - cost = ask * 100 * contracts <= bankroll
-    - max 1 official trade (caller enforces)
-    - prefer 1 contract; allow 2 only under high confidence + ample room
+    Hard rules:
+    - ask * 100 * contracts <= bankroll
+    - caller enforces max 1 open trade
+
+    Soft degen policy:
+    - default: push toward a large fraction of bankroll on the idea
+    - high confidence + tight-ish spread → lean heavier
+    - still leave a tiny cushion so a scratch fill doesn't auto-bust math
     """
     if ask_price <= 0 or bankroll <= 0:
         return 0
@@ -34,17 +39,36 @@ def decide_contracts(
     if max_affordable < 1:
         return 0
 
-    # Default conservative
-    contracts = 1
+    # Target risk fraction of bankroll by confidence
+    if confidence >= 0.85:
+        target_frac = 0.92
+    elif confidence >= 0.70:
+        target_frac = 0.80
+    elif confidence >= 0.55:
+        target_frac = 0.65
+    else:
+        target_frac = 0.50
 
-    # Mild scale-up only when very confident and spread is tight
-    if confidence >= 0.78 and spread_pct <= 0.10 and max_affordable >= 2:
-        contracts = 2
-    if confidence >= 0.88 and spread_pct <= 0.08 and max_affordable >= 3:
-        contracts = min(3, max_affordable)
+    # Wide spread → slightly less size (still aggressive)
+    if spread_pct > 0.25:
+        target_frac *= 0.75
+    elif spread_pct > 0.18:
+        target_frac *= 0.90
 
-    # Never risk more than ~40% of current bankroll on one trade
-    while contracts > 1 and (cost_one * contracts) > bankroll * 0.40:
+    target_dollars = bankroll * target_frac
+    contracts = max(1, int(target_dollars // cost_one))
+    contracts = min(contracts, max_affordable)
+
+    # Always try at least 1 if affordable; prefer more when cheap tickets
+    if cost_one < 80 and confidence >= 0.50 and max_affordable >= 2:
+        contracts = max(contracts, min(3, max_affordable))
+    if cost_one < 40 and confidence >= 0.55 and max_affordable >= 4:
+        contracts = max(contracts, min(5, max_affordable))
+    if cost_one < 25 and confidence >= 0.60 and max_affordable >= 6:
+        contracts = max(contracts, min(8, max_affordable))
+
+    # Never exceed bankroll
+    while contracts > 1 and cost_one * contracts > bankroll + 0.01:
         contracts -= 1
 
-    return max(1, contracts) if cost_one <= bankroll else 0
+    return contracts if cost_one * contracts <= bankroll + 0.01 else 0
