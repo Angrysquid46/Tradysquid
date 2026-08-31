@@ -30,17 +30,9 @@ DB_PATH = ROOT / "state" / "scoreboard.db"
 STARTING_BANKROLL_USD = 1000.0
 MAX_OPEN_TRADES_PER_BOT = 1
 
-# AXIOM permanently removed 2026-08-27 (owner directive, given and
-# confirmed twice: "delete axioms entire presence in the code and the
-# discord... no traces of it in the system" / "kill axiom remove its
-# corpse"). Its historical rows in state/scoreboard.db are untouched
-# (official_completed_trades_immutable=true still applies to what already
-# happened) - dropping it here only stops any NEW row from ever being
-# recorded under that name, and stops it from being enumerated by
-# anything that iterates BOTS (confirmed to be exactly one call site,
-# rivalry_presentation.render_scoreboard, fixed in the same change to use
-# rivalry_presentation.PUBLIC_BOTS directly instead).
-BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE")
+# AXIOM permanently removed 2026-08-27 (owner directive).
+# GROK added 2026-08-30 as independent Grok/xAI competitor.
+BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK")
 
 
 def connect_db() -> sqlite3.Connection:
@@ -127,10 +119,6 @@ def record_trade_open(
         raise ValueError("entry_price and contracts must be positive")
     if entry_price * 100 * contracts > authoritative_bankroll + 0.01:
         raise ValueError("trade cost exceeds referee bankroll")
-    # Global per bot, not per generation - IMMUTABLE_RULES.json's
-    # max_open_trades_per_bot has no generation qualifier. A generation-
-    # scoped check would let a bot hold an open trade in one generation
-    # while opening another in the next (Phase 14 audit finding).
     open_count = connection.execute(
         "SELECT COUNT(*) FROM official_trades WHERE bot=? AND closed_at IS NULL",
         (bot,),
@@ -168,18 +156,7 @@ def record_trade_close(
     max_adverse_pct: float | None = None,
 ) -> None:
     """The one allowed UPDATE - guarded by closed_at IS NULL so a trade
-    can transition open -> closed exactly once. Raises if the trade
-    doesn't exist or is already closed - what makes 'official completed
-    trades immutable' real rather than merely documented.
-
-    The referee computes P&L itself from the row's own stored
-    entry_price/contracts and the given exit_price, rather than trusting
-    the caller's pnl_usd outright (Phase 14 audit finding - a competitor
-    should never get to just announce its own P&L). `pnl_usd` stays a
-    required parameter for every existing caller's benefit (an honest
-    caller already does this exact math before calling), but is now
-    validated against the referee's own computation rather than written
-    as-is; a mismatch beyond simple float rounding raises."""
+    can transition open -> closed exactly once."""
     row = connection.execute(
         "SELECT closed_at, entry_price, contracts FROM official_trades WHERE trade_id=?",
         (trade_id,),
@@ -443,15 +420,6 @@ def lifetime_pnl(connection: sqlite3.Connection, bot: str) -> float:
 def recent_closed_trades(
     connection: sqlite3.Connection, bot: str, *, limit: int = 20, outcome: str | None = None
 ) -> list[dict[str, Any]]:
-    """Immutable, closed-trade audit feed for winners/losers channels.
-
-    Each record is sourced from the neutral referee's ``official_trades``
-    table after its one permitted open-to-closed transition.  Contract and
-    fill details are intentionally available only after a trade has closed;
-    open-position presentation remains status-only.  Newest first. ``outcome``
-    (``WIN``/``LOSS``/``SCRATCH``) filters before limiting, so winners and
-    losers each receive their own most-recent-N records.
-    """
     rows = connection.execute(
         "SELECT trade_id, generation, opened_at, closed_at, side, contract_symbol, "
         "entry_price, exit_price, contracts, pnl_usd FROM official_trades "
@@ -484,12 +452,6 @@ def recent_closed_trades(
 def bankroll_history(
     connection: sqlite3.Connection, bot: str, generation: int | None = None
 ) -> list[dict[str, Any]]:
-    """Public bankroll-over-time series for a chart, oldest first. Two
-    points per closed trade (before and after), using each trade's real
-    recorded entry_bankroll rather than accumulating locally - a bust
-    reset is then just what the data already shows (entry_bankroll snaps
-    back to STARTING_BANKROLL_USD once bust_check_job starts the next
-    generation), not something this has to simulate."""
     trades = _closed_trades(connection, bot, generation)
     points: list[dict[str, Any]] = [
         {"at": None, "bankroll": STARTING_BANKROLL_USD, "generation": trades[0]["generation"] if trades else (generation or 1)}
@@ -504,9 +466,6 @@ def bankroll_history(
     return points
 
 
-# The exact key set scoreboard_snapshot() returns - exported so other
-# modules (rivalry.py's public_score_snapshot schema check) can validate
-# against the real public shape instead of duplicating/guessing it.
 SCOREBOARD_SNAPSHOT_KEYS = frozenset({
     "bot", "generation", "current_bankroll", "generation_pnl", "lifetime_pnl",
     "trade_count_generation", "trade_count_lifetime", "win_rate", "profit_factor",
@@ -518,12 +477,6 @@ SCOREBOARD_SNAPSHOT_KEYS = frozenset({
 
 
 def scoreboard_snapshot(connection: sqlite3.Connection, bot: str) -> dict[str, Any]:
-    """The public metrics payload Section 6 describes.
-
-    Live positions are deliberately represented only as OPEN/FLAT.  The
-    referee and bot-recovery path use current_position_status() directly;
-    contract, direction, fill, size and timing never enter public state.
-    """
     generation = current_generation(connection, bot)
     public_position_status = "OPEN" if current_position_status(connection, bot) else "FLAT"
     return {
@@ -553,12 +506,6 @@ def scoreboard_snapshot(connection: sqlite3.Connection, bot: str) -> dict[str, A
 
 
 def current_leader(connection: sqlite3.Connection) -> str | None:
-    """"Leader" is a comparison against a rival - with fewer than two
-    registered bots there is nothing to lead against, so this returns
-    None rather than crashing on ordered[1] or fabricating a trivial
-    "leader" of a field of one. (Not reachable today with BOTS at two
-    entries, but a real bug the AXIOM removal would have introduced here
-    if BOTS had shrunk to one - guarded defensively regardless.)"""
     if len(BOTS) < 2:
         return None
     totals = {bot: lifetime_pnl(connection, bot) for bot in BOTS}

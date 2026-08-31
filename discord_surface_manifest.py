@@ -47,25 +47,15 @@ EVENT_TYPES = ("EVENT", "UPDATE", "PUBLISH", "ERROR")
 
 SURFACE_STATUSES = ("UPDATED", "VERIFIED_UNAFFECTED", "RETIRED", DESYNCHRONIZED, MISCONFIGURED)
 
-# The complete dynamic competition presentation inventory.  Operational
-# channels that contain ordinary stream messages are not singleton/dynamic
-# surfaces.  Every competition card has one stable owner and producer here.
+# The complete dynamic competition presentation inventory.
 CANONICAL_COMPETITION_SURFACES: tuple[dict[str, object], ...] = ()
 
 
-# Per-bot RIPTIDE/BLACKTIDE dashboard surfaces (rivalry_presentation.
-# publish_bot_surfaces) - same registration requirement as
-# CANONICAL_COMPETITION_SURFACES above (record_surface_event() raises on
-# an unregistered surface_id), generated rather than hand-duplicated since
-# both bots' surface sets are identical in shape. AXIOM (Claude's
-# competitor) permanently removed 2026-08-27 (owner directive) - dropped
-# from this generator so reconcile_canonical_bot_surfaces below retires
-# its surfaces via the same register-then-retire-obsolete path every
-# other surface uses.
+# Per-bot dashboard surfaces. GROK added 2026-08-30 as independent Grok/xAI competitor.
 CANONICAL_BOT_SURFACES = tuple(
     {
         "surface_id": f"{bot.lower()}-{suffix}", "category": bot,
-        "channel": channel.format(bot=bot.lower()), "owner": "Codex",
+        "channel": channel.format(bot=bot.lower()), "owner": "Codex" if bot != "GROK" else "Grok",
         "purpose": purpose.format(bot),
         "producer": "rivalry_presentation.publish_bot_surfaces",
         "publisher": "discord_transport.DiscordTracker", "update_mode": update_mode,
@@ -73,7 +63,7 @@ CANONICAL_BOT_SURFACES = tuple(
         **({"max_silence_minutes": 10} if update_mode == UPDATE_MODE_PERIODIC else {}),
         "event_types": event_types, "schema_version": "phase15-v1",
     }
-    for bot in ("BLACKTIDE", "RIPTIDE", "SURGE")
+    for bot in ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK")
     for suffix, channel, purpose, update_mode, expected_silence, event_types in (
         ("dashboard-card", "{bot}-dashboard", "{}'s balance/generation/P&L/win-rate stat card",
          UPDATE_MODE_PERIODIC, False, ("PUBLISH",)),
@@ -96,7 +86,7 @@ def reconcile_canonical_bot_surfaces(connection: sqlite3.Connection) -> tuple[st
     for item in CANONICAL_BOT_SURFACES:
         register_surface(connection, **item)
     rows = connection.execute(
-        "SELECT surface_id FROM surfaces WHERE category IN ('AXIOM', 'BLACKTIDE', 'RIPTIDE', 'SURGE')"
+        "SELECT surface_id FROM surfaces WHERE category IN ('AXIOM', 'BLACKTIDE', 'RIPTIDE', 'SURGE', 'GROK')"
     ).fetchall()
     retired: list[str] = []
     for row in rows:
@@ -208,11 +198,6 @@ def register_surface(
 
 
 def reconcile_canonical_competition_surfaces(connection: sqlite3.Connection) -> tuple[str, ...]:
-    """Upsert the authoritative competition cards and retire obsolete ones.
-
-    This is idempotent and local.  Live Discord comparison/publishing is done
-    by rivalry_presentation so an outage cannot corrupt manifest ownership.
-    """
     active_ids = {item["surface_id"] for item in CANONICAL_COMPETITION_SURFACES}
     for item in CANONICAL_COMPETITION_SURFACES:
         register_surface(connection, **item)
@@ -269,9 +254,6 @@ def _last_event(connection: sqlite3.Connection, surface_id: str) -> sqlite3.Row 
 def compute_health(
     connection: sqlite3.Connection, surface_id: str, *, now: datetime | None = None
 ) -> str:
-    """Derives one of the six timing-based states. DESYNCHRONIZED and
-    MISCONFIGURED are never derived here - they require comparing
-    declared state against live Discord state, not built this phase."""
     surface = _get_surface(connection, surface_id)
     if surface is None:
         raise ValueError(f"surface_id {surface_id!r} was never registered")
@@ -295,7 +277,6 @@ def compute_health(
     if surface["update_mode"] == UPDATE_MODE_EVENT_DRIVEN:
         return HEALTHY
 
-    # PERIODIC
     if surface["expected_silence"]:
         return HEALTHY
     max_silence = surface["max_silence_minutes"]
