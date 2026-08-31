@@ -7,6 +7,7 @@ import sys
 from dataclasses import dataclass
 
 import discord_transport
+import learning_center_index
 from run_with_env import load_env
 
 BOT_CHANNEL_ALLOW = (
@@ -103,6 +104,18 @@ CHANNELS = [
     ChannelSpec("START HERE", "risk-management", "Options risk disclosures and pre-trade safety checklist."),
     ChannelSpec("LEARNING CENTER", "learning-index", "Start here: the complete 43-chapter curriculum."),
 ]
+
+# GROK's category addition must not retire the existing curriculum topology.
+# Generate these declarations from the canonical chapter registry so Discord
+# reconciliation and the Learning Center index cannot drift apart again.
+CHANNELS.extend(
+    ChannelSpec(
+        "LEARNING CENTER",
+        learning_center_index.chapter_channel_name(chapter),
+        f"Chapter {chapter}: {title}.",
+    )
+    for chapter, title in learning_center_index.CHAPTERS.items()
+)
 
 DELETE_CHANNELS = {
     "strategies-dashboard", "strategies-results",
