@@ -6,14 +6,15 @@
     "SHARED_DATA",
     "BLACKTIDE_ONLY",
     "CLAUDE_ONLY",
+    "GROK_ONLY",
     "HUMAN_LEARNING_CENTER"
   ],
-  "rule": "Claude cannot modify BLACKTIDE-private resources. ChatGPT/Codex cannot modify Claude-private resources. Neither competitor autonomously changes immutable competition law.",
+  "rule": "Claude cannot modify BLACKTIDE-private resources. ChatGPT/Codex cannot modify Claude-private resources. Grok cannot modify BLACKTIDE or Claude private resources. Neither competitor autonomously changes immutable competition law.",
   "entries": [
     {
       "path": "TRADYSQUID_2_MASTER_PREBUILD.md",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
       "writers": ["Owner"],
       "protected": true,
       "purpose": "Approved architecture, goals, and rules. Agents follow it; only the owner edits it (Section 24)."
@@ -21,130 +22,130 @@
     {
       "path": "AGENTS.md",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
       "purpose": "Root agent instructions enforcing read-before-write (Section 12)."
     },
     {
       "path": "AI_COLLABORATION.md",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
       "purpose": "Cross-agent collaboration contract and control-hub field reference."
     },
     {
       "path": "ai_coordination.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
       "purpose": "Shared exclusive-lock/checkpoint/finish/verify tool; the required locking/concurrency mechanism for Phase 0 (Section 12)."
     },
     {
       "path": "governance/",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": true,
-      "purpose": "PROJECT_STATE/PHASES/ACTIVE_HANDOFF/CHANGELOG/OWNERSHIP/IMMUTABLE_RULES - the single shared source of project truth per Section 13. Writes should go through ai_coordination.py's begin/checkpoint/finish, not direct edits. Phase 4 landed enforcement: finish() calls enforce_ownership() against this file before releasing the lock, and verify() calls validate_governance_schema()/check_state_freshness() against these files before allowing a new begin()."
+      "purpose": "PROJECT_STATE/PHASES/ACTIVE_HANDOFF/CHANGELOG/OWNERSHIP/IMMUTABLE_RULES - the single shared source of project truth per Section 13. Writes should go through ai_coordination.py's begin/checkpoint/finish, not direct edits."
     },
     {
       "path": "learning_center_index.py",
       "owner": "HUMAN_LEARNING_CENTER",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Phase 10 (Section 15): the 43-chapter curriculum's stable structure - chapter list, lc-NN-slug Discord channel naming, LC-XX-YY lesson IDs, and the lesson registry. Both agents may build/maintain the shell and tooling; Section 15 requires autonomous trading code to never import, search, or query this module or its content."
+      "purpose": "Phase 10 (Section 15): the 43-chapter curriculum's stable structure."
     },
     {
       "path": "market_data_store.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Phase 5: append-only Parquet market-data storage layer (quotes/chain/bars) and the DuckDB glob-query read API both competitors' backtests read through."
+      "purpose": "Phase 5: append-only Parquet market-data storage layer."
     },
     {
       "path": "market_data_collector.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Phase 5: the scheduled capture jobs that populate market_data_store.py from Tradier, with VERIFIED_REAL/REAL_WITH_LIMITATIONS/REJECTED data-quality classification and the daily data manifest."
+      "purpose": "Phase 5: the scheduled capture jobs."
     },
     {
       "path": "backtest_lab.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Phase 6: the shared, strategy-neutral no-lookahead MarketView interface (Section 10) and record_backtest/load_backtest_records reproducibility mechanism both competitors' backtests use."
+      "purpose": "Phase 6: the shared, strategy-neutral no-lookahead MarketView interface."
     },
     {
       "path": "market_api_budget.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Phase 7: Section 8's shared API-budget priority scheme and gate - the one shared factual market service both competitors' live loops must call through."
+      "purpose": "Phase 7: Section 8's shared API-budget priority scheme."
     },
     {
       "path": "market_data.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Authoritative Tradier HTTP choke point. Every REST observation participates in the shared quota and response-cache architecture."
+      "purpose": "Authoritative Tradier HTTP choke point."
     },
     {
       "path": "market_response_cache.py",
       "owner": "SHARED_DATA",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Cross-process cache for identical factual provider responses; contains no competitor strategy intelligence."
+      "purpose": "Cross-process cache for identical factual provider responses."
     },
     {
       "path": "scoreboard.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Phase 8: Section 6's neutral, immutable competition scorekeeper - the sole official trade ledger, outside any private trader. AXIOM permanently removed 2026-08-27 (owner directive)."
+      "purpose": "Phase 8: Section 6's neutral, immutable competition scorekeeper."
     },
     {
       "path": "discord_surface_manifest.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Phase 9: Section 14's Discord surface manifest and health-state framework, used by any module (both competitors included) that presents a dynamic Discord surface."
+      "purpose": "Phase 9: Section 14's Discord surface manifest."
     },
     {
       "path": "rivalry.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Phase 9: Section 7's bounded, rate-limited rivalry event system - never a code path a trader's decisions can read. AXIOM permanently removed 2026-08-27 (owner directive)."
+      "purpose": "Phase 9: Section 7's bounded rivalry event system."
     },
     {
       "path": "rivalry_presentation.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Failure-isolated Discord publisher for redacted official scoreboard and bounded rivalry cards."
+      "purpose": "Failure-isolated Discord publisher for redacted official scoreboard."
     },
     {
       "path": "sync_discord_structure.py",
       "owner": "SHARED_CORE",
-      "readers": ["Owner", "Codex", "Claude"],
-      "writers": ["Owner", "Codex", "Claude"],
+      "readers": ["Owner", "Codex", "Claude", "Grok"],
+      "writers": ["Owner", "Codex", "Claude", "Grok"],
       "protected": false,
-      "purpose": "Authoritative idempotent live Discord channel/category reconciliation specification."
+      "purpose": "Authoritative idempotent live Discord channel/category reconciliation."
     },
     {
       "path": "bots/blacktide/",
@@ -152,7 +153,7 @@
       "readers": ["Owner", "Codex"],
       "writers": ["Codex"],
       "protected": true,
-      "purpose": "Phase 11 (Section 11): BLACKTIDE's private trader, built in Phase 12. Only Codex may write here. Claude must not request, inspect, infer, copy, modify, or train from anything under this path (Section 3's private-competitor boundary) - this entry enforces the write side; the read-side boundary is convention (this directory's own AGENTS.md), not a technical sandbox."
+      "purpose": "Phase 11: BLACKTIDE's private trader. Only Codex may write here."
     },
     {
       "path": "bots/riptide/",
@@ -160,7 +161,7 @@
       "readers": ["Owner", "Codex"],
       "writers": ["Codex"],
       "protected": true,
-      "purpose": "Owner-authorized Phase 15 independent Codex-owned RIPTIDE paper challenger. Only Codex may write here; it may not read or use BLACKTIDE or Claude private strategy intelligence."
+      "purpose": "Owner-authorized Phase 15 independent Codex-owned RIPTIDE paper challenger."
     },
     {
       "path": "bots/surge/",
@@ -168,10 +169,18 @@
       "readers": ["Owner", "Codex"],
       "writers": ["Codex"],
       "protected": true,
-      "purpose": "Owner-selected Phase 15 SURGE paper competitor using the three-minute causal impulse strategy. Only Codex may write here."
+      "purpose": "Owner-selected Phase 15 SURGE paper competitor. Only Codex may write here."
+    },
+    {
+      "path": "bots/grok/",
+      "owner": "GROK_ONLY",
+      "readers": ["Owner", "Grok"],
+      "writers": ["Grok"],
+      "protected": true,
+      "purpose": "Independent Grok/xAI-owned SPY 0DTE paper competitor. Only Grok may write private strategy intelligence here. Must not read or consume BLACKTIDE, RIPTIDE, or SURGE private strategy."
     }
   ],
-  "scoped_instructions_convention": "Each BLACKTIDE_ONLY/CLAUDE_ONLY directory (created Phase 11+, e.g. bots/blacktide, bots/claude) must contain its own AGENTS.md scoped to that directory, following the nearest-file convention: an agent reads the root AGENTS.md plus the nearest scoped AGENTS.md above its working path. This file's writers field for that directory's entry is the authoritative machine-readable grant; the scoped AGENTS.md is a human/agent-readable restatement of the same rule, not a separate grant. Root AGENTS.md must not enumerate bot directories in advance of the phase that creates them.",
+  "scoped_instructions_convention": "Each BLACKTIDE_ONLY/CLAUDE_ONLY/GROK_ONLY directory must contain its own AGENTS.md scoped to that directory.",
   "not_yet_assigned": [
     "learning/ catalog/lessons/search/references (HUMAN_LEARNING_CENTER, created Phase 10)"
   ]
