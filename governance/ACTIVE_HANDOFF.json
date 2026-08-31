@@ -14,9 +14,9 @@
   "expected_effects": "Adds third paper competitor with ,000 Gen 1 ledger, one open position maximum, public SURGE surfaces, and standalone runtime; no brokerage orders.",
   "required_tests": "Ownership/isolation, engine causality, observed ask/bid fills, referee recovery, runtime/preflight, complete pytest, CI, updater receipt, process health and official ledger verification.",
   "risks": "Selected strategy is hindsight-best and failed validation; live losses/bust are possible. New competitor registration touches shared presentation and startup orchestration but frozen updater code remains untouched.",
-  "next_safe_action_if_interrupted": "Commit intended files, open PR, pass CI, merge, await existing updater, reconcile live Discord surfaces, launch SURGE only, and verify port/ledger/evaluations.",
+  "next_safe_action_if_interrupted": "Add hidden watchdog wrapper, retarget task action atomically, test task and confirm no visible console while supervisor heartbeat remains healthy; then resume SURGE PR/deployment completion.",
   "phase": "Phase 15",
-  "last_checkpoint_at": "2026-08-28T22:10:58.581121-05:00",
-  "last_successful_action": "Implemented isolated SURGE competitor #3 with exact owner-selected 3-minute configuration, causal Tier-A selected-contract execution, observed ask/bid accounting, restart-safe peak tracking, neutral referee registration, public surface declarations, scheduler/launch/preflight, and tests. 55 focused plus complete repository suite pass.",
-  "next_safe_action": "Commit intended files, open PR, pass CI, merge, await existing updater, reconcile live Discord surfaces, launch SURGE only, and verify port/ledger/evaluations."
+  "last_checkpoint_at": "2026-08-30T20:17:10.865380-05:00",
+  "last_successful_action": "Owner reported a command window stealing focus every few minutes. Verified the enabled Tradysquids Supervisor Watchdog runs every five minutes with an Interactive principal and directly launches powershell.exe despite -WindowStyle Hidden. Expanding active work only to add a WScript hidden wrapper and retarget/mark the scheduled task hidden; supervisor/updater logic remains frozen and unchanged.",
+  "next_safe_action": "Add hidden watchdog wrapper, retarget task action atomically, test task and confirm no visible console while supervisor heartbeat remains healthy; then resume SURGE PR/deployment completion."
 }

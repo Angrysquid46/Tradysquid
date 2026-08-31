@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-28T22:10:58.983192-05:00",
-  "branch": "main",
-  "observed_head_at_write": "a0eea99a1c3bd8a3fbcc75fd5dd1f5c9c9f70510",
-  "commit_subject": "Merge pull request #389 from Angrysquid46/codex/surge-profitability-finish",
+  "last_updated": "2026-08-30T20:17:11.259977-05:00",
+  "branch": "codex/surge-env-bootstrap",
+  "observed_head_at_write": "98044de431cc5d5158b362d9d6b0d5b42f7db4e2",
+  "commit_subject": "fix: bootstrap SURGE runtime environment",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": {
