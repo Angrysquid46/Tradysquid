@@ -69,17 +69,25 @@ class GrokRuntime:
         import scoreboard as sb
 
         pos = sb.current_position_status(self.sb, BOT_NAME)
+        session_open = self.is_session_open()
         result = run_preflight(
             scoreboard_available=True,
             market_data_available=True,
             today_0dte_available=True,  # caller should refine with real check
             provider_reachable=self.provider_ok(),
             no_open_position=pos is None,
-            session_open=self.is_session_open(),
+            # Session availability controls decision cycles, not process
+            # availability. Keeping the runtime online after hours allows
+            # recovery and monitoring without permitting an off-hours trade;
+            # cycle() independently returns NO_ACTION while the session is
+            # closed.
+            session_open=True,
         )
         if not result.ok:
             logger.error("preflight failed: %s", result.failures)
             return False
+        if not session_open:
+            logger.info("market session closed; runtime online in idle mode")
         for w in result.warnings:
             logger.warning("preflight warning: %s", w)
         return True

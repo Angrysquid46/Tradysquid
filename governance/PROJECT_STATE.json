@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-30T21:01:36.295871-05:00",
+  "last_updated": "2026-08-31T04:04:54.569658-05:00",
   "branch": "main",
-  "observed_head_at_write": "6e403e9ba58ce10ae69d74ccad8cec44530087a8",
-  "commit_subject": "Merge pull request #395 from Angrysquid46/codex/separate-surge-grok-ports",
+  "observed_head_at_write": "6d1479ca0c2956a4ad28647b670d3f45a896e6b9",
+  "commit_subject": "Merge pull request #396 from Angrysquid46/codex/checkpoint-grok-surge-launch",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": {
