@@ -1,8 +1,8 @@
 """GROK market adapter — shared neutral data only.
 
-Live paper cycles prefer Tradier via market_data (quotes, 1-min timesales,
-0DTE chain). Point-in-time parquet MarketView is still tried first when it
-has fresh data; empty/stale parquet no longer forces permanent NO_ACTION.
+Uses the shared 1m parquet store (data/market) and Tradier. Parquet chain
+rows store call/put in `side` (collector schema); that must map to
+option_type or contract selection sees an empty book and never enters.
 """
 
 from __future__ import annotations
@@ -104,10 +104,22 @@ def _normalize_chain(options_payload: dict[str, Any] | list) -> list[dict[str, A
         delta = c.get("delta")
         if delta is None and greeks:
             delta = greeks.get("delta")
+        # Collector parquet schema uses `side` (call/put). Live Tradier uses option_type.
+        raw_type = (
+            c.get("option_type")
+            or c.get("type")
+            or c.get("side")  # market_data_collector.classify_chain_row
+            or ""
+        )
+        option_type = str(raw_type).upper()
+        if option_type in ("C", "CALL"):
+            option_type = "CALL"
+        elif option_type in ("P", "PUT"):
+            option_type = "PUT"
         out.append({
             "symbol": symbol,
             "option_symbol": symbol,
-            "option_type": str(c.get("option_type") or c.get("type") or "").upper(),
+            "option_type": option_type,
             "strike": float(c.get("strike") or 0),
             "bid": float(c.get("bid") or 0),
             "ask": float(c.get("ask") or 0),
@@ -124,7 +136,6 @@ def _normalize_chain(options_payload: dict[str, Any] | list) -> list[dict[str, A
 def _live_bars_1m() -> list[dict[str, Any]]:
     import market_data
 
-    # Prefer 1-minute tape for 0DTE decisions; fall back to 5-min if needed.
     try:
         bars = market_data.get_intraday_history("SPY", interval="1min")
     except Exception as exc:
@@ -149,7 +160,6 @@ def _live_0dte_chain() -> list[dict[str, Any]]:
         logger.warning("live expirations failed: %s", exc)
         return []
     if today not in expirations:
-        # No 0DTE listed (weekend/holiday) — refuse rather than invent
         logger.info("no SPY 0DTE expiration for %s (have %s)", today, expirations[:3])
         return []
     try:
@@ -161,10 +171,10 @@ def _live_0dte_chain() -> list[dict[str, Any]]:
 
 
 class GrokMarketAdapter:
-    """Live-first adapter for paper competition cycles."""
+    """Shared-store + live adapter for paper competition cycles."""
 
     def __init__(self, market_view: Any | None = None):
-        self._mv = market_view  # lazy optional parquet view
+        self._mv = market_view
 
     def _market_view(self) -> Any | None:
         if self._mv is not None:
@@ -180,7 +190,6 @@ class GrokMarketAdapter:
 
     def features(self, as_of: datetime | None = None) -> dict[str, Any]:
         as_of = as_of or datetime.now(CENTRAL)
-        # 1) parquet if present and dense enough
         mv = self._market_view()
         if mv is not None:
             try:
@@ -192,10 +201,9 @@ class GrokMarketAdapter:
                     return feat
             except Exception as exc:
                 logger.warning("parquet features failed: %s", exc)
-        # 2) live Tradier
         feat = _bars_to_features(_live_bars_1m())
         if not feat:
-            logger.warning("features empty — no parquet bars and live tape thin")
+            logger.warning("features empty after parquet + live")
         return feat
 
     def chain(self, as_of: datetime | None = None) -> list[dict[str, Any]]:
@@ -205,16 +213,15 @@ class GrokMarketAdapter:
             try:
                 options = mv.options_as_of(as_of) or {}
                 contracts = _normalize_chain(options)
-                # Only trust parquet chain if non-empty and not marked dead
-                if contracts and options.get("tier") in (None, "A", "B", "TIER_A", "TIER_B"):
-                    # backtest_lab uses "A"/"B"/"C"
-                    if options.get("tier") != "C":
-                        return contracts
+                # Use shared chain whenever we got real typed contracts.
+                typed = [c for c in contracts if c.get("option_type") in ("CALL", "PUT")]
+                if typed:
+                    return typed
             except Exception as exc:
                 logger.warning("parquet chain failed: %s", exc)
         live = _live_0dte_chain()
         if not live:
-            logger.warning("chain empty — no usable 0DTE contracts")
+            logger.warning("chain empty after parquet + live")
         return live
 
     def underlying(self, as_of: datetime | None = None) -> dict[str, Any]:
@@ -223,7 +230,7 @@ class GrokMarketAdapter:
         if mv is not None:
             try:
                 snap = mv.market_as_of(as_of) or {}
-                if snap.get("tier") != "C" and snap.get("quote"):
+                if snap.get("quote"):
                     return snap
             except Exception:
                 pass
