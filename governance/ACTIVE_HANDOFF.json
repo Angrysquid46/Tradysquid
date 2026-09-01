@@ -1,22 +1,5 @@
 {
-  "active": true,
-  "work_id": "3a2d3334-cde9-467c-be7b-8bd2688f007e",
-  "actor": "Codex",
-  "task": "Repair trusted one-minute bar completeness and partition integrity",
-  "method": "Make completed-bar ingestion session-aware and idempotent across prior trading days, partition rows by their actual market date, add completeness audit/backfill tooling and regression tests, repair existing misplaced/missing August bars only from verified provider data, then deploy and verify.",
-  "started_at": "2026-08-31T15:14:55.589939-05:00",
-  "starting_commit": "08cadfbcc36d6f9028a07b24718893d173acac45",
-  "process_id": 42528,
-  "owner_request": "Audit found August 28 missing 27 closing bars and prior-session bars physically written into later trading-day partitions; silent gaps make backtests untrustworthy.",
-  "before_state": "Global bar history is complete for Aug 24-27, Aug 28 has 363/390 RTH minutes, and Aug 31 has 385/390 at audit time. Collector fetches one calendar day and writes all returned rows under capture-day partition, so weekday tails can land in next-day partitions and Friday tails are skipped after a weekend.",
-  "reason": "Audit found August 28 missing 27 closing bars and prior-session bars physically written into later trading-day partitions; silent gaps make backtests untrustworthy.",
-  "intended_scope": "Shared market_data collector/store and strategy-neutral audit/backfill tests/tooling; existing verified bar data repair. No trader strategy, scoreboard, Discord, updater, or frozen supervisor changes.",
-  "expected_effects": "Each bar is stored under its own Central-time trading date, prior trading sessions are automatically audited/backfilled, duplicates remain harmless, manifests expose completeness, and backtests can reject incomplete sessions.",
-  "required_tests": "Unit tests for per-row partitioning, weekend prior-session backfill, deduplication, 390-minute completeness/gap reporting, no-lookahead/as-of behavior; focused and full CI; post-deploy live audit of Aug 24 onward.",
-  "risks": "Historical provider results may be unavailable or incomplete; never fabricate bars, label unresolved gaps explicitly, preserve append-only source records, and avoid destructive rewrites until verified replacement data exists.",
-  "next_safe_action_if_interrupted": "Commit/PR/CI/merge/deploy final audit correction; run deployed collector cycle and verify Aug 31 manifest shows 385/390 REJECT with five-minute gap; verify Aug 24-28 remain 390/390 and all trader ports remain live; finish lock.",
-  "phase": "Phase 15",
-  "last_checkpoint_at": "2026-08-31T15:57:42.629520-05:00",
-  "last_successful_action": "Final deployed verification found Tradier returns zero rows for an explicit current-day timesales request after market close. Stored bars remain intact, but the job's audited-day set previously derived only from returned rows. Added current date unconditionally so the manifest and job summary preserve an explicit REJECT/missing-minute status even on an empty provider response. Focused 67 tests pass.",
-  "next_safe_action": "Commit/PR/CI/merge/deploy final audit correction; run deployed collector cycle and verify Aug 31 manifest shows 385/390 REJECT with five-minute gap; verify Aug 24-28 remain 390/390 and all trader ports remain live; finish lock."
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-08-31T16:07:13.580949-05:00"
 }

@@ -228,6 +228,23 @@ def test_bust_and_new_generation_resets_bankroll_but_keeps_lifetime_history(five
     assert sb.bust_count(db, "BLACKTIDE") == 1
 
 
+def test_new_generation_dashboard_curve_and_drawdown_exclude_prior_generation(five_trade_generation):
+    db = five_trade_generation
+    sb.record_generation_event(db, bot="BLACKTIDE", generation=1, event="BUSTED", minimum_qualifying_cost=1301)
+    sb.record_generation_event(db, bot="BLACKTIDE", generation=2, event="STARTED")
+
+    empty_curve = sb.bankroll_history(db, "BLACKTIDE", generation=2)
+    assert empty_curve == [{"at": None, "bankroll": 1000.0, "generation": 2}]
+    assert sb.scoreboard_snapshot(db, "BLACKTIDE")["current_drawdown"] is None
+
+    _open(db, "g2-loss", generation=2, entry_bankroll=1000, opened_at="2026-08-24T10:00:00")
+    _close(db, "g2-loss", -200, closed_at="2026-08-24T10:05:00")
+    curve = sb.bankroll_history(db, "BLACKTIDE", generation=2)
+    assert [round(point["bankroll"]) for point in curve] == [1000, 1000, 800]
+    assert {point["generation"] for point in curve} == {2}
+    assert sb.scoreboard_snapshot(db, "BLACKTIDE")["current_drawdown"] == pytest.approx(-200)
+
+
 def test_best_worst_generation_and_generation_over_generation_improvement(five_trade_generation):
     db = five_trade_generation
     sb.record_generation_event(db, bot="BLACKTIDE", generation=1, event="BUSTED", minimum_qualifying_cost=1301)
