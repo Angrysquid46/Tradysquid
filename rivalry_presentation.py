@@ -18,7 +18,7 @@ LEGACY_RIVALRY_TOKEN = "TSQ-COMPETITION-RIVALRY"
 # Bump when a persisted per-bot Discord surface changes shape. The scheduler
 # fingerprints this so a presentation release refreshes old cards even when
 # the underlying trade facts have not changed.
-BOT_SURFACE_FORMAT_VERSION = "per-event-trade-cards-v1"
+BOT_SURFACE_FORMAT_VERSION = "generation-scoped-bankroll-v2"
 # AXIOM permanently removed 2026-08-27 (owner directive) - no longer in
 # scoreboard.BOTS/rivalry.BOTS either, not just this presentation list.
 # GROK added 2026-08-30 as independent Grok/xAI competitor.
@@ -171,22 +171,26 @@ def render_bot_dashboard(connection: Any, bot: str) -> str:
 
 
 def render_bankroll_chart(bot: str, points: list[dict[str, Any]], output: Path) -> dict[str, Any]:
-    """PIL line chart of bankroll over every closed trade, across
-    generations - a bust shows up as a real drop toward $0 (marked)
-    followed by a jump back to the $1,000 reset, because that IS what a
-    bust is, not something drawn separately."""
+    """Render only one generation's equity curve.
+
+    Be defensive when called with legacy all-generation points: a reset is a
+    new trial, never a bankroll gain, so no line may connect generations.
+    """
     from PIL import Image, ImageDraw, ImageFont
 
-    values = [float(point["bankroll"]) for point in points]
-    if len(values) < 2:
-        values = [scoreboard.STARTING_BANKROLL_USD, scoreboard.STARTING_BANKROLL_USD]
+    generation = int(points[-1].get("generation", 1)) if points else 1
+    generation_points = [point for point in points if int(point.get("generation", generation)) == generation]
+    actual_values = [float(point["bankroll"]) for point in generation_points]
+    has_closed_trades = len(actual_values) > 1
+    values = actual_values or [scoreboard.STARTING_BANKROLL_USD]
+    scale_values = values if len(values) > 1 else values * 2
 
     width, height = 1200, 600
     left, right, top, bottom = 90, 40, 80, 60
     plot_width = width - left - right
     plot_height = height - top - bottom
-    low = max(0.0, min(values) - 25.0)
-    high = max(values + [scoreboard.STARTING_BANKROLL_USD]) * 1.1
+    low = max(0.0, min(scale_values) - 25.0)
+    high = max(scale_values + [scoreboard.STARTING_BANKROLL_USD]) * 1.1
 
     image = Image.new("RGB", (width, height), "#0b1420")
     draw = ImageDraw.Draw(image)
@@ -194,7 +198,7 @@ def render_bankroll_chart(bot: str, points: list[dict[str, Any]], output: Path) 
     title_font = ImageFont.load_default(size=26)
 
     def xy(index: int, value: float) -> tuple[int, int]:
-        x = left + int(index / max(len(values) - 1, 1) * plot_width)
+        x = left + int(index / max(len(scale_values) - 1, 1) * plot_width)
         y = top + int((high - value) / max(high - low, 0.01) * plot_height)
         return x, y
 
@@ -208,26 +212,25 @@ def render_bankroll_chart(bot: str, points: list[dict[str, Any]], output: Path) 
     draw.line((left, starting_y, width - right, starting_y), fill="#3b4a5e", width=1)
     draw.text((width - 230, starting_y - 20), "start $1,000", fill="#6b7f97", font=small)
 
-    line_points = [xy(index, value) for index, value in enumerate(values)]
-    draw.line(line_points, fill="#7dd3fc", width=3)
-
-    busts = 0
-    for index in range(1, len(values)):
-        if values[index - 1] > 0 and values[index] <= 0.01:
-            busts += 1
-            x, y = xy(index, values[index])
-            draw.ellipse((x - 7, y - 7, x + 7, y + 7), fill="#ef4444")
+    if has_closed_trades:
+        line_points = [xy(index, value) for index, value in enumerate(values)]
+        draw.line(line_points, fill="#7dd3fc", width=3)
 
     current, peak = values[-1], max(values)
-    draw.text((left, 20), f"{bot} BANKROLL", fill="#f8fafc", font=title_font)
+    draw.text((left, 20), f"{bot} · GENERATION {generation} BANKROLL", fill="#f8fafc", font=title_font)
+    summary = (
+        f"Current ${current:.2f} · Generation peak ${peak:.2f} · resets excluded"
+        if has_closed_trades else
+        f"No closed trades yet · Generation {generation} reset baseline $1,000"
+    )
     draw.text(
         (left, 52),
-        f"Current ${current:.2f} · Peak ${peak:.2f} · {busts} bust(s) shown on this chart",
+        summary,
         fill="#b8c7d9", font=small,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     image.save(output, format="PNG", optimize=True)
-    return {"current": current, "peak": peak, "busts": busts}
+    return {"current": current, "peak": peak, "generation": generation, "has_closed_trades": has_closed_trades}
 
 
 def render_bot_held_trade(connection: Any, bot: str) -> str:
@@ -383,12 +386,14 @@ def publish_bot_surfaces(
         )
         published.append(surface_ids[0])
 
-        points = scoreboard.bankroll_history(score_connection, bot)
+        generation = scoreboard.current_generation(score_connection, bot)
+        points = scoreboard.bankroll_history(score_connection, bot, generation)
         output = CHART_DIR / f"{prefix}-bankroll.png"
         metrics = render_bankroll_chart(bot, points, output)
         caption = (
-            f"📈 **{bot} bankroll** · current ${metrics['current']:.2f} · "
-            f"peak ${metrics['peak']:.2f} · {metrics['busts']} bust(s) shown"
+            f"📈 **{bot} generation {metrics['generation']} bankroll** · "
+            f"current ${metrics['current']:.2f} · generation peak ${metrics['peak']:.2f} · "
+            "resets excluded"
         )
         chart_message_id = _replace_bot_chart(
             tracker, dashboard_channel_id, output, caption, f"{prefix}-bankroll-chart"

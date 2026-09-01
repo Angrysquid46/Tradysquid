@@ -126,7 +126,14 @@ def test_closed_winner_posts_one_immutable_card_not_a_trade_wall(monkeypatch):
         exit_price=1.1, pnl_usd=10.0,
     )
     monkeypatch.setattr(presentation, "_resolve_channel_id", lambda *_args: "channel")
-    monkeypatch.setattr(presentation, "render_bankroll_chart", lambda *_args: {"current": 1010.0, "peak": 1010.0, "busts": 0})
+    chart_calls = []
+    monkeypatch.setattr(
+        presentation,
+        "render_bankroll_chart",
+        lambda _bot, points, _output: chart_calls.append(points) or {
+            "current": 1010.0, "peak": 1010.0, "generation": 1, "has_closed_trades": True,
+        },
+    )
     monkeypatch.setattr(presentation, "_replace_bot_chart", lambda *_args: "chart")
     tracker = Tracker()
     first = presentation.publish_bot_surfaces(score, manifest, tracker, "BLACKTIDE")
@@ -135,8 +142,29 @@ def test_closed_winner_posts_one_immutable_card_not_a_trade_wall(monkeypatch):
     assert first["ok"] is True
     assert second["ok"] is True
     assert len(winner_cards) == 1
+    assert all({point["generation"] for point in points} == {1} for points in chart_calls)
     assert "## BLACKTIDE — Winner · Official Close" in winner_cards[0]
     assert "SPY $766.000 Call · expires Aug 27, 2026" in winner_cards[0]
+
+
+def test_bankroll_chart_never_connects_two_generations():
+    output = Path(tempfile.mkdtemp()) / "bankroll.png"
+    metrics = presentation.render_bankroll_chart(
+        "RIPTIDE",
+        [
+            {"at": None, "bankroll": 1000.0, "generation": 1},
+            {"at": "2026-08-31T15:00:00-05:00", "bankroll": 100.0, "generation": 1},
+            {"at": None, "bankroll": 1000.0, "generation": 2},
+        ],
+        output,
+    )
+    assert metrics == {
+        "current": 1000.0,
+        "peak": 1000.0,
+        "generation": 2,
+        "has_closed_trades": False,
+    }
+    assert output.exists()
 
 
 def test_live_held_trade_remains_redacted():

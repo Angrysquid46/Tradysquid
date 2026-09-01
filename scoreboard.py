@@ -499,7 +499,10 @@ def scoreboard_snapshot(connection: sqlite3.Connection, bot: str) -> dict[str, A
         "largest_winner": largest_winner(connection, bot, None),
         "largest_loser": largest_loser(connection, bot, None),
         "max_drawdown": max_drawdown(connection, bot, None),
-        "current_drawdown": current_drawdown(connection, bot, None),
+        # A reset starts a genuinely new equity curve.  Lifetime drawdown
+        # would treat the reset bankroll as investment performance and make
+        # the active generation's dashboard misleading.
+        "current_drawdown": current_drawdown(connection, bot, generation),
         "bust_count": bust_count(connection, bot),
         "current_streak": current_streak(connection, bot, None),
         "best_generation": best_generation(connection, bot),
