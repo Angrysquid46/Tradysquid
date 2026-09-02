@@ -1,12 +1,4 @@
-"""GROK autonomous paper runtime.
-
-Startup → preflight → recover state → evaluate entries/exits →
-generation management → private learning hooks → clean shutdown.
-
-Restart safety: reconstructs official generation/bankroll/open position
-from the neutral scoreboard and private state from disk. Never opens a
-second trade while an official one exists.
-"""
+"""GROK autonomous paper runtime."""
 
 from __future__ import annotations
 
@@ -52,7 +44,6 @@ class GrokRuntime:
         self._running = False
 
     def recover(self) -> None:
-        """Reconstruct official + private state after process restart."""
         import scoreboard as sb
 
         gen = sb.current_generation(self.sb, BOT_NAME)
@@ -73,40 +64,33 @@ class GrokRuntime:
         result = run_preflight(
             scoreboard_available=True,
             market_data_available=True,
-            today_0dte_available=True,  # caller should refine with real check
+            today_0dte_available=True,
             provider_reachable=self.provider_ok(),
             no_open_position=pos is None,
-            # Session availability controls decision cycles, not process
-            # availability. Keeping the runtime online after hours allows
-            # recovery and monitoring without permitting an off-hours trade;
-            # cycle() independently returns NO_ACTION while the session is
-            # closed.
             session_open=True,
         )
         if not result.ok:
             logger.error("preflight failed: %s", result.failures)
             return False
         if not session_open:
-            logger.info("market session closed; runtime online in idle mode")
+            logger.info("session closed; runtime idle-capable")
         for w in result.warnings:
             logger.warning("preflight warning: %s", w)
         return True
 
     def cycle(self) -> Decision:
-        """One decision cycle. Safe to call repeatedly."""
         import scoreboard as sb
 
         if not self.is_session_open():
             return Decision(action="NO_ACTION", reason="session closed")
 
         pos = sb.current_position_status(self.sb, BOT_NAME)
-        features = self.get_features()
+        features = self.get_features() or {}
         bankroll = sb.current_bankroll(self.sb, BOT_NAME)
         gen = sb.current_generation(self.sb, BOT_NAME)
 
         if pos is not None:
-            # Manage open position
-            chain = self.get_chain()
+            chain = self.get_chain() or []
             symbol = pos.get("contract_symbol")
             current_bid = 0.0
             for c in chain:
@@ -116,7 +100,9 @@ class GrokRuntime:
             opened = pos.get("opened_at") or _now_iso()
             try:
                 opened_dt = datetime.fromisoformat(opened)
-                minutes_held = (datetime.now(opened_dt.tzinfo) - opened_dt).total_seconds() / 60.0
+                minutes_held = (
+                    datetime.now(opened_dt.tzinfo) - opened_dt
+                ).total_seconds() / 60.0
             except Exception:
                 minutes_held = 0.0
 
@@ -127,32 +113,52 @@ class GrokRuntime:
                 minutes_held=minutes_held,
                 minutes_to_close=self.minutes_to_close(),
             )
+            logger.info(
+                "EXIT_EVAL action=%s bid=%.2f reason=%s",
+                decision.action, current_bid, decision.reason,
+            )
             if decision.action == "EXIT" and current_bid > 0:
                 self._close_trade(pos, current_bid, decision.reason)
             return decision
 
-        # Flat — evaluate entry
-        if bankroll < 5.0:  # effectively cannot trade anything meaningful
+        if bankroll < 5.0:
             self._maybe_bust(bankroll)
-            return Decision(action="NO_ACTION", reason="bankroll too low for qualifying trade")
+            return Decision(action="NO_ACTION", reason="bankroll too low")
 
-        chain = self.get_chain()
+        chain = self.get_chain() or []
+        logger.info(
+            "CYCLE bars=%s ret3=%s ret5=%s chain=%s bankroll=%.2f",
+            features.get("bar_count"),
+            features.get("ret_3m"),
+            features.get("ret_5m"),
+            len(chain),
+            bankroll,
+        )
+
         decision = evaluate_entry(features, chain, bankroll)
         if decision.action != "ENTER" or not decision.side:
+            logger.info("NO_ENTER reason=%s rejected=%s", decision.reason, decision.rejected[:3])
             return decision
 
         selected = select_contract(decision.side, chain, bankroll, decision.confidence)
         if selected is None:
+            logger.warning(
+                "ENTER signal but no contract side=%s chain=%s",
+                decision.side, len(chain),
+            )
             return Decision(
                 action="NO_ACTION",
-                reason="no acceptable contract after selection filters",
+                reason="no fillable contract",
                 candidates_considered=decision.candidates_considered,
-                rejected=decision.rejected + [{"family": decision.family or "", "reason": "contract selection failed"}],
+                rejected=decision.rejected
+                + [{"family": decision.family or "", "reason": "contract selection failed"}],
             )
 
         contracts = decide_contracts(
             selected.ask, bankroll, decision.confidence, selected.spread_pct
         )
+        if contracts < 1:
+            contracts = selected.contracts
         if contracts < 1:
             return Decision(action="NO_ACTION", reason="unaffordable after sizing")
 
@@ -164,7 +170,7 @@ class GrokRuntime:
             generation=gen,
             bankroll=bankroll,
             family=decision.family or "unknown",
-            reason=decision.reason,
+            reason=f"{decision.reason} | {selected.reason}",
         )
         return decision
 
@@ -199,7 +205,6 @@ class GrokRuntime:
             "OPEN %s %s x%s @ %.2f family=%s reason=%s",
             side, symbol, contracts, entry_price, family, reason,
         )
-        # Private telemetry
         self.private.decision_log_tail.append({
             "at": _now_iso(),
             "action": "ENTER",
@@ -238,11 +243,9 @@ class GrokRuntime:
         save_state(self.private)
 
     def _maybe_bust(self, bankroll: float) -> None:
-        """Only bust when truly unable to fund a qualifying trade."""
         import scoreboard as sb
 
-        # Conservative: require evidence that even a cheap contract is unaffordable
-        min_qualifying = 15.0  # $0.15 ask * 100
+        min_qualifying = 15.0
         if bankroll + 0.01 >= min_qualifying:
             return
         gen = sb.current_generation(self.sb, BOT_NAME)
