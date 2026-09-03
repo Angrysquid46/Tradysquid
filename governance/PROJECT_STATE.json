@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-09-03T17:25:35.714045-05:00",
+  "last_updated": "2026-09-03T17:31:57.279970-05:00",
   "branch": "codex/live-held-trade-tracking",
-  "observed_head_at_write": "3e4069575fec3cb448569902de50c3bfe06cc1ed",
-  "commit_subject": "chore(governance): reconcile state after PR 409",
+  "observed_head_at_write": "ea3b4f9f68b5529cf34abe3e2b9baf6f84442ab6",
+  "commit_subject": "fix: restore complete live held trade tracking",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": {
