@@ -152,13 +152,59 @@ def test_scoreboard_snapshot_keys_constant_matches_the_real_return_shape(five_tr
     assert set(snapshot.keys()) == sb.SCOREBOARD_SNAPSHOT_KEYS
 
 
-def test_public_snapshot_redacts_live_position_details(db):
+def test_summary_snapshot_stays_compact_while_position_api_exposes_facts(db):
     _open(db, "secret-live", entry_bankroll=1000)
     snapshot = sb.scoreboard_snapshot(db, "BLACKTIDE")
     assert snapshot["current_position_status"] == "OPEN"
     serialized = json.dumps(snapshot)
     assert "SPY260824C00500000" not in serialized
     assert "entry_price" not in serialized
+    position = sb.current_position_status(db, "BLACKTIDE")
+    assert position["contract_symbol"] == "SPY260824C00500000"
+    assert position["entry_price"] == 1.0
+
+
+def test_open_position_marks_use_bid_and_track_high_low(db):
+    _open(db, "marked", entry_bankroll=1000)
+    assert sb.record_trade_mark(
+        db, trade_id="marked", bid=0.90,
+        marked_at="2026-08-24T09:01:00-05:00",
+    ) is True
+    assert sb.record_trade_mark(
+        db, trade_id="marked", bid=1.15,
+        marked_at="2026-08-24T09:02:00-05:00",
+    ) is True
+    assert sb.record_trade_mark(
+        db, trade_id="marked", bid=0.80,
+        marked_at="2026-08-24T09:03:00-05:00",
+    ) is True
+    position = sb.current_position_status(db, "BLACKTIDE")
+    assert position["last_mark_price"] == pytest.approx(0.80)
+    assert position["mark_high_price"] == pytest.approx(1.15)
+    assert position["mark_low_price"] == pytest.approx(0.80)
+    assert position["last_marked_at"] == "2026-08-24T09:03:00-05:00"
+
+
+def test_late_mark_cannot_mutate_closed_trade(db):
+    _open(db, "closed", entry_bankroll=1000)
+    _close(db, "closed", 10)
+    assert sb.record_trade_mark(
+        db, trade_id="closed", bid=9.99,
+        marked_at="2026-08-24T09:06:00-05:00",
+    ) is False
+    row = db.execute(
+        "SELECT last_mark_price FROM official_trades WHERE trade_id='closed'"
+    ).fetchone()
+    assert row["last_mark_price"] is None
+
+
+def test_position_mark_rejects_nonpositive_bid(db):
+    _open(db, "marked", entry_bankroll=1000)
+    with pytest.raises(ValueError, match="positive"):
+        sb.record_trade_mark(
+            db, trade_id="marked", bid=0,
+            marked_at="2026-08-24T09:01:00-05:00",
+        )
 
 
 def test_trade_count_and_total_pnl(five_trade_generation):

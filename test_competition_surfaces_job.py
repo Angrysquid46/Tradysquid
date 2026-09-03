@@ -84,3 +84,62 @@ def test_bot_presentation_format_change_refreshes_both_bot_surfaces(connections,
     assert calls["bots"] == list(lie.rivalry_presentation.PUBLIC_BOTS)
     assert "RIPTIDE:ok" in result
     assert "BLACKTIDE:ok" in result
+
+
+def test_live_held_job_batch_marks_open_contract_and_publishes_only_changed_bot(connections, monkeypatch):
+    score_connection = scoreboard.connect_db()
+    scoreboard.record_trade_open(
+        score_connection, trade_id="live-1", bot="SURGE", generation=1,
+        opened_at="2026-09-03T12:09:50-05:00", side="CALL",
+        contract_symbol="SPY260903C00650000", entry_price=1.00,
+        contracts=2, entry_bankroll=1000.0,
+    )
+    quote_calls = []
+    monkeypatch.setattr(
+        lie.market_data, "get_quotes",
+        lambda symbols, include_greeks, priority: quote_calls.append(
+            (symbols, include_greeks, priority)
+        ) or {"SPY260903C00650000": {"bid": 1.12}},
+    )
+    published = []
+    monkeypatch.setattr(
+        lie.rivalry_presentation, "publish_bot_held_surface",
+        lambda score, surface, tracker, bot: published.append(bot) or {
+            "ok": True, "published": (f"{bot.lower()}-held-trade-card",), "error": None,
+        },
+    )
+
+    result = lie.live_held_trades_job(connections)
+    marked = scoreboard.current_position_status(score_connection, "SURGE")
+
+    assert quote_calls == [(
+        ["SPY260903C00650000"], False,
+        lie.market_api_budget.PRIORITY_OPEN_POSITION_SAFETY,
+    )]
+    assert marked["last_mark_price"] == pytest.approx(1.12)
+    assert set(published) == set(lie.rivalry_presentation.PUBLIC_BOTS)
+    assert "SURGE:ok" in result
+
+
+def test_live_held_job_skips_unchanged_flat_cards_after_reconciliation(connections, monkeypatch):
+    monkeypatch.setattr(lie.market_data, "get_quotes", lambda *args, **kwargs: {})
+    published = []
+    monkeypatch.setattr(
+        lie.rivalry_presentation, "publish_bot_held_surface",
+        lambda score, surface, tracker, bot: published.append(bot) or {
+            "ok": True, "published": (), "error": None,
+        },
+    )
+    lie.live_held_trades_job(connections)
+    published.clear()
+
+    result = lie.live_held_trades_job(connections)
+
+    assert published == []
+    assert all(f"{bot}:unchanged" in result for bot in lie.rivalry_presentation.PUBLIC_BOTS)
+
+
+def test_live_held_job_is_registered_on_ten_second_fast_path():
+    job = next(item for item in lie.JOBS if item.name == "live-held-trades")
+    assert job.interval.total_seconds() == 10
+    assert job.background is True

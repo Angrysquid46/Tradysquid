@@ -18,7 +18,7 @@ LEGACY_RIVALRY_TOKEN = "TSQ-COMPETITION-RIVALRY"
 # Bump when a persisted per-bot Discord surface changes shape. The scheduler
 # fingerprints this so a presentation release refreshes old cards even when
 # the underlying trade facts have not changed.
-BOT_SURFACE_FORMAT_VERSION = "generation-scoped-bankroll-v2"
+BOT_SURFACE_FORMAT_VERSION = "complete-live-held-trade-v3"
 # AXIOM permanently removed 2026-08-27 (owner directive) - no longer in
 # scoreboard.BOTS/rivalry.BOTS either, not just this presentation list.
 # GROK added 2026-08-30 as independent Grok/xAI competitor.
@@ -35,7 +35,7 @@ def render_scoreboard(connection: Any) -> str:
             f"Lifetime P/L ${row['lifetime_pnl']:.2f}",
             f"Trades {row['trade_count_lifetime']} · Position {row['current_position_status']}",
         ))
-    lines.append("Live positions are intentionally shown only as OPEN or FLAT.")
+    lines.append("Exact live position details and executable-bid P/L are shown in each trader's held-trades channel.")
     return "\n".join(lines)
 
 
@@ -237,13 +237,69 @@ def render_bot_held_trade(connection: Any, bot: str) -> str:
     status = scoreboard.current_position_status(connection, bot)
     if not status:
         return f"## {bot} — Held Trade\nNo open position. Status: FLAT."
+    entry = float(status["entry_price"])
+    contracts = int(status["contracts"])
+    mark = status.get("last_mark_price")
+    high = status.get("mark_high_price")
+    low = status.get("mark_low_price")
+    if mark is None:
+        mark_text = "Awaiting first executable bid"
+        pnl_text = "Awaiting first executable bid"
+    else:
+        mark = float(mark)
+        unrealized = (mark - entry) * 100 * contracts
+        unrealized_pct = ((mark / entry) - 1) * 100 if entry else 0.0
+        mark_text = f"${mark:.2f} executable bid"
+        pnl_text = f"{'+' if unrealized >= 0 else '-'}${abs(unrealized):.2f} ({unrealized_pct:+.1f}%)"
+    range_text = "Awaiting first executable bid"
+    if high is not None and low is not None:
+        best = ((float(high) / entry) - 1) * 100 if entry else 0.0
+        worst = ((float(low) / entry) - 1) * 100 if entry else 0.0
+        range_text = f"Best ${float(high):.2f} ({best:+.1f}%) · Worst ${float(low):.2f} ({worst:+.1f}%)"
     return "\n".join((
         f"## {bot} — Held Trade",
-        f"Status: OPEN · generation {status.get('generation')}",
-        f"Opened: {status.get('opened_at')}",
-        "Contract, side, and size stay private (Section 14) - only that a "
-        "position is open is shown here.",
+        "### Status", f"OPEN · Generation {status.get('generation')}",
+        "### Contract", _format_contract(status),
+        "### Position", f"{str(status.get('side') or '').upper()} · {contracts} contract{'s' if contracts != 1 else ''}",
+        "### Entry", f"${entry:.2f} ask · ${entry * 100 * contracts:.2f} total cost",
+        "### Current Mark", mark_text,
+        "### Unrealized P/L", pnl_text,
+        "### Since Entry", range_text,
+        "### Timeline", f"Opened {_format_timestamp(status.get('opened_at'))} · Marked {_format_timestamp(status.get('last_marked_at')) if status.get('last_marked_at') else 'not yet'}",
+        "### Trade ID", f"`{status['trade_id']}`",
     ))
+
+
+def publish_bot_held_surface(
+    score_connection: Any,
+    surface_connection: Any,
+    tracker: discord_transport.DiscordTracker,
+    bot: str,
+) -> dict[str, Any]:
+    """Publish only the latency-sensitive live held-position card."""
+    surface_id = f"{bot.lower()}-held-trade-card"
+    try:
+        surfaces.reconcile_canonical_bot_surfaces(surface_connection)
+        channel_id = _resolve_channel_id(tracker, f"{bot.lower()}-held-trades")
+        message_id, _ = tracker.upsert_singleton_message(
+            channel_id,
+            render_bot_held_trade(score_connection, bot),
+            f"{bot.lower()}-held-trade",
+        )
+        surfaces.record_surface_event(
+            surface_connection, surface_id=surface_id, event_type="PUBLISH",
+            detail=f"message_id={message_id}",
+        )
+        return {"ok": True, "published": (surface_id,), "error": None}
+    except Exception as exc:
+        try:
+            surfaces.record_surface_event(
+                surface_connection, surface_id=surface_id, event_type="ERROR",
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        except Exception:
+            pass
+        return {"ok": False, "published": (), "error": f"{type(exc).__name__}: {exc}"}
 
 
 _OCC_SYMBOL = re.compile(
