@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-09-01T12:00:00-05:00",
-  "branch": "main",
-  "observed_head_at_write": "f1a020b66a427089e34c7665a78e85853d737a23",
-  "commit_subject": "fix(grok): read parquet chain side field so shared 0DTE book is usable (#406)",
+  "last_updated": "2026-09-03T13:31:14.015433-05:00",
+  "branch": "codex/live-held-trade-tracking",
+  "observed_head_at_write": "1e1b99fd70529d196717a92ec73c3621b434d06f",
+  "commit_subject": "feat(grok): force real entries — lower tape thresholds + contract fallback (#409)",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
   "active_lock": null,
