@@ -62,6 +62,11 @@ def connect_db(*, check_same_thread: bool = True) -> sqlite3.Connection:
             pnl_usd REAL,
             max_favorable_pct REAL,
             max_adverse_pct REAL,
+            last_mark_price REAL,
+            last_marked_at TEXT,
+            mark_high_price REAL,
+            mark_low_price REAL,
+            mark_source TEXT,
             recorded_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS official_trades_bot_generation
@@ -77,6 +82,18 @@ def connect_db(*, check_same_thread: bool = True) -> sqlite3.Connection:
         );
         """
     )
+    existing_columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(official_trades)").fetchall()
+    }
+    for name, sql_type in (
+        ("last_mark_price", "REAL"),
+        ("last_marked_at", "TEXT"),
+        ("mark_high_price", "REAL"),
+        ("mark_low_price", "REAL"),
+        ("mark_source", "TEXT"),
+    ):
+        if name not in existing_columns:
+            connection.execute(f"ALTER TABLE official_trades ADD COLUMN {name} {sql_type}")
     connection.commit()
     return connection
 
@@ -186,6 +203,36 @@ def record_trade_close(
     if cursor.rowcount == 0:
         raise ValueError(f"trade_id {trade_id!r} closed concurrently; refusing to overwrite")
     connection.commit()
+
+
+def record_trade_mark(
+    connection: sqlite3.Connection,
+    *,
+    trade_id: str,
+    bid: float,
+    marked_at: str,
+    source: str = "Tradier executable bid",
+) -> bool:
+    """Persist a factual executable-bid mark for an official open position."""
+    if bid <= 0:
+        raise ValueError("position mark bid must be positive")
+    cursor = connection.execute(
+        """
+        UPDATE official_trades
+        SET last_mark_price=?, last_marked_at=?,
+            mark_high_price=CASE
+                WHEN mark_high_price IS NULL OR ? > mark_high_price THEN ?
+                ELSE mark_high_price END,
+            mark_low_price=CASE
+                WHEN mark_low_price IS NULL OR ? < mark_low_price THEN ?
+                ELSE mark_low_price END,
+            mark_source=?
+        WHERE trade_id=? AND closed_at IS NULL
+        """,
+        (bid, marked_at, bid, bid, bid, bid, source[:100], trade_id),
+    )
+    connection.commit()
+    return cursor.rowcount == 1
 
 
 def record_generation_event(

@@ -24,6 +24,7 @@ from typing import Any, Callable
 from urllib.parse import quote, quote_plus, urljoin
 
 import market_data
+import market_api_budget
 import discord_transport
 import activity_log
 import ai_coordination
@@ -42,7 +43,7 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "state" / "local-information.db"
 LOCK_HOST = "127.0.0.1"
 LOCK_PORT = int(os.environ.get("LOCAL_ENGINE_LOCK_PORT", "8765"))
-POLL_SECONDS = int(os.environ.get("LOCAL_ENGINE_POLL_SECONDS", "30"))
+POLL_SECONDS = int(os.environ.get("LOCAL_ENGINE_POLL_SECONDS", "10"))
 MARKET_REFRESH_MINUTES = int(os.environ.get("LOCAL_MARKET_REFRESH_MINUTES", "5"))
 FILINGS_REFRESH_MINUTES = int(os.environ.get("LOCAL_FILINGS_REFRESH_MINUTES", "30"))
 STATUS_REFRESH_MINUTES = int(os.environ.get("LOCAL_STATUS_REFRESH_MINUTES", "15"))
@@ -796,6 +797,72 @@ def competition_surfaces_job(connection: sqlite3.Connection) -> str:
     return "; ".join(results)
 
 
+def live_held_trades_job(connection: sqlite3.Connection) -> str:
+    """Batch-mark and publish all official open positions on a fast path."""
+    tracker = discord_transport.DiscordTracker(
+        discord_transport.DISCORD_BOT_TOKEN, discord_transport.DISCORD_GUILD_ID
+    )
+    if not tracker.enabled:
+        return "Discord tracker disabled"
+    score_connection = scoreboard.connect_db()
+    surface_connection = discord_surface_manifest.connect_db()
+    try:
+        open_rows = {
+            bot: scoreboard.current_position_status(score_connection, bot)
+            for bot in rivalry_presentation.PUBLIC_BOTS
+        }
+        symbols = sorted({
+            str(row["contract_symbol"])
+            for row in open_rows.values() if row is not None
+        })
+        quotes = (
+            market_data.get_quotes(
+                symbols,
+                include_greeks=False,
+                priority=market_api_budget.PRIORITY_OPEN_POSITION_SAFETY,
+            )
+            if symbols else {}
+        )
+        marked_at = iso_now()
+        for row in open_rows.values():
+            if row is None:
+                continue
+            quote = quotes.get(str(row["contract_symbol"])) or {}
+            try:
+                bid = float(quote.get("bid") or 0)
+            except (TypeError, ValueError):
+                bid = 0.0
+            if bid > 0:
+                scoreboard.record_trade_mark(
+                    score_connection,
+                    trade_id=str(row["trade_id"]),
+                    bid=bid,
+                    marked_at=marked_at,
+                )
+
+        results = []
+        for bot in rivalry_presentation.PUBLIC_BOTS:
+            position = scoreboard.current_position_status(score_connection, bot)
+            fingerprint = _fingerprint({
+                "position": position,
+                "presentation_format": rivalry_presentation.BOT_SURFACE_FORMAT_VERSION,
+            })
+            state_key = f"live-held-trades:{bot}:fingerprint"
+            if get_state(connection, state_key) == fingerprint:
+                results.append(f"{bot}:unchanged")
+                continue
+            published = rivalry_presentation.publish_bot_held_surface(
+                score_connection, surface_connection, tracker, bot
+            )
+            results.append(f"{bot}:{'ok' if published['ok'] else published['error']}")
+            if published["ok"]:
+                set_state(connection, state_key, fingerprint)
+        return "; ".join(results)
+    finally:
+        score_connection.close()
+        surface_connection.close()
+
+
 @dataclass
 class Job:
     name: str
@@ -925,6 +992,14 @@ JOBS = [
         upgrade_batch_44.spy_technicals_job,
         background=True,
         retry_interval=timedelta(minutes=5),
+    ),
+    Job(
+        "live-held-trades",
+        timedelta(seconds=10),
+        live_held_trades_job,
+        after_hours_interval=timedelta(minutes=5),
+        background=True,
+        retry_interval=timedelta(seconds=10),
     ),
     Job(
         "competition-surfaces",
@@ -1131,7 +1206,7 @@ def main() -> int:
                             start_background_job(job)
                         else:
                             run_job(connection, job)
-                time.sleep(max(POLL_SECONDS, 10))
+                time.sleep(max(min(POLL_SECONDS, 10), 1))
     finally:
         connection.close()
 

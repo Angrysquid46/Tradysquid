@@ -1,11 +1,16 @@
 {
-  "last_updated": "2026-09-01T12:00:00-05:00",
-  "branch": "main",
-  "observed_head_at_write": "f1a020b66a427089e34c7665a78e85853d737a23",
-  "commit_subject": "fix(grok): read parquet chain side field so shared 0DTE book is usable (#406)",
+  "last_updated": "2026-09-03T17:31:57.279970-05:00",
+  "branch": "codex/live-held-trade-tracking",
+  "observed_head_at_write": "ea3b4f9f68b5529cf34abe3e2b9baf6f84442ab6",
+  "commit_subject": "fix: restore complete live held trade tracking",
   "current_phase": "Phase 15",
   "current_subphase": "Phase 16 (Learning Center population) COMPLETE 2026-08-26: all 43 chapters (110 lessons, 223 cards) authored and published live via learning_center_publish.py across two batches (PR #342: chapters 1-5; this PR: chapters 6-43), /learn topic: registered and live-verified across the full curriculum. Phase 15 remains in_progress (owner-authorized/armed 2026-08-25): AXIOM live pending market open, BLACKTIDE running its own independent process; 0 trades yet for either bot, phase completes once both have genuinely traded. Discord layout rebuilt (PRs #338, #340, #341).",
-  "active_lock": null,
+  "active_lock": {
+    "actor": "Codex",
+    "task": "Restore complete live held-trade tracking for all active traders",
+    "work_id": "48e78139-038b-4f98-bb5a-3c401351bba6",
+    "started_at": "2026-09-03T17:15:30.347196-05:00"
+  },
   "notes": "Exact synchronization is derived from Git: when no lock is active, the newest commit containing governance/PROJECT_STATE.json must equal HEAD. observed_head_at_write is provenance, not a self-referential equality claim.",
   "synchronization_semantics": "state_record_commit_equals_head_when_lock_clear"
 }

@@ -167,7 +167,7 @@ def test_bankroll_chart_never_connects_two_generations():
     assert output.exists()
 
 
-def test_live_held_trade_remains_redacted():
+def test_live_held_trade_shows_complete_position_and_unrealized_pnl():
     path = Path(tempfile.mkdtemp()) / "scoreboard.db"
     original = scoreboard.DB_PATH
     scoreboard.DB_PATH = path
@@ -188,8 +188,18 @@ def test_live_held_trade_remains_redacted():
             contracts=2,
             entry_bankroll=1000.0,
         )
+        scoreboard.record_trade_mark(
+            connection, trade_id="open-trade-1", bid=0.96,
+            marked_at="2026-08-26T10:04:20-05:00",
+        )
         card = presentation.render_bot_held_trade(connection, "BLACKTIDE")
     finally:
         connection.close()
-    assert "SPY260826C00766000" not in card
+    assert "SPY $766.000 Call · expires Aug 26, 2026" in card
+    assert "CALL · 2 contracts" in card
+    assert "$0.85 ask · $170.00 total cost" in card
+    assert "$0.96 executable bid" in card
+    assert "+$22.00 (+12.9%)" in card
+    assert "Best $0.96 (+12.9%) · Worst $0.96 (+12.9%)" in card
+    assert "Trade ID\n`open-trade-1`" in card
     assert "OPEN" in card

@@ -57,11 +57,11 @@ CANONICAL_BOT_SURFACES = tuple(
         "surface_id": f"{bot.lower()}-{suffix}", "category": bot,
         "channel": channel.format(bot=bot.lower()), "owner": "Codex" if bot != "GROK" else "Grok",
         "purpose": purpose.format(bot),
-        "producer": "rivalry_presentation.publish_bot_surfaces",
+        "producer": ("rivalry_presentation.publish_bot_held_surface" if suffix == "held-trade-card" else "rivalry_presentation.publish_bot_surfaces"),
         "publisher": "discord_transport.DiscordTracker", "update_mode": update_mode,
         "expected_silence": expected_silence,
         **({"max_silence_minutes": 10} if update_mode == UPDATE_MODE_PERIODIC else {}),
-        "event_types": event_types, "schema_version": "phase15-v1",
+        "event_types": event_types, "schema_version": ("live-position-v2" if suffix == "held-trade-card" else "phase15-v1"),
     }
     for bot in ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK")
     for suffix, channel, purpose, update_mode, expected_silence, event_types in (
@@ -69,7 +69,7 @@ CANONICAL_BOT_SURFACES = tuple(
          UPDATE_MODE_PERIODIC, False, ("PUBLISH",)),
         ("dashboard-chart", "{bot}-dashboard", "{}'s bankroll-history chart",
          UPDATE_MODE_PERIODIC, False, ("PUBLISH",)),
-        ("held-trade-card", "{bot}-held-trades", "{}'s current OPEN/FLAT position card",
+        ("held-trade-card", "{bot}-held-trades", "{}'s exact live contract, executable bid, and unrealized P/L card",
          UPDATE_MODE_EVENT_DRIVEN, True, ("PUBLISH",)),
         ("winners-card", "{bot}-winners", "{}'s immutable one-card-per-winning-close receipts",
          UPDATE_MODE_EVENT_DRIVEN, True, ("PUBLISH",)),

@@ -1,5 +1,22 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-08-31T16:07:13.580949-05:00"
+  "active": true,
+  "work_id": "48e78139-038b-4f98-bb5a-3c401351bba6",
+  "actor": "Codex",
+  "task": "Restore complete live held-trade tracking for all active traders",
+  "method": "Replace OPEN/FLAT-only Discord presentation with exact official position facts and executable-bid unrealized P/L; make open/mark/close state refresh promptly for every active trader through shared infrastructure; preserve strategy behavior.",
+  "started_at": "2026-09-03T17:15:30.347196-05:00",
+  "starting_commit": "3e4069575fec3cb448569902de50c3bfe06cc1ed",
+  "process_id": 42216,
+  "owner_request": "Owner reports held-trade channels conceal actual positions and cannot be used to follow live trades.",
+  "before_state": "Official opens/closes are recorded, but held cards expose only OPEN/FLAT, omit contract/size/entry/mark/P&L, refresh through a slow five-minute heavyweight batch, and can miss short-lived positions entirely.",
+  "reason": "Owner reports held-trade channels conceal actual positions and cannot be used to follow live trades.",
+  "intended_scope": "Shared neutral scoreboard live-position state, Discord held-trade rendering/publishing, shared competition surface scheduling, tests and operational verification. No private entry/exit strategy logic.",
+  "expected_effects": "Every active trader's held channel shows exact open contract facts and current executable-bid unrealized P/L, updates promptly while open, and clears promptly on official close; periodic reconciliation remains as recovery.",
+  "required_tests": "Scoreboard schema/API compatibility, exact P/L math, all bot held-card rendering, prompt scheduling/event behavior, closed-trade immutability, focused presentation/competition tests, full suite.",
+  "risks": "Avoid provider quota duplication, never manufacture marks, preserve official immutable close accounting, isolate Discord failures from trading, and do not modify frozen updater components.",
+  "next_safe_action_if_interrupted": "Retry GitHub connectivity/push; open PR, run required checks, merge, let frozen updater deploy, restart only information-engine, and live-verify exact contract/bid/unrealized P&L updates across held channels. Do not claim deployed until those steps complete.",
+  "phase": "Phase 15",
+  "last_checkpoint_at": "2026-09-03T17:31:56.796598-05:00",
+  "last_successful_action": "Live held-position repair committed on codex/live-held-trade-tracking at ea3b4f9 after 53 focused tests passed, full suite passed except one unchanged pre-existing RIPTIDE expected-P&L assertion (200 actual vs 250 expected), and production-schema migration succeeded on a 335-trade scoreboard copy. Two GitHub pushes failed because github.com currently resolves to unreachable 10.0.0.1 and port 443 times out.",
+  "next_safe_action": "Retry GitHub connectivity/push; open PR, run required checks, merge, let frozen updater deploy, restart only information-engine, and live-verify exact contract/bid/unrealized P&L updates across held channels. Do not claim deployed until those steps complete."
 }
