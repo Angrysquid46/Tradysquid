@@ -34,6 +34,11 @@ def test_real_ask_entry_fast_bid_exit_and_one_position():
     e.apply_entry(d,trade_id="r",opened_at=NOW,entry_iv=.25)
     x=e.decide(as_of=NOW+timedelta(minutes=1),bankroll=600,market={"tier":"A"},options={"tier":"A","contracts":[option(d.side,bid=.80,ask=.85)]},bars=bars("reverse"))
     assert x.action=="EXIT" and x.price==.80
+
+def test_end_of_session_exit_does_not_require_analytics_bars():
+    e=Riptide(); d=decide("trend"); e.apply_entry(d,trade_id="r",opened_at=NOW,entry_iv=.25)
+    x=e.decide(as_of=NOW.replace(hour=15),bankroll=600,market={"tier":"A"},options={"tier":"A","contracts":[option(d.side,bid=.70,ask=.75)]},bars=[])
+    assert x.action=="EXIT" and x.price==.70 and x.reason=="end-of-session liquidation"
 def test_contract_and_bankroll_safety_remain_absolute():
     e=Riptide(); wide=option(bid=.5,ask=1.05)
     d=e.decide(as_of=NOW,bankroll=1000,market={"tier":"A"},options={"tier":"A","contracts":[wide]},bars=bars())
