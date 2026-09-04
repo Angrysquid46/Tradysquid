@@ -123,6 +123,15 @@ def test_runtime_starts_idle_when_session_is_closed(monkeypatch):
     assert captured["session_open"] is True
 
 
+def test_runtime_stays_online_after_hours_when_provider_is_down(monkeypatch):
+    import scoreboard as sb
+    import bots.grok.runtime as runtime_module
+    monkeypatch.setattr(sb,"current_position_status",lambda *_:None)
+    runtime=runtime_module.GrokRuntime.__new__(runtime_module.GrokRuntime)
+    runtime.sb=object(); runtime.provider_ok=lambda:False; runtime.is_session_open=lambda:False
+    assert runtime.preflight() is True
+
+
 def test_runtime_manages_open_position_after_close_with_direct_quote(monkeypatch):
     import scoreboard as sb
     import bots.grok.runtime as runtime_module

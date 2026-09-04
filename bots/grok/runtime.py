@@ -87,11 +87,15 @@ class GrokRuntime:
 
         pos = sb.current_position_status(self.sb, BOT_NAME)
         session_open = self.is_session_open()
+        provider_reachable = self.provider_ok()
         result = run_preflight(
             scoreboard_available=True,
             market_data_available=True,
             today_0dte_available=True,  # caller should refine with real check
-            provider_reachable=self.provider_ok(),
+            # An after-hours, flat runtime must remain online for recovery and
+            # monitoring even if the provider is temporarily unreachable.
+            # Live cycles independently fail closed on absent bars/chains.
+            provider_reachable=provider_reachable if (session_open or pos is not None) else True,
             no_open_position=pos is None,
             # Session availability controls decision cycles, not process
             # availability. Keeping the runtime online after hours allows
@@ -105,6 +109,8 @@ class GrokRuntime:
             return False
         if not session_open:
             logger.info("market session closed; runtime online in idle mode")
+        if not provider_reachable:
+            logger.warning("provider unavailable; runtime remains online and decision cycles fail closed")
         for w in result.warnings:
             logger.warning("preflight warning: %s", w)
         return True
