@@ -11,6 +11,7 @@ from bots.grok.contract_selection import select_contract
 from bots.grok.engine import evaluate_entry, evaluate_exit
 from bots.grok.preflight import run_preflight
 from bots.grok.sizing import decide_contracts
+from bots.grok.evolution import derive_policy
 
 
 def test_grok_package_exists():
@@ -73,6 +74,15 @@ def test_exit_eod_flatten():
     assert "eod" in decision.reason.lower() or "end-of-day" in decision.reason.lower()
 
 
+def test_exit_never_claims_fill_without_real_bid():
+    decision = evaluate_exit(
+        {"entry_price": 1.0, "side": "CALL"}, {}, current_bid=0,
+        minutes_held=200, minutes_to_close=0,
+    )
+    assert decision.action == "HOLD"
+    assert "real bid" in decision.reason
+
+
 def test_preflight_fails_closed():
     result = run_preflight(
         scoreboard_available=False,
@@ -113,13 +123,34 @@ def test_runtime_starts_idle_when_session_is_closed(monkeypatch):
     assert captured["session_open"] is True
 
 
+def test_runtime_manages_open_position_after_close_with_direct_quote(monkeypatch):
+    import scoreboard as sb
+    import bots.grok.runtime as runtime_module
+    from datetime import datetime, timezone
+
+    position={"trade_id":"g1","contract_symbol":"SPY260904C00770000","entry_price":1.0,
+              "contracts":1,"side":"CALL","opened_at":datetime.now(timezone.utc).isoformat()}
+    monkeypatch.setattr(sb,"current_position_status",lambda *_:position)
+    monkeypatch.setattr(sb,"current_bankroll",lambda *_:1000.0)
+    monkeypatch.setattr(sb,"current_generation",lambda *_:1)
+    runtime=runtime_module.GrokRuntime.__new__(runtime_module.GrokRuntime)
+    runtime.sb=object(); runtime.is_session_open=lambda:False; runtime.get_features=lambda:{}
+    runtime.get_chain=lambda:[]; runtime.get_contract_quote=lambda symbol:{"bid":1.10}
+    runtime.minutes_to_close=lambda:0; runtime._parameters=lambda:{}
+    closed=[]; runtime._close_trade=lambda pos,bid,reason:closed.append((bid,reason))
+    runtime._record_cycle=lambda decision,**kwargs:decision
+    decision=runtime.cycle()
+    assert decision.action=="EXIT"
+    assert closed==[(1.10,"eod flatten")]
+
+
 def test_scheduler_runtime_uses_cross_thread_scoreboard_connection(monkeypatch):
     import bots.grok.scheduler as scheduler_module
 
     captured = {}
 
     class FakeAdapter:
-        features = chain = underlying = is_session_open = minutes_to_close = provider_ok = staticmethod(lambda: None)
+        features = chain = underlying = contract_quote = is_session_open = minutes_to_close = provider_ok = staticmethod(lambda *args: None)
 
     class FakeRuntime:
         def __init__(self, **kwargs):
@@ -163,3 +194,27 @@ def test_scheduler_records_strategy_neutral_cycle_health(monkeypatch, tmp_path):
     assert payload["status"] == "COMPLETED"
     assert payload["action"] == "NO_ACTION"
     assert set(payload) == {"observed_at", "status", "action"}
+
+
+def test_grok_learning_penalizes_stable_loser_and_cuts_risk():
+    trades=[{"family":"tape_bias","return_pct":-.10} for _ in range(12)]
+    params,evidence=derive_policy(trades,{})
+    assert params["family_bias"]["tape_bias"]<0
+    assert params["risk_multiplier"]==pytest.approx(.35)
+    assert params["min_confidence_to_enter"]>.30
+    assert evidence["families"]["tape_bias"]["status"]=="PROMOTED"
+
+
+def test_grok_family_bias_changes_live_candidate_selection():
+    features={"ret_3m":.001,"ret_5m":.001,"rsi_14":55,"adx_14":20,
+              "bb_width":.01,"vwap_distance_pct":.0002,"relative_volume":1.0}
+    chain=[{"symbol":"SPY260904C00770000"}]
+    baseline=evaluate_entry(features,chain,1000)
+    learned=evaluate_entry(features,chain,1000,{"family_bias":{baseline.family:-.22}})
+    assert learned.family!=baseline.family or learned.confidence<baseline.confidence
+
+
+def test_grok_learned_risk_multiplier_controls_live_sizing():
+    normal=decide_contracts(.50,1000,.8,.05,{"risk_multiplier":1.0})
+    defensive=decide_contracts(.50,1000,.8,.05,{"risk_multiplier":.35})
+    assert 1<=defensive<normal

@@ -119,7 +119,11 @@ class RiptideRuntime:
                 raise RuntimeError("RIPTIDE emitted invalid exit")
             pnl = (decision.price - position.entry_price) * position.contracts * CONTRACT_MULTIPLIER
             scoreboard.record_trade_close(connection, trade_id=position.trade_id, closed_at=as_of.isoformat(), exit_price=decision.price, pnl_usd=pnl)
-            self.evolution.record(Outcome(position.trade_id, self.engine.generation, (decision.price / position.entry_price) - 1, decision.reason, as_of.isoformat(), position.setup))
+            opened_at=position.opened_at
+            observed_at=as_of
+            if (opened_at.tzinfo is None)!=(observed_at.tzinfo is None):
+                observed_at=observed_at.replace(tzinfo=opened_at.tzinfo)
+            self.evolution.record(Outcome(position.trade_id, self.engine.generation, (decision.price / position.entry_price) - 1, decision.reason, as_of.isoformat(), position.setup, position.entry_state, position.policy_version, (observed_at-opened_at).total_seconds()/60))
             self.evolution.evaluate(self.engine)
             self.engine.apply_exit(decision)
         elif decision.action == "BUST":

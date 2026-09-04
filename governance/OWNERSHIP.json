@@ -174,10 +174,10 @@
     {
       "path": "bots/grok/",
       "owner": "GROK_ONLY",
-      "readers": ["Owner", "Grok"],
-      "writers": ["Grok"],
+      "readers": ["Owner", "Codex", "Grok"],
+      "writers": ["Codex", "Grok"],
       "protected": true,
-      "purpose": "Independent Grok/xAI-owned SPY 0DTE paper competitor. Only Grok may write private strategy intelligence here. Must not read or consume BLACKTIDE, RIPTIDE, or SURGE private strategy."
+      "purpose": "Independent Grok/xAI-designed SPY 0DTE paper competitor. Owner delegates implementation editing to Codex; Grok supplies/updates the strategy concept. Neither may read or consume BLACKTIDE, RIPTIDE, or SURGE private strategy."
     },
     {
       "path": "bots/grok/runtime.py",

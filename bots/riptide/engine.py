@@ -15,11 +15,13 @@ class Parameters:
     min_open_interest:int=25; min_delta:float=.22; max_delta:float=.68
     base_risk_fraction:float=.38; maximum_risk_fraction:float=.78
     take_profit_pct:float=.28; stop_loss_pct:float=.18; max_hold_minutes:int=10
-    exploration_rate:float=.24; family_bias:tuple[tuple[str,float],...]=()
+    exploration_rate:float=.22; family_bias:tuple[tuple[str,float],...]=()
+    context_bias:tuple[tuple[str,float],...]=(); policy_version:int=1
 @dataclass(frozen=True)
 class Position:
     trade_id:str; contract_symbol:str; side:Literal["call","put"]; contracts:int
     entry_price:float; opened_at:datetime; setup:str="RECOVERED"; entry_iv:float|None=None
+    entry_state:str="UNKNOWN"; policy_version:int=1
 @dataclass(frozen=True)
 class Candidate:
     family:str; style:str; side:Literal["call","put"]; score:float
@@ -61,7 +63,7 @@ class Riptide:
         if not affordable:return Decision("BUST","entire bankroll cannot afford a legitimate qualifying contract",action_pressure=pressure,action_floor=floor,market_state=f.state,candidates=candidates)
         target=.38+.12*chosen.opportunity
         contract=min(affordable,key=lambda x:(abs(abs(float(x["delta"]))-target),(float(x["ask"])-float(x["bid"]))/float(x["ask"]),float(x["ask"])))
-        ask=float(contract["ask"]); ruin=clamp(bankroll/1000,.35,1.); wager=min(self.parameters.maximum_risk_fraction,self.parameters.base_risk_fraction+.20*pressure+.18*chosen.score)*ruin
+        ask=float(contract["ask"]); ruin=clamp(bankroll/1000,.20,1.); wager=min(self.parameters.maximum_risk_fraction,self.parameters.base_risk_fraction+.12*pressure+.12*chosen.score)*ruin
         qty=max(1,int(bankroll*wager//(ask*100)))
         return Decision("ENTER",chosen.reason,str(contract["option_symbol"]),chosen.side,qty,ask,chosen.family,pressure,floor,f.state,candidates)
     def _features(self,bars:list[dict[str,Any]])->Features:
@@ -72,15 +74,16 @@ class Riptide:
         volatility=clamp(vol/.0025); expansion=clamp(recent/max(prior,.01)-.65); compression=clamp(1.2-recent/max(prior,.01)); reversal=clamp(abs(short-med)/max(vol*4,.001)); part=clamp(rv/1.6); loc=clamp(abs(pos-.5)*2); disagree=clamp(abs(short-long)/max(vol*5,.001)); unstable=clamp((pstdev(r[-6:]) if len(r)>=6 else vol)/max(vol,.0001)-.55); gap=(c[-1]/vw-1)/max(vol,.0002)
         state="CHAOTIC_EXPANSION" if volatility>.7 and expansion>.55 else "COILED" if compression>.6 else "RUNNING" if abs(direction)>.55 and part>.45 else "CONFLICTED" if reversal>.55 or disagree>.55 else "RANGE_EDGE" if loc>.65 else "DRIFTING"
         return Features(direction,accel,volatility,expansion,compression,reversal,part,loc,disagree,unstable,gap,pos,state)
-    def _make(self,fam,style,side,raw,p,u,reason):
-        opp=clamp(raw+dict(self.parameters.family_bias).get(fam,0)); urgency=clamp(.35*p+.65*opp); asym=clamp(.35+.55*opp); excite=clamp(.25+.4*p+.35*opp); score=clamp(.42*opp+.18*urgency+.14*asym+.16*excite-.10*u)
+    def _make(self,fam,style,side,raw,p,u,reason,state):
+        learned=dict(self.parameters.family_bias).get(fam,0)+dict(self.parameters.context_bias).get(f"{state}|{fam}",0)
+        opp=clamp(raw+learned); urgency=clamp(.35*p+.65*opp); asym=clamp(.35+.55*opp); excite=clamp(.25+.4*p+.35*opp); score=clamp(.42*opp+.18*urgency+.14*asym+.16*excite-.10*u)
         return Candidate(fam,style,side,score,opp,urgency,asym,excite,u,reason)
     def _candidates(self,f:Features,p:float)->list[Candidate]:
         t="call" if f.direction>=0 else "put"; fade="put" if t=="call" else "call"; edge="put" if f.range_position>.58 else "call"; vw="call" if f.vwap_gap>=0 else "put"
         s=[("MOMENTUM_CHASE","CHASER",t,.34+.36*abs(f.direction)+.2*f.participation,.22,"momentum worth chasing"),("FAILED_MOVE_FADE","CONTRARIAN",fade,.25+.3*f.reversal+.27*f.disagreement+.18*f.location,.36,"failed move offers a fade"),("VOLATILITY_EXPANSION","VOLATILITY_JUNKIE",t,.28+.38*f.expansion+.22*f.volatility+.12*f.participation,.3,"volatility is expanding"),("COMPRESSION_RELEASE","VOLATILITY_JUNKIE",t,.28+.36*f.compression+.22*abs(f.acceleration)+.14*f.participation,.34,"stored pressure is releasing"),("REVERSAL_ATTEMPT","CONTRARIAN",fade,.24+.36*f.reversal+.24*f.location+.16*f.instability,.44,"early reversal gamble"),("TREND_CONTINUATION","CHASER",t,.32+.38*abs(f.direction)+.18*(1-f.disagreement)+.12*f.participation,.24,"persistent direction"),("OVEREXTENSION_SNAPBACK","CONTRARIAN",edge,.24+.36*f.location+.22*f.volatility+.18*f.disagreement,.42,"overextension snapback"),("VWAP_RECLAIM_REJECTION","CHASER",vw,.27+.34*clamp(abs(f.vwap_gap)/2)+.22*abs(f.acceleration)+.17*f.participation,.33,"VWAP interaction"),("RANGE_EDGE_SPECULATION","CONTRARIAN",edge,.3+.43*f.location+.17*(1-f.expansion)+.1*p,.37,"range-edge gamble"),("MICROSTRUCTURE_DISLOCATION","VOLATILITY_JUNKIE",t,.23+.32*f.instability+.27*f.participation+.18*f.expansion,.48,"short-lived dislocation"),("LATE_CONFIRMATION_CHASE","CHASER",t,.25+.27*abs(f.direction)+.23*max(0,f.acceleration*f.direction)+.25*p,.39,"late chase"),("CONTROLLED_EXPLORATION","LOTTERY_EXPLORER",t if abs(f.direction)>.12 else edge,.18+.18*f.volatility+.16*f.participation+.3*p+.18*f.location,.58,"controlled weak-edge exploration")]
-        return [self._make(*x[:4],p,x[4],x[5]) for x in s]
+        return [self._make(*x[:4],p,x[4],x[5],f.state) for x in s]
     def _explore(self,pool,as_of,p):
-        roll=((as_of.toordinal()*1440+as_of.hour*60+as_of.minute)*2654435761%1000)/1000; rate=min(.52,self.parameters.exploration_rate+p*.22)
+        roll=((as_of.toordinal()*1440+as_of.hour*60+as_of.minute)*2654435761%1000)/1000; rate=min(.40,self.parameters.exploration_rate+p*.18)
         return pool[int(roll*1000)%min(4,len(pool))] if len(pool)>1 and roll<rate else pool[0]
     def _pressure(self,t):return clamp(max(0,t.hour*60+t.minute-515)/210)
     def _eligible(self,x,side,t):
@@ -105,14 +108,14 @@ class Riptide:
         return Decision("EXIT",reason,self.position.contract_symbol,self.position.side,self.position.contracts,b,self.position.setup,market_state=state) if reason else Decision("NO_ACTION","position remains inside fast exit envelope",market_state=state)
     def apply_entry(self,d,*,trade_id,opened_at,entry_iv=None):
         if d.action!="ENTER" or self.position or d.price is None or not d.setup:raise ValueError("invalid or overlapping entry")
-        self.position=Position(trade_id,str(d.contract_symbol),d.side,d.contracts,d.price,opened_at,d.setup,entry_iv)
+        self.position=Position(trade_id,str(d.contract_symbol),d.side,d.contracts,d.price,opened_at,d.setup,entry_iv,d.market_state or "UNKNOWN",self.parameters.policy_version)
     def apply_exit(self,d):
         if d.action!="EXIT" or not self.position:raise ValueError("no valid position to close")
         old,self.position=self.position,None; return old
     def evolve(self,outcomes):
         if len(outcomes)<8:return self.parameters
         vals=[float(getattr(x,"return_pct",x if isinstance(x,(int,float)) else 0)) for x in outcomes[-32:]]; mean=fmean(vals); win=sum(x>0 for x in vals)/len(vals)
-        self.parameters=replace(self.parameters,base_risk_fraction=max(.28,min(.52,self.parameters.base_risk_fraction+(-.04 if mean<-.08 else .03 if mean>.04 else 0))),exploration_rate=max(.14,min(.4,self.parameters.exploration_rate+(.03 if win<.38 else -.02 if win>.62 else 0))))
+        self.parameters=replace(self.parameters,base_risk_fraction=max(.12,min(.48,self.parameters.base_risk_fraction+(-.04 if mean<-.04 else .02 if mean>.04 else 0))),exploration_rate=max(.05,min(.22,self.parameters.exploration_rate+(-.03 if win<.42 else .01 if win>.58 and mean>0 else 0))))
         return self.parameters
     def reset_generation_after_bust(self):
         if self.position:raise ValueError("cannot bust-reset with an open position")

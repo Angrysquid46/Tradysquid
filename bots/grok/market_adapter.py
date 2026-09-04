@@ -243,6 +243,18 @@ class GrokMarketAdapter:
             logger.warning("underlying quote failed: %s", exc)
             return {}
 
+    def contract_quote(self, symbol: str) -> dict[str, Any] | None:
+        import market_api_budget
+        import market_data
+
+        try:
+            return market_data.get_quote(
+                symbol, priority=market_api_budget.PRIORITY_EXIT_CRITICAL_DATA
+            )
+        except Exception as exc:
+            logger.warning("direct held-contract quote failed: %s", exc)
+            return None
+
     def is_session_open(self, as_of: datetime | None = None) -> bool:
         as_of = as_of or datetime.now(CENTRAL)
         local = as_of.astimezone(CENTRAL) if as_of.tzinfo else as_of.replace(tzinfo=CENTRAL)
