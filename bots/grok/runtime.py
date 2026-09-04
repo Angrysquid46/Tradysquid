@@ -18,6 +18,7 @@ from typing import Any, Callable
 from bots.grok import BOT_NAME
 from bots.grok.contract_selection import select_contract
 from bots.grok.engine import Decision, evaluate_entry, evaluate_exit
+from bots.grok.evolution import active_parameters, evolve_state
 from bots.grok.preflight import run_preflight
 from bots.grok.sizing import decide_contracts
 from bots.grok.state import load_state, save_state
@@ -37,6 +38,7 @@ class GrokRuntime:
         get_features: Callable[[], dict[str, Any]],
         get_chain: Callable[[], list[dict[str, Any]]],
         get_underlying: Callable[[], dict[str, Any]],
+        get_contract_quote: Callable[[str], dict[str, Any] | None],
         is_session_open: Callable[[], bool],
         minutes_to_close: Callable[[], float],
         provider_ok: Callable[[], bool],
@@ -45,11 +47,26 @@ class GrokRuntime:
         self.get_features = get_features
         self.get_chain = get_chain
         self.get_underlying = get_underlying
+        self.get_contract_quote = get_contract_quote
         self.is_session_open = is_session_open
         self.minutes_to_close = minutes_to_close
         self.provider_ok = provider_ok
         self.private = load_state()
         self._running = False
+
+    def _parameters(self) -> dict[str, Any]:
+        return active_parameters(self.private)
+
+    def _record_cycle(self, decision: Decision, *, bankroll: float, generation: int) -> Decision:
+        self.private.last_decision_at = _now_iso()
+        self.private.decision_log_tail.append({
+            "at":self.private.last_decision_at,"action":decision.action,"reason":decision.reason,
+            "family":decision.family,"bankroll":bankroll,"generation":generation,
+            "strategy_version":self.private.strategy_version,
+        })
+        self.private.decision_log_tail=self.private.decision_log_tail[-500:]
+        save_state(self.private)
+        return decision
 
     def recover(self) -> None:
         """Reconstruct official + private state after process restart."""
@@ -96,13 +113,13 @@ class GrokRuntime:
         """One decision cycle. Safe to call repeatedly."""
         import scoreboard as sb
 
-        if not self.is_session_open():
-            return Decision(action="NO_ACTION", reason="session closed")
-
         pos = sb.current_position_status(self.sb, BOT_NAME)
+        if not self.is_session_open() and pos is None:
+            return Decision(action="NO_ACTION", reason="session closed")
         features = self.get_features()
         bankroll = sb.current_bankroll(self.sb, BOT_NAME)
         gen = sb.current_generation(self.sb, BOT_NAME)
+        params = self._parameters()
 
         if pos is not None:
             # Manage open position
@@ -113,6 +130,9 @@ class GrokRuntime:
                 if c.get("symbol") == symbol or c.get("option_symbol") == symbol:
                     current_bid = float(c.get("bid") or 0)
                     break
+            if current_bid <= 0 and symbol:
+                direct=self.get_contract_quote(str(symbol)) or {}
+                current_bid=float(direct.get("bid") or 0)
             opened = pos.get("opened_at") or _now_iso()
             try:
                 opened_dt = datetime.fromisoformat(opened)
@@ -126,35 +146,36 @@ class GrokRuntime:
                 current_bid=current_bid,
                 minutes_held=minutes_held,
                 minutes_to_close=self.minutes_to_close(),
+                params=params,
             )
             if decision.action == "EXIT" and current_bid > 0:
                 self._close_trade(pos, current_bid, decision.reason)
-            return decision
+            return self._record_cycle(decision,bankroll=bankroll,generation=gen)
 
         # Flat — evaluate entry
         if bankroll < 5.0:  # effectively cannot trade anything meaningful
             self._maybe_bust(bankroll)
-            return Decision(action="NO_ACTION", reason="bankroll too low for qualifying trade")
+            return self._record_cycle(Decision(action="NO_ACTION", reason="bankroll too low for qualifying trade"),bankroll=bankroll,generation=gen)
 
         chain = self.get_chain()
-        decision = evaluate_entry(features, chain, bankroll)
+        decision = evaluate_entry(features, chain, bankroll,params)
         if decision.action != "ENTER" or not decision.side:
-            return decision
+            return self._record_cycle(decision,bankroll=bankroll,generation=gen)
 
-        selected = select_contract(decision.side, chain, bankroll, decision.confidence)
+        selected = select_contract(decision.side, chain, bankroll, decision.confidence,params)
         if selected is None:
-            return Decision(
+            return self._record_cycle(Decision(
                 action="NO_ACTION",
                 reason="no acceptable contract after selection filters",
                 candidates_considered=decision.candidates_considered,
                 rejected=decision.rejected + [{"family": decision.family or "", "reason": "contract selection failed"}],
-            )
+            ),bankroll=bankroll,generation=gen)
 
         contracts = decide_contracts(
-            selected.ask, bankroll, decision.confidence, selected.spread_pct
+            selected.ask, bankroll, decision.confidence, selected.spread_pct,params
         )
         if contracts < 1:
-            return Decision(action="NO_ACTION", reason="unaffordable after sizing")
+            return self._record_cycle(Decision(action="NO_ACTION", reason="unaffordable after sizing"),bankroll=bankroll,generation=gen)
 
         self._open_trade(
             side=decision.side,
@@ -165,8 +186,9 @@ class GrokRuntime:
             bankroll=bankroll,
             family=decision.family or "unknown",
             reason=decision.reason,
+            features=features,
         )
-        return decision
+        return self._record_cycle(decision,bankroll=bankroll,generation=gen)
 
     def _open_trade(
         self,
@@ -179,6 +201,7 @@ class GrokRuntime:
         bankroll: float,
         family: str,
         reason: str,
+        features: dict[str,Any],
     ) -> None:
         import scoreboard as sb
 
@@ -208,6 +231,8 @@ class GrokRuntime:
             "symbol": symbol,
             "family": family,
             "reason": reason,
+            "features": features,
+            "strategy_version": self.private.strategy_version,
         })
         self.private.decision_log_tail = self.private.decision_log_tail[-200:]
         save_state(self.private)
@@ -216,9 +241,9 @@ class GrokRuntime:
         import scoreboard as sb
 
         trade_id = pos["trade_id"]
-        entry = float(pos["entry_price"])
+        entry_price = float(pos["entry_price"])
         contracts = int(pos["contracts"])
-        pnl = (exit_price - entry) * 100 * contracts
+        pnl = (exit_price - entry_price) * 100 * contracts
         sb.record_trade_close(
             self.sb,
             trade_id=trade_id,
@@ -234,6 +259,16 @@ class GrokRuntime:
             "pnl": pnl,
             "reason": reason,
         })
+        entry_event=next((row for row in reversed(self.private.decision_log_tail) if row.get("trade_id")==trade_id and row.get("action")=="ENTER"),{})
+        trades=self.private.learning_metrics.setdefault("trades",[])
+        trades.append({
+            "trade_id":trade_id,"closed_at":_now_iso(),"family":entry_event.get("family","unknown"),
+            "return_pct":(exit_price-entry_price)/entry_price,"pnl_usd":pnl,
+            "exit_reason":reason,"features":entry_event.get("features",{}),
+            "strategy_version":entry_event.get("strategy_version",self.private.strategy_version),
+        })
+        self.private.learning_metrics["trades"]=trades[-1000:]
+        self.private.learning_metrics["last_evolution"]=evolve_state(self.private)
         self.private.decision_log_tail = self.private.decision_log_tail[-200:]
         save_state(self.private)
 

@@ -49,6 +49,8 @@ def decide_contracts(
     else:
         target_frac = 0.50
 
+    target_frac *= max(0.25, min(1.0, float((params or {}).get("risk_multiplier", 1.0))))
+
     # Wide spread → slightly less size (still aggressive)
     if spread_pct > 0.25:
         target_frac *= 0.75

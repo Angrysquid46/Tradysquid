@@ -62,6 +62,7 @@ def build_runtime() -> GrokRuntime:
         get_features=adapter.features,
         get_chain=adapter.chain,
         get_underlying=adapter.underlying,
+        get_contract_quote=adapter.contract_quote,
         is_session_open=adapter.is_session_open,
         minutes_to_close=adapter.minutes_to_close,
         provider_ok=adapter.provider_ok,

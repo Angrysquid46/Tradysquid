@@ -87,3 +87,14 @@ def test_family_learning_suppresses_loser_and_persists(tmp_path):
     restarted=Riptide(); loop.apply(restarted)
     assert restarted.parameters==first.parameters
     assert state["sample"]==8
+
+def test_losing_policy_reduces_risk_and_exploration_instead_of_revenge_sampling(tmp_path):
+    loop=EvolutionLoop(tmp_path/"outcomes.jsonl",tmp_path/"learning.json")
+    for i in range(12):
+        loop.record(Outcome(str(i),1,-.10,"stop",f"2026-08-28T12:{i:02}:00","FAILED_MOVE_FADE","CONFLICTED"))
+    engine=Riptide(); state=loop.evaluate(engine)
+    assert state["risk"]==pytest.approx(.12)
+    assert state["exploration"]==pytest.approx(.05)
+    assert state["family_bias"]["FAILED_MOVE_FADE"]<0
+    assert state["context_bias"]["CONFLICTED|FAILED_MOVE_FADE"]<0
+    assert state["policy_version"]>1

@@ -47,6 +47,8 @@ BOOTSTRAP_PARAMS = {
     "runner_trail_giveback": 0.18,
     "moon_target_pct": 1.20,
     "quick_scalp_pct": 0.40,
+    "family_bias": {},
+    "risk_multiplier": 1.0,
 }
 
 
@@ -216,6 +218,8 @@ def evaluate_entry(
         cand = scorer(features)
         if cand is None:
             continue
+        cand.score += float(p.get("family_bias", {}).get(cand.family, 0.0))
+        cand.confidence = max(0.0, min(0.99, cand.confidence + float(p.get("family_bias", {}).get(cand.family, 0.0))))
         if cand.score < p["min_score_to_consider"]:
             rejected.append({"family": cand.family, "reason": "score below threshold"})
             continue
@@ -254,15 +258,15 @@ def evaluate_exit(
 ) -> Decision:
     p = {**BOOTSTRAP_PARAMS, **(params or {})}
 
+    entry_price = float(position.get("entry_price") or 0.0)
+    if entry_price <= 0 or current_bid <= 0:
+        return Decision(action="HOLD", reason="waiting on a real bid")
+
     if minutes_to_close <= p["eod_flatten_minutes_before_close"]:
         return Decision(action="EXIT", reason="eod flatten")
 
     if minutes_held >= p["max_hold_minutes"]:
         return Decision(action="EXIT", reason="time stop")
-
-    entry_price = float(position.get("entry_price") or 0.0)
-    if entry_price <= 0 or current_bid <= 0:
-        return Decision(action="HOLD", reason="waiting on a real bid")
 
     pnl_pct = (current_bid - entry_price) / entry_price
     peak = peak_pnl_pct if peak_pnl_pct is not None else pnl_pct
