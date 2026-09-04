@@ -91,11 +91,18 @@ class Riptide:
     def _exit(self,t,options,bars):
         x=next((x for x in options.get("contracts",[]) if str(x.get("option_symbol"))==self.position.contract_symbol),None)
         if options.get("tier")!="A" or not x:return Decision("NO_ACTION","current observed contract bid unavailable")
-        try:b=float(x["bid"]); f=self._features(bars)
-        except (KeyError,TypeError,ValueError,ZeroDivisionError):return Decision("NO_ACTION","invalid observed exit evidence")
-        ch=b/self.position.entry_price-1; held=(t-self.position.opened_at).total_seconds()/60; failed=(self.position.side=="call" and f.direction<-.18) or (self.position.side=="put" and f.direction>.18)
-        reason="aggressive profit capture" if ch>=self.parameters.take_profit_pct else "loss intolerance stop" if ch<=-self.parameters.stop_loss_pct else "directional reversal invalidation" if failed else "rapid-turnover maximum holding time" if held>=self.parameters.max_hold_minutes else "end-of-session liquidation" if t.hour*60+t.minute>=900 else None
-        return Decision("EXIT",reason,self.position.contract_symbol,self.position.side,self.position.contracts,b,self.position.setup,market_state=f.state) if reason else Decision("NO_ACTION","position remains inside fast exit envelope",market_state=f.state)
+        try:b=float(x["bid"])
+        except (KeyError,TypeError,ValueError):return Decision("NO_ACTION","invalid observed exit evidence")
+        if b<0:return Decision("NO_ACTION","invalid observed exit evidence")
+        ch=b/self.position.entry_price-1; held=(t-self.position.opened_at).total_seconds()/60
+        state=None; failed=False
+        try:
+            f=self._features(bars); state=f.state
+            failed=(self.position.side=="call" and f.direction<-.18) or (self.position.side=="put" and f.direction>.18)
+        except (IndexError,KeyError,TypeError,ValueError,ZeroDivisionError):
+            pass
+        reason="end-of-session liquidation" if t.hour*60+t.minute>=900 else "aggressive profit capture" if ch>=self.parameters.take_profit_pct else "loss intolerance stop" if ch<=-self.parameters.stop_loss_pct else "directional reversal invalidation" if failed else "rapid-turnover maximum holding time" if held>=self.parameters.max_hold_minutes else None
+        return Decision("EXIT",reason,self.position.contract_symbol,self.position.side,self.position.contracts,b,self.position.setup,market_state=state) if reason else Decision("NO_ACTION","position remains inside fast exit envelope",market_state=state)
     def apply_entry(self,d,*,trade_id,opened_at,entry_iv=None):
         if d.action!="ENTER" or self.position or d.price is None or not d.setup:raise ValueError("invalid or overlapping entry")
         self.position=Position(trade_id,str(d.contract_symbol),d.side,d.contracts,d.price,opened_at,d.setup,entry_iv)

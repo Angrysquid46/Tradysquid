@@ -10,6 +10,8 @@ from pathlib import Path
 from datetime import datetime
 
 import backtest_lab
+import market_api_budget
+import market_data
 import scoreboard
 
 from .engine import CONTRACT_MULTIPLIER, Decision, Position, Riptide
@@ -22,13 +24,51 @@ TELEMETRY_PATH = Path(__file__).resolve().parents[2] / "state" / "riptide" / "de
 
 class RiptideRuntime:
     def __init__(self, *, engine: Riptide | None = None, market_view=None, evolution: EvolutionLoop | None = None,
-                 telemetry_path: Path | None = None):
+                 telemetry_path: Path | None = None, quote_loader=None, daily_history_loader=None):
         self.engine = engine or Riptide()
         self.market_view = market_view or backtest_lab.MarketView("SPY")
         self.evolution = evolution or EvolutionLoop()
         if hasattr(self.evolution, "apply"):
             self.evolution.apply(self.engine)
         self.telemetry_path = telemetry_path or TELEMETRY_PATH
+        self.quote_loader = quote_loader or market_data.get_quote
+        self.daily_history_loader = daily_history_loader or market_data.get_daily_history
+
+    @staticmethod
+    def _contract_terms(symbol: str) -> tuple[str, float]:
+        if len(symbol) < 15 or symbol[-9] not in "CP":
+            raise ValueError(f"invalid OCC option symbol: {symbol!r}")
+        return ("call" if symbol[-9] == "C" else "put", int(symbol[-8:]) / 1000)
+
+    def _expired_settlement(self, as_of: datetime) -> Decision | None:
+        position = self.engine.position
+        if position is None:
+            return None
+        expiry = datetime.strptime(position.contract_symbol[-15:-9], "%y%m%d").date()
+        if as_of.date() <= expiry:
+            return None
+        side, strike = self._contract_terms(position.contract_symbol)
+        rows = self.daily_history_loader("SPY", days=max(10, (as_of.date() - expiry).days + 5))
+        row = next((item for item in rows if str(item.get("date")) == expiry.isoformat()), None)
+        if row is None or row.get("close") is None:
+            return Decision("NO_ACTION", "expired contract awaits verified underlying close")
+        underlying_close = float(row["close"])
+        settlement = max(underlying_close - strike, 0.0) if side == "call" else max(strike - underlying_close, 0.0)
+        return Decision("EXIT", f"expiration settlement from verified SPY close {underlying_close:.2f}",
+                        position.contract_symbol, position.side, position.contracts, settlement, position.setup)
+
+    def _add_direct_position_quote(self, options: dict) -> dict:
+        position = self.engine.position
+        if position is None:
+            return options
+        contracts = list(options.get("contracts") or [])
+        if any(str(row.get("option_symbol")) == position.contract_symbol for row in contracts):
+            return options
+        quote = self.quote_loader(position.contract_symbol, priority=market_api_budget.PRIORITY_EXIT_CRITICAL_DATA)
+        if quote is None or quote.get("bid") is None:
+            return options
+        contracts.append({**quote, "option_symbol": position.contract_symbol, "data_class": "VERIFIED_REAL"})
+        return {**options, "tier": "A", "contracts": contracts}
 
     def recover(self, connection: sqlite3.Connection) -> None:
         self.engine.generation = scoreboard.current_generation(connection, SCOREBOARD_BOT)
@@ -46,16 +86,18 @@ class RiptideRuntime:
     def evaluate(self, as_of: datetime, connection: sqlite3.Connection) -> Decision:
         self.recover(connection)
         bankroll = scoreboard.current_bankroll(connection, SCOREBOARD_BOT)
-        market = self.market_view.market_as_of(as_of)
-        options = self.market_view.options_as_of(as_of)
-        bars = self.market_view.bars_as_of(as_of, lookback_minutes=90)
-        decision = self.engine.decide(
-            as_of=as_of,
-            bankroll=bankroll,
-            market=market,
-            options=options,
-            bars=bars,
-        )
+        decision = self._expired_settlement(as_of)
+        if decision is None:
+            market = self.market_view.market_as_of(as_of)
+            options = self._add_direct_position_quote(self.market_view.options_as_of(as_of))
+            bars = self.market_view.bars_as_of(as_of, lookback_minutes=90)
+            decision = self.engine.decide(
+                as_of=as_of,
+                bankroll=bankroll,
+                market=market,
+                options=options,
+                bars=bars,
+            )
         self.telemetry_path.parent.mkdir(parents=True, exist_ok=True)
         payload = asdict(decision)
         payload.update({"observed_at": as_of.isoformat(), "bankroll": bankroll})
