@@ -98,3 +98,7 @@ def test_losing_policy_reduces_risk_and_exploration_instead_of_revenge_sampling(
     assert state["family_bias"]["FAILED_MOVE_FADE"]<0
     assert state["context_bias"]["CONFLICTED|FAILED_MOVE_FADE"]<0
     assert state["policy_version"]>1
+
+def test_isolated_outcome_ledger_cannot_write_live_promoted_state(tmp_path):
+    loop=EvolutionLoop(tmp_path/"outcomes.jsonl")
+    assert loop.state_path==tmp_path/"promoted-learning.json"

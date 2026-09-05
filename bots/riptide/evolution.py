@@ -39,7 +39,9 @@ class Outcome:
 class EvolutionLoop:
     def __init__(self, path: Path | None = None, state_path: Path | None = None):
         self.path = path or STATE_DIR / "outcomes.jsonl"
-        self.state_path = state_path or STATE_PATH
+        # A caller supplying an isolated outcome ledger (tests/research) must
+        # never be able to overwrite the live promoted policy by omission.
+        self.state_path = state_path or (STATE_PATH if path is None else self.path.with_name("promoted-learning.json"))
 
     def apply(self, engine: Riptide) -> None:
         if not self.state_path.exists(): return
