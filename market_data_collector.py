@@ -441,6 +441,22 @@ def grade_day(connection, trading_day: str) -> str:
     return grade
 
 
+def grade_completed_days_job(connection) -> str:
+    """Persist option/quote quality for every completed recorded session."""
+    now = market_data.now_ct()
+    rows = connection.execute(
+        "SELECT trading_day FROM daily_data_manifest ORDER BY trading_day"
+    ).fetchall()
+    results = []
+    for row in rows:
+        trading_day = str(row[0])
+        day = date.fromisoformat(trading_day)
+        if day > now.date() or (day == now.date() and now.time() < time(15, 0)):
+            continue
+        results.append(f"{trading_day}:{grade_day(connection, trading_day)}")
+    return "; ".join(results) if results else "no completed sessions to grade"
+
+
 def capture_cycle_job(connection) -> str:
     symbol = market_data.TICKER
     now = market_data.now_ct()
@@ -499,11 +515,14 @@ def capture_cycle_job(connection) -> str:
         api_errors=api_errors,
         invalid=invalid,
     )
-    return (
+    summary = (
         f"quote={'OK' if quote_written else 'MISS'} "
         f"chain={'OK' if chain_written else 'MISS'} "
         f"errors={api_errors} invalid={invalid}"
     )
+    if not quote_written or not chain_written:
+        raise RuntimeError(f"incomplete permanent market capture: {summary}")
+    return summary
 
 
 def bars_capture_job(connection) -> str:

@@ -873,6 +873,7 @@ class Job:
     background: bool = False
     provider_heavy: bool = False
     retry_interval: timedelta | None = None
+    minute_aligned: bool = False
 
 
 JOBS = [
@@ -936,8 +937,16 @@ JOBS = [
         market_data_collector.capture_cycle_job,
         market_hours_only=True,
         background=True,
-        provider_heavy=True,
+        # The permanent archive must not queue behind reports or scans. The
+        # shared quota manager still reserves capacity for every API request.
+        provider_heavy=False,
         retry_interval=timedelta(minutes=1),
+        minute_aligned=True,
+    ),
+    Job(
+        "market-data-quality-grade",
+        timedelta(minutes=5),
+        market_data_collector.grade_completed_days_job,
     ),
     Job(
         "spy-bars-capture",
@@ -1020,7 +1029,11 @@ def due(connection: sqlite3.Connection, job: Job, now: datetime) -> bool:
     last = get_state(connection, f"job:{job.name}")
     if last:
         try:
-            if now - datetime.fromisoformat(last) < interval:
+            previous = datetime.fromisoformat(last)
+            if getattr(job, "minute_aligned", False):
+                if now.replace(second=0, microsecond=0) <= previous.replace(second=0, microsecond=0):
+                    return False
+            elif now - previous < interval:
                 return False
         except ValueError:
             pass

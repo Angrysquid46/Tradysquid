@@ -1,5 +1,22 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-09-04T20:18:50.314747-05:00"
+  "active": true,
+  "work_id": "6c349c2a-d4d3-4c9f-ab5e-0dee8afbcce7",
+  "actor": "Codex",
+  "task": "Repair permanent minute market-data capture and enforce backtest archive quality",
+  "method": "Fix shared collection scheduling and provider isolation so SPY quotes and 0DTE chains are attempted on minute boundaries; propagate partial provider failures into scheduler health/retry state; schedule end-of-session grading; expose exact gap and grade evidence; add deterministic regression tests; deploy through the frozen updater and live-verify the next eligible session.",
+  "started_at": "2026-09-06T19:49:37.744356-05:00",
+  "starting_commit": "ac998e44eb36b67d36f263d2b9c4fb45e6d8ad7a",
+  "process_id": 37596,
+  "owner_request": "Owner requires a trustworthy continuously recorded point-in-time database for causal backtests; current option archive has zero A/B days and failures were silently marked OK.",
+  "before_state": "Timestamped archive spans 2026-08-24..2026-09-04. Chain snapshots per 390-minute session were 171,260,260,259,261,266,264,144,142,338. Shared provider serialization caused roughly 88-91 second cadence; Sep 2-3 internal provider errors were returned as OK; daily option grades remain blank.",
+  "reason": "Owner requires a trustworthy continuously recorded point-in-time database for causal backtests; current option archive has zero A/B days and failures were silently marked OK.",
+  "intended_scope": "Shared market_data_collector/local_information_engine scheduling, manifest health reporting, and tests only. No trader strategy, official trade, Discord history, broker, credential, or frozen updater changes.",
+  "expected_effects": "Future sessions attempt one point-in-time quote/chain capture per minute without unrelated provider jobs delaying the cadence; missing quote/chain cycles fail visibly and retry; daily manifests receive explicit grades; incomplete data cannot be represented as healthy.",
+  "required_tests": "Collector unit tests; scheduler concurrency/cadence tests; failure propagation tests; daily grade scheduling tests; focused suite; full repository suite; GitHub CI; automatic deployment receipt; live scheduler/job/manifest verification.",
+  "risks": "Provider rate limits and concurrent demand; duplicate minute writes; market-hours boundary behavior; deployment must not disturb live traders. Use existing quota manager and append-only/idempotent storage.",
+  "next_safe_action_if_interrupted": "Run full repository tests, review exact diff and ownership, commit/PR/CI/merge, let frozen updater deploy, then verify jobs and manifest behavior. First live minute-by-minute completeness proof must occur during the next market session; do not claim historical gaps repaired.",
+  "phase": "Phase 15",
+  "last_checkpoint_at": "2026-09-06T19:53:04.607089-05:00",
+  "last_successful_action": "Implemented isolated permanent-capture repair: spy-market-data-capture no longer waits on the shared provider-heavy lock; it is clock-minute aligned to prevent completion-time drift; partial quote/chain cycles now raise after recording manifest evidence so scheduler health and retry state report ERROR; completed sessions are automatically option-graded every five minutes. Updated regression tests; 50 focused collector/scheduler tests pass.",
+  "next_safe_action": "Run full repository tests, review exact diff and ownership, commit/PR/CI/merge, let frozen updater deploy, then verify jobs and manifest behavior. First live minute-by-minute completeness proof must occur during the next market session; do not claim historical gaps repaired."
 }
