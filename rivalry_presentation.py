@@ -18,7 +18,7 @@ LEGACY_RIVALRY_TOKEN = "TSQ-COMPETITION-RIVALRY"
 # Bump when a persisted per-bot Discord surface changes shape. The scheduler
 # fingerprints this so a presentation release refreshes old cards even when
 # the underlying trade facts have not changed.
-BOT_SURFACE_FORMAT_VERSION = "complete-live-held-trade-v3"
+BOT_SURFACE_FORMAT_VERSION = "bankroll-drawdown-visibility-v4"
 # AXIOM permanently removed 2026-08-27 (owner directive) - no longer in
 # scoreboard.BOTS/rivalry.BOTS either, not just this presentation list.
 # GROK added 2026-08-30 as independent Grok/xAI competitor.
@@ -189,8 +189,12 @@ def render_bankroll_chart(bot: str, points: list[dict[str, Any]], output: Path) 
     left, right, top, bottom = 90, 40, 80, 60
     plot_width = width - left - right
     plot_height = height - top - bottom
-    low = max(0.0, min(scale_values) - 25.0)
-    high = max(scale_values + [scoreboard.STARTING_BANKROLL_USD]) * 1.1
+    observed_low = min(scale_values + [scoreboard.STARTING_BANKROLL_USD])
+    observed_high = max(scale_values + [scoreboard.STARTING_BANKROLL_USD])
+    observed_range = max(observed_high - observed_low, 1.0)
+    padding = max(25.0, observed_range * 0.04)
+    low = max(0.0, observed_low - padding)
+    high = observed_high + padding
 
     image = Image.new("RGB", (width, height), "#0b1420")
     draw = ImageDraw.Draw(image)
@@ -217,9 +221,53 @@ def render_bankroll_chart(bot: str, points: list[dict[str, Any]], output: Path) 
         draw.line(line_points, fill="#7dd3fc", width=3)
 
     current, peak = values[-1], max(values)
+    peak_index = values.index(peak)
+    drawdown = current - peak
+    drawdown_pct = (drawdown / peak * 100.0) if peak else 0.0
+
+    if has_closed_trades:
+        peak_x, peak_y = xy(peak_index, peak)
+        current_x, current_y = xy(len(values) - 1, current)
+
+        if drawdown < 0 and current_x > peak_x:
+            overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(overlay)
+            overlay_draw.rectangle(
+                (peak_x, peak_y, current_x, current_y),
+                fill=(239, 68, 68, 38),
+            )
+            image = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
+            draw = ImageDraw.Draw(image)
+            for x in range(peak_x, current_x, 16):
+                draw.line((x, peak_y, min(x + 8, current_x), peak_y), fill="#f59e0b", width=2)
+                draw.line((x, current_y, min(x + 8, current_x), current_y), fill="#ef4444", width=2)
+
+        draw.ellipse((peak_x - 7, peak_y - 7, peak_x + 7, peak_y + 7), fill="#f59e0b")
+        draw.ellipse(
+            (current_x - 8, current_y - 8, current_x + 8, current_y + 8),
+            fill="#ef4444" if drawdown < 0 else "#22c55e",
+        )
+        draw.text(
+            (max(left, peak_x - 145), max(top, peak_y - 28)),
+            f"PEAK ${peak:,.0f}",
+            fill="#fbbf24",
+            font=small,
+        )
+        draw.text(
+            (max(left, current_x - 165), min(height - bottom - 20, current_y + 12)),
+            f"CURRENT ${current:,.0f}",
+            fill="#fca5a5" if drawdown < 0 else "#86efac",
+            font=small,
+        )
+
     draw.text((left, 20), f"{bot} · GENERATION {generation} BANKROLL", fill="#f8fafc", font=title_font)
+    drawdown_summary = (
+        f"Drawdown -${abs(drawdown):.2f} ({drawdown_pct:.1f}%)"
+        if drawdown < 0 else
+        "At generation peak"
+    )
     summary = (
-        f"Current ${current:.2f} · Generation peak ${peak:.2f} · resets excluded"
+        f"Current ${current:.2f} · Peak ${peak:.2f} · {drawdown_summary}"
         if has_closed_trades else
         f"No closed trades yet · Generation {generation} reset baseline $1,000"
     )
@@ -230,7 +278,14 @@ def render_bankroll_chart(bot: str, points: list[dict[str, Any]], output: Path) 
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     image.save(output, format="PNG", optimize=True)
-    return {"current": current, "peak": peak, "generation": generation, "has_closed_trades": has_closed_trades}
+    return {
+        "current": current,
+        "peak": peak,
+        "drawdown": drawdown,
+        "drawdown_pct": drawdown_pct,
+        "generation": generation,
+        "has_closed_trades": has_closed_trades,
+    }
 
 
 def render_bot_held_trade(connection: Any, bot: str) -> str:
@@ -446,10 +501,15 @@ def publish_bot_surfaces(
         points = scoreboard.bankroll_history(score_connection, bot, generation)
         output = CHART_DIR / f"{prefix}-bankroll.png"
         metrics = render_bankroll_chart(bot, points, output)
+        drawdown_caption = (
+            f"drawdown -${abs(metrics['drawdown']):.2f} ({metrics['drawdown_pct']:.1f}%)"
+            if metrics["drawdown"] < 0 else
+            "at generation peak"
+        )
         caption = (
             f"📈 **{bot} generation {metrics['generation']} bankroll** · "
             f"current ${metrics['current']:.2f} · generation peak ${metrics['peak']:.2f} · "
-            "resets excluded"
+            f"{drawdown_caption} · resets excluded"
         )
         chart_message_id = _replace_bot_chart(
             tracker, dashboard_channel_id, output, caption, f"{prefix}-bankroll-chart"

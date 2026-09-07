@@ -3,6 +3,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import pytest
+
 import discord_surface_manifest as surfaces
 import rivalry_presentation as presentation
 import scoreboard
@@ -131,7 +133,8 @@ def test_closed_winner_posts_one_immutable_card_not_a_trade_wall(monkeypatch):
         presentation,
         "render_bankroll_chart",
         lambda _bot, points, _output: chart_calls.append(points) or {
-            "current": 1010.0, "peak": 1010.0, "generation": 1, "has_closed_trades": True,
+            "current": 1010.0, "peak": 1010.0, "drawdown": 0.0,
+            "drawdown_pct": 0.0, "generation": 1, "has_closed_trades": True,
         },
     )
     monkeypatch.setattr(presentation, "_replace_bot_chart", lambda *_args: "chart")
@@ -161,9 +164,29 @@ def test_bankroll_chart_never_connects_two_generations():
     assert metrics == {
         "current": 1000.0,
         "peak": 1000.0,
+        "drawdown": 0.0,
+        "drawdown_pct": 0.0,
         "generation": 2,
         "has_closed_trades": False,
     }
+    assert output.exists()
+
+
+def test_bankroll_chart_reports_peak_to_current_drawdown():
+    output = Path(tempfile.mkdtemp()) / "surge-bankroll.png"
+    metrics = presentation.render_bankroll_chart(
+        "SURGE",
+        [
+            {"at": None, "bankroll": 1000.0, "generation": 1},
+            {"at": "2026-09-04T14:09:50-05:00", "bankroll": 2935.0, "generation": 1},
+            {"at": "2026-09-04T14:41:50-05:00", "bankroll": 2481.0, "generation": 1},
+        ],
+        output,
+    )
+    assert metrics["current"] == 2481.0
+    assert metrics["peak"] == 2935.0
+    assert metrics["drawdown"] == -454.0
+    assert metrics["drawdown_pct"] == pytest.approx(-15.4685, rel=1e-4)
     assert output.exists()
 
 
