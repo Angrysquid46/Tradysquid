@@ -180,6 +180,14 @@
       "purpose": "Independent Grok/xAI-designed SPY 0DTE paper competitor. Owner delegates implementation editing to Codex; Grok supplies/updates the strategy concept. Neither may read or consume BLACKTIDE, RIPTIDE, or SURGE private strategy."
     },
     {
+      "path": "bots/volt/",
+      "owner": "BLACKTIDE_ONLY",
+      "readers": ["Owner", "Codex"],
+      "writers": ["Codex"],
+      "protected": true,
+      "purpose": "Owner-selected sensitive SURGE challenger, isolated as the VOLT paper competitor."
+    },
+    {
       "path": "bots/grok/runtime.py",
       "owner": "SHARED_CORE",
       "readers": ["Owner", "Codex", "Grok"],

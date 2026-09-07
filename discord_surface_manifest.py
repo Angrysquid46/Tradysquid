@@ -63,7 +63,7 @@ CANONICAL_BOT_SURFACES = tuple(
         **({"max_silence_minutes": 10} if update_mode == UPDATE_MODE_PERIODIC else {}),
         "event_types": event_types, "schema_version": ("live-position-v2" if suffix == "held-trade-card" else "phase15-v1"),
     }
-    for bot in ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK")
+    for bot in ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK", "VOLT")
     for suffix, channel, purpose, update_mode, expected_silence, event_types in (
         ("dashboard-card", "{bot}-dashboard", "{}'s balance/generation/P&L/win-rate stat card",
          UPDATE_MODE_PERIODIC, False, ("PUBLISH",)),
@@ -86,7 +86,7 @@ def reconcile_canonical_bot_surfaces(connection: sqlite3.Connection) -> tuple[st
     for item in CANONICAL_BOT_SURFACES:
         register_surface(connection, **item)
     rows = connection.execute(
-        "SELECT surface_id FROM surfaces WHERE category IN ('AXIOM', 'BLACKTIDE', 'RIPTIDE', 'SURGE', 'GROK')"
+        "SELECT surface_id FROM surfaces WHERE category IN ('AXIOM', 'BLACKTIDE', 'RIPTIDE', 'SURGE', 'GROK', 'VOLT')"
     ).fetchall()
     retired: list[str] = []
     for row in rows:

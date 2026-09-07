@@ -67,6 +67,7 @@ CATEGORY_ORDER = [
     "RIPTIDE",
     "SURGE",
     "GROK",
+    "VOLT",
     "OWNER CONTROL",
 ]
 
@@ -100,6 +101,10 @@ CHANNELS = [
     ChannelSpec("GROK", "grok-held-trades", "GROK's current live position, updated on open/close."),
     ChannelSpec("GROK", "grok-winners", "GROK's winning closed trades."),
     ChannelSpec("GROK", "grok-losers", "GROK's losing closed trades."),
+    ChannelSpec("VOLT", "volt-dashboard", "VOLT stat cards (balance, generation, P/L, win rate, streak, drawdown) plus a bankroll history chart."),
+    ChannelSpec("VOLT", "volt-held-trades", "VOLT's current live position, updated on open/close."),
+    ChannelSpec("VOLT", "volt-winners", "VOLT's winning closed trades."),
+    ChannelSpec("VOLT", "volt-losers", "VOLT's losing closed trades."),
     ChannelSpec("START HERE", "bot-commands", "Complete TradeBot slash-command reference and ticker-context instructions."),
     ChannelSpec("START HERE", "risk-management", "Options risk disclosures and pre-trade safety checklist."),
     ChannelSpec("LEARNING CENTER", "learning-index", "Start here: the complete 43-chapter curriculum."),
@@ -186,6 +191,10 @@ CHANNEL_STARTERS = {
     "grok-held-trades": "Updated when GROK opens or closes its position.",
     "grok-winners": "Updated immediately when a GROK position closes profitably.",
     "grok-losers": "Updated immediately when a GROK position closes without a profit.",
+    "volt-dashboard": "Updated every 5 minutes: stat cards plus a bankroll history chart.",
+    "volt-held-trades": "Updated when VOLT opens or closes its position.",
+    "volt-winners": "Updated immediately when VOLT closes profitably.",
+    "volt-losers": "Updated immediately when VOLT closes without a profit.",
     "workflow-log": "Used for releases, deployments, and rollback reports.",
 }
 
