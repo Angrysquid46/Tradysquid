@@ -32,7 +32,7 @@ MAX_OPEN_TRADES_PER_BOT = 1
 
 # AXIOM permanently removed 2026-08-27 (owner directive).
 # GROK added 2026-08-30 as independent Grok/xAI competitor.
-BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK")
+BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK", "VOLT")
 
 
 def connect_db(*, check_same_thread: bool = True) -> sqlite3.Connection:
@@ -246,7 +246,7 @@ def record_generation_event(
 ) -> None:
     if bot not in BOTS:
         raise ValueError(f"Unknown bot: {bot!r}")
-    if event not in ("STARTED", "BUSTED"):
+    if event not in ("STARTED", "BUSTED", "RESET"):
         raise ValueError(f"Unknown generation event: {event!r}")
     current = current_generation(connection, bot)
     open_position = current_position_status(connection, bot)
@@ -257,7 +257,10 @@ def record_generation_event(
         (bot, generation),
     ).fetchall()
     existing_events = {row["event"] for row in existing}
-    if event == "BUSTED":
+    if event == "RESET":
+        if generation != current or "RESET" in existing_events:
+            raise ValueError("invalid or duplicate RESET transition")
+    elif event == "BUSTED":
         if generation != current or "BUSTED" in existing_events:
             raise ValueError("invalid or duplicate BUSTED transition")
         bankroll = current_bankroll(connection, bot)
@@ -270,7 +273,7 @@ def record_generation_event(
         if generation != current + 1 or "STARTED" in existing_events:
             raise ValueError("STARTED must advance exactly one generation and cannot duplicate")
         prior = connection.execute(
-            "SELECT 1 FROM generation_events WHERE bot=? AND generation=? AND event='BUSTED'",
+            "SELECT 1 FROM generation_events WHERE bot=? AND generation=? AND event IN ('BUSTED','RESET')",
             (bot, current),
         ).fetchone()
         if prior is None:

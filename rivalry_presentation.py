@@ -22,7 +22,7 @@ BOT_SURFACE_FORMAT_VERSION = "bankroll-drawdown-visibility-v4"
 # AXIOM permanently removed 2026-08-27 (owner directive) - no longer in
 # scoreboard.BOTS/rivalry.BOTS either, not just this presentation list.
 # GROK added 2026-08-30 as independent Grok/xAI competitor.
-PUBLIC_BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK")
+PUBLIC_BOTS = ("BLACKTIDE", "RIPTIDE", "SURGE", "GROK", "VOLT")
 
 
 def render_scoreboard(connection: Any) -> str:
