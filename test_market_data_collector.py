@@ -208,7 +208,7 @@ def test_capture_cycle_job_writes_quote_and_chain_and_updates_manifest(
     assert tuple(row) == (1, 1)
 
 
-def test_capture_cycle_job_skips_chain_when_no_zero_dte_expiration(
+def test_capture_cycle_job_fails_when_no_zero_dte_expiration(
     manifest_db, monkeypatch, scratch_data_root
 ):
     monkeypatch.setattr(collector.market_data, "TICKER", "SPY")
@@ -224,12 +224,11 @@ def test_capture_cycle_job_skips_chain_when_no_zero_dte_expiration(
     monkeypatch.setattr(
             collector.market_data, "get_expirations", lambda symbol, **kwargs: ["2026-08-25"]
     )
-    summary = collector.capture_cycle_job(manifest_db)
-    assert "quote=OK" in summary
-    assert "chain=MISS" in summary
+    with pytest.raises(RuntimeError, match="quote=OK chain=MISS"):
+        collector.capture_cycle_job(manifest_db)
 
 
-def test_capture_cycle_job_counts_provider_failure_as_api_error_not_crash(
+def test_capture_cycle_job_counts_provider_failure_and_fails_scheduler_job(
     manifest_db, monkeypatch, scratch_data_root
 ):
     monkeypatch.setattr(collector.market_data, "TICKER", "SPY")
@@ -242,8 +241,8 @@ def test_capture_cycle_job_counts_provider_failure_as_api_error_not_crash(
 
     monkeypatch.setattr(collector.market_data, "get_quotes", boom)
     monkeypatch.setattr(collector.market_data, "get_expirations", lambda symbol, **kwargs: [])
-    summary = collector.capture_cycle_job(manifest_db)
-    assert "errors=1" in summary
+    with pytest.raises(RuntimeError, match="errors=1"):
+        collector.capture_cycle_job(manifest_db)
     row = manifest_db.execute(
         "SELECT api_errors FROM daily_data_manifest WHERE trading_day=?", ("2026-08-24",)
     ).fetchone()
@@ -265,9 +264,8 @@ def test_capture_cycle_job_skips_quote_call_and_records_error_when_budget_gate_b
     monkeypatch.setattr(collector.market_data, "get_expirations", lambda symbol, **kwargs: [])
     monkeypatch.setattr(market_api_budget, "request_allowed", lambda priority: False)
 
-    summary = collector.capture_cycle_job(manifest_db)
-    assert "quote=MISS" in summary
-    assert "errors=1" in summary
+    with pytest.raises(RuntimeError, match="quote=MISS.*errors=1"):
+        collector.capture_cycle_job(manifest_db)
     row = manifest_db.execute(
         "SELECT api_errors FROM daily_data_manifest WHERE trading_day=?", ("2026-08-24",)
     ).fetchone()
@@ -298,10 +296,8 @@ def test_capture_cycle_job_isolates_source_level_options_budget_denial(
         raise collector.market_data.TradierError("shared budget denied")
 
     monkeypatch.setattr(collector.market_data, "get_chain", boom_if_called)
-    summary = collector.capture_cycle_job(manifest_db)
-    assert "quote=OK" in summary
-    assert "chain=MISS" in summary
-    assert "errors=1" in summary
+    with pytest.raises(RuntimeError, match="quote=OK chain=MISS errors=1"):
+        collector.capture_cycle_job(manifest_db)
 
 
 def test_bars_capture_job_skipped_when_budget_gate_blocks(monkeypatch, scratch_data_root):
@@ -560,3 +556,33 @@ def test_live_bar_capture_runs_each_minute_for_minute_scale_traders():
     job = next(job for job in engine.JOBS if job.name == "spy-bars-capture")
     assert job.interval == timedelta(minutes=1)
     assert job.callback is collector.bars_capture_job
+
+
+def test_permanent_chain_capture_is_not_serialized_behind_other_provider_jobs():
+    job = next(job for job in engine.JOBS if job.name == "spy-market-data-capture")
+    assert job.interval == timedelta(minutes=1)
+    assert job.background is True
+    assert job.provider_heavy is False
+    assert job.minute_aligned is True
+
+
+def test_permanent_capture_becomes_due_on_next_clock_minute(manifest_db, monkeypatch):
+    job = next(job for job in engine.JOBS if job.name == "spy-market-data-capture")
+    monkeypatch.setattr(engine.market_data, "market_is_open_now", lambda: (True, "open"))
+    engine.set_state(manifest_db, f"job:{job.name}", "2026-08-24T09:31:59-05:00")
+    assert engine.due(
+        manifest_db, job, datetime.fromisoformat("2026-08-24T09:32:00-05:00")
+    )
+
+
+def test_completed_day_grading_is_registered_and_persists_grade(manifest_db, monkeypatch):
+    job = next(job for job in engine.JOBS if job.name == "market-data-quality-grade")
+    assert job.callback is collector.grade_completed_days_job
+    monkeypatch.setattr(
+        collector.market_data, "now_ct", lambda: datetime(2026, 8, 25, 8, 0)
+    )
+    collector.ensure_manifest_row(manifest_db, "2026-08-24")
+    assert collector.grade_completed_days_job(manifest_db) == "2026-08-24:REJECT"
+    assert manifest_db.execute(
+        "SELECT grade FROM daily_data_manifest WHERE trading_day='2026-08-24'"
+    ).fetchone()[0] == "REJECT"
