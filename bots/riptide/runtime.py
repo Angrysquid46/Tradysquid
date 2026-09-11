@@ -20,6 +20,7 @@ from .evolution import EvolutionLoop, Outcome
 
 SCOREBOARD_BOT = "RIPTIDE"
 TELEMETRY_PATH = Path(__file__).resolve().parents[2] / "state" / "riptide" / "decision-telemetry.jsonl"
+POSITION_STATE_PATH = Path(__file__).resolve().parents[2] / "state" / "riptide" / "position-state.json"
 
 
 class RiptideRuntime:
@@ -33,6 +34,31 @@ class RiptideRuntime:
         self.telemetry_path = telemetry_path or TELEMETRY_PATH
         self.quote_loader = quote_loader or market_data.get_quote
         self.daily_history_loader = daily_history_loader or market_data.get_daily_history
+        self.position_state_path = (telemetry_path.parent / "position-state.json") if telemetry_path else POSITION_STATE_PATH
+
+    def _save_position_state(self) -> None:
+        position = self.engine.position
+        if position is None:
+            self.position_state_path.unlink(missing_ok=True)
+            return
+        payload = {
+            "trade_id": position.trade_id,
+            "setup": position.setup,
+            "entry_iv": position.entry_iv,
+            "entry_state": position.entry_state,
+            "policy_version": position.policy_version,
+        }
+        self.position_state_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.position_state_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        temporary.replace(self.position_state_path)
+
+    def _load_position_context(self, trade_id: str) -> dict:
+        try:
+            payload = json.loads(self.position_state_path.read_text(encoding="utf-8"))
+            return payload if payload.get("trade_id") == trade_id else {}
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            return {}
 
     @staticmethod
     def _contract_terms(symbol: str) -> tuple[str, float]:
@@ -75,13 +101,22 @@ class RiptideRuntime:
         row = scoreboard.current_position_status(connection, SCOREBOARD_BOT)
         if row is None:
             self.engine.position = None
+            self.position_state_path.unlink(missing_ok=True)
             return
         if self.engine.position is not None and self.engine.position.trade_id == str(row["trade_id"]):
             return
         side = str(row["side"]).lower()
         if side not in ("call", "put"):
             raise RuntimeError(f"invalid RIPTIDE side: {side!r}")
-        self.engine.position = Position(str(row["trade_id"]), str(row["contract_symbol"]), side, int(row["contracts"]), float(row["entry_price"]), datetime.fromisoformat(str(row["opened_at"])))
+        context = self._load_position_context(str(row["trade_id"]))
+        self.engine.position = Position(
+            str(row["trade_id"]), str(row["contract_symbol"]), side, int(row["contracts"]),
+            float(row["entry_price"]), datetime.fromisoformat(str(row["opened_at"])),
+            str(context.get("setup") or "RECOVERED"),
+            float(context["entry_iv"]) if context.get("entry_iv") is not None else None,
+            str(context.get("entry_state") or "UNKNOWN"),
+            int(context.get("policy_version") or 1),
+        )
 
     def evaluate(self, as_of: datetime, connection: sqlite3.Connection) -> Decision:
         self.recover(connection)
@@ -113,6 +148,7 @@ class RiptideRuntime:
             selected = next((row for row in options.get("contracts", []) if str(row.get("option_symbol")) == decision.contract_symbol), {})
             self.engine.apply_entry(decision, trade_id=trade_id, opened_at=as_of,
                                     entry_iv=float(selected["iv"]) if selected.get("iv") is not None else None)
+            self._save_position_state()
         elif decision.action == "EXIT":
             position = self.engine.position
             if position is None or decision.price is None:
@@ -126,6 +162,7 @@ class RiptideRuntime:
             self.evolution.record(Outcome(position.trade_id, self.engine.generation, (decision.price / position.entry_price) - 1, decision.reason, as_of.isoformat(), position.setup, position.entry_state, position.policy_version, (observed_at-opened_at).total_seconds()/60))
             self.evolution.evaluate(self.engine)
             self.engine.apply_exit(decision)
+            self._save_position_state()
         elif decision.action == "BUST":
             if self.engine.position is not None:
                 raise RuntimeError("cannot bust with an open position")

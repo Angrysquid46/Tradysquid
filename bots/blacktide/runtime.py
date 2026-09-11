@@ -18,15 +18,42 @@ SCOREBOARD_BOT = "BLACKTIDE"
 STATE_DIR = Path(__file__).resolve().parents[2] / "state" / "blacktide"
 DECISION_LOG_PATH = STATE_DIR / "decision-audit.jsonl"
 DECISION_STATE_PATH = STATE_DIR / "decision-audit-state.json"
+POSITION_STATE_PATH = STATE_DIR / "position-state.json"
 
 
 class BlacktideRuntime:
-    def __init__(self, *, engine: BLACKTIDE | None = None, market_view=None, evolution=None):
+    def __init__(self, *, engine: BLACKTIDE | None = None, market_view=None, evolution=None,
+                 position_state_path: Path | None = None):
         self.engine = engine or BLACKTIDE()
         self.market_view = market_view or backtest_lab.MarketView("SPY")
         self.evolution = evolution or EvolutionLoop()
         if hasattr(self.evolution, "apply"):
             self.evolution.apply(self.engine)
+        self.position_state_path = position_state_path or POSITION_STATE_PATH
+
+    def _save_position_state(self) -> None:
+        position = self.engine.position
+        if position is None:
+            self.position_state_path.unlink(missing_ok=True)
+            return
+        payload = {
+            "trade_id": position.trade_id,
+            "entry_state": position.entry_state,
+            "entry_family": position.entry_family,
+        }
+        self.position_state_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.position_state_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        temporary.replace(self.position_state_path)
+
+    def _load_position_context(self, trade_id: str) -> tuple[str, str]:
+        try:
+            payload = json.loads(self.position_state_path.read_text(encoding="utf-8"))
+            if payload.get("trade_id") == trade_id:
+                return str(payload.get("entry_state") or "UNKNOWN"), str(payload.get("entry_family") or "UNKNOWN")
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+        return "UNKNOWN", "UNKNOWN"
 
     @staticmethod
     def _record_decision(decision: Decision, as_of: datetime) -> None:
@@ -54,6 +81,8 @@ class BlacktideRuntime:
             if DECISION_STATE_PATH.exists():
                 previous = json.loads(DECISION_STATE_PATH.read_text(encoding="utf-8"))
             previous_at = datetime.fromisoformat(str(previous.get("observed_at") or "")) if previous.get("observed_at") else None
+            if previous_at and (previous_at.tzinfo is None) != (as_of.tzinfo is None):
+                previous_at = previous_at.replace(tzinfo=as_of.tzinfo)
             unchanged = previous.get("signature") == signature
             recent = bool(previous_at and (as_of - previous_at).total_seconds() < 300)
             if decision.action == "NO_ACTION" and unchanged and recent:
@@ -73,14 +102,20 @@ class BlacktideRuntime:
         row = scoreboard.current_position_status(connection, SCOREBOARD_BOT)
         if row is None:
             self.engine.position = None
+            self.position_state_path.unlink(missing_ok=True)
+            return
+        trade_id = str(row["trade_id"])
+        if self.engine.position is not None and self.engine.position.trade_id == trade_id:
             return
         side = str(row["side"]).lower()
         if side not in ("call", "put"):
             raise RuntimeError(f"invalid official BLACKTIDE side: {side!r}")
+        entry_state, entry_family = self._load_position_context(trade_id)
         self.engine.position = Position(
-            trade_id=str(row["trade_id"]), contract_symbol=str(row["contract_symbol"]),
+            trade_id=trade_id, contract_symbol=str(row["contract_symbol"]),
             side=side, contracts=int(row["contracts"]), entry_price=float(row["entry_price"]),
             opened_at=datetime.fromisoformat(str(row["opened_at"])),
+            entry_state=entry_state, entry_family=entry_family,
         )
 
     def evaluate(self, as_of: datetime, connection: sqlite3.Connection) -> Decision:
@@ -104,6 +139,7 @@ class BlacktideRuntime:
                 entry_bankroll=bankroll,
             )
             self.engine.apply_entry(decision, trade_id=trade_id, opened_at=as_of)
+            self._save_position_state()
         elif decision.action == "EXIT":
             position = self.engine.position
             if position is None or decision.price is None:
@@ -122,6 +158,7 @@ class BlacktideRuntime:
             ))
             self.evolution.evaluate(self.engine)
             self.engine.apply_exit(decision)
+            self._save_position_state()
         elif decision.action == "BUST":
             if self.engine.position is not None:
                 raise RuntimeError("cannot bust with an open position")
