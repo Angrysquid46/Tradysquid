@@ -117,6 +117,11 @@ def record_response_headers(response: Any) -> dict[str, int] | None:
     return state
 
 
+def _expiry_epoch_seconds(expiry: int) -> float:
+    """Normalize Tradier quota expiries, which may be Unix milliseconds."""
+    return expiry / 1000.0 if expiry >= 10_000_000_000 else float(expiry)
+
+
 def current_state() -> dict[str, int] | None:
     with _database() as db:
         row = db.execute("SELECT allowed,used,available,expiry FROM quota WHERE id=1").fetchone()
@@ -142,7 +147,7 @@ def request_allowed(priority: int) -> bool:
         now_value = int(time.time())
         reservations = int(row["reservations"])
         available = int(row["available"])
-        if expiry < 10_000_000_000 and expiry <= now_value:
+        if _expiry_epoch_seconds(expiry) <= now_value:
             reservations, available, expiry = 0, int(row["allowed"]), now_value + 60
             db.execute("UPDATE quota SET used=0,available=?,expiry=?,reservations=0,updated_at=? WHERE id=1", (available, expiry, time.time()))
         effective = max(0, available - reservations)
