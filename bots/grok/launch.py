@@ -10,6 +10,10 @@ import threading
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+from bots.grok.env_bootstrap import bootstrap
+
+bootstrap()
+
 from bots.grok.preflight import run_preflight
 from bots.grok.scheduler import build_runtime, build_scheduler
 
