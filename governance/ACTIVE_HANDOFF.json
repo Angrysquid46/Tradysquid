@@ -1,19 +1,5 @@
 {
-  "active": true,
-  "work_id": "46463979-6127-48c7-a5d7-8b0b20701700",
-  "actor": "Codex",
-  "task": "Add VOLT sensitive-movement trader and reset all competitors to fresh  generations",
-  "method": "Implement the owner-selected sensitive SURGE backtest winner as a separate isolated paper trader named VOLT; wire ownership, scoreboard, Discord, runtime, launcher and watchdog registration; test/deploy; verify all current positions flat; preserve completed history while recording clean new-generation starts at  for BLACKTIDE, RIPTIDE, SURGE, GROK and VOLT; launch and verify all runtimes.",
-  "started_at": "2026-09-06T21:32:16.333423-05:00",
-  "starting_commit": "a84ead72be30d43fd2dbf00fa2afca8c73cfbe73",
-  "process_id": 54828,
-  "owner_request": "Owner wants an independent live forward test of the best sensitive SURGE challenger and a fair same-day bankroll reset for every competitor.",
-  "before_state": "Active roster is BLACKTIDE/RIPTIDE/SURGE/GROK. All official positions were verified flat. Existing histories: BLACKTIDE 188 trades generation 1, RIPTIDE 334 trades generation 2, SURGE 89 trades generation 1, GROK zero trades. VOLT does not exist.",
-  "reason": "Owner wants an independent live forward test of the best sensitive SURGE challenger and a fair same-day bankroll reset for every competitor.",
-  "intended_scope": "New bots/volt private package, shared roster/presentation/Discord/ownership/runtime launch declarations and tests, plus owner-authorized neutral generation reset events after deployment. Preserve immutable completed trades. No brokerage execution and no frozen updater changes.",
-  "expected_effects": "Five isolated paper traders begin new official generations at exactly  with prior history retained; VOLT uses the tested signal_window=3, efficiency_floor=.15, score_floor=.60, expansion_weight=.35 and otherwise current SURGE risk/exits; all five appear and run independently.",
-  "required_tests": "Trader isolation/preflight/runtime/recovery/scheduler tests; roster/scoreboard/Discord/surface tests; full repository suite; GitHub CI; updater receipt; flat-state reset verification; five runtime listeners/cycles; Discord cards.",
-  "risks": "Reset must never occur with an open position; copying only the explicitly owner-selected SURGE challenger is authorized; new port and process must not collide; reset events must preserve immutable history; after-hours health is not proof of trading.",
-  "next_safe_action_if_interrupted": "Inspect current launch/watchdog and scoreboard generation APIs, implement VOLT and shared wiring, then test before any reset or live state mutation.",
-  "phase": "Phase 15"
+  "active": false,
+  "work_id": null,
+  "cleared_at": "2026-09-11T07:55:34.925746-05:00"
 }
