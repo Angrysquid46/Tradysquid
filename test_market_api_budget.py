@@ -8,6 +8,9 @@ import pytest
 import market_api_budget as budget
 
 
+FUTURE_EXPIRY_MS = "9999999999999"
+
+
 @pytest.fixture(autouse=True)
 def reset_state(tmp_path, monkeypatch):
     monkeypatch.setattr(budget, "DB_PATH", tmp_path / "budget.db")
@@ -24,10 +27,10 @@ class FakeResponse:
 def test_record_response_headers_parses_real_shaped_response():
     response = FakeResponse({
         "X-Ratelimit-Allowed": "120", "X-Ratelimit-Used": "1",
-        "X-Ratelimit-Available": "119", "X-Ratelimit-Expiry": "1787593740000",
+        "X-Ratelimit-Available": "119", "X-Ratelimit-Expiry": FUTURE_EXPIRY_MS,
     })
     state = budget.record_response_headers(response)
-    assert state == {"allowed": 120, "used": 1, "available": 119, "expiry": 1787593740000}
+    assert state == {"allowed": 120, "used": 1, "available": 119, "expiry": int(FUTURE_EXPIRY_MS)}
     assert budget.current_state() == state
 
 
@@ -40,7 +43,7 @@ def test_record_response_headers_returns_none_when_headers_missing():
 def test_record_response_headers_returns_none_for_malformed_values():
     response = FakeResponse({
         "X-Ratelimit-Allowed": "not-a-number", "X-Ratelimit-Used": "1",
-        "X-Ratelimit-Available": "119", "X-Ratelimit-Expiry": "1787593740000",
+        "X-Ratelimit-Available": "119", "X-Ratelimit-Expiry": FUTURE_EXPIRY_MS,
     })
     assert budget.record_response_headers(response) is None
 
@@ -72,7 +75,7 @@ def _set_available_fraction(fraction: float) -> None:
         "X-Ratelimit-Allowed": str(allowed),
         "X-Ratelimit-Used": str(allowed - available),
         "X-Ratelimit-Available": str(available),
-        "X-Ratelimit-Expiry": "1787593740000",
+        "X-Ratelimit-Expiry": FUTURE_EXPIRY_MS,
     }))
 
 
@@ -122,11 +125,27 @@ def test_secondary_priorities_preserve_final_forty_percent():
         assert budget.request_allowed(priority) is False
 
 
+def test_expired_millisecond_window_clears_crashed_process_reservations(monkeypatch):
+    monkeypatch.setattr(budget.time, "time", lambda: 2_000_000_000.0)
+    budget.record_response_headers(FakeResponse({
+        "X-Ratelimit-Allowed": "120", "X-Ratelimit-Used": "120",
+        "X-Ratelimit-Available": "0", "X-Ratelimit-Expiry": "1999999999000",
+    }))
+    with budget._database() as db:
+        db.execute("UPDATE quota SET reservations=95 WHERE id=1")
+
+    assert budget.request_allowed(budget.PRIORITY_SECONDARY_CONTEXT) is True
+
+    with budget._database() as db:
+        row = db.execute("SELECT used, available, reservations FROM quota WHERE id=1").fetchone()
+    assert tuple(row) == (0, 120, 1)
+
+
 def test_cross_process_reservations_are_atomic(tmp_path):
     shared = tmp_path / "cross-process.db"
     monkey_headers = FakeResponse({
         "X-Ratelimit-Allowed": "10", "X-Ratelimit-Used": "0",
-        "X-Ratelimit-Available": "10", "X-Ratelimit-Expiry": "1787593740000",
+        "X-Ratelimit-Available": "10", "X-Ratelimit-Expiry": FUTURE_EXPIRY_MS,
     })
     original = budget.DB_PATH
     budget.DB_PATH = shared
