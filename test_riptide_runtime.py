@@ -35,6 +35,21 @@ def test_runtime_records_immutable_round_trip(tmp_path, monkeypatch):
                              telemetry_path=tmp_path / "decision-telemetry.jsonl")
     assert runtime.evaluate(NOW, connection).action == "ENTER"
     assert scoreboard.current_position_status(connection, "RIPTIDE") is not None
+    expected = (
+        runtime.engine.position.setup,
+        runtime.engine.position.entry_state,
+        runtime.engine.position.policy_version,
+        runtime.engine.position.entry_iv,
+    )
+    runtime = RiptideRuntime(market_view=view, evolution=EvolutionLoop(tmp_path / "outcomes.jsonl"),
+                             telemetry_path=tmp_path / "decision-telemetry.jsonl")
+    runtime.recover(connection)
+    assert (
+        runtime.engine.position.setup,
+        runtime.engine.position.entry_state,
+        runtime.engine.position.policy_version,
+        runtime.engine.position.entry_iv,
+    ) == expected
     view.bid = 1.55
     assert runtime.evaluate(NOW + timedelta(minutes=1), connection).action == "EXIT"
     assert scoreboard.trade_count(connection, "RIPTIDE") == 1
