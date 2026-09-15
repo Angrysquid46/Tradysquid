@@ -19,7 +19,7 @@ class VoltRuntime:
         except (OSError,ValueError,TypeError,KeyError):pass
         self.engine.position=Position(str(row["trade_id"]),str(row["contract_symbol"]),str(row["side"]).lower(),int(row["contracts"]),float(row["entry_price"]),datetime.fromisoformat(str(row["opened_at"])),peak)
     def evaluate(self,as_of:datetime,c:sqlite3.Connection)->Decision:
-        self.recover(c);bankroll=scoreboard.current_bankroll(c,BOT);market=self.market_view.market_as_of(as_of);options=self.market_view.options_as_of(as_of);bars=self.market_view.bars_as_of(as_of,lookback_minutes=60)
+        self.recover(c);bankroll=scoreboard.current_bankroll(c,BOT);market=self.market_view.market_as_of(as_of);options=self.market_view.options_as_of(as_of);bars=self.market_view.bars_as_of(as_of,lookback_minutes=180)
         d=self.engine.decide(as_of,bankroll,market,options,bars);self.telemetry_path.parent.mkdir(parents=True,exist_ok=True)
         with self.telemetry_path.open("a",encoding="utf-8") as f:f.write(json.dumps({**asdict(d),"observed_at":as_of.isoformat(),"bankroll":bankroll},sort_keys=True)+"\n")
         if self.engine.position:POSITION_STATE.write_text(json.dumps({"trade_id":self.engine.position.trade_id,"peak_bid":self.engine.position.peak_bid}),encoding="utf-8")

@@ -6,6 +6,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
+from market_direction import assess_market_direction, trade_direction_permission
+
 from .amcte import MarketState, build_vector, opportunity
 
 BOT_ID = "BLACKTIDE_SPY"
@@ -78,6 +80,11 @@ class BLACKTIDE:
         if setup is None:
             return Decision("NO_ACTION", f"no approved transition in {vector.state.value}")
         side = setup.side
+        direction = assess_market_direction(bars)
+        countertrend = any(token in setup.family.upper() for token in ("REVERS", "FAILED", "FADE", "SNAPBACK", "RECLAIM"))
+        permission = trade_direction_permission(direction, side, countertrend_setup=countertrend)
+        if not permission.allowed:
+            return Decision("NO_ACTION", permission.reason, family=setup.family, market_state=direction.direction)
         candidates = [c for c in raw_contracts if self._eligible(c, side, as_of)]
         if not candidates:
             return Decision("NO_ACTION", "no liquid same-day contract qualifies")
@@ -86,12 +93,13 @@ class BLACKTIDE:
             return Decision("BUST", "entire bankroll cannot afford any qualifying contract")
         contract = min(affordable, key=lambda c: (abs(abs(float(c["delta"])) - 0.50), float(c["ask"])))
         ask = float(contract["ask"])
-        contracts = int((bankroll * self.parameters.risk_fraction) // (ask * CONTRACT_MULTIPLIER))
+        effective_risk = self.parameters.risk_fraction * permission.size_multiplier
+        contracts = int((bankroll * effective_risk) // (ask * CONTRACT_MULTIPLIER))
         if contracts < 1:
             return Decision("NO_ACTION", "preferred risk allocation cannot fund one contract")
         return Decision("ENTER", "private directional/liquidity criteria met",
                         str(contract["option_symbol"]), side, contracts, ask,
-                        setup.family, vector.state.value)
+                        setup.family, f"{vector.state.value}|{direction.direction}|{permission.relationship}")
 
     @staticmethod
     def _critical_quality(contract: dict[str, Any]) -> bool:
@@ -125,12 +133,18 @@ class BLACKTIDE:
         change = bid / self.position.entry_price - 1
         held = (as_of - self.position.opened_at).total_seconds() / 60
         vector = build_vector(bars, options_quality=1.0)
+        direction = assess_market_direction(bars)
         invalidated = vector is not None and (
             (self.position.side == "call" and vector.control_delta < -.18)
             or (self.position.side == "put" and vector.control_delta > .18)
             or vector.state in (MarketState.DISORDER, MarketState.FAILED_EXPANSION)
         )
-        if invalidated:
+        direction_invalidated = (
+            self.position.side == "call" and direction.direction == "DOWN" and not direction.up_reversal_confirmed
+        ) or (
+            self.position.side == "put" and direction.direction == "UP" and not direction.down_reversal_confirmed
+        )
+        if invalidated or direction_invalidated:
             return Decision("EXIT", "market-control invalidation", self.position.contract_symbol,
                             self.position.side, self.position.contracts, bid)
         if change >= self.parameters.take_profit_pct:

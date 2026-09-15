@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from market_direction import assess_market_direction, trade_direction_permission
+
 MULTIPLIER=100
 @dataclass
 class Position:
@@ -39,8 +41,10 @@ class Surge:
             quote=next((x for x in options.get("contracts",[]) if x.get("option_symbol")==self.position.symbol),None)
             if not quote or quote.get("data_class")!="VERIFIED_REAL" or quote.get("bid") is None:return Decision("NO_ACTION","OPEN_POSITION_QUOTE_UNAVAILABLE")
             bid=float(quote["bid"]);self.position.peak_bid=max(self.position.peak_bid,bid);change=bid/self.position.entry-1;peak=self.position.peak_bid/self.position.entry-1;held=(as_of-self.position.opened_at).total_seconds()/60
+            direction=assess_market_direction(bars);against=(self.position.side=="call" and direction.direction=="DOWN" and not direction.up_reversal_confirmed) or (self.position.side=="put" and direction.direction=="UP" and not direction.down_reversal_confirmed)
             reason=None
             if change<=-.20:reason="FAST_FAILURE_STOP"
+            elif against:reason="MULTI_TIMEFRAME_DIRECTION_INVALIDATION"
             elif peak>=.08 and bid<=self.position.peak_bid*.90:reason="PROFIT_TRAIL"
             elif held>=1 and (state=="CHOP" or (side and side!=self.position.side)):reason="IMPULSE_REVERSAL"
             elif held>=12:reason="MAX_HOLD"
@@ -48,10 +52,12 @@ class Surge:
             return Decision("NO_ACTION","HOLDING")
         if market.get("tier")!="A" or options.get("tier") not in {"A","B"}:return Decision("NO_ACTION","TIER_A_REQUIRED")
         if not side:return Decision("NO_ACTION",state,score=score)
+        direction=assess_market_direction(bars);permission=trade_direction_permission(direction,side,countertrend_setup=True)
+        if not permission.allowed:return Decision("NO_ACTION",permission.reason,side=side,score=score)
         contract=self.contract(options,side,bankroll)
         if not contract:return Decision("NO_ACTION","NO_AFFORDABLE_CONTRACT",score=score)
-        ask=float(contract["ask"]);qty=int(bankroll*.35//(ask*100))
+        ask=float(contract["ask"]);qty=int(bankroll*.35*permission.size_multiplier//(ask*100))
         if qty<1:return Decision("NO_ACTION","NO_AFFORDABLE_CONTRACT",score=score)
-        return Decision("ENTER","THREE_MINUTE_IMPULSE",side,str(contract["option_symbol"]),ask,qty,score)
+        return Decision("ENTER",f"THREE_MINUTE_IMPULSE; {permission.reason}",side,str(contract["option_symbol"]),ask,qty,score)
     def apply_entry(self,d,trade_id,opened_at,bid):self.position=Position(trade_id,str(d.contract_symbol),str(d.side),d.contracts,float(d.price),opened_at,bid)
     def apply_exit(self):self.position=None

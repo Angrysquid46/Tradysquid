@@ -37,3 +37,12 @@ def test_owner_reset_preserves_history_and_starts_new_generation(tmp_path, monke
         assert scoreboard.current_generation(c,"VOLT") == 2
         assert scoreboard.current_bankroll(c,"VOLT") == 1000
     finally:c.close()
+
+
+def test_sensitive_bounce_cannot_buy_call_against_unconfirmed_downtrend():
+    values=[510-index*.12 for index in range(55)]+[503.5,503.56,503.63,503.70]
+    observed=[{"close":x,"high":x+.04,"low":x-.04,"volume":1000} for x in values]
+    contract={"data_class":"VERIFIED_REAL","side":"call","bid":.95,"ask":1.,"delta":.5,"option_symbol":"x"}
+    decision=Volt().decide(datetime.now(),1000,{"tier":"A"},{"tier":"A","contracts":[contract]},observed)
+    assert decision.action=="NO_ACTION"
+    assert "conflicts with verified direction" in decision.reason

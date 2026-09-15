@@ -6,6 +6,7 @@ from pathlib import Path
 from statistics import fmean
 import json,duckdb
 import backtest_lab
+from market_direction import assess_market_direction,trade_direction_permission
 
 ROOT=Path(__file__).resolve().parent
 @dataclass
@@ -20,6 +21,7 @@ class StrategyConfig:
     trail_activation:float=.15; trail_giveback:float=.10
     reversal_delay:float=1.5; max_hold:float=12.; max_spread:float=.18
     delta_low:float=.35; delta_high:float=.65
+    direction_filter:bool=True
 
 def _signal(bars,config=StrategyConfig()):
     if len(bars)<20:return None,0.,"INSUFFICIENT"
@@ -81,7 +83,7 @@ def load_snapshots(start:date,end:date):
 
 def replay(snapshots,start:date,end:date,bankroll=1000.,config=StrategyConfig(),fill_penalty=0.):
     position=None; trades=[]; consumed=None; prior_day=None; last_bid=None; last_time=None
-    stats={"evaluations":0,"chop_rejections":0,"weak_rejections":0,"duplicate_evidence_rejections":0,"entries":0}
+    stats={"evaluations":0,"chop_rejections":0,"weak_rejections":0,"direction_rejections":0,"duplicate_evidence_rejections":0,"entries":0}
     def close(at,bid,reason):
         nonlocal position,bankroll
         pnl=(bid-position["ask"])*position["qty"]*100; bankroll+=pnl
@@ -104,11 +106,13 @@ def replay(snapshots,start:date,end:date,bankroll=1000.,config=StrategyConfig(),
             continue
         if state=="CHOP":stats["chop_rejections"]+=1;continue
         if not side:stats["weak_rejections"]+=1;continue
+        permission=trade_direction_permission(assess_market_direction(bars),side,countertrend_setup=True) if config.direction_filter else None
+        if permission is not None and not permission.allowed:stats["direction_rejections"]+=1;continue
         evidence=(str(bars[-1].get("bar_timestamp") or bars[-1].get("bar_time")),side)
         if evidence==consumed:stats["duplicate_evidence_rejections"]+=1;continue
         contract=_contract(opts,side,bankroll,config)
         if not contract:continue
-        ask=float(contract["ask"])+fill_penalty; qty=int(bankroll*config.allocation//(ask*100))
+        ask=float(contract["ask"])+fill_penalty; size_multiplier=permission.size_multiplier if permission is not None else 1.; qty=int(bankroll*config.allocation*size_multiplier//(ask*100))
         if qty<1:continue
         last_bid=max(0.,float(contract["bid"])-fill_penalty);last_time=now
         position={"time":now,"side":side,"symbol":contract["option_symbol"],"ask":ask,"peak_bid":last_bid,"qty":qty,"score":score};consumed=evidence;stats["entries"]+=1

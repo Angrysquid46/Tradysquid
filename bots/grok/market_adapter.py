@@ -12,6 +12,8 @@ from datetime import datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from market_direction import assess_market_direction
+
 CENTRAL = ZoneInfo("America/Chicago")
 MARKET_CLOSE = time(15, 0)
 logger = logging.getLogger("grok.market_adapter")
@@ -81,6 +83,7 @@ def _bars_to_features(bars: list[dict[str, Any]]) -> dict[str, Any]:
         "relative_volume": rel_vol,
         "last_close": closes[-1],
         "bar_count": len(closes),
+        "market_direction": assess_market_direction(bars).as_dict(),
     }
 
 
@@ -193,7 +196,7 @@ class GrokMarketAdapter:
         mv = self._market_view()
         if mv is not None:
             try:
-                bars = mv.bars_as_of(as_of, lookback_minutes=60) or []
+                bars = mv.bars_as_of(as_of, lookback_minutes=180) or []
                 if isinstance(bars, dict):
                     bars = bars.get("bars") or bars.get("data") or []
                 feat = _bars_to_features(list(bars))

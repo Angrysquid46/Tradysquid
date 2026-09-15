@@ -125,7 +125,7 @@ class RiptideRuntime:
         if decision is None:
             market = self.market_view.market_as_of(as_of)
             options = self._add_direct_position_quote(self.market_view.options_as_of(as_of))
-            bars = self.market_view.bars_as_of(as_of, lookback_minutes=90)
+            bars = self.market_view.bars_as_of(as_of, lookback_minutes=180)
             decision = self.engine.decide(
                 as_of=as_of,
                 bankroll=bankroll,

@@ -31,3 +31,14 @@ def test_replay_liquidates_at_last_observed_bid():
     snap=[(datetime(2026,8,24,10),bs,{"contracts":[contract],"_by_symbol":{"x":contract}})]
     result=replay(snap,datetime(2026,8,24).date(),datetime(2026,8,24).date(),config=config)
     assert result["trades"][0]["reason"]=="END_OF_SESSION"
+
+def test_replay_direction_filter_rejects_small_countertrend_bounce():
+    config=StrategyConfig(signal_window=3,score_floor=.2,efficiency_floor=.1,direction_filter=True)
+    values=[510-index*.12 for index in range(55)]+[503.5,503.56,503.63,503.70]
+    bs=bars(values)
+    for i,x in enumerate(bs):x["bar_timestamp"]=i
+    contract={"data_class":"VERIFIED_REAL","side":"call","bid":1.,"ask":1.05,"delta":.5,"option_symbol":"x"}
+    snap=[(datetime(2026,8,24,10),bs,{"contracts":[contract],"_by_symbol":{"x":contract}})]
+    result=replay(snap,datetime(2026,8,24).date(),datetime(2026,8,24).date(),config=config)
+    assert result["stats"]["direction_rejections"]==1
+    assert result["trades"]==[]

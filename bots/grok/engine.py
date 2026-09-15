@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from market_direction import MarketDirection, trade_direction_permission
+
 
 @dataclass
 class SetupCandidate:
@@ -30,6 +32,7 @@ class Decision:
     reason: str = ""
     candidates_considered: list[SetupCandidate] = field(default_factory=list)
     rejected: list[dict[str, str]] = field(default_factory=list)
+    direction_size_multiplier: float = 1.0
 
 
 BOOTSTRAP_PARAMS = {
@@ -236,14 +239,27 @@ def evaluate_entry(
         )
 
     best = max(candidates, key=lambda c: (c.confidence, c.score))
+    raw_direction = features.get("market_direction")
+    try:
+        direction = MarketDirection(**raw_direction)
+    except (TypeError, ValueError):
+        direction = MarketDirection(
+            "MIXED", 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, {}, {}, False, False, int(features.get("bar_count") or 0),
+        )
+    permission = trade_direction_permission(direction, best.side)
+    if not permission.allowed:
+        rejected.append({"family": best.family, "reason": permission.reason})
+        return Decision(action="NO_ACTION", reason=permission.reason, rejected=rejected)
     return Decision(
         action="ENTER",
         side=best.side,
         family=best.family,
         confidence=best.confidence,
-        reason=best.reason,
+        reason=f"{best.reason}; {permission.reason}",
         candidates_considered=candidates,
         rejected=rejected,
+        direction_size_multiplier=permission.size_multiplier,
     )
 
 
@@ -261,6 +277,20 @@ def evaluate_exit(
     entry_price = float(position.get("entry_price") or 0.0)
     if entry_price <= 0 or current_bid <= 0:
         return Decision(action="HOLD", reason="waiting on a real bid")
+
+    raw_direction = features.get("market_direction")
+    try:
+        direction = MarketDirection(**raw_direction)
+        position_side = str(position.get("side") or "").lower()
+        against = (
+            position_side == "call" and direction.direction == "DOWN" and not direction.up_reversal_confirmed
+        ) or (
+            position_side == "put" and direction.direction == "UP" and not direction.down_reversal_confirmed
+        )
+        if against:
+            return Decision(action="EXIT", reason="multi-timeframe direction invalidation")
+    except (TypeError, ValueError):
+        pass
 
     if minutes_to_close <= p["eod_flatten_minutes_before_close"]:
         return Decision(action="EXIT", reason="eod flatten")

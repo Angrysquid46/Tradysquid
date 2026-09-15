@@ -5,6 +5,8 @@ from datetime import datetime
 from statistics import fmean, pstdev
 from typing import Any, Literal
 
+from market_direction import assess_market_direction, trade_direction_permission
+
 BOT_ID="RIPTIDE_SPY"; STARTING_BANKROLL=1000.; CONTRACT_MULTIPLIER=100
 FAMILIES=("MOMENTUM_CHASE","FAILED_MOVE_FADE","VOLATILITY_EXPANSION","COMPRESSION_RELEASE","REVERSAL_ATTEMPT","TREND_CONTINUATION","OVEREXTENSION_SNAPBACK","VWAP_RECLAIM_REJECTION","RANGE_EDGE_SPECULATION","MICROSTRUCTURE_DISLOCATION","LATE_CONFIRMATION_CHASE","CONTROLLED_EXPLORATION")
 
@@ -56,16 +58,21 @@ class Riptide:
         floor=max(self.parameters.minimum_action_floor,self.parameters.base_action_floor-pressure*self.parameters.pressure_floor_reduction)
         pool=[x for x in candidates if x.score>=floor]
         if not pool:return Decision("NO_ACTION","every opportunity below documented actionability floor",action_pressure=pressure,action_floor=floor,market_state=f.state,candidates=candidates)
-        chosen=self._explore(pool,as_of,pressure)
+        direction=assess_market_direction(bars)
+        permitted=[(candidate,trade_direction_permission(direction,candidate.side,countertrend_setup=candidate.style=="CONTRARIAN")) for candidate in pool]
+        allowed=[candidate for candidate,permission in permitted if permission.allowed]
+        if not allowed:return Decision("NO_ACTION","all setups conflict with verified direction without confirmed reversal",action_pressure=pressure,action_floor=floor,market_state=direction.direction,candidates=candidates)
+        chosen=self._explore(allowed,as_of,pressure)
+        permission=trade_direction_permission(direction,chosen.side,countertrend_setup=chosen.style=="CONTRARIAN")
         eligible=[x for x in options.get("contracts",[]) if self._eligible(x,chosen.side,as_of)]
         if not eligible:return Decision("NO_ACTION","no legitimate same-day contract qualifies",action_pressure=pressure,action_floor=floor,market_state=f.state,candidates=candidates)
         affordable=[x for x in eligible if float(x["ask"])*100<=bankroll]
         if not affordable:return Decision("BUST","entire bankroll cannot afford a legitimate qualifying contract",action_pressure=pressure,action_floor=floor,market_state=f.state,candidates=candidates)
         target=.38+.12*chosen.opportunity
         contract=min(affordable,key=lambda x:(abs(abs(float(x["delta"]))-target),(float(x["ask"])-float(x["bid"]))/float(x["ask"]),float(x["ask"])))
-        ask=float(contract["ask"]); ruin=clamp(bankroll/1000,.20,1.); wager=min(self.parameters.maximum_risk_fraction,self.parameters.base_risk_fraction+.12*pressure+.12*chosen.score)*ruin
+        ask=float(contract["ask"]); ruin=clamp(bankroll/1000,.20,1.); wager=min(self.parameters.maximum_risk_fraction,self.parameters.base_risk_fraction+.12*pressure+.12*chosen.score)*ruin*permission.size_multiplier
         qty=max(1,int(bankroll*wager//(ask*100)))
-        return Decision("ENTER",chosen.reason,str(contract["option_symbol"]),chosen.side,qty,ask,chosen.family,pressure,floor,f.state,candidates)
+        return Decision("ENTER",f"{chosen.reason}; {permission.reason}",str(contract["option_symbol"]),chosen.side,qty,ask,chosen.family,pressure,floor,f"{f.state}|{direction.direction}|{permission.relationship}",candidates)
     def _features(self,bars:list[dict[str,Any]])->Features:
         rows=bars[-60:]; c=[float(x["close"]) for x in rows]; h=[float(x["high"]) for x in rows]; l=[float(x["low"]) for x in rows]; v=[max(0.,float(x.get("volume") or 0)) for x in rows]
         r=[c[i]/c[i-1]-1 for i in range(1,len(c)) if c[i-1]]; vol=pstdev(r[-20:]) if len(r)>1 else 0.; short=c[-1]/c[-4]-1; med=c[-1]/c[-10]-1; long=c[-1]/c[0]-1
@@ -102,6 +109,8 @@ class Riptide:
         try:
             f=self._features(bars); state=f.state
             failed=(self.position.side=="call" and f.direction<-.18) or (self.position.side=="put" and f.direction>.18)
+            direction=assess_market_direction(bars)
+            failed=failed or (self.position.side=="call" and direction.direction=="DOWN" and not direction.up_reversal_confirmed) or (self.position.side=="put" and direction.direction=="UP" and not direction.down_reversal_confirmed)
         except (IndexError,KeyError,TypeError,ValueError,ZeroDivisionError):
             pass
         reason="end-of-session liquidation" if t.hour*60+t.minute>=900 else "aggressive profit capture" if ch>=self.parameters.take_profit_pct else "loss intolerance stop" if ch<=-self.parameters.stop_loss_pct else "directional reversal invalidation" if failed else "rapid-turnover maximum holding time" if held>=self.parameters.max_hold_minutes else None
