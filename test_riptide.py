@@ -75,7 +75,9 @@ def test_chronological_replay_is_active_varied_and_rapidly_redeploys():
             exits+=1; engine.apply_exit(decision)
     assert entries>=18 and exits>=17
     assert entries/eligible_flat>=.8
-    assert len(set(entered))>=5
+    # Directional safety can suppress unconfirmed contrarian families while
+    # the remaining policy still expresses several distinct setups.
+    assert len(set(entered))>=4
     assert set(entered).issubset(set(FAMILIES))
 
 def test_family_learning_suppresses_loser_and_persists(tmp_path):

@@ -227,3 +227,13 @@ def test_grok_learned_risk_multiplier_controls_live_sizing():
     normal=decide_contracts(.50,1000,.8,.05,{"risk_multiplier":1.0})
     defensive=decide_contracts(.50,1000,.8,.05,{"risk_multiplier":.35})
     assert 1<=defensive<normal
+
+
+def test_grok_short_bounce_cannot_override_verified_downtrend():
+    from market_direction import assess_market_direction
+    observed=[{"close":510-index*.12,"high":510-index*.12+.04,"low":510-index*.12-.04,"volume":1000} for index in range(60)]
+    observed += [{"close":502.9+i*.06,"high":502.94+i*.06,"low":502.86+i*.06,"volume":1000} for i in range(5)]
+    features={"ret_3m":.0004,"ret_5m":.0005,"rsi_14":55,"adx_14":20,"bb_width":.01,"vwap_distance_pct":.0002,"relative_volume":1.0,"market_direction":assess_market_direction(observed).as_dict()}
+    decision=evaluate_entry(features,[{"symbol":"SPY260915C00760000"}],1000)
+    assert decision.action=="NO_ACTION"
+    assert "conflicts with verified direction" in decision.reason

@@ -126,7 +126,7 @@ class BlacktideRuntime:
             bankroll=bankroll,
             market=self.market_view.market_as_of(as_of),
             options=self.market_view.options_as_of(as_of),
-            bars=self.market_view.bars_as_of(as_of, lookback_minutes=120),
+            bars=self.market_view.bars_as_of(as_of, lookback_minutes=180),
         )
         self._record_decision(decision, as_of)
         if decision.action == "ENTER":

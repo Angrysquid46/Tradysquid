@@ -180,6 +180,7 @@ class GrokRuntime:
         contracts = decide_contracts(
             selected.ask, bankroll, decision.confidence, selected.spread_pct,params
         )
+        contracts = int(contracts * decision.direction_size_multiplier)
         if contracts < 1:
             return self._record_cycle(Decision(action="NO_ACTION", reason="unaffordable after sizing"),bankroll=bankroll,generation=gen)
 
