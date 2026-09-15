@@ -237,3 +237,13 @@ def test_grok_short_bounce_cannot_override_verified_downtrend():
     decision=evaluate_entry(features,[{"symbol":"SPY260915C00760000"}],1000)
     assert decision.action=="NO_ACTION"
     assert "conflicts with verified direction" in decision.reason
+
+
+def test_grok_preflight_allows_recovery_of_its_official_open_position(monkeypatch):
+    import bots.grok.runtime as runtime_module
+    monkeypatch.setattr("scoreboard.current_position_status", lambda *_: {"trade_id": "g-open"})
+    runtime=runtime_module.GrokRuntime.__new__(runtime_module.GrokRuntime)
+    runtime.sb=object()
+    runtime.is_session_open=lambda:True
+    runtime.provider_ok=lambda:True
+    assert runtime.preflight()
