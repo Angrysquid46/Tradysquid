@@ -96,7 +96,12 @@ class GrokRuntime:
             # monitoring even if the provider is temporarily unreachable.
             # Live cycles independently fail closed on absent bars/chains.
             provider_reachable=provider_reachable if (session_open or pos is not None) else True,
-            no_open_position=pos is None,
+            # recover() has already adopted GROK's one authoritative official
+            # position.  That position must not make a safe process restart
+            # impossible; cycle() continues to manage it and cannot open a
+            # second trade while it exists.  --require-clean-start remains the
+            # separate launch-time gate for callers demanding a flat start.
+            no_open_position=True,
             # Session availability controls decision cycles, not process
             # availability. Keeping the runtime online after hours allows
             # recovery and monitoring without permitting an off-hours trade;
