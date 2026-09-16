@@ -37,7 +37,6 @@ class Decision:
     action_floor:float=1.; market_state:str|None=None
     candidates:tuple[Candidate,...]=field(default_factory=tuple)
     minimum_qualifying_cost:float|None=None
-    maximum_permitted_cost:float|None=None
 @dataclass(frozen=True)
 class Features:
     direction:float; acceleration:float; volatility:float; expansion:float
@@ -69,7 +68,7 @@ class Riptide:
         eligible=[x for x in options.get("contracts",[]) if self._eligible(x,chosen.side,as_of)]
         if not eligible:return Decision("NO_ACTION","no legitimate same-day contract qualifies",action_pressure=pressure,action_floor=floor,market_state=f.state,candidates=candidates)
         affordable=[x for x in eligible if float(x["ask"])*100<=bankroll]
-        if not affordable:return Decision("BUST","entire bankroll cannot afford a legitimate qualifying contract",action_pressure=pressure,action_floor=floor,market_state=f.state,candidates=candidates,minimum_qualifying_cost=min(float(x["ask"])*100 for x in eligible),maximum_permitted_cost=bankroll)
+        if not affordable:return Decision("BUST","entire bankroll cannot afford a legitimate qualifying contract",action_pressure=pressure,action_floor=floor,market_state=f.state,candidates=candidates,minimum_qualifying_cost=min(float(x["ask"])*100 for x in eligible))
         target=.38+.12*chosen.opportunity
         contract=min(affordable,key=lambda x:(abs(abs(float(x["delta"]))-target),(float(x["ask"])-float(x["bid"]))/float(x["ask"]),float(x["ask"])))
         ask=float(contract["ask"]); ruin=clamp(bankroll/1000,.20,1.); wager=min(self.parameters.maximum_risk_fraction,self.parameters.base_risk_fraction+.12*pressure+.12*chosen.score)*ruin*permission.size_multiplier

@@ -11,7 +11,7 @@ class Position:
     trade_id:str; symbol:str; side:str; contracts:int; entry:float; opened_at:datetime; peak_bid:float
 @dataclass(frozen=True)
 class Decision:
-    action:str; reason:str; side:str|None=None; contract_symbol:str|None=None; price:float|None=None; contracts:int=0; score:float=0.; minimum_qualifying_cost:float|None=None; maximum_permitted_cost:float|None=None
+    action:str; reason:str; side:str|None=None; contract_symbol:str|None=None; price:float|None=None; contracts:int=0; score:float=0.; minimum_qualifying_cost:float|None=None
 
 class Surge:
     def __init__(self):self.generation=1;self.position=None
@@ -56,8 +56,9 @@ class Surge:
         if not permission.allowed:return Decision("NO_ACTION",permission.reason,side=side,score=score)
         contract=self.contract(options,side)
         if not contract:return Decision("NO_ACTION","NO_QUALIFYING_CONTRACT",score=score)
-        ask=float(contract["ask"]);cost=ask*100;budget=bankroll*.35*permission.size_multiplier;qty=int(budget//cost)
-        if qty<1:return Decision("BUST","effective risk allocation cannot fund one qualifying contract",score=score,minimum_qualifying_cost=cost,maximum_permitted_cost=min(bankroll,budget))
+        ask=float(contract["ask"]);cost=ask*100
+        if cost>bankroll+.01:return Decision("BUST","entire bankroll cannot fund one qualifying contract",score=score,minimum_qualifying_cost=cost)
+        qty=max(1,int(bankroll*.35*permission.size_multiplier//cost))
         return Decision("ENTER",f"THREE_MINUTE_IMPULSE; {permission.reason}",side,str(contract["option_symbol"]),ask,qty,score)
     def apply_entry(self,d,trade_id,opened_at,bid):self.position=Position(trade_id,str(d.contract_symbol),str(d.side),d.contracts,float(d.price),opened_at,bid)
     def apply_exit(self):self.position=None

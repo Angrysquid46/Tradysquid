@@ -122,24 +122,6 @@ def test_generation_transitions_are_sequential_and_referee_enforced(db):
         sb.record_generation_event(db, bot="BLACKTIDE", generation=2, event="STARTED")
 
 
-def test_effective_affordability_evidence_allows_bust_with_positive_bankroll(db):
-    sb.record_generation_event(
-        db, bot="VOLT", generation=1, event="BUSTED",
-        minimum_qualifying_cost=240.0, maximum_permitted_cost=180.0,
-    )
-    sb.record_generation_event(db, bot="VOLT", generation=2, event="STARTED")
-    assert sb.current_generation(db, "VOLT") == 2
-    assert sb.current_bankroll(db, "VOLT") == 1000.0
-
-
-def test_effective_bust_rejected_when_permitted_allocation_can_fund_trade(db):
-    with pytest.raises(ValueError, match="permitted allocation can still afford"):
-        sb.record_generation_event(
-            db, bot="SURGE", generation=1, event="BUSTED",
-            minimum_qualifying_cost=180.0, maximum_permitted_cost=200.0,
-        )
-
-
 def test_generation_transition_rejected_while_position_open(db):
     _open(db, "open", entry_bankroll=1000)
     with pytest.raises(ValueError, match="position is open"):

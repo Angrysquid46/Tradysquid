@@ -65,15 +65,14 @@ def test_bust_reset_preserves_parameters_and_advances_generation():
     assert bot.generation == 2 and bot.parameters == original
 
 
-def test_effective_inability_to_fund_one_contract_is_a_bust():
+def test_risk_fraction_rounds_up_to_one_when_full_bankroll_can_afford_it():
     bot = BLACKTIDE()
     result = bot.decide(
         as_of=NOW, bankroll=110, market={"tier": "A"},
         options={"tier": "A", "contracts": [option(bid=1.0, ask=1.05)]}, bars=bars(),
     )
-    assert result.action == "BUST"
-    assert result.minimum_qualifying_cost == pytest.approx(105.0)
-    assert result.maximum_permitted_cost == pytest.approx(26.4)
+    assert result.action == "ENTER"
+    assert result.contracts == 1
 
 
 def test_bust_only_when_no_qualifying_contract_is_affordable():

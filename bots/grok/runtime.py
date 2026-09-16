@@ -176,7 +176,6 @@ class GrokRuntime:
                 self._bust_and_restart(
                     bankroll=bankroll,
                     minimum_qualifying_cost=minimum_cost,
-                    maximum_permitted_cost=bankroll,
                     detail="entire bankroll cannot fund one qualifying contract",
                 )
                 return self._record_cycle(Decision(action="BUST", reason="entire bankroll cannot fund one qualifying contract"),bankroll=bankroll,generation=gen)
@@ -190,16 +189,7 @@ class GrokRuntime:
         sized_contracts = decide_contracts(
             selected.ask, bankroll, decision.confidence, selected.spread_pct,params
         )
-        contracts = int(sized_contracts * decision.direction_size_multiplier)
-        if contracts < 1:
-            permitted_cost = min(bankroll, selected.ask * 100.0 * sized_contracts * decision.direction_size_multiplier)
-            self._bust_and_restart(
-                bankroll=bankroll,
-                minimum_qualifying_cost=selected.ask * 100.0,
-                maximum_permitted_cost=permitted_cost,
-                detail="effective risk allocation cannot fund one qualifying contract",
-            )
-            return self._record_cycle(Decision(action="BUST", reason="effective risk allocation cannot fund one qualifying contract"),bankroll=bankroll,generation=gen)
+        contracts = max(1, int(sized_contracts * decision.direction_size_multiplier))
 
         self._open_trade(
             side=decision.side,
@@ -301,7 +291,6 @@ class GrokRuntime:
         *,
         bankroll: float,
         minimum_qualifying_cost: float,
-        maximum_permitted_cost: float,
         detail: str,
     ) -> None:
         """Record an evidenced effective bust and immediately start the next generation."""
@@ -314,7 +303,6 @@ class GrokRuntime:
             event="BUSTED",
             detail=detail,
             minimum_qualifying_cost=minimum_qualifying_cost,
-            maximum_permitted_cost=maximum_permitted_cost,
         )
         sb.record_generation_event(
             self.sb,
