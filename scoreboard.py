@@ -243,7 +243,6 @@ def record_generation_event(
     event: str,
     detail: str = "",
     minimum_qualifying_cost: float | None = None,
-    maximum_permitted_cost: float | None = None,
 ) -> None:
     if bot not in BOTS:
         raise ValueError(f"Unknown bot: {bot!r}")
@@ -269,12 +268,7 @@ def record_generation_event(
             if bankroll > 0.01:
                 raise ValueError("positive-bankroll bust requires minimum_qualifying_cost evidence")
         elif minimum_qualifying_cost <= bankroll + 0.01:
-            if maximum_permitted_cost is None:
-                raise ValueError("referee bankroll can still afford the qualifying trade")
-            if maximum_permitted_cost < 0 or maximum_permitted_cost > bankroll + 0.01:
-                raise ValueError("invalid maximum permitted trade cost evidence")
-            if minimum_qualifying_cost <= maximum_permitted_cost + 0.01:
-                raise ValueError("permitted allocation can still afford the qualifying trade")
+            raise ValueError("referee bankroll can still afford the qualifying trade")
     else:
         if generation != current + 1 or "STARTED" in existing_events:
             raise ValueError("STARTED must advance exactly one generation and cannot duplicate")

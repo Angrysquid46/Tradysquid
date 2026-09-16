@@ -166,7 +166,7 @@ class RiptideRuntime:
         elif decision.action == "BUST":
             if self.engine.position is not None:
                 raise RuntimeError("cannot bust with an open position")
-            scoreboard.record_generation_event(connection, bot=SCOREBOARD_BOT, generation=self.engine.generation, event="BUSTED", detail=decision.reason, minimum_qualifying_cost=decision.minimum_qualifying_cost or bankroll + .02, maximum_permitted_cost=decision.maximum_permitted_cost)
+            scoreboard.record_generation_event(connection, bot=SCOREBOARD_BOT, generation=self.engine.generation, event="BUSTED", detail=decision.reason, minimum_qualifying_cost=decision.minimum_qualifying_cost or bankroll + .02)
             self.engine.reset_generation_after_bust()
             scoreboard.record_generation_event(connection, bot=SCOREBOARD_BOT, generation=self.engine.generation, event="STARTED", detail="bankroll reset to $1,000")
         return decision

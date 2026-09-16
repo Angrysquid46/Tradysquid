@@ -54,7 +54,6 @@ class Decision:
     family: str | None = None
     market_state: str | None = None
     minimum_qualifying_cost: float | None = None
-    maximum_permitted_cost: float | None = None
 
 
 class BLACKTIDE:
@@ -94,16 +93,11 @@ class BLACKTIDE:
         if not affordable:
             minimum_cost = min(float(c["ask"]) * CONTRACT_MULTIPLIER for c in candidates)
             return Decision("BUST", "entire bankroll cannot afford any qualifying contract",
-                            minimum_qualifying_cost=minimum_cost,
-                            maximum_permitted_cost=bankroll)
+                            minimum_qualifying_cost=minimum_cost)
         contract = min(affordable, key=lambda c: (abs(abs(float(c["delta"])) - 0.50), float(c["ask"])))
         ask = float(contract["ask"])
         effective_risk = self.parameters.risk_fraction * permission.size_multiplier
-        contracts = int((bankroll * effective_risk) // (ask * CONTRACT_MULTIPLIER))
-        if contracts < 1:
-            return Decision("BUST", "effective risk allocation cannot fund one qualifying contract",
-                            minimum_qualifying_cost=ask * CONTRACT_MULTIPLIER,
-                            maximum_permitted_cost=bankroll * effective_risk)
+        contracts = max(1, int((bankroll * effective_risk) // (ask * CONTRACT_MULTIPLIER)))
         return Decision("ENTER", "private directional/liquidity criteria met",
                         str(contract["option_symbol"]), side, contracts, ask,
                         setup.family, f"{vector.state.value}|{direction.direction}|{permission.relationship}")

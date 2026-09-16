@@ -267,9 +267,8 @@ def test_grok_effective_bust_records_and_restarts_generation(tmp_path,monkeypatc
     runtime.private=SimpleNamespace(current_generation=1)
     runtime._bust_and_restart(
         bankroll=1000,
-        minimum_qualifying_cost=400,
-        maximum_permitted_cost=350,
-        detail="effective risk allocation cannot fund one qualifying contract",
+        minimum_qualifying_cost=1200,
+        detail="entire bankroll cannot fund one qualifying contract",
     )
     assert sb.current_generation(db,"GROK")==2
     assert sb.current_bankroll(db,"GROK")==1000

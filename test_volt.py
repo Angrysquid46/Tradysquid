@@ -50,19 +50,18 @@ def test_sensitive_bounce_cannot_buy_call_against_unconfirmed_downtrend():
     assert "conflicts with verified direction" in decision.reason
 
 
-def test_volt_valid_signal_that_cannot_fund_one_contract_busts():
+def test_volt_valid_signal_uses_one_contract_when_full_bankroll_can_afford_it():
     contract={"data_class":"VERIFIED_REAL","side":"call","bid":3.90,"ask":4.00,"delta":.5,"option_symbol":"x"}
     decision=Volt().decide(datetime.now(),1000,{"tier":"A"},{"tier":"A","contracts":[contract]},_bars())
-    assert decision.action=="BUST"
-    assert decision.minimum_qualifying_cost==400
-    assert decision.maximum_permitted_cost==350
+    assert decision.action=="ENTER"
+    assert decision.contracts==1
 
 
 def test_volt_runtime_records_bust_and_starts_fresh_generation(tmp_path,monkeypatch):
     class View:
         def market_as_of(self,_):return {"tier":"A"}
         def bars_as_of(self,_,lookback_minutes=180):return _bars()
-        def options_as_of(self,_):return {"tier":"A","contracts":[{"data_class":"VERIFIED_REAL","side":"call","bid":3.90,"ask":4.00,"delta":.5,"option_symbol":"x"}]}
+        def options_as_of(self,_):return {"tier":"A","contracts":[{"data_class":"VERIFIED_REAL","side":"call","bid":11.90,"ask":12.00,"delta":.5,"option_symbol":"x"}]}
     monkeypatch.setattr(scoreboard,"DB_PATH",tmp_path/"scoreboard.db")
     monkeypatch.setattr(volt_runtime,"POSITION_STATE",tmp_path/"position-state.json")
     db=scoreboard.connect_db()
