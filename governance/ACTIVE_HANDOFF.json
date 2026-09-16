@@ -1,5 +1,22 @@
 {
-  "active": false,
-  "work_id": null,
-  "cleared_at": "2026-09-15T10:59:51.928855-05:00"
+  "active": true,
+  "work_id": "47397ae8-2306-423e-bf16-fffd4218c965",
+  "actor": "Codex",
+  "task": "Enforce automatic bust and generation reset when a valid trade cannot fund one contract",
+  "method": "Audit all five trader entry sizing and shared referee lifecycle, replace silent affordability skips with explicit BUST outcomes where a valid qualifying setup cannot fund one contract under its allowed allocation, preserve immutable trades and strategies, add regression tests, deploy through PR/updater, and live-verify generation transitions.",
+  "started_at": "2026-09-16T13:43:33.939823-05:00",
+  "starting_commit": "f50d95e17dfd9d7b1b7a9e4557606f863c566726",
+  "process_id": 69816,
+  "owner_request": "Owner clarified that effective inability to afford a legitimate qualifying trade must bust and reset to a fresh 1000-dollar generation, not remain NO_ACTION.",
+  "before_state": "BLACKTIDE and VOLT repeatedly return NO_ACTION after valid signals because preferred risk allocation cannot fund one contract; immutable Section 4 already requires bust on effective inability.",
+  "reason": "Owner clarified that effective inability to afford a legitimate qualifying trade must bust and reset to a fresh 1000-dollar generation, not remain NO_ACTION.",
+  "intended_scope": "Trader decision outcome wiring, runtime bust lifecycle, neutral scoreboard generation transition calls, and focused tests for BLACKTIDE RIPTIDE SURGE VOLT GROK as applicable; no entry strategy changes and no updater changes.",
+  "expected_effects": "A valid qualifying setup that cannot fund one permitted contract records a generation bust/postmortem, preserves history, starts the next generation at 1000 dollars, and resumes evaluation.",
+  "required_tests": "Focused per-trader bust tests, referee generation tests, full repository suite, CI, updater receipt, live ports and cycle health.",
+  "risks": "Incorrectly treating no signal or no liquid qualifying contract as a bust; duplicate busts across restart; resetting an open position; strategy ownership leakage.",
+  "next_safe_action_if_interrupted": "Commit intended code/tests/governance on a separate branch, open PR, wait for CI, merge, let the frozen updater deploy, safely restart trader runtimes while preserving GROK/RIPTIDE open positions, and verify live bust/reset plus all ports/cycles.",
+  "phase": "Phase 15",
+  "last_checkpoint_at": "2026-09-16T13:51:40.968434-05:00",
+  "last_successful_action": "Implemented evidenced effective-affordability bust semantics across BLACKTIDE, RIPTIDE, SURGE, VOLT, and GROK. Valid setup plus qualifying contract plus insufficient permitted allocation now emits BUST, records minimum contract cost and maximum permitted allocation with the neutral referee, preserves history, starts the next generation at ,000, and resumes. No-signal and no-qualifying-contract cases remain NO_ACTION. Added engine, runtime, GROK selection, and referee regression coverage. Focused 103 tests and full repository suite pass.",
+  "next_safe_action": "Commit intended code/tests/governance on a separate branch, open PR, wait for CI, merge, let the frozen updater deploy, safely restart trader runtimes while preserving GROK/RIPTIDE open positions, and verify live bust/reset plus all ports/cycles."
 }

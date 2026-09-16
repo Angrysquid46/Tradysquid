@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from bots.grok.contract_selection import select_contract
+from bots.grok.contract_selection import minimum_tradeable_contract_cost, select_contract
 from bots.grok.engine import evaluate_entry, evaluate_exit
 from bots.grok.preflight import run_preflight
 from bots.grok.sizing import decide_contracts
@@ -55,6 +55,12 @@ def test_contract_selection_filters_bad_spreads():
     selected = select_contract("CALL", chain, 1000.0, 0.7)
     assert selected is not None
     assert selected.symbol == "SPY250830C00505000"  # tighter spread wins
+
+
+def test_minimum_tradeable_contract_cost_keeps_unaffordable_evidence():
+    chain=[{"symbol":"SPY250830C00500000","option_type":"CALL","bid":10.0,"ask":10.5}]
+    assert select_contract("CALL",chain,1000.0,.7) is None
+    assert minimum_tradeable_contract_cost("CALL",chain)==1050.0
 
 
 def test_entry_no_action_without_features():
@@ -247,3 +253,24 @@ def test_grok_preflight_allows_recovery_of_its_official_open_position(monkeypatc
     runtime.is_session_open=lambda:True
     runtime.provider_ok=lambda:True
     assert runtime.preflight()
+
+
+def test_grok_effective_bust_records_and_restarts_generation(tmp_path,monkeypatch):
+    import scoreboard as sb
+    import bots.grok.runtime as runtime_module
+    from types import SimpleNamespace
+    monkeypatch.setattr(sb,"DB_PATH",tmp_path/"scoreboard.db")
+    monkeypatch.setattr(runtime_module,"save_state",lambda _:None)
+    db=sb.connect_db()
+    runtime=runtime_module.GrokRuntime.__new__(runtime_module.GrokRuntime)
+    runtime.sb=db
+    runtime.private=SimpleNamespace(current_generation=1)
+    runtime._bust_and_restart(
+        bankroll=1000,
+        minimum_qualifying_cost=400,
+        maximum_permitted_cost=350,
+        detail="effective risk allocation cannot fund one qualifying contract",
+    )
+    assert sb.current_generation(db,"GROK")==2
+    assert sb.current_bankroll(db,"GROK")==1000
+    assert sb.bust_count(db,"GROK")==1
