@@ -30,4 +30,9 @@ class VoltRuntime:
             p=self.engine.position
             if not p or d.price is None:raise RuntimeError("VOLT emitted invalid exit")
             pnl=(d.price-p.entry)*p.contracts*MULTIPLIER;scoreboard.record_trade_close(c,trade_id=p.trade_id,closed_at=as_of.isoformat(),exit_price=d.price,pnl_usd=pnl);self.engine.apply_exit();POSITION_STATE.unlink(missing_ok=True)
+        elif d.action=="BUST":
+            if self.engine.position is not None:raise RuntimeError("cannot bust with an open position")
+            scoreboard.record_generation_event(c,bot=BOT,generation=self.engine.generation,event="BUSTED",detail=d.reason,minimum_qualifying_cost=d.minimum_qualifying_cost or bankroll+.02,maximum_permitted_cost=d.maximum_permitted_cost)
+            self.engine.generation+=1
+            scoreboard.record_generation_event(c,bot=BOT,generation=self.engine.generation,event="STARTED",detail="bankroll reset to $1,000")
         return d

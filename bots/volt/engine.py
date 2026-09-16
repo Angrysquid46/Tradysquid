@@ -11,7 +11,7 @@ class Position:
     trade_id:str; symbol:str; side:str; contracts:int; entry:float; opened_at:datetime; peak_bid:float
 @dataclass(frozen=True)
 class Decision:
-    action:str; reason:str; side:str|None=None; contract_symbol:str|None=None; price:float|None=None; contracts:int=0; score:float=0.
+    action:str; reason:str; side:str|None=None; contract_symbol:str|None=None; price:float|None=None; contracts:int=0; score:float=0.; minimum_qualifying_cost:float|None=None; maximum_permitted_cost:float|None=None
 
 class Volt:
     def __init__(self):self.generation=1;self.position=None
@@ -27,12 +27,12 @@ class Volt:
         if score<.60:return None,score,"WEAK"
         return ("call" if net>0 else "put"),score,"IMPULSE"
     @staticmethod
-    def contract(options,side,bankroll):
+    def contract(options,side):
         valid=[]
         for x in options.get("contracts",[]):
             try:
                 bid,ask,delta=float(x["bid"]),float(x["ask"]),abs(float(x["delta"]));spread=(ask-bid)/ask
-                if x.get("data_class")=="VERIFIED_REAL" and x.get("side")==side and bid>0 and ask>=bid and spread<=.18 and .35<=delta<=.70 and ask*100<=bankroll:valid.append(x)
+                if x.get("data_class")=="VERIFIED_REAL" and x.get("side")==side and bid>0 and ask>=bid and spread<=.18 and .35<=delta<=.70:valid.append(x)
             except (KeyError,TypeError,ValueError,ZeroDivisionError):pass
         return min(valid,key=lambda x:(abs(abs(float(x["delta"]))-.5),float(x["ask"]))) if valid else None
     def decide(self,as_of,bankroll,market,options,bars):
@@ -54,10 +54,10 @@ class Volt:
         if not side:return Decision("NO_ACTION",state,score=score)
         direction=assess_market_direction(bars);permission=trade_direction_permission(direction,side,countertrend_setup=True)
         if not permission.allowed:return Decision("NO_ACTION",permission.reason,side=side,score=score)
-        contract=self.contract(options,side,bankroll)
-        if not contract:return Decision("NO_ACTION","NO_AFFORDABLE_CONTRACT",score=score)
-        ask=float(contract["ask"]);qty=int(bankroll*.35*permission.size_multiplier//(ask*100))
-        if qty<1:return Decision("NO_ACTION","NO_AFFORDABLE_CONTRACT",score=score)
+        contract=self.contract(options,side)
+        if not contract:return Decision("NO_ACTION","NO_QUALIFYING_CONTRACT",score=score)
+        ask=float(contract["ask"]);cost=ask*100;budget=bankroll*.35*permission.size_multiplier;qty=int(budget//cost)
+        if qty<1:return Decision("BUST","effective risk allocation cannot fund one qualifying contract",score=score,minimum_qualifying_cost=cost,maximum_permitted_cost=min(bankroll,budget))
         return Decision("ENTER",f"SENSITIVE_THREE_MINUTE_IMPULSE; {permission.reason}",side,str(contract["option_symbol"]),ask,qty,score)
     def apply_entry(self,d,trade_id,opened_at,bid):self.position=Position(trade_id,str(d.contract_symbol),str(d.side),d.contracts,float(d.price),opened_at,bid)
     def apply_exit(self):self.position=None

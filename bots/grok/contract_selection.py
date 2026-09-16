@@ -35,6 +35,22 @@ def _side_match(otype: str, side: str) -> bool:
     return o == side.upper()
 
 
+def minimum_tradeable_contract_cost(side: str, chain: list[dict[str, Any]]) -> float | None:
+    """Cheapest same-side contract with an executable observed market."""
+    costs: list[float] = []
+    for contract in chain:
+        if not _side_match(str(contract.get("option_type", "") or ""), side):
+            continue
+        try:
+            bid = float(contract.get("bid") or 0)
+            ask = float(contract.get("ask") or 0)
+        except (TypeError, ValueError):
+            continue
+        if bid > 0 and ask >= bid:
+            costs.append(ask * 100.0)
+    return min(costs) if costs else None
+
+
 def _pick(
     candidates: list[dict[str, Any]],
     *,

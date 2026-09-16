@@ -165,7 +165,8 @@ class BlacktideRuntime:
             scoreboard.record_generation_event(
                 connection, bot=SCOREBOARD_BOT, generation=self.engine.generation,
                 event="BUSTED", detail=decision.reason,
-                minimum_qualifying_cost=bankroll + 0.02,
+                minimum_qualifying_cost=decision.minimum_qualifying_cost or bankroll + 0.02,
+                maximum_permitted_cost=decision.maximum_permitted_cost,
             )
             self.engine.reset_generation_after_bust()
             scoreboard.record_generation_event(

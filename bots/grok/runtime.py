@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from bots.grok import BOT_NAME
-from bots.grok.contract_selection import select_contract
+from bots.grok.contract_selection import minimum_tradeable_contract_cost, select_contract
 from bots.grok.engine import Decision, evaluate_entry, evaluate_exit
 from bots.grok.evolution import active_parameters, evolve_state
 from bots.grok.preflight import run_preflight
@@ -164,10 +164,6 @@ class GrokRuntime:
             return self._record_cycle(decision,bankroll=bankroll,generation=gen)
 
         # Flat — evaluate entry
-        if bankroll < 5.0:  # effectively cannot trade anything meaningful
-            self._maybe_bust(bankroll)
-            return self._record_cycle(Decision(action="NO_ACTION", reason="bankroll too low for qualifying trade"),bankroll=bankroll,generation=gen)
-
         chain = self.get_chain()
         decision = evaluate_entry(features, chain, bankroll,params)
         if decision.action != "ENTER" or not decision.side:
@@ -175,6 +171,15 @@ class GrokRuntime:
 
         selected = select_contract(decision.side, chain, bankroll, decision.confidence,params)
         if selected is None:
+            minimum_cost = minimum_tradeable_contract_cost(decision.side, chain)
+            if minimum_cost is not None and minimum_cost > bankroll + 0.01:
+                self._bust_and_restart(
+                    bankroll=bankroll,
+                    minimum_qualifying_cost=minimum_cost,
+                    maximum_permitted_cost=bankroll,
+                    detail="entire bankroll cannot fund one qualifying contract",
+                )
+                return self._record_cycle(Decision(action="BUST", reason="entire bankroll cannot fund one qualifying contract"),bankroll=bankroll,generation=gen)
             return self._record_cycle(Decision(
                 action="NO_ACTION",
                 reason="no acceptable contract after selection filters",
@@ -182,12 +187,19 @@ class GrokRuntime:
                 rejected=decision.rejected + [{"family": decision.family or "", "reason": "contract selection failed"}],
             ),bankroll=bankroll,generation=gen)
 
-        contracts = decide_contracts(
+        sized_contracts = decide_contracts(
             selected.ask, bankroll, decision.confidence, selected.spread_pct,params
         )
-        contracts = int(contracts * decision.direction_size_multiplier)
+        contracts = int(sized_contracts * decision.direction_size_multiplier)
         if contracts < 1:
-            return self._record_cycle(Decision(action="NO_ACTION", reason="unaffordable after sizing"),bankroll=bankroll,generation=gen)
+            permitted_cost = min(bankroll, selected.ask * 100.0 * sized_contracts * decision.direction_size_multiplier)
+            self._bust_and_restart(
+                bankroll=bankroll,
+                minimum_qualifying_cost=selected.ask * 100.0,
+                maximum_permitted_cost=permitted_cost,
+                detail="effective risk allocation cannot fund one qualifying contract",
+            )
+            return self._record_cycle(Decision(action="BUST", reason="effective risk allocation cannot fund one qualifying contract"),bankroll=bankroll,generation=gen)
 
         self._open_trade(
             side=decision.side,
@@ -284,36 +296,36 @@ class GrokRuntime:
         self.private.decision_log_tail = self.private.decision_log_tail[-200:]
         save_state(self.private)
 
-    def _maybe_bust(self, bankroll: float) -> None:
-        """Only bust when truly unable to fund a qualifying trade."""
+    def _bust_and_restart(
+        self,
+        *,
+        bankroll: float,
+        minimum_qualifying_cost: float,
+        maximum_permitted_cost: float,
+        detail: str,
+    ) -> None:
+        """Record an evidenced effective bust and immediately start the next generation."""
         import scoreboard as sb
-
-        # Conservative: require evidence that even a cheap contract is unaffordable
-        min_qualifying = 15.0  # $0.15 ask * 100
-        if bankroll + 0.01 >= min_qualifying:
-            return
         gen = sb.current_generation(self.sb, BOT_NAME)
-        try:
-            sb.record_generation_event(
-                self.sb,
-                bot=BOT_NAME,
-                generation=gen,
-                event="BUSTED",
-                detail=f"bankroll {bankroll:.2f} cannot fund min qualifying trade",
-                minimum_qualifying_cost=min_qualifying,
-            )
-            sb.record_generation_event(
-                self.sb,
-                bot=BOT_NAME,
-                generation=gen + 1,
-                event="STARTED",
-                detail="post-bust reset to $1000",
-            )
-            self.private.current_generation = gen + 1
-            save_state(self.private)
-            logger.warning("GROK generation %s BUSTED → started %s", gen, gen + 1)
-        except ValueError as exc:
-            logger.info("bust check skipped: %s", exc)
+        sb.record_generation_event(
+            self.sb,
+            bot=BOT_NAME,
+            generation=gen,
+            event="BUSTED",
+            detail=detail,
+            minimum_qualifying_cost=minimum_qualifying_cost,
+            maximum_permitted_cost=maximum_permitted_cost,
+        )
+        sb.record_generation_event(
+            self.sb,
+            bot=BOT_NAME,
+            generation=gen + 1,
+            event="STARTED",
+            detail="post-bust reset to $1000",
+        )
+        self.private.current_generation = gen + 1
+        save_state(self.private)
+        logger.warning("GROK generation %s BUSTED → started %s", gen, gen + 1)
 
     def start(self) -> None:
         self.recover()
